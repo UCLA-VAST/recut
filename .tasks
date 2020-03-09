@@ -1,0 +1,30 @@
+[project-init]
+command=mkdir build && cd build && cmake ../src
+cwd=<root>
+
+[project-build]
+command=cd build && make -j 56 
+# command=cd build && make -j 56 && make install -j 56
+cwd=<root>
+# this is for output=quickfix only
+# if it is omitted, vim's current errorformat will be used.
+errorformat=%f:%m:%l
+
+[project-test]
+command=cd bin && ./recut_tests
+cwd=<root>
+
+[project-bench]
+command=cd bin && ./recut_bench
+cwd=<root>
+
+[project-perf]
+command=cd bin && perf record -g ./recut_tests && perf report -g 'graph,.9,caller'
+cwd=<root>
+
+[project-run]
+command=cd misc_scripts && python performance_test.py
+cwd=<root>
+
+# save all files in buffer before executing any command
+save=2
