@@ -1,5 +1,24 @@
 cmake_minimum_required(VERSION 2.8)
 
+#set(BOOST_ROOT )
+set(Boost_USE_STATIC_LIBS OFF)
+set(Boost_USE_MULTITHREADED ON)
+set(Boost_USE_STATIC_RUNTIME OFF)
+find_package(Boost REQUIRED )
+message(STATUS "Boost version: ${Boost_VERSION}")
+message(STATUS "BOOST_INCLUDE_PATH: ${BOOST_INCLUDE_PATH}")
+message(STATUS "BOOST_LIBRARY_PATH: ${BOOST_LIBRARY_PATH}")
+
+# This is needed if your Boost version is newer than your CMake version
+# or if you have an old version of CMake (<3.5)
+if(NOT TARGET Boost::filesystem)
+    add_library(Boost::filesystem IMPORTED INTERFACE)
+    set_property(TARGET Boost::filesystem PROPERTY
+        INTERFACE_INCLUDE_DIRECTORIES ${Boost_INCLUDE_DIR})
+    set_property(TARGET Boost::filesystem PROPERTY
+        INTERFACE_LINK_LIBRARIES ${Boost_LIBRARIES})
+endif()
+
 project(RecutPipeline)
 
 # build google benchmark (target: benchmark)
@@ -17,4 +36,17 @@ add_subdirectory(extern/benchmark)
 
 set(SRC src/recut_main.cpp)
 add_executable(recut ${SRC})
+
+file(GLOB LOCAL_INCLUDE_LIBS "../lib/*.so")
+target_link_libraries(recut PUBLIC ${LOCAL_LIBS})
+#target_link_libraries(recut PUBLIC Boost::filesystem)
+#add_compile_options(-lboost -lboost_filesystem) # boost filesystem
+if(Boost_FOUND)
+  include_directories(${Boost_INCLUDE_DIRS})
+  add_executable(foo foo.cc)
+  target_link_libraries(foo ${Boost_LIBRARIES})
+endif()
+
+include_directories(../include)
+
 install(TARGETS recut DESTINATION bin)
