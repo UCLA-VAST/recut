@@ -1,10 +1,9 @@
 [project-init]
-command=mkdir build && cd build && cmake ../src
+command=mkdir build && cd build && cmake ../src -DCMAKE_BUILD_TYPE=Debug -DMPI=TRUE -DVERBOSE=False -DPROFILE=FALSE
 cwd=<root>
 
 [project-build]
-command=cd build && make -j 56 
-# command=cd build && make -j 56 && make install -j 56
+command=cd build && make -j 56 && make install -j 56
 cwd=<root>
 # this is for output=quickfix only
 # if it is omitted, vim's current errorformat will be used.
@@ -15,7 +14,7 @@ command=cd bin && ./recut_tests
 cwd=<root>
 
 [project-bench]
-command=cd bin && ./recut_bench
+command=cd bin && ./recut_tests
 cwd=<root>
 
 [project-perf]
