@@ -1,6 +1,6 @@
 ### Installation
 ```
-git clone --recursive https://github.com/UCLA-VAST/recut.git
+git clone --recursive https://github.com/UCLA-VAST/recut-pipeline.git
 cd recut
 mkdir build bin
 cd build
