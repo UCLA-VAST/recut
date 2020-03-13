@@ -23,6 +23,11 @@ set(HEADER
   )
 add_executable(recut ${SRC} ${HEADER})
 
+# start edit (added by mrunal)
+find_package (Eigen3 3.3 REQUIRED NO_MODULE)
+target_link_libraries(recut Eigen3::Eigen)
+# end edit
+
 file(GLOB LOCAL_INCLUDE_LIBS "../lib/*.so")
 target_link_libraries(recut PUBLIC ${LOCAL_LIBS})
 target_compile_features(recut PRIVATE cxx_std_17)
