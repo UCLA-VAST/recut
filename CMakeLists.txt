@@ -1,7 +1,9 @@
 cmake_minimum_required(VERSION 2.8)
 
+set(CMAKE_CXX_COMPILER "/usr/bin/g++-7")
+
 #set(BOOST_ROOT )
-set(Boost_DEBUG 1)
+#set(Boost_DEBUG 1)
 set(Boost_USE_STATIC_LIBS OFF)
 set(Boost_USE_MULTITHREADED ON)
 set(Boost_USE_STATIC_RUNTIME OFF)
@@ -45,6 +47,7 @@ add_executable(recut ${SRC})
 
 file(GLOB LOCAL_INCLUDE_LIBS "../lib/*.so")
 target_link_libraries(recut PUBLIC ${LOCAL_LIBS})
+target_compile_features(recut PRIVATE cxx_std_17)
 
 #set(BOOST_LIBRARIES
     #${BOOST_LIBRARY_PATH}/libboost_serialization.so
