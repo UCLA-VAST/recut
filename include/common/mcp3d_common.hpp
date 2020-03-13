@@ -13,7 +13,7 @@
 // no dependency on other files in
 // mcp3d codebase
 #include "mcp3d_macros.hpp"
-//#include "mcp3d_types.hpp"
+#include "mcp3d_types.hpp"
 #include "mcp3d_constants.hpp"
 #include "mcp3d_paths.hpp"
 #include "mcp3d_utility.hpp"
