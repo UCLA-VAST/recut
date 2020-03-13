@@ -1,7 +1,6 @@
 #pragma once
 
 #include<bitset>
-#include "recut_prune.h"
 #include<set>
 #include<future>
 #include<fstream>
@@ -14,8 +13,9 @@
 #include<omp.h>
 #include"super_interval.hpp" 
 #include"recut_parameters.hpp"
+//#include "recut_prune.h"
 //#include "common/mcp3d_common.hpp"
-//#include"markers.h"
+#include"markers.h"
 //#include"fastmarching_macro.h"
 #include "image/mcp3d_voxel_types.hpp"
 #include "image/mcp3d_image.hpp"
