@@ -1,11 +1,17 @@
 cmake_minimum_required(VERSION 2.8)
 
 #set(BOOST_ROOT )
+set(Boost_DEBUG 1)
 set(Boost_USE_STATIC_LIBS OFF)
 set(Boost_USE_MULTITHREADED ON)
 set(Boost_USE_STATIC_RUNTIME OFF)
-find_package(Boost REQUIRED )
-message(STATUS "Boost version: ${Boost_VERSION}")
+#set(BOOST_ROOT "/usr/share")
+set(BOOST_INCLUDE_PATH "/usr/include/boost")
+set(BOOST_LIBRARY_PATH "/usr/lib/x86_64-linux-gnu")
+#set(BOOST_LIBRARY_PATH "/usr/share/")
+#set(BOOST_INCLUDE_PATH "/usr/include/boost")
+#find_package(Boost REQUIRED )
+#message(STATUS "Boost version: ${Boost_VERSION}")
 message(STATUS "BOOST_INCLUDE_PATH: ${BOOST_INCLUDE_PATH}")
 message(STATUS "BOOST_LIBRARY_PATH: ${BOOST_LIBRARY_PATH}")
 
@@ -39,14 +45,22 @@ add_executable(recut ${SRC})
 
 file(GLOB LOCAL_INCLUDE_LIBS "../lib/*.so")
 target_link_libraries(recut PUBLIC ${LOCAL_LIBS})
-#target_link_libraries(recut PUBLIC Boost::filesystem)
-#add_compile_options(-lboost -lboost_filesystem) # boost filesystem
-if(Boost_FOUND)
-  include_directories(${Boost_INCLUDE_DIRS})
-  add_executable(foo foo.cc)
-  target_link_libraries(foo ${Boost_LIBRARIES})
-endif()
 
-include_directories(../include)
+#set(BOOST_LIBRARIES
+    #${BOOST_LIBRARY_PATH}/libboost_serialization.so
+    #${BOOST_LIBRARY_PATH}/libboost_filesystem.so
+    #${BOOST_LIBRARY_PATH}/libboost_system.so)
+
+#target_link_libraries(recut ${BOOST_LIBRARIES})
+include_directories(${BOOST_INCLUDE_PATH})
+
+#add_compile_options(-lboost -lboost_filesystem) # boost filesystem
+#if(Boost_FOUND)
+  #include_directories(${Boost_INCLUDE_DIRS})
+  #add_executable(foo foo.cc)
+  #target_link_libraries(foo ${Boost_LIBRARIES})
+#endif()
+
+include_directories(include)
 
 install(TARGETS recut DESTINATION bin)
