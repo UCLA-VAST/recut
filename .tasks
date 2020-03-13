@@ -1,5 +1,5 @@
 [project-init]
-command=mkdir build && cd build && cmake ../src -DCMAKE_BUILD_TYPE=Debug -DMPI=TRUE -DVERBOSE=False -DPROFILE=FALSE
+command=rm -rf build && mkdir build && cd build && cmake .. 
 cwd=<root>
 
 [project-build]

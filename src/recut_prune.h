@@ -6,7 +6,7 @@
 #include <map>
 #include <set>
 //#include "smooth_curve.h"
-#include "marker_radius.h"
+//#include "marker_radius.h"
 
 #ifndef MAX
 #define MAX(x,y) ((x) > (y) ? (x) : (y))
