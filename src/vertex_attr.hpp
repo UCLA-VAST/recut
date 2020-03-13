@@ -1,14 +1,19 @@
 #ifndef VERTEX_ATTR_H_
 #define VERTEX_ATTR_H_
-#include<limits>
-#include<vector>
-#include"utils.hpp"
-#include<cstring>
-#include<cassert>
-#include<iostream>
+#include <limits>
+#include <vector>
+#include "utils.hpp"
+#include <cstring>
+#include <cassert>
+#include <iostream>
 #define assertm(exp, msg) assert(((void) msg, exp))
 
-//#include <boost/heap/fibonacci_heap.hpp>
+using std::numeric_limits;
+using std::atomic;
+using std::cout;
+using std::endl;
+using std::vector;
+using std::ios;
 
 // overflows at ~2e9 nodes, ~ 1024 * 1024 * 1024 * 2
 //typedef uint32_t VID_t; // overflows after ~2e9 ~= 2 1024^3 tiles
