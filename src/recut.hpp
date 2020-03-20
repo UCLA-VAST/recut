@@ -16,7 +16,7 @@
 //#include "recut_prune.h"
 //#include "common/mcp3d_common.hpp"
 #include"markers.h"
-//#include"fastmarching_macro.h"
+#include"fastmarching_macro.h"
 #include "image/mcp3d_voxel_types.hpp"
 #include "image/mcp3d_image.hpp"
 
@@ -1107,7 +1107,7 @@ template <class image_t>
 void Recut<image_t>::get_interval_offsets(const VID_t interval_num, vector<int>& interval_offsets, vector<int>& interval_extents ) {
   VID_t i, j, k;
   get_interval_subscript(interval_num, i, j, k);
-  vector<int> subs = {k, j, i};
+  vector<VID_t> subs = {k, j, i};
   interval_offsets = {0, 0, 0};
   interval_extents = {0, 0, 0};
   auto off = args->image_offsets();
