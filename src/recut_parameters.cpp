@@ -1,12 +1,12 @@
 //
-// Created by muyezhu on 5/24/19.
 //
-#include "image/mcp3d_image_utils.hpp"
+//#include "image/mcp3d_image_utils.hpp"
 #include "recut_parameters.hpp"
+#include <omp.h>
 
 using namespace std;
 
-string mcp3d::RecutParameters::MetaString()
+string RecutParameters::MetaString()
 {
     stringstream meta_stream;
     meta_stream << "# foreground_percent = " << foreground_percent_ << endl;
@@ -27,7 +27,7 @@ string mcp3d::RecutParameters::MetaString()
     return meta_stream.str();
 }
 
-void mcp3d::RecutCommandLineArgs::PrintUsage()
+void RecutCommandLineArgs::PrintUsage()
 {
     cout<< "Usage : ./recut <image_root_dir> <channel> [-inmarker <marker_dir>] [-outswc <swc_file>] "
             "[-resolution-level <int>] [-image-offsets <int> [<int>] [<int>]] [-image-extents <int> [<int>] [<int>]]"
@@ -55,39 +55,39 @@ void mcp3d::RecutCommandLineArgs::PrintUsage()
     cout << endl;
 }
 
-string mcp3d::RecutCommandLineArgs::MetaString()
+string RecutCommandLineArgs::MetaString()
 {
     stringstream meta_stream;
     meta_stream << "# image root dir = " << image_root_dir_ << endl;
     meta_stream << "# channel = " << channel_ << endl;
     meta_stream << "# resolution level = " << resolution_level_ << endl;
-    meta_stream << "# offsets (zyx) = " << mcp3d::JoinVector(image_offsets(), ", ", true) << endl;
-    meta_stream << "# extents (zyx) = " << mcp3d::JoinVector(image_extents(), ", ", true) << endl;
+    meta_stream << "# offsets (zyx) = " << image_offsets()[0] << " " << image_offsets()[1] << " " << image_offsets()[2] << endl;
+    meta_stream << "# extents (zyx) = " << image_extents()[0] << " " << image_extents()[1] << " " << image_extents()[2] << endl;
     meta_stream << recut_parameters_.MetaString();
     return meta_stream.str();
 }
 
-bool mcp3d::ParseRecutArgs(int argc, char * argv[], mcp3d::RecutCommandLineArgs& args)
+bool RecutArgs(int argc, char * argv[], RecutCommandLineArgs& args)
 {
     if (argc < 3)
     {
-        mcp3d::RecutCommandLineArgs::PrintUsage();
+        RecutCommandLineArgs::PrintUsage();
         return false;
     }
     try
     {
         // global volume and channel selection
         args.set_image_root_dir(argv[1]);
-        args.set_channel(ParseInt(argv[2]));
+        args.set_channel(atoi(argv[2]));
         // if the switch is given, parameter(s) corresponding to the switch is expected
         for (int i = 3; i < argc; ++i)
         {
             // subvolume selection arguments
             if (strcmp(argv[i],"-resolution-level") == 0 || strcmp(argv[i],"-rl") == 0)
             {
-                if (i + 1 >= argc || argv[i + 1][0] == '-')
-                    MCP3D_INVALID_ARGUMENT("missing parameter for -resolution-level")
-                args.set_resolution_level(ParseInt(argv[i + 1]));
+                //if (i + 1 >= argc || argv[i + 1][0] == '-')
+                    //MCP3D_INVALID_ARGUMENT("missing parameter for -resolution-level")
+                args.set_resolution_level(atoi(argv[i + 1]));
                 ++i;
             }
             else if (strcmp(argv[i],"-image-offsets") == 0 || strcmp(argv[i],"-io") == 0)
@@ -95,9 +95,9 @@ bool mcp3d::ParseRecutArgs(int argc, char * argv[], mcp3d::RecutCommandLineArgs&
                 vector<int> offsets;
                 for (int j = 0; j < 3; ++ j)
                 {
-                    if (i + 1 >= argc || argv[i + 1][0] == '-')
-                        MCP3D_INVALID_ARGUMENT("missing parameter(s) for -image-offsets")
-                    int offset = ParseInt(argv[i + 1]);
+                    //if (i + 1 >= argc || argv[i + 1][0] == '-')
+                        //MCP3D_INVALID_ARGUMENT("missing parameter(s) for -image-offsets")
+                    int offset = atoi(argv[i + 1]);
                     offsets.push_back(offset);
                     ++i;
                 }
@@ -108,9 +108,9 @@ bool mcp3d::ParseRecutArgs(int argc, char * argv[], mcp3d::RecutCommandLineArgs&
                 vector<int> extents;
                 for (int j = 0; j < 3; ++ j)
                 {
-                    if (i + 1 >= argc || argv[i + 1][0] == '-')
-                        MCP3D_INVALID_ARGUMENT("missing parameter for -image-extents")
-                    int extent = ParseInt(argv[i + 1]);
+                    //if (i + 1 >= argc || argv[i + 1][0] == '-')
+                        //MCP3D_INVALID_ARGUMENT("missing parameter for -image-extents")
+                    int extent = atoi(argv[i + 1]);
                     extents.push_back(extent);
                     ++i;
                 }
@@ -118,72 +118,72 @@ bool mcp3d::ParseRecutArgs(int argc, char * argv[], mcp3d::RecutCommandLineArgs&
             }
             else if (strcmp(argv[i], "-outswc") == 0 || strcmp(argv[i], "-os") == 0)
             {
-                if (i + 1 >= argc || argv[i + 1][0] == '-')
-                    MCP3D_INVALID_ARGUMENT("missing parameter for -outswc")
+                //if (i + 1 >= argc || argv[i + 1][0] == '-')
+                    //MCP3D_INVALID_ARGUMENT("missing parameter for -outswc")
                 args.set_swc_path(argv[i + 1]);
                 ++i;
             }
             else if (strcmp(argv[i], "-inmarker") == 0 || strcmp(argv[i], "-im") == 0)
             {
-                if (i + 1 >= argc || argv[i + 1][0] == '-')
-                    MCP3D_INVALID_ARGUMENT("missing parameter for -inmarker")
+                //if (i + 1 >= argc || argv[i + 1][0] == '-')
+                    //MCP3D_INVALID_ARGUMENT("missing parameter for -inmarker")
                 args.recut_parameters().set_marker_file_path(argv[i + 1]);
                 ++i;
             }
             else if (strcmp(argv[i], "-bg-thresh") == 0 || strcmp(argv[i], "-bt") == 0)
             {
-                if (i + 1 >= argc || argv[i + 1][0] == '-')
-                    MCP3D_INVALID_ARGUMENT("missing parameter for -bg-thresh")
-                args.recut_parameters().set_background_thresh(ParseInt(argv[i + 1]));
+                //if (i + 1 >= argc || argv[i + 1][0] == '-')
+                    //MCP3D_INVALID_ARGUMENT("missing parameter for -bg-thresh")
+                args.recut_parameters().set_background_thresh(atoi(argv[i + 1]));
                 ++i;
             }
             else if (strcmp(argv[i], "-min") == 0)
             {
-                if (i + 1 >= argc || argv[i + 1][0] == '-')
-                    MCP3D_INVALID_ARGUMENT("missing parameter for -min")
-                args.recut_parameters().set_min_intensity(ParseInt(argv[i + 1]));
+                //if (i + 1 >= argc || argv[i + 1][0] == '-')
+                    //MCP3D_INVALID_ARGUMENT("missing parameter for -min")
+                args.recut_parameters().set_min_intensity(atoi(argv[i + 1]));
                 ++i;
             }
             else if (strcmp(argv[i], "-max") == 0 )
             {
-                if (i + 1 >= argc || argv[i + 1][0] == '-')
-                    MCP3D_INVALID_ARGUMENT("missing parameter for -max")
-                args.recut_parameters().set_max_intensity(ParseInt(argv[i + 1]));
+                //if (i + 1 >= argc || argv[i + 1][0] == '-')
+                    //MCP3D_INVALID_ARGUMENT("missing parameter for -max")
+                args.recut_parameters().set_max_intensity(atoi(argv[i + 1]));
                 ++i;
             }
             else if (strcmp(argv[i], "-fg-percent") == 0 || strcmp(argv[i], "-fp") == 0)
             {
-                if (i + 1 >= argc || argv[i + 1][0] == '-')
-                    MCP3D_INVALID_ARGUMENT("missing parameter for -fg-percent")
-                args.recut_parameters().set_foreground_percent(ParseDouble(argv[i + 1]));
+                //if (i + 1 >= argc || argv[i + 1][0] == '-')
+                    //MCP3D_INVALID_ARGUMENT("missing parameter for -fg-percent")
+                args.recut_parameters().set_foreground_percent(atof(argv[i + 1]));
                 ++i;
             }
             else if (strcmp(argv[i], "-length-thresh") == 0 || strcmp(argv[i], "-lt") == 0)
             {
-                if (i + 1 >= argc || argv[i + 1][0] == '-')
-                    MCP3D_INVALID_ARGUMENT("missing parameter for -length-thresh")
-                args.recut_parameters().set_length_thresh(ParseDouble(argv[i + 1]));
+                //if (i + 1 >= argc || argv[i + 1][0] == '-')
+                    //MCP3D_INVALID_ARGUMENT("missing parameter for -length-thresh")
+                args.recut_parameters().set_length_thresh(atof(argv[i + 1]));
                 ++i;
             }
             else if (strcmp(argv[i], "-sr-ratio") == 0 || strcmp(argv[i], "-sr") == 0)
             {
-                if (i + 1 >= argc || argv[i + 1][0] == '-')
-                    MCP3D_INVALID_ARGUMENT("missing parameter for -sr-ratio")
-                args.recut_parameters().set_sr_ratio(ParseDouble(argv[i + 1]));
+                //if (i + 1 >= argc || argv[i + 1][0] == '-')
+                    //MCP3D_INVALID_ARGUMENT("missing parameter for -sr-ratio")
+                args.recut_parameters().set_sr_ratio(atof(argv[i + 1]));
                 ++i;
             }
             else if (strcmp(argv[i], "-prune") == 0 || strcmp(argv[i], "-pr") == 0)
             {
-                if (i + 1 >= argc || argv[i + 1][0] == '-')
-                    MCP3D_INVALID_ARGUMENT("missing parameter for -prune")
-                args.recut_parameters().set_prune(ParseInt(argv[i + 1]));
+                //if (i + 1 >= argc || argv[i + 1][0] == '-')
+                    //MCP3D_INVALID_ARGUMENT("missing parameter for -prune")
+                args.recut_parameters().set_prune(atoi(argv[i + 1]));
                 ++i;
             }
             else if (strcmp(argv[i], "-cnn-type") == 0 || strcmp(argv[i], "-ct") == 0)
             {
-                if (i + 1 >= argc || argv[i + 1][0] == '-')
-                    MCP3D_INVALID_ARGUMENT("missing parameter for -cnn-type")
-                args.recut_parameters().set_cnn_type(ParseInt(argv[i + 1]));
+                //if (i + 1 >= argc || argv[i + 1][0] == '-')
+                    //MCP3D_INVALID_ARGUMENT("missing parameter for -cnn-type")
+                args.recut_parameters().set_cnn_type(atoi(argv[i + 1]));
                 ++i;
             }
             else if (strcmp(argv[i], "-parallel") == 0 || strcmp(argv[i], "-pl") == 0)
@@ -193,8 +193,8 @@ bool mcp3d::ParseRecutArgs(int argc, char * argv[], mcp3d::RecutCommandLineArgs&
                 cout << "max threads available to CPU = " << max_threads <<endl;
                 ++i;
                 if (!(i >= argc || argv[i][0] == '-')) {
-                    args.recut_parameters().set_parallel_num(ParseInt(argv[i]));
-                    current_threads = ParseInt(argv[i]);
+                    args.recut_parameters().set_parallel_num(atoi(argv[i]));
+                    current_threads = atoi(argv[i]);
                 } else {
                     args.recut_parameters().set_parallel_num(max_threads);
                 }
@@ -203,16 +203,16 @@ bool mcp3d::ParseRecutArgs(int argc, char * argv[], mcp3d::RecutCommandLineArgs&
             }
             else if (strcmp(argv[i], "-interval_size") == 0 || strcmp(argv[i], "-is") == 0)
             {
-                if (i + 1 >= argc || argv[i + 1][0] == '-')
-                    MCP3D_INVALID_ARGUMENT("missing parameter for -interval_size")
-                args.recut_parameters().set_interval_size(ParseInt(argv[i + 1]));
+                //if (i + 1 >= argc || argv[i + 1][0] == '-')
+                    //MCP3D_INVALID_ARGUMENT("missing parameter for -interval_size")
+                args.recut_parameters().set_interval_size(atoi(argv[i + 1]));
                 ++i;
             }
             else if (strcmp(argv[i], "-block_size") == 0 || strcmp(argv[i], "-bs") == 0)
             {
-                if (i + 1 >= argc || argv[i + 1][0] == '-')
-                    MCP3D_INVALID_ARGUMENT("missing parameter for -block_size")
-                args.recut_parameters().set_block_size(ParseInt(argv[i + 1]));
+                //if (i + 1 >= argc || argv[i + 1][0] == '-')
+                    //MCP3D_INVALID_ARGUMENT("missing parameter for -block_size")
+                args.recut_parameters().set_block_size(atoi(argv[i + 1]));
                 ++i;
             }
             else if (strcmp(argv[i], "-restart") == 0 || strcmp(argv[i], "-rs") == 0)
@@ -220,8 +220,8 @@ bool mcp3d::ParseRecutArgs(int argc, char * argv[], mcp3d::RecutCommandLineArgs&
                 args.recut_parameters().set_restart(true);
                 args.recut_parameters().set_restart_factor(4.0);
                 if (!(i + 1 >= argc || argv[i + 1][0] == '-')) {
-                  args.recut_parameters().set_restart_factor(ParseDouble(argv[i + 1]));
-                  if (ParseDouble(argv[i + 1]) <= 0.00000001) { // parse double has issues with 0
+                  args.recut_parameters().set_restart_factor(atof(argv[i + 1]));
+                  if (atof(argv[i + 1]) <= 0.00000001) { // parse double has issues with 0
                     args.recut_parameters().set_restart(false);
                   }
                   ++i;
@@ -243,10 +243,10 @@ bool mcp3d::ParseRecutArgs(int argc, char * argv[], mcp3d::RecutCommandLineArgs&
             string z_end = to_string(args.image_offsets()[0] + args.image_extents()[0]),
                    y_end = to_string(args.image_offsets()[1] + args.image_extents()[1]),
                    x_end = to_string(args.image_offsets()[2] + args.image_extents()[2]);
-            args.set_swc_path(mcp3d::JoinPath(args.image_root_dir(),
+            args.set_swc_path(args.image_root_dir() + 
                                               "tracing_z" + z_start + "_" + z_end +
                                               "_y" + y_start + "_" + y_end +
-                                              "_x" + x_start + "_" + x_end) + ".swc");
+                                              "_x" + x_start + "_" + x_end + ".swc");
         }
         // if neither background threshold nor foreground percent given, set foreground percent to 0.01
         if (args.recut_parameters().background_thresh() < 0 && args.recut_parameters().foreground_percent() < 0)
@@ -256,7 +256,7 @@ bool mcp3d::ParseRecutArgs(int argc, char * argv[], mcp3d::RecutCommandLineArgs&
     catch (const exception& e)
     {
         cout << e.what() << endl;
-        MCP3D_MESSAGE("invalid command line arguments. neuron tracing not performed")
+        //MCP3D_MESSAGE("invalid command line arguments. neuron tracing not performed")
         RecutCommandLineArgs::PrintUsage();
         return false;
     }
