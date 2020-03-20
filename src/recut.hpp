@@ -2011,7 +2011,7 @@ void Recut<image_t>::initialize() {
   bool is_root = true;
   if (params->marker_file_path().back() != '/')
     params->set_marker_file_path( params->marker_file_path().append("/") );
-  for (const auto& marker_file : boost::filesystem::directory_iterator(params->marker_file_path())) {
+  for (const auto& marker_file : directory_iterator(params->marker_file_path())) {
     const auto marker_name = marker_file.path().filename().string();
     const auto full_marker_name = params->marker_file_path() + marker_name;
     inmarkers = readMarker_file(full_marker_name);
