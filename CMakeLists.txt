@@ -13,7 +13,7 @@ add_subdirectory(extern/benchmark)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_COMPILER "/usr/bin/g++-7")
-set(CMAKE_CXX_FLAGS "/usr/bin/g++-7")
+#set(CMAKE_CXX_FLAGS "/usr/bin/g++-7")
 
 set(SRC 
   ${PROJECT_SOURCE_DIR}/src/recut_main.cpp
@@ -30,11 +30,7 @@ add_executable(recut ${SRC} ${HEADER})
 
 target_link_libraries(recut PUBLIC ${LOCAL_INCLUDE_LIBS})
 target_compile_features(recut PRIVATE cxx_std_17)
-target_compile_options(recut PUBLIC -lboost -lboost_filesystem) # boost filesystem
 set_property(TARGET recut PROPERTY CXX_STANDARD 17)
-
-set(BOOST_INCLUDE_PATH "/usr/include/boost")
-include_directories(${BOOST_INCLUDE_PATH})
 include_directories(include)
 
 install(TARGETS recut DESTINATION bin)
