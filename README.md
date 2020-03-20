@@ -33,3 +33,9 @@ submodules and auto builds through cmake, see `recut/CMakeLists.txt`)
 cd recut/bin
 ./recut --help
 ```
+
+# TODO:
+1. Remove recut cmd line args
+2. Image -> array
+3. TopPercentile -> dummy functions
+4. image.Volume -> first pointer to image_arr
