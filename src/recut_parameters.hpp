@@ -2,10 +2,10 @@
 
 #include <iostream>
 #include <sstream>
-#include "common/mcp3d_utility.hpp"
-
-namespace mcp3d
-{
+#include <vector>
+#include <cstring>
+#include <cstdlib>
+//#include "common/mcp3d_utility.hpp"
 
 class RecutParameters
 {
@@ -81,10 +81,10 @@ public:
     void set_interval_size(int interval_size) { interval_size_ = interval_size; }
     void set_marker_file_path(const std::string& marker_file_path)
     {
-        if (mcp3d::IsDir(marker_file_path))
-            marker_file_path_ = marker_file_path;
-        else
-        MCP3D_MESSAGE(marker_file_path + " is not a folder")
+        marker_file_path_ = marker_file_path;
+        //if (mcp3d::IsDir(marker_file_path))
+        //else
+        //MCP3D_MESSAGE(marker_file_path + " is not a folder")
     }
     void set_max_intensity(double max_intensity) { max_intensity_ = max_intensity; }
     void set_min_intensity(double min_intensity) { min_intensity_ = min_intensity; }
@@ -122,8 +122,8 @@ public:
     void set_recut_parameters(RecutParameters& params)  { recut_parameters_ = params; }
     void set_image_root_dir(const std::string& image_root_dir)
     {
-        if (!mcp3d::IsDir(image_root_dir))
-            MCP3D_INVALID_ARGUMENT(image_root_dir + " is not a directory")
+        //if (!mcp3d::IsDir(image_root_dir))
+            //MCP3D_INVALID_ARGUMENT(image_root_dir + " is not a directory")
         image_root_dir_ = image_root_dir;
     }
 
@@ -131,15 +131,15 @@ public:
 
     void set_channel(int channel)
     {
-        if (channel < 0)
-            MCP3D_INVALID_ARGUMENT("channel number must be non negative, received " + std::to_string(channel))
+        //if (channel < 0)
+            //MCP3D_INVALID_ARGUMENT("channel number must be non negative, received " + std::to_string(channel))
         channel_ = channel;
     }
 
     void set_resolution_level(int resolution_level)
     {
-        if (resolution_level < 0)
-            MCP3D_INVALID_ARGUMENT("resolution_level must be non negative, received " + std::to_string(resolution_level))
+        //if (resolution_level < 0)
+            //MCP3D_INVALID_ARGUMENT("resolution_level must be non negative, received " + std::to_string(resolution_level))
         resolution_level_ = resolution_level;
     }
 
@@ -147,8 +147,8 @@ public:
     {
         for (size_t i = 0; i < std::min((size_t)3, image_offsets.size()); ++i)
         {
-            if (image_offsets[i] < 0)
-                MCP3D_INVALID_ARGUMENT("offsets values must be non negative")
+            //if (image_offsets[i] < 0)
+                //MCP3D_INVALID_ARGUMENT("offsets values must be non negative")
             image_offsets_[i] = image_offsets[i];
         }
     }
@@ -157,8 +157,8 @@ public:
     {
         for (size_t i = 0; i < std::min((size_t)3, image_extents.size()); ++i)
         {
-            if (image_extents[i] < 0)
-                MCP3D_INVALID_ARGUMENT("offsets values must be non negative")
+            //if (image_extents[i] < 0)
+                //MCP3D_INVALID_ARGUMENT("offsets values must be non negative")
             image_extents_[i] = image_extents[i];
         }
     }
@@ -172,4 +172,3 @@ private:
 
 bool ParseRecutArgs(int argc, char * argv[], RecutCommandLineArgs& args);
 
-}

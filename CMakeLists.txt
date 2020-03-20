@@ -25,8 +25,8 @@ add_executable(recut ${SRC} ${HEADER})
 
 #find_package (Eigen3 3.3 REQUIRED NO_MODULE)
 
-file(GLOB LOCAL_INCLUDE_LIBS "../lib/*.so")
-message(STATUS ${LOCAL_INCLUDE_LIBS})
+#file(GLOB LOCAL_INCLUDE_LIBS "../lib/*.so")
+#message(STATUS ${LOCAL_INCLUDE_LIBS})
 
 target_link_libraries(recut PUBLIC ${LOCAL_INCLUDE_LIBS})
 target_compile_features(recut PRIVATE cxx_std_17)

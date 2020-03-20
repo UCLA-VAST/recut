@@ -1,6 +1,7 @@
 #pragma once
 
 #include<bitset>
+#include<unordered_set>
 #include<set>
 #include<future>
 #include<fstream>
@@ -17,8 +18,8 @@
 //#include "common/mcp3d_common.hpp"
 #include"markers.h"
 #include"fastmarching_macro.h"
-#include "image/mcp3d_voxel_types.hpp"
-#include "image/mcp3d_image.hpp"
+//#include "image/mcp3d_voxel_types.hpp"
+//#include "image/mcp3d_image.hpp"
 
 // taskflow significantly increases load times, avoid loading it if possible
 #ifdef TF
@@ -141,12 +142,12 @@ public:
 
   atomic<VID_t> global_revisits;
   VID_t vertex_issue; // default heuristic per thread for roughly best performance
-  mcp3d::RecutCommandLineArgs* args;
-  mcp3d::RecutParameters* params;
+  RecutCommandLineArgs* args;
+  RecutParameters* params;
   vector<VID_t> interval_sizes;
 
   Recut() {};
-  Recut(mcp3d::RecutCommandLineArgs& args) : args(&args), params(&(args.recut_parameters())),
+  Recut(RecutCommandLineArgs& args) : args(&args), params(&(args.recut_parameters())),
       global_revisits(0), max_int(args.recut_parameters().get_max_intensity()), min_int(args.recut_parameters().get_min_intensity()),
       user_def_block_size(args.recut_parameters().block_size()), cnn_type(1),
       mmap_(false) {
@@ -207,8 +208,8 @@ public:
   //void create_integrate_thread(VID_t interval_num, VID_t block_num) ;
   void march_narrow_band(const image_t* img, VID_t interval_num, VID_t block_num);
   void create_march_thread(VID_t interval_num, VID_t block_num) ;
-  void setup_interval_and_image_view(VID_t interval_num, mcp3d::MImage &image) ;
-  double reconstruct_interval(VID_t interval_num, mcp3d::MImage &image) ;
+  void setup_interval_and_image_view(VID_t interval_num, image_t* image) ;
+  double reconstruct_interval(VID_t interval_num, image_t* image) ;
   void update();
   template<typename vertex_t>
   void update_shardless(vector<vertex_t> roots,const vector<int> image_offsets,
@@ -1230,7 +1231,7 @@ int Recut<image_t>::thresh_pct(const image_t* img) {
 }
 
 template<class image_t>
-double Recut<image_t>::reconstruct_interval(VID_t interval_num, mcp3d::MImage &image) {
+double Recut<image_t>::reconstruct_interval(VID_t interval_num, image_t* image) {
 
   struct timespec presave_time, postmarch_time, iter_start,
                   start_iter_loop_time, end_iter_time, postsave_time; 
@@ -1274,10 +1275,11 @@ double Recut<image_t>::reconstruct_interval(VID_t interval_num, mcp3d::MImage &i
 #endif
 
 #ifdef TF
-          prevent_destruction.back()->silent_emplace([=, &image]() { march_narrow_band(image.Volume<image_t>(0), interval_num, block_num); });
+          // FIXME check passing image ptr as ref
+          prevent_destruction.back()->silent_emplace([=, &image]() { march_narrow_band(image, interval_num, block_num); });
           added_task = true;
 #else
-          async(launch::async, &Recut<image_t>::march_narrow_band, this, image.Volume<image_t>(0), interval_num, block_num);
+          async(launch::async, &Recut<image_t>::march_narrow_band, this, image, interval_num, block_num);
 #endif // TF
 
         }
@@ -1302,7 +1304,7 @@ double Recut<image_t>::reconstruct_interval(VID_t interval_num, mcp3d::MImage &i
 
 #pragma omp parallel for
     for(VID_t block_num = 0;block_num<nblocks;++block_num) {
-      march_narrow_band(image.Volume<image_t>(0), interval_num, block_num);
+      march_narrow_band(image, interval_num, block_num);
     }
 
 #endif // ASYNC
@@ -1377,7 +1379,7 @@ double Recut<image_t>::reconstruct_interval(VID_t interval_num, mcp3d::MImage &i
  * file INTERVAL_BASE
  */
 template <class image_t>
-void Recut<image_t>::setup_interval_and_image_view(VID_t interval_num, mcp3d::MImage &image) {
+void Recut<image_t>::setup_interval_and_image_view(VID_t interval_num, image_t* image) {
   struct timespec interval_start, interval_load, image_load;
   clock_gettime(CLOCK_REALTIME, &interval_start);
   // only load the intervals needed (those that are activated)
@@ -1393,17 +1395,17 @@ void Recut<image_t>::setup_interval_and_image_view(VID_t interval_num, mcp3d::MI
   vector<int> interval_extents;
   vector<int> interval_dims;
 
-  // read data
-  try {
-    get_interval_offsets(interval_num, interval_offsets, interval_extents);
-    // use unit strides only
-    mcp3d::MImageBlock block(interval_offsets, interval_extents);
-    image.SelectView(block, args->resolution_level());
-    image.ReadData(true, "quiet");
-  } catch(...) {
-    MCP3D_MESSAGE("error in image io. neuron tracing not performed")
-    throw;
-  }
+  //// read data
+  //try {
+    //get_interval_offsets(interval_num, interval_offsets, interval_extents);
+    //// use unit strides only
+    //mcp3d::MImageBlock block(interval_offsets, interval_extents);
+    //image.SelectView(block, args->resolution_level());
+    //image.ReadData(true, "quiet");
+  //} catch(...) {
+    //MCP3D_MESSAGE("error in image io. neuron tracing not performed")
+    //throw;
+  //}
 
   clock_gettime(CLOCK_REALTIME, &image_load);
 #ifdef LOG
@@ -1411,7 +1413,9 @@ void Recut<image_t>::setup_interval_and_image_view(VID_t interval_num, mcp3d::MI
   //cout << "fg " << params->foreground_percent() << endl;
 #endif
 
-  interval_dims = image.loaded_view().view_xyz_dims();
+  //interval_dims = image.loaded_view().view_xyz_dims();
+  // FIXME for now interval dims always equal the image for simplicity
+  interval_dims = args->image_extents();
   this->interval_vert_num = interval_dims[0] * (VID_t) interval_dims[1] * interval_dims[2];
 
   // assign thresholding value
@@ -1420,9 +1424,9 @@ void Recut<image_t>::setup_interval_and_image_view(VID_t interval_num, mcp3d::MI
   // was changed by a user so it takes precedence over the defaults
   double elapsed = omp_get_wtime();
   if (params->foreground_percent() >= 0) {
-    //this->bkg_thresh = thresh_pct(image.Volume<image_t>(0));
-    this->bkg_thresh = mcp3d::TopPercentile<image_t>(image.Volume<image_t>(0), interval_dims,
-        params->foreground_percent());
+    this->bkg_thresh = thresh_pct(image);
+    //this->bkg_thresh = mcp3d::TopPercentile<image_t>(image.Volume<image_t>(0), interval_dims,
+        //params->foreground_percent());
   } else { // if bkg set explicitly and foreground wasn't
     if (params->background_thresh() >= 0) {
       this->bkg_thresh = params->background_thresh();
@@ -1434,12 +1438,12 @@ void Recut<image_t>::setup_interval_and_image_view(VID_t interval_num, mcp3d::MI
 
   // assign max and min ints for this interval
   if (this->max_int < 0) { 
-    get_max_min(image.Volume<image_t>(0)); 
+    get_max_min(image); 
   } else if (this->min_int < 0) {
     if (this->bkg_thresh >= 0) {
       this->min_int = this->bkg_thresh;
     } else  {
-      get_max_min(image.Volume<image_t>(0)); 
+      get_max_min(image); 
     }
   }
 
@@ -1478,8 +1482,10 @@ void Recut<image_t>::update() {
   // FIXME check that this has no state that can 
   // be corrupted in a shared setting
   // otherwise just create copies of it if necessary
-  mcp3d::MImage image;
-  image.ReadImageInfo(args->image_root_dir());
+  //mcp3d::MImage image;
+  //image.ReadImageInfo(args->image_root_dir());
+  // FIXME This is where we set image to our desired values
+  image_t* image = (image_t*) malloc(sizeof(image_t) * args->image_extents()[0] * args->image_extents()[1] * args->image_extents()[2]);
 
   // begin processing all intervals
   // note this is a while since, intervals can be
@@ -1522,6 +1528,7 @@ void Recut<image_t>::update() {
 #endif
   cout <<" revisits: "<< global_revisits << " vertices" <<endl;
 #endif
+  free(image);
 
 }
 
@@ -1875,22 +1882,24 @@ void Recut<image_t>::initialize() {
   uint64_t root_64bit;
 
   // determine the image size
-  mcp3d::MImage global_image;
+  //mcp3d::MImage global_image;
   // these 3 are in z y x order
   vector<int> off; 
   vector<int> ext;
   vector<int> end;
   try
   {
-    global_image.ReadImageInfo(args->image_root_dir());
-    if (global_image.image_info().empty())
-    {
-        MCP3D_MESSAGE("no supported image formats found in " +
-                      args->image_root_dir() + ", do nothing.")
-        throw;
-    }
-    global_image.SaveImageInfo(); // save to __image_info__.json
-    auto temp = global_image.xyz_dims(args->resolution_level()); 
+    //global_image.ReadImageInfo(args->image_root_dir());
+    //if (global_image.image_info().empty())
+    //{
+        //MCP3D_MESSAGE("no supported image formats found in " +
+                      //args->image_root_dir() + ", do nothing.")
+        //throw;
+    //}
+    //global_image.SaveImageInfo(); // save to __image_info__.json
+    //auto temp = global_image.xyz_dims(args->resolution_level()); 
+    // FIXME the total reference image size for now will just be the input processing size
+    auto temp = args->image_extents();
     // account for image_offsets and args->image_extents()
     off = args->image_offsets(); // default start is {0, 0, 0} for full image
     ext = args->image_extents(); // default is {0, 0, 0} for full image
@@ -1912,7 +1921,7 @@ void Recut<image_t>::initialize() {
     nxy = nx * ny;
     this->img_vox_num = nx * ny * nz;
   } catch(...) {
-    MCP3D_MESSAGE("error in image io. neuron tracing not performed")
+    //MCP3D_MESSAGE("error in image io. neuron tracing not performed")
     throw;
   }
 
