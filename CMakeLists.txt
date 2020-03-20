@@ -30,6 +30,7 @@ add_executable(recut ${SRC} ${HEADER})
 
 target_link_libraries(recut PUBLIC ${LOCAL_INCLUDE_LIBS})
 target_compile_features(recut PRIVATE cxx_std_17)
+target_compile_options(recut PUBLIC -lstdc++fs) 
 set_property(TARGET recut PROPERTY CXX_STANDARD 17)
 include_directories(include)
 
