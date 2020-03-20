@@ -39,7 +39,7 @@ set_target_properties(recut PROPERTIES
 
 target_link_libraries(recut PUBLIC ${LOCAL_INCLUDE_LIBS})
 target_compile_features(recut PRIVATE cxx_std_17)
-# target_compile_options(recut PUBLIC -lboost -lboost_filesystem) # boost filesystem
+target_compile_options(recut PUBLIC -lstdc++fs) # boost filesystem
 
 # set(BOOST_INCLUDE_PATH "/usr/include/boost")
 # include_directories(${BOOST_INCLUDE_PATH})
