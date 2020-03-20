@@ -67,7 +67,7 @@ string RecutCommandLineArgs::MetaString()
     return meta_stream.str();
 }
 
-bool RecutArgs(int argc, char * argv[], RecutCommandLineArgs& args)
+bool ParseRecutArgs(int argc, char * argv[], RecutCommandLineArgs& args)
 {
     if (argc < 3)
     {
@@ -261,3 +261,4 @@ bool RecutArgs(int argc, char * argv[], RecutCommandLineArgs& args)
         return false;
     }
 }
+
