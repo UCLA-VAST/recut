@@ -14,8 +14,6 @@
 #include "image/mcp3d_voxel_types.hpp" // convert to CV type
 #include "common/mcp3d_utility.hpp" // PadNumStr
 
-using namespace boost::filesystem;
-
 //static void BM_multi_interval(benchmark::State& state) {
   //auto grid_size = 32;
   //double slt_pct = 100;

@@ -23,14 +23,14 @@ set(HEADER
   )
 add_executable(recut ${SRC} ${HEADER})
 
-# start edit (added by mrunal)
-find_package (Eigen3 3.3 REQUIRED NO_MODULE)
-target_link_libraries(recut Eigen3::Eigen)
-# end edit
+#find_package (Eigen3 3.3 REQUIRED NO_MODULE)
 
 file(GLOB LOCAL_INCLUDE_LIBS "../lib/*.so")
-target_link_libraries(recut PUBLIC ${LOCAL_LIBS})
+message(STATUS ${LOCAL_INCLUDE_LIBS})
+
+target_link_libraries(recut PUBLIC ${LOCAL_INCLUDE_LIBS})
 target_compile_features(recut PRIVATE cxx_std_17)
+target_compile_options(recut PUBLIC -lboost -lboost_filesystem) # boost filesystem
 
 set(BOOST_INCLUDE_PATH "/usr/include/boost")
 include_directories(${BOOST_INCLUDE_PATH})
