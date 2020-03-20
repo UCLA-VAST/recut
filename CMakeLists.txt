@@ -10,6 +10,10 @@ add_subdirectory(extern/googletest)
 # build tests (targets: gtest, gtest_main)
 add_subdirectory(extern/benchmark)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_COMPILER "/usr/bin/g++-7")
+
 set(SRC 
   ${PROJECT_SOURCE_DIR}/src/recut_main.cpp
   ${PROJECT_SOURCE_DIR}/src/recut_parameters.cpp)
