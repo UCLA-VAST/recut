@@ -1,27 +1,36 @@
 enable_testing()
-cmake_minimum_required(VERSION 2.8)
+# note this is set to 3.9 because of 
+# cpp 17 features that we found not to work
+# on older version during linking
+# we strongly suggest upgrading to this version
+# or higher to build this code from source
+cmake_minimum_required(VERSION 3.9)
 
 project(recut)
 
+# build tests (targets: gtest, gtest_main)
+add_subdirectory(extern/googletest/googletest)
 # build google benchmark (target: benchmark)
 # do not build tests of benchmarking lib
 set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "Suppressing benchmark's tests" FORCE)
-add_subdirectory(extern/googletest)
-# build tests (targets: gtest, gtest_main)
+set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "Don't install benchmark" FORCE)
 add_subdirectory(extern/benchmark)
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_FLAGS "/usr/bin/g++")
 
 # works for cmake 3.9+
 find_package(OpenMP REQUIRED)
 
+set(MARKERS ${PROJECT_SOURCE_DIR}/src/markers.cpp)
+
+# These define the executable and command line processing
+# if a recut command line tool is needed
 set(SRC 
   ${PROJECT_SOURCE_DIR}/src/recut_main.cpp
   ${PROJECT_SOURCE_DIR}/src/recut_parameters.cpp
-  ${PROJECT_SOURCE_DIR}/src/markers.cpp
+  ${MARKERS}
   )
+
+# These define the core functionality of the library
+# and can be used as header only
 set(HEADER
   ${PROJECT_SOURCE_DIR}/src/recut.hpp 
   ${PROJECT_SOURCE_DIR}/src/recut_parameters.hpp 
@@ -31,13 +40,20 @@ set(HEADER
   ${PROJECT_SOURCE_DIR}/src/utils.hpp
   ${PROJECT_SOURCE_DIR}/src/markers.h
   )
+
 add_executable(recut ${SRC} ${HEADER})
+add_executable(recut_test test/recut_test.cpp ${HEADER} ${MARKERS})
+add_executable(recut_bench bench/recut_bench.cpp ${MARKERS} ${HEADER})
 
-
-target_link_libraries(recut PUBLIC OpenMP::OpenMP_CXX)
-target_link_libraries(recut PUBLIC ${LOCAL_INCLUDE_LIBS})
-target_compile_features(recut PRIVATE cxx_std_17)
-set_property(TARGET recut PROPERTY CXX_STANDARD 17)
 include_directories(include)
 
-install(TARGETS recut DESTINATION bin)
+target_link_libraries(recut_test PUBLIC gtest)
+target_link_libraries(recut_bench PUBLIC benchmark)
+
+set(ALL_TARGETS recut recut_test recut_bench)
+foreach(I ${ALL_TARGETS})
+  message(STATUS "${I}")
+  target_link_libraries(${I} PUBLIC OpenMP::OpenMP_CXX)
+  target_compile_features(${I} PRIVATE cxx_std_17)
+  install(TARGETS ${I} DESTINATION ${PROJECT_SOURCE_DIR}/bin)
+endforeach()

@@ -62,6 +62,7 @@ struct atomwrapper
   atomwrapper &operator=(const atomwrapper &other)
   {
     _a.store(other._a.load());
+    return *this;
   }
 };
 
@@ -222,7 +223,6 @@ public:
   VID_t parentToVID(struct VertexAttr* attr) ;
   inline VID_t get_block_id(VID_t iblock, VID_t jblock, VID_t kblock) ;
   ~Recut<image_t>() ;
-  void print_image(const image_t* img, VID_t size) ;
   void print_interval(VID_t interval_num) ;
   void check_image(const image_t* img, VID_t size) ;
 };
@@ -240,14 +240,6 @@ void Recut<image_t>::print_interval(VID_t interval_num) {
   for (VID_t i=0; i < interval->GetNVertices(); i++) {
     auto v = interval->GetData()[i];
     cout << i << endl << v.description() << endl;
-  }
-}
-
-template <class image_t>
-void Recut<image_t>::print_image(const image_t* img, VID_t size) {
-  cout << "recut image " << endl;
-  for (VID_t i=0; i < size; i++) {
-    cout << i << " " << +(img[i]) << endl;
   }
 }
 
