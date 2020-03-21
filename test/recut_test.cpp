@@ -17,7 +17,7 @@
 #define PI 3.14159265
 #define EXP_DEV_LOW .05
 
-using namespace boost::filesystem;
+using namespace std::filesystem;
 
 void print_image(uint16_t* inimg1d, VID_t size) {
   cout << "print image " << endl;
