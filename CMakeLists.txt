@@ -19,7 +19,9 @@ find_package(OpenMP REQUIRED)
 
 set(SRC 
   ${PROJECT_SOURCE_DIR}/src/recut_main.cpp
-  ${PROJECT_SOURCE_DIR}/src/recut_parameters.cpp)
+  ${PROJECT_SOURCE_DIR}/src/recut_parameters.cpp
+  ${PROJECT_SOURCE_DIR}/src/markers.cpp
+  )
 set(HEADER
   ${PROJECT_SOURCE_DIR}/src/recut.hpp 
   ${PROJECT_SOURCE_DIR}/src/recut_parameters.hpp 
@@ -27,6 +29,7 @@ set(HEADER
   ${PROJECT_SOURCE_DIR}/src/interval.hpp 
   ${PROJECT_SOURCE_DIR}/src/vertex_attr.hpp 
   ${PROJECT_SOURCE_DIR}/src/utils.hpp
+  ${PROJECT_SOURCE_DIR}/src/markers.h
   )
 add_executable(recut ${SRC} ${HEADER})
 

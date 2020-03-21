@@ -34,8 +34,14 @@ cd recut/bin
 ./recut --help
 ```
 
-# TODO:
-1. Remove recut cmd line args
-2. Image -> array
-3. TopPercentile -> dummy functions
-4. image.Volume -> first pointer to image_arr
+
+# Tools to use to profile and gather data
+1. perf
+2. scripts to make nice plots
+3. maybe - run on gem5?
+
+
+# Aspects to focus gathering data
+1. CPU function time
+2. Memory stuff
+3. Cache stuff
