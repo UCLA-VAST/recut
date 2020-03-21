@@ -1491,6 +1491,7 @@ void Recut<image_t>::update() {
   // note this is a while since, intervals can be
   // reactivated, loop will continue until all intervals
   // are finished, see check_intervals_finish()
+  // Main march for loop
   while (true) {
 
     // Manage iterations at interval level
