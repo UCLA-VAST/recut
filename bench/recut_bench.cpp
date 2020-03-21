@@ -1,18 +1,7 @@
 #include <benchmark/benchmark.h>
-#include "recut.hpp"
-#include "../external_tools/vaa3d/neuron_tracing/all_path_pruning2/heap.h"
-#include "fastmarching_tree.h"
-#include <vector>
-#include <iostream>
-#include <fstream>
-#include <math.h>
-#include <string>
-#include <bits/stdc++.h>
+#include "../src/recut.hpp"
 #include <cstdlib> //rand srand
 #include <ctime> // for srand
-#include <opencv2/opencv.hpp> // imwrite
-#include "image/mcp3d_voxel_types.hpp" // convert to CV type
-#include "common/mcp3d_utility.hpp" // PadNumStr
 
 //static void BM_multi_interval(benchmark::State& state) {
   //auto grid_size = 32;

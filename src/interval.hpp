@@ -1,9 +1,9 @@
 #ifndef INTERVAL_H_
 #define INTERVAL_H_
+
+#include"vertex_attr.hpp"
 #include<memory>
 #include<string>
-#include"vertex_attr.hpp"
-
 #include<cassert>
 #include<cstring>
 #include<sys/mman.h>

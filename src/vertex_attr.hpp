@@ -2,11 +2,9 @@
 #define VERTEX_ATTR_H_
 #include <limits>
 #include <vector>
-#include "utils.hpp"
 #include <cstring>
 #include <cassert>
 #include <iostream>
-#define assertm(exp, msg) assert(((void) msg, exp))
 
 using std::numeric_limits;
 using std::atomic;
@@ -20,8 +18,10 @@ using std::ios;
 //#define INTERVAL_BASE "/tmp/interval_base_32.bin";
 
 typedef uint64_t VID_t; // for multi-interval runs
+#include "utils.hpp"
 // pre-generated array of vertices initialized wth desired default values, useful for mmap
 #define INTERVAL_BASE "/tmp/interval_base_64bit.bin"; // must match the VID_t bit length type
+#define assertm(exp, msg) assert(((void) msg, exp))
 
 // equivalent max allows up to interval actual size of 1024, 1024, 1024 with block_size 4 including padding (ghost cells)
 // WARNING: if you change this number you need to rerun CreateIntervalBase function in recut_tests.cpp
@@ -181,7 +181,7 @@ struct VertexAttr {
   /* can not be above idx value 5
    */
   template <typename T>
-  bool mark_connect(T idx) {
+  void mark_connect(T idx) {
     edge_state.unset(5); // if only 1 connection allowed
     edge_state.unset(4);
     edge_state.unset(3);
