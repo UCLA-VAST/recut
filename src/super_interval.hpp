@@ -58,6 +58,11 @@ public:
     inline VID_t GetNVertices() const {return nvertices_;}
     inline VID_t GetNIntervals() const {return nintervals_;}
     inline VID_t GetNBlocks() const {return nblocks_;}
+    inline void Release() const {
+      for (auto& interval : intervals_) {
+        interval->Release();
+      }
+    }
 private:
     std::vector<std::shared_ptr<Interval> > intervals_;
     VID_t nvertices_;

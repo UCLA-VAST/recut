@@ -5,7 +5,7 @@
 #include <vector>
 #include <cstring>
 #include <cstdlib>
-//#include "common/mcp3d_utility.hpp"
+#include <limits>
 
 class RecutParameters
 {
@@ -34,6 +34,12 @@ public:
         interval_size_ = 1024;
         max_intensity_ = -1;
         min_intensity_ = -1;
+        // no getters or setters
+        generate_image = false;
+        tcase = -1; // -1 indicates it's not a test case
+        slt_pct = -1;
+        selected = 0;
+        root_vid = std::numeric_limits<uint64_t>::max();
     }
     std::string MetaString();
     // getters
@@ -88,6 +94,9 @@ public:
     }
     void set_max_intensity(double max_intensity) { max_intensity_ = max_intensity; }
     void set_min_intensity(double min_intensity) { min_intensity_ = min_intensity; }
+    // no getters or setters
+    int generate_image, tcase, slt_pct;
+    uint64_t selected, root_vid;
 
 private:
     bool gsdt_, coverage_prune_, allow_gap_,

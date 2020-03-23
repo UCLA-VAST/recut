@@ -1,29 +1,43 @@
+# These are example project actions that may be useful to consult for
+# reference. Some commands may be environment specific
+# all of these commands can be run in background as asynchronous
+# jobs leveraging asynctasks.vim and asyncrun.vim
+
 [project-init]
-command=rm -rf build && mkdir build && cd build && cmake .. 
+command=rm -rf build && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug
+#RelWithDebInfo
 cwd=<root>
 
 [project-build]
 command=cd build && make -j 56 && make install -j 56
 cwd=<root>
-# this is for output=quickfix only
-# if it is omitted, vim's current errorformat will be used.
-errorformat=%f:%m:%l
 
 [project-test]
-command=cd bin && ./recut_tests
+command=cd bin && ./recut_test
 cwd=<root>
 
 [project-bench]
-command=cd bin && ./recut_tests
+command=cd bin && ./recut_bench
 cwd=<root>
 
 [project-perf]
-command=cd bin && perf record -g ./recut_tests && perf report -g 'graph,.9,caller'
+command=sudo cpupower frequency-set -g performance && cd bin && perf record -g recut_bench && sudo cpupower frequency-set -g powersave 
+#&& perf report -g 'graph,.9,caller'
+#command=sudo cpupower frequency-set -g performance && cd bin && perf stat -e L1-dcache-misses L1-dcache-loads LLC-load-misses LLC-loads faults instructions cycles recut_bench && sudo cpupower frequency-set -g powersave 
 cwd=<root>
 
 [project-run]
 command=cd misc_scripts && python performance_test.py
 cwd=<root>
 
+[project-tags]
+command=ctags -R --exclude={lib,bin,build,extern,docs,include}
+cwd=<root>
+
 # save all files in buffer before executing any command
 save=2
+
+# this is for output=quickfix only
+# if it is omitted, vim's current errorformat will be used.
+errorformat=%f:%m:%l
+

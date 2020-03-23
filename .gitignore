@@ -2,3 +2,4 @@ logs/
 bin/
 build/
 tags
+include
