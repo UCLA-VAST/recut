@@ -1,5 +1,6 @@
 #pragma once
 
+#include <openssl/ssl.h>
 #include<bitset>
 #include<unordered_set>
 #include<set>
@@ -103,7 +104,8 @@ template <class image_t>
 class Recut
 {
 public:
-  image_t* inimg1d;
+  image_t* generated_image = nullptr;
+  vector<VID_t> root_vids;
   bool mmap_;
   size_t iteration;
   int cnn_type;
@@ -148,22 +150,25 @@ public:
   vector<VID_t> interval_sizes;
 
   Recut() {};
-  Recut(RecutCommandLineArgs& args) : args(&args), params(&(args.recut_parameters())),
-      global_revisits(0), max_int(args.recut_parameters().get_max_intensity()), min_int(args.recut_parameters().get_min_intensity()),
-      user_def_block_size(args.recut_parameters().block_size()), cnn_type(1),
-      mmap_(false) {
+  Recut(RecutCommandLineArgs& args) : args(&args),
+    params(&(args.recut_parameters())), global_revisits(0),
+    max_int(args.recut_parameters().get_max_intensity()),
+    min_int(args.recut_parameters().get_min_intensity()),
+    user_def_block_size(args.recut_parameters().block_size()),
+    cnn_type(1), mmap_(false) {
 
 #ifdef MMAP
-        this->mmap_ = true;
+    this->mmap_ = true;
 #endif
     this->restart_bool = params->restart();
     this->restart_factor = params->restart_factor();
   }
 
-  //vector<MyMarker*>& run() ;
-
-  inline void Reset(struct VertexAttr* attr) {}
-  inline void Init(struct VertexAttr* attr) { }
+  inline void release() {super_interval.Release();}
+  inline void reset() {
+    release();
+    activate_roots();
+  }
   void initialize_globals(const VID_t& nintervals, const VID_t& nblocks) ;
 
   //template<typename T, typename T2>
@@ -222,15 +227,100 @@ public:
   void finalize(vector<vertex_t> &outtree);
   VID_t parentToVID(struct VertexAttr* attr) ;
   inline VID_t get_block_id(VID_t iblock, VID_t jblock, VID_t kblock) ;
-  ~Recut<image_t>() ;
   void print_interval(VID_t interval_num) ;
   void check_image(const image_t* img, VID_t size) ;
+  void activate_roots() ;
+  void process_marker_dir(vector<int> off, vector<int> end) ;
+  ~Recut<image_t>() ;
 };
 
 template <class image_t>
 Recut<image_t>::~Recut<image_t>()
 { //FIXME
   //delete &super_interval;
+  if (this->params->generate_image) {
+    // when initialize has been run
+    // generated_image is no longer nullptr
+    if (this->generated_image)
+      delete[] this->generated_image;
+  }
+}
+
+/*
+ * Does this subscript belong in the full image
+ * accounting for the input offsets and extents
+ * i, j, k : subscript of vertex in question
+ * off : offsets in z y x order
+ * end : sanitized end pixels order
+ */
+template<typename T, typename T2>
+bool check_in_bounds(T i, T j, T k, T2 off, T2 end) {
+  if (i < off[2]) return false;
+  if (j < off[1]) return false;
+  if (k < off[0]) return false;
+  if (i > end[2]) return false;
+  if (j > end[1]) return false;
+  if (k > end[0]) return false;
+  return true;
+}
+
+// adds all markers to this->root_vids
+template <class image_t>
+void Recut<image_t>::process_marker_dir(vector<int> off, vector<int> end) {
+  // allow either dir or dir/ naming styles
+  if (params->marker_file_path().back() != '/')
+    params->set_marker_file_path( params->marker_file_path().append("/") );
+
+  vector<MyMarker> inmarkers;
+  for (const auto& marker_file : directory_iterator(params->marker_file_path())) {
+    const auto marker_name = marker_file.path().filename().string();
+    const auto full_marker_name = params->marker_file_path() + marker_name;
+    inmarkers = readMarker_file(full_marker_name);
+
+    // set intervals with root present as active
+    for (auto& root : inmarkers) {
+      // init state and phi for root
+      VID_t i, j, k;
+      i = root.x + 1;
+      j = root.y + 1;
+      k = root.z + 1;
+      auto vid = get_img_vid(i, j, k);
+
+      if (!check_in_bounds(i, j, k, off, end)) continue;
+      this->root_vids.push_back(vid);
+
+#ifdef LOG
+      cout << "Read marker x " << i << " y " << j << " z " << k << " vid " << vid << endl;
+#endif
+    }
+  }
+}
+
+template <class image_t>
+void Recut<image_t>::activate_roots() {
+  bool is_root = true; // changes behavior of place_ghost_update
+  for (VID_t vid : this->root_vids) {
+    auto interval_num = get_interval_num(vid);
+    auto block_num = get_block_num(vid);
+    Interval* interval = super_interval.GetInterval(interval_num); 
+
+    interval->SetActive(true); 
+    VertexAttr* dummy_attr = new VertexAttr(); // march is protect from dummy values like this
+    dummy_attr->mark_root(vid); // 0000 0000, selected no parent, all zeros indicates KNOWN_FIX root
+    dummy_attr->value = 0.0;
+
+    safe_push(this->heap_vec[interval_num][block_num], dummy_attr, interval_num, block_num);
+    active_blocks[interval_num][block_num].store(true);
+    // place ghost update accounts for
+    // edges of intervals in addition to blocks
+    // this only adds to update_ghost_vec if the root happens
+    // to be on a boundary
+    place_ghost_update(interval_num, dummy_attr, block_num, is_root); // add to any other ghost zone blocks
+#ifdef LOG
+    cout << "Set interval " << interval_num << " block " << block_num << " to active ";
+    cout << "for marker vid " << vid << endl;
+#endif 
+  }
 }
 
 template <class image_t>
@@ -1380,7 +1470,7 @@ void Recut<image_t>::setup_interval_and_image_view(VID_t interval_num, image_t* 
 
   clock_gettime(CLOCK_REALTIME,&interval_load);
 #ifdef LOG
-  //cout<<"Load interval " << interval_num << " in "<<DiffTime(interval_start,interval_load)<<" sec."<<endl;
+  cout<<"Load interval " << interval_num << " in "<<DiffTime(interval_start,interval_load)<<" sec."<<endl;
 #endif
 
   vector<int> interval_offsets;
@@ -1474,10 +1564,18 @@ void Recut<image_t>::update() {
   // FIXME check that this has no state that can 
   // be corrupted in a shared setting
   // otherwise just create copies of it if necessary
-  //mcp3d::MImage image;
-  //image.ReadImageInfo(args->image_root_dir());
-  // FIXME This is where we set image to our desired values
-  image_t* image = (image_t*) malloc(sizeof(image_t) * args->image_extents()[0] * args->image_extents()[1] * args->image_extents()[2]);
+  image_t* image;
+  assertm(this->params->generate_image, "Currently params->generate_image must be set to true");
+  if (this->params->generate_image) {
+    assertm(this->generated_image, "Image not generated by intialize");
+    image = this->generated_image;
+  } else {
+#ifdef IMAGE
+    mcp3d::MImage image;
+    image.ReadImageInfo(args->image_root_dir());
+    assertm(false, "set image to image.Volume(0)");
+#endif
+  }
 
   // begin processing all intervals
   // note this is a while since, intervals can be
@@ -1521,7 +1619,6 @@ void Recut<image_t>::update() {
 #endif
   cout <<" revisits: "<< global_revisits << " vertices" <<endl;
 #endif
-  free(image);
 
 }
 
@@ -1821,29 +1918,13 @@ void Recut<image_t>::initialize_globals(const VID_t& nintervals, const VID_t& nb
 
 }
 
-/*
- * Does this subscript belong in the full image
- * accounting for the input offsets and extents
- * i, j, k : subscript of vertex in question
- * off : offsets in z y x order
- * end : sanitized end pixels order
- */
-template<typename T, typename T2>
-bool check_in_bounds(T i, T j, T k, T2 off, T2 end) {
-  if (i < off[2]) return false;
-  if (j < off[1]) return false;
-  if (k < off[0]) return false;
-  if (i > end[2]) return false;
-  if (j > end[1]) return false;
-  if (k > end[0]) return false;
-  return true;
-}
-
 template < class image_t>
 void Recut<image_t>::initialize() {
 
 #ifdef LOG
 // stamp the compile time config
+// so that past logs are explicit about
+// their flags
 
 #ifdef RV
   cout << "RV" << endl;
@@ -1876,47 +1957,44 @@ void Recut<image_t>::initialize() {
 
   // determine the image size
   //mcp3d::MImage global_image;
+  //global_image.ReadImageInfo(args->image_root_dir());
+  //if (global_image.image_info().empty())
+  //{
+      //MCP3D_MESSAGE("no supported image formats found in " +
+                    //args->image_root_dir() + ", do nothing.")
+      //throw;
+  //}
+  //global_image.SaveImageInfo(); // save to __image_info__.json
+  //auto temp = global_image.xyz_dims(args->resolution_level()); 
+
   // these 3 are in z y x order
   vector<int> off; 
   vector<int> ext;
   vector<int> end;
-  try
-  {
-    //global_image.ReadImageInfo(args->image_root_dir());
-    //if (global_image.image_info().empty())
-    //{
-        //MCP3D_MESSAGE("no supported image formats found in " +
-                      //args->image_root_dir() + ", do nothing.")
-        //throw;
-    //}
-    //global_image.SaveImageInfo(); // save to __image_info__.json
-    //auto temp = global_image.xyz_dims(args->resolution_level()); 
-    // FIXME the total reference image size for now will just be the input processing size
-    auto temp = args->image_extents();
-    // account for image_offsets and args->image_extents()
-    off = args->image_offsets(); // default start is {0, 0, 0} for full image
-    ext = args->image_extents(); // default is {0, 0, 0} for full image
-    // protect faulty out of bounds input if extents goes beyond
-    // domain of full image
-    auto endx = ext[2] ? min(off[2] + ext[2], temp[2]) : temp[2];
-    auto endy = ext[1] ? min(off[1] + ext[1], temp[1]) : temp[1];
-    auto endz = ext[0] ? min(off[0] + ext[0], temp[0]) : temp[0];
-    end = {endz, endy, endx}; // sanitized end pixel in each dimension
-    // protect faulty offset values
-    assert(endx - off[2] > 0);
-    assert(endy - off[1] > 0);
-    assert(endz - off[0] > 0);
-    // save to globals the actual size of the full image
-    // accounting for the input offsets and extents
-    nx = endx - off[2]; // these will be used throughout the rest of the program
-    ny = endy - off[1];
-    nz = endz - off[0];
-    nxy = nx * ny;
-    this->img_vox_num = nx * ny * nz;
-  } catch(...) {
-    //MCP3D_MESSAGE("error in image io. neuron tracing not performed")
-    throw;
-  }
+  
+  // FIXME the total reference image size for now will just be the input processing size
+  auto temp = args->image_extents();
+  // account for image_offsets and args->image_extents()
+  off = args->image_offsets(); // default start is {0, 0, 0} for full image
+  ext = args->image_extents(); // default is {0, 0, 0} for full image
+  // protect faulty out of bounds input if extents goes beyond
+  // domain of full image, note: z, y, x order
+  auto endx = ext[2] ? min(off[2] + ext[2], temp[2]) : temp[2];
+  auto endy = ext[1] ? min(off[1] + ext[1], temp[1]) : temp[1];
+  auto endz = ext[0] ? min(off[0] + ext[0], temp[0]) : temp[0];
+  end = {endz, endy, endx}; // sanitized end pixel in each dimension
+  // protect faulty offset values
+  assert(endx - off[2] > 0);
+  assert(endy - off[1] > 0);
+  assert(endz - off[0] > 0);
+  // save to globals the actual size of the full image
+  // accounting for the input offsets and extents
+  // these will be used throughout the rest of the program
+  this->nx = endx - off[2]; 
+  this->ny = endy - off[1];
+  this->nz = endz - off[0];
+  this->nxy = nx * ny;
+  this->img_vox_num = nx * ny * nz;
 
   // the image size and offsets override the user inputted interval size
   // continuous id's are the same for src or dst intervals
@@ -1969,10 +2047,10 @@ void Recut<image_t>::initialize() {
   // we cast the interval num and block nums to uint16 for use as a key
   // in the global variables maps, if total intervals or blocks exceed this
   // there would be overflow
-  if (nintervals > 2<<16 - 1) {
+  if (nintervals > (2<<16) - 1) {
     cout << "Number of intervals too high: " << nintervals << " try increasing interval size";
   }
-  if (nintervals > 2<<16 - 1) {
+  if (nintervals > (2<<16) - 1) {
     cout << "Number of blocks too high: " << nblocks << " try increasing block size";
   }
   if (nvid > MAX_INTERVAL_VERTICES) {
@@ -2000,67 +2078,32 @@ void Recut<image_t>::initialize() {
   cout<<"Initialized globals" << DiffTime(time2, time3) << endl;
 #endif
 
-  vector<MyMarker> inmarkers;
-  bool is_root = true;
-  if (params->marker_file_path().back() != '/')
-    params->set_marker_file_path( params->marker_file_path().append("/") );
-  for (const auto& marker_file : directory_iterator(params->marker_file_path())) {
-    const auto marker_name = marker_file.path().filename().string();
-    const auto full_marker_name = params->marker_file_path() + marker_name;
-    inmarkers = readMarker_file(full_marker_name);
+  if (this->params->generate_image) {
+    // This is where we set image to our desired values
+    this->generated_image = new image_t[this->img_vox_num];
+    // add the single root vid to the global state
+    this->root_vids = {this->params->root_vid};
 
-    // set intervals with root present as active
-    for (auto& root : inmarkers) {
-      // init state and phi for root
-      VID_t i, j, k, ii, jj, kk;
-      i = root.x + 1;
-      j = root.y + 1;
-      k = root.z + 1;
-      auto vid = get_img_vid(i, j, k);
-      if (!check_in_bounds(i, j, k, off, end)) continue;
-      auto interval_num = get_sub_to_interval_num(i, j, k);
-      //i -= image_offsets[2]; // already conducted in markers.cpp?
-      //j -= image_offsets[1];
-      //k -= image_offsets[0];
-      //auto ia = i % x_interval_size;
-      //auto ja = j % y_interval_size;
-      //auto ka = k % z_interval_size;
-      //auto interval_vid = ia + ja * block_size + ka * block_size * block_size;
-      // all block_nums are a linear row-wise idx, relative to current interval
-      auto block_num = get_block_num(vid);
-      Interval* interval = super_interval.GetInterval(interval_num); 
+    assertm(root_vids.size() == 1, "Can only support 1 marker (root) at this time");
+    assertm(this->params->tcase > -1, "Mismatched tcase for generate image");
+    assertm(this->params->slt_pct > -1, "Mismatched slt_pct for generate image");
+    assertm(this->params->selected > -0, "Mismatched selected for generate image");
+    assertm(this->params->root_vid != numeric_limits<uint64_t>::max(), "Root vid uninitialized");
 
-//#ifdef LOG_FULL
-      cout << "Setting interval " << interval_num << " block " << block_num << " to active ";
-      cout << "for marker x " << i << " y " << j << " z " << k << " vid " << vid << endl;
-//#endif 
-
-      //interval does not need to be in memory
-      //interval->LoadFromDisk();
-      //auto attr = get_attr_vid(interval_num, block_num, vid); 
-
-      interval->SetActive(true); 
-      VertexAttr* dummy_attr = new VertexAttr(); // march is protect from dummy values like this
-      dummy_attr->mark_root(vid); // 0000 0000, selected no parent, all zeros indicates KNOWN_FIX root
-#ifdef FULL_PRINT
-      cout << "\tmark root: " << dummy_attr->vid << endl;
-#endif
-      dummy_attr->value = 0.0;
-      //dummy_attr->parent = 0;
-      // FIXME not necessary
-      //auto embedded_attr = get_attr_vid(interval_num, block_num, dummy_attr->vid);
-      //*embedded_attr = *dummy_attr;
-      this->heap_vec[interval_num][block_num].size();
-      safe_push(this->heap_vec[interval_num][block_num], dummy_attr, interval_num, block_num);
-      active_blocks[interval_num][block_num].store(true);
-      // place ghost update accounts for
-      // edges of intervals in addition to blocks
-      // this only adds to update_ghost_vec if the root happens
-      // to be on a boundary
-      place_ghost_update(interval_num, dummy_attr, block_num, is_root); // add to any other ghost zone blocks
-    }
+    // both get_grid and mesh_grid take the length of one dimension
+    // of the image, currently assuming all test images
+    // are cubes
+    // sets all to 0 for tcase 4 and 5
+    get_grid(this->params->tcase, this->generated_image, this->nx); 
+    if (this->params->tcase == 4) 
+      mesh_grid(this->root_vids[0], this->generated_image, this->params->selected, 
+          this->nx); 
+  } else {
+    // adds all markers to this->root_vids
+    process_marker_dir(off, end);
   }
 
+  activate_roots();
 }
 
 

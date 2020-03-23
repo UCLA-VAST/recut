@@ -28,8 +28,14 @@ typedef uint64_t VID_t; // for multi-interval runs
 // to save an interval at least that size at /tmp/
 const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 
+// equivalent max allows up to interval actual size of 256, 256, 256 with block_size 4 including padding (ghost cells)
+// Note this is ~786 MB, for VertexAttr of size 24 bytes
+// WARNING: if you change this number you need to rerun CreateIntervalBase function in recut_tests.cpp
+// to save an interval at least that size at /tmp/
+//const VID_t MAX_INTERVAL_VERTICES = 32768000;
+
 // Define your logging level in order of increasing additive levels of specificity
-#define LOG // overview logging details of the recut run, this suffices for basic timing info, granularity at interval level
+//#define LOG // overview logging details of the recut run, this suffices for basic timing info, granularity at interval level
 //#define LOG_FULL // roughly block by block processing granularity
 //#define FULL_PRINT // vertex by vertex behavior
 //#define HLOG_FULL // log the behavior of the block heap methods

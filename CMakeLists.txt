@@ -20,12 +20,13 @@ add_subdirectory(extern/benchmark)
 find_package(OpenMP REQUIRED)
 
 set(MARKERS ${PROJECT_SOURCE_DIR}/src/markers.cpp)
+set(PARAMS ${PROJECT_SOURCE_DIR}/src/recut_parameters.cpp)
 
 # These define the executable and command line processing
 # if a recut command line tool is needed
 set(SRC 
   ${PROJECT_SOURCE_DIR}/src/recut_main.cpp
-  ${PROJECT_SOURCE_DIR}/src/recut_parameters.cpp
+  ${PARAMS}
   ${MARKERS}
   )
 
@@ -42,8 +43,8 @@ set(HEADER
   )
 
 add_executable(recut ${SRC} ${HEADER})
-add_executable(recut_test test/recut_test.cpp ${HEADER} ${MARKERS})
-add_executable(recut_bench bench/recut_bench.cpp ${MARKERS} ${HEADER})
+add_executable(recut_test test/recut_test.cpp ${HEADER} ${MARKERS} ${PARAMS})
+add_executable(recut_bench bench/recut_bench.cpp ${MARKERS} ${HEADER} ${PARAMS})
 
 include_directories(include)
 
@@ -57,3 +58,5 @@ foreach(I ${ALL_TARGETS})
   target_compile_features(${I} PRIVATE cxx_std_17)
   install(TARGETS ${I} DESTINATION ${PROJECT_SOURCE_DIR}/bin)
 endforeach()
+
+add_test(NAME recut_test COMMAND ${PROJECT_SOURCE_DIR}/bin/recut_test)

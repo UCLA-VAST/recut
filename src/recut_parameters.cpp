@@ -4,7 +4,13 @@
 #include "recut_parameters.hpp"
 #include <omp.h>
 
-using namespace std;
+using std::cout;
+using std::endl;
+using std::string;
+using std::stringstream;
+using std::vector;
+using std::to_string;
+using std::exception;
 
 string RecutParameters::MetaString()
 {

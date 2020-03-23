@@ -13,6 +13,12 @@
 
 #define EXP_DEV_LOW .05
 
+#ifdef IMAGE
+#define GEN_IMAGE false
+#else
+#define GEN_IMAGE true
+#endif
+
 //VID_t compare_tree(const T seq, const T2 parallel, long
     //sz0, sz1, sz2) {
   //// get min of both sizes
@@ -24,118 +30,6 @@
   //}
 //}
 
-RecutCommandLineArgs get_args(int grid_size, int slt_pct, int tcase) {
-  RecutCommandLineArgs args;
-  auto params = args.recut_parameters();
-  auto str_path = get_curr();
-  params.set_marker_file_path(str_path + "/test_markers/" + to_string(grid_size) + "/tcase" + to_string(tcase) + "/slt_pct" + to_string(slt_pct) + "/");
-  args.set_image_root_dir(str_path + "/test_images/" + to_string(grid_size) + "/tcase" + to_string(tcase) + "/slt_pct" + to_string(slt_pct) + "/");
-  params.set_max_intensity(1);
-  params.set_min_intensity(0);
-  args.set_recut_parameters(params);
-  //args.PrintParameters();
-  return args;
-}
-
-VID_t get_central_sub(int grid_size) {
-  return grid_size / 2 - 1; // place at center
-}
-
-VID_t get_central_vid(int grid_size) {
-  auto sub = get_central_sub(grid_size);
-  auto root_vid = (VID_t) sub * grid_size * grid_size + sub * grid_size + sub;
-  return root_vid; // place at center
-}
-
-VID_t get_central_diag_vid(int grid_size) {
-  auto sub = get_central_sub(grid_size);
-  sub++; // add 1 to all x, y, z
-  auto root_vid = (VID_t) sub * grid_size * grid_size + sub * grid_size + sub;
-  return root_vid; // place at center diag
-}
-
-#ifdef IMAGE
-void write_tiff(uint16_t* inimg1d, std::string base, int grid_size) {
-  remove_all(base); // make sure it's an overwrite
-  cout << "      Delete old: " << base << endl;
-  create_directories(base);
-  //print_image(inimg1d, grid_size * grid_size * grid_size);
-  for (int zi=0; zi < grid_size; zi++) {
-    std::string fn = base;
-    fn = fn + "img_";
-    //fn = fn + mcp3d::PadNumStr(zi, 9999); // pad to 4 digits
-    fn = fn + std::to_string(zi); // pad to 4 digits
-    std::string suff = ".tif";
-    fn = fn + suff;
-    VID_t start = zi * grid_size * grid_size;
-    //cout << "fn: " << fn << " start: " << start << endl;
-    //print_image(&(inimg1d[start]), grid_size * grid_size);
-
-    { // cv write
-      int cv_type = mcp3d::VoxelTypeToCVTypes(mcp3d::VoxelType::M16U, 1);
-      cv::Mat m(grid_size, grid_size, cv_type, &(inimg1d[start]));
-      cv::imwrite(fn, m);
-    }
-
-    //uint8_t* ptr = Plane(z, c, t);
-    //std::vector<int> dims = {grid_size, grid_size, grid_size};
-    //mcp3d::image::MImage mimg(dims); // defaults to uint16 format
-  }
-  cout << "      Wrote test images at: " << base << endl;
-}
-#endif
-
-void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
-  remove_all(fn); // make sure it's an overwrite
-  cout << "      Delete old: " << fn << endl;
-  create_directories(fn);
-  fn = fn + "marker";
-  std::ofstream mf;
-  mf.open(fn);
-  mf << "# x,y,z\n";
-  mf << x << "," << y << "," << z;
-  mf.close();
-  cout << "      Wrote marker: " << fn << endl;
-}
-
-#ifdef IMAGE
-uint16_t* read_tiff(std::string fn, int grid_size ) {
-  cout << "Read: " << fn << endl;
-
-  //auto full_img = cv::imread(fn, cv::IMREAD_ANYDEPTH | cv::IMREAD_GRAYSCALE);
-  //// buffer for whole image
-  //uint16_t* full_img_ptr = full_img.ptr<uint16_t>() ;
-  //return full_img_ptr;
-
-  //Mat test1(1000, 1000, CV_16U, Scalar(400));
-  //imwrite("test.tiff", test1);
-  //auto testfn = fn + "img_0000.tif";
-  //cout << "Read: " << testfn << endl;
-  //cv::Mat test2 = cv::imread(testfn, cv::IMREAD_ANYDEPTH);
-  //cout << test2 << endl;
-  //cout << test1.depth() << " " << test2.depth() << endl;
-  //cout << test2.at<unsigned short>(0,0) << endl;
-
-  vector<int> interval_offsets = {0, 0, 0}; // zyx
-  vector<int> interval_extents = {grid_size, grid_size, grid_size};
-  // read data
-  mcp3d::MImage image;
-  image.ReadImageInfo(fn);
-  try {
-    // use unit strides only
-    mcp3d::MImageBlock block(interval_offsets, interval_extents);
-    image.SelectView(block, 0);
-    image.ReadData();
-  } catch(...) {
-    MCP3D_MESSAGE("error in image io. neuron tracing not performed")
-    throw;
-  }
-  VID_t inimg1d_size = grid_size * grid_size * grid_size;
-  uint16_t* img = new uint16_t[inimg1d_size];
-  memcpy((void*) img, image.Volume<uint16_t>(0), inimg1d_size * sizeof(uint16_t));
-  return img;
-}
-#endif
 
 void check_image(uint16_t* inimg1d, uint16_t* check,int grid_size) {
   cout << "check image " << endl;
@@ -224,25 +118,12 @@ void load_save(bool mmap_) {
   //}
 //}
 
-/* interval_size parameter is actually irrelevant due to 
- * copy on write, the chunk requested during reading
- * or mmapping is
- */
-VID_t get_used_vertex_num(VID_t grid_size, VID_t block_size) {
-  auto len = grid_size / block_size;
-  auto total_blocks = len * len * len;
-  auto pad_block_size = block_size + 2;
-  auto pad_block_num = pad_block_size * pad_block_size * pad_block_size;
-  // this is the total vertices that will be used including ghost cells
-  auto interval_vert_num = pad_block_num * total_blocks;
-  return interval_vert_num;
-}
-
 void test_get_attr_vid(bool mmap, int grid_size, int interval_size, int block_size)  {
   auto nvid = grid_size * grid_size * grid_size;
   double slt_pct = 100;
   int tcase = 0;
-  auto args = get_args(grid_size, slt_pct, tcase);
+  auto args = get_args(grid_size, slt_pct, tcase,
+      GEN_IMAGE);
   auto params = args.recut_parameters();
   params.set_block_size(block_size);
   params.set_interval_size(interval_size);
@@ -472,20 +353,18 @@ TEST(Interval, GetAttrVidMultiInterval) {
 } 
 
 
-#ifdef IMAGE
-/* Create the desired images to be used by other gtest
- * functions below, this can be skipped
- * once it has been run on a new system
- * for all the necessary configurations of 
- * grid_sizes, tcases and selected percents
+/* 
+ * Create the desired markers (seed locations) and images to be used by other
+ * gtest functions below, this can be skipped once it has been run on a new
+ * system for all the necessary configurations of grid_sizes, tcases and
+ * selected percents
  */
-TEST (Install, DISABLED_CreateImages) {
+TEST (Install, DISABLED_CreateMarkersImages) {
   // change these to desired params
   // Note this will delete anything in the
   // same directory before writing
   // tcase 5 is deprecated
-  //std::vector<int> grid_sizes = {2, 4, 8, 256, 512, 1024};
-  std::vector<int> grid_sizes = {16, 32, 64, 128};
+  std::vector<int> grid_sizes = {4, 8, 16, 32, 64, 128, 512};
   std::vector<int> testcases = {4, 3, 2, 1, 0};
   std::vector<double> selected_percents = {1, 10, 50, 100};
 
@@ -538,6 +417,7 @@ TEST (Install, DISABLED_CreateImages) {
         fn_marker = fn_marker + std::to_string((int) slt_pct);
         fn_marker = fn_marker + delim;
 
+#ifdef IMAGE
         VID_t selected = tol_sz * (slt_pct / (float) 100); // for tcase 4
         // always select at least the root
         if (selected == 0) selected = 1;
@@ -564,13 +444,17 @@ TEST (Install, DISABLED_CreateImages) {
         ASSERT_NEAR(actual_slt_pct, slt_pct, 100 * EXP_DEV_LOW);
 
         write_tiff(inimg1d, fn, grid_size) ;
-        write_marker(x, y, z, fn_marker);
         delete[] inimg1d;
+#endif
+
+        // record the root
+        write_marker(x, y, z, fn_marker);
       }
     }
   }
 }
 
+#ifdef IMAGE
 TEST (Image, ReadWrite) {
   auto grid_size = 2;
   auto tcase = 4;
@@ -601,7 +485,8 @@ TEST (Image, ReadWrite) {
   //check_image(inimg1d, check2, grid_size);
 
   // run recut over the image
-  auto args = get_args(grid_size, slt_pct, tcase);
+  auto args = get_args(grid_size, slt_pct, tcase,
+      GEN_IMAGE);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
   recut.update();
@@ -862,7 +747,7 @@ TEST(DISABLED_EndToEnd, Full) {
   delete[] inimg1d;
 }
 
-TEST (RecutPipeline, 4tcase4orig50) {
+TEST (RecutPipeline, DISABLED_4tcase4orig50) {
   auto grid_size = 4;
   double slt_pct = 50;
   auto selected = grid_size * grid_size * grid_size * (slt_pct / 100);
@@ -872,7 +757,8 @@ TEST (RecutPipeline, 4tcase4orig50) {
   long sz0 = (long) grid_size;
   long sz1 = (long) grid_size;
   long sz2 = (long) grid_size;
-  auto args = get_args(grid_size, slt_pct, tcase);
+  auto args = get_args(grid_size, slt_pct, tcase,
+      GEN_IMAGE);
   VID_t x, y, z;
   x = y = z = get_central_sub(grid_size); //place at center
 
@@ -904,7 +790,7 @@ TEST (RecutPipeline, 4tcase4orig50) {
 }
 #endif // APP2
 
-TEST(RecutPipeline, PrintDefaultInfo) {
+TEST(RecutPipeline, DISABLED_PrintDefaultInfo) {
   auto v1 = new VertexAttr();
   auto ps = sysconf(_SC_PAGESIZE);
   auto vs = sizeof(VertexAttr);
@@ -926,7 +812,8 @@ TEST (RecutPipeline, 4tcase0) {
   auto grid_size = 4;
   double slt_pct = 100; // NA
   int tcase = 0;
-  auto args = get_args(grid_size, slt_pct, tcase);
+  auto args = get_args(grid_size, slt_pct, tcase,
+      GEN_IMAGE);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
   recut.update();
@@ -939,7 +826,8 @@ TEST (RecutPipeline, 4tcase0MultiInterval) {
   auto grid_size = 4;
   double slt_pct = 100; // NA
   int tcase = 0;
-  auto args = get_args(grid_size, slt_pct, tcase);
+  auto args = get_args(grid_size, slt_pct, tcase,
+      GEN_IMAGE);
 
   auto params = args.recut_parameters();
   params.set_interval_size(2);
@@ -960,7 +848,8 @@ TEST (RecutPipeline, 4tcase1) {
   auto grid_size = 4;
   double slt_pct = 100; // NA
   int tcase = 1;
-  auto args = get_args(grid_size, slt_pct, tcase);
+  auto args = get_args(grid_size, slt_pct, tcase, 
+      GEN_IMAGE);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
   recut.update();
@@ -973,7 +862,8 @@ TEST (RecutPipeline, 4tcase2) {
   auto grid_size = 4;
   double slt_pct = 100; // NA
   int tcase = 2;
-  auto args = get_args(grid_size, slt_pct, tcase);
+  auto args = get_args(grid_size, slt_pct, tcase, 
+      GEN_IMAGE);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
   recut.update();
@@ -986,7 +876,8 @@ TEST (RecutPipeline, 4tcase3) {
   auto grid_size = 4;
   double slt_pct = 100; // NA
   int tcase = 3;
-  auto args = get_args(grid_size, slt_pct, tcase);
+  auto args = get_args(grid_size, slt_pct, tcase, 
+      GEN_IMAGE);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
   recut.update();
@@ -999,7 +890,8 @@ TEST (RecutPipeline, 4tcase4) {
   auto grid_size = 4;
   double slt_pct = 50;
   int tcase = 4;
-  auto args = get_args(grid_size, slt_pct, tcase);
+  auto args = get_args(grid_size, slt_pct, tcase, 
+      GEN_IMAGE);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
   recut.update();
@@ -1009,11 +901,12 @@ TEST (RecutPipeline, 4tcase4) {
   EXPECT_NEAR(outtree.size() , (slt_pct / 100 ) * grid_size * grid_size * grid_size, expected * EXP_DEV_LOW );
 }
 
-TEST (RecutPipeline, ScratchPad) {
+TEST (RecutPipeline, DISABLED_ScratchPad) {
   auto grid_size = 512;
   double slt_pct = 10;
   int tcase = 4;
-  auto args = get_args(grid_size, slt_pct, tcase);
+  auto args = get_args(grid_size, slt_pct, tcase,
+      GEN_IMAGE);
   std::vector<int> interval_sizes = {grid_size / 2, grid_size / 4};
   VID_t expected = (slt_pct / 100 ) * grid_size * grid_size * grid_size;
   for (auto& interval_size : interval_sizes) {
@@ -1042,7 +935,8 @@ TEST (RecutPipeline, DISABLED_256tcase4sltpct10) {
   auto grid_size = 256;
   double slt_pct = 10;
   int tcase = 4;
-  auto args = get_args(grid_size, slt_pct, tcase);
+  auto args = get_args(grid_size, slt_pct, tcase,
+      GEN_IMAGE);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
   recut.update();
@@ -1077,7 +971,8 @@ TEST (RecutPipeline, DISABLED_512tcase0sltpct100) {
   //interval_base_immutable(get_used_vertex_num(grid_size, block_size));
   double slt_pct = 100;
   int tcase = 0;
-  auto args = get_args(grid_size, slt_pct, tcase);
+  auto args = get_args(grid_size, slt_pct, tcase,
+      GEN_IMAGE);
   auto params = args.recut_parameters();
 
   // set block size to large enough to prevent array overflow for now
@@ -1099,7 +994,8 @@ TEST (RecutPipeline, DISABLED_1024tcase4sltpct1) {
   auto grid_size = 1024;
   double slt_pct = 1;
   int tcase = 4;
-  auto args = get_args(grid_size, slt_pct, tcase);
+  auto args = get_args(grid_size, slt_pct, tcase,
+      GEN_IMAGE);
   auto params = args.recut_parameters();
 
   // set block size to large enough to prevent array overflow for now
@@ -1126,7 +1022,8 @@ TEST (RecutPipeline, DISABLED_SequentialMatch1024) {
   long sz0 = (long) grid_size;
   long sz1 = (long) grid_size;
   long sz2 = (long) grid_size;
-  auto args = get_args(grid_size, slt_pct, tcase);
+  auto args = get_args(grid_size, slt_pct, tcase,
+      GEN_IMAGE);
   VID_t x, y, z;
   x = y = z = get_central_sub(grid_size); //place at center
 
@@ -1173,7 +1070,8 @@ TEST (RecutPipeline, DISABLED_SequentialMatch256) {
   int tcase = 4;
   auto selected = grid_size * grid_size * grid_size * (slt_pct / 100);
   RecutCommandLineArgs args;
-  args = get_args(grid_size, slt_pct, tcase);
+  args = get_args(grid_size, slt_pct, tcase,
+      GEN_IMAGE);
 
   // seq params
   uint16_t bkg_thresh = 0;
@@ -1218,7 +1116,8 @@ TEST (RecutPipeline, DISABLED_StandardIntervalReadWrite256) {
   auto selected = grid_size * grid_size * grid_size * (slt_pct / 100);
 
   // Read
-  auto args = get_args(grid_size, slt_pct, tcase);
+  auto args = get_args(grid_size, slt_pct, tcase,
+      GEN_IMAGE);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
   recut.update();
@@ -1235,7 +1134,8 @@ TEST (RecutPipeline, DISABLED_Mmap256) {
   auto selected = grid_size * grid_size * grid_size * (slt_pct / 100);
 
   // mmap section
-  auto args = get_args(grid_size, slt_pct, tcase);
+  auto args = get_args(grid_size, slt_pct, tcase,
+      GEN_IMAGE);
   auto recut_mmap = Recut<uint16_t>(args);
   recut_mmap.mmap_ = true;
   recut_mmap.initialize();
@@ -1253,7 +1153,8 @@ TEST (RecutPipeline, DISABLED_MmapMultiInterval256) {
   auto selected = grid_size * grid_size * grid_size * (slt_pct / 100);
 
   // mmap section, multi-interval
-  auto args = get_args(grid_size, slt_pct, tcase);
+  auto args = get_args(grid_size, slt_pct, tcase,
+      GEN_IMAGE);
 
   auto params = args.recut_parameters();
   params.set_interval_size(128);

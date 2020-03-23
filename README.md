@@ -4,7 +4,7 @@ git clone --recursive https://github.com/UCLA-VAST/recut-pipeline.git
 cd recut
 mkdir build bin
 cd build
-cmake ..
+cmake .. -DCMAKE_BUILD_TYPE=[Debug/Release]
 make 
 make install
 ```
@@ -17,7 +17,7 @@ generated via:
 
 ```
 cd recut/bin
-./recut_tests --gtest_also_run_disabled --gtest_filter=INSTALL.*
+./recut_test --gtest_also_run_disabled_tests --gtest_filter=Install.*
 ```
 
 ### Dependencies

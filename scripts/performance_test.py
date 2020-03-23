@@ -8,8 +8,10 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 
+analyze = False
+
 # Perf vars
-perf = False
+perf = True
 perf_args = ['L1-dcache-misses', 'L1-dcache-loads', 'LLC-load-misses',
         'LLC-loads', 'faults', 'instructions', 'cycles']
 # 'cache-misses', 'cache-references',
@@ -31,7 +33,7 @@ save_dat = False # good for long runs, bad when in active research mode
 # revisit = True
 LOG = True
 N = 1 # number of runs to repeat
-grid_len = 512
+grid_len = 256
 grid_lens = [grid_len]
 # image_dims = [7680, 8448, 383]
 # image dims represent the total area to cover in a run,
@@ -43,8 +45,8 @@ grid_lens = [grid_len]
 # has 1 block and these blocks can run independently on their own
 # thread.
 image_dims = [grid_len, grid_len, grid_len]
-block_sizes = [grid_len, grid_len / 2, grid_len / 4, grid_len / 8]
-# block_sizes = [256, 128, 64, 32, 16]
+block_sizes = [grid_len]
+# block_sizes = [grid_len, grid_len / 2, grid_len / 4, grid_len / 8]
 # image_dims = [1792, 1664, 352]
 image_vox_num = image_dims[0] * image_dims[1] * image_dims[2]
 image_vox_num_scaled = image_vox_num / 1e7
@@ -98,8 +100,10 @@ else:
 par_markers = np.zeros(par_update_times.shape)
 
 # Directory inputs and outputs
-cur = os.path.dirname(os.path.realpath(__file__))
-base_dir = '/curr/kdmarrett/data'
+curr = os.path.dirname(os.path.realpath(__file__))
+parent = os.path.abspath(os.path.join(curr, os.pardir))
+base_dir = parent + '/data'
+print(base_dir)
 run_dir = base_dir + '/run_data'
 swc_dir = base_dir + '/swcs'
 perf_output_dir = base_dir + '/perf'
@@ -172,25 +176,27 @@ for grid_len in grid_lens:
                     xe = adjust_ie(xa, 0, grid_len)
                     swc_output_file = swc_output + '/' +  '_'.join([ str(z), str(y), str(x)]) + app_suff
                     os.system('touch ' + swc_output_file)
-                    params = ['../bin/recut', img_dir, ch,
-                            '-inmarker', marker_dir + '/', '-io', str(za), str(ya), str(xa),
-                            '-ie', str(ze), str(ye), str(xe),
-                            '-lt', '50', '-pr', pr, '-bs', str(bs),
-                            '-ct', '1', '-rl', res_lvl, '-outswc', 
-                            swc_output_file, '-bg-thresh',
-                            bkg_thresh, '-max', max_int]
+                    bfilter = '--benchmark_filter=bench_critical_loop/%d' % grid_len
+                    params = ['../bin/recut_bench', bfilter]
+                    # params = ['../bin/recut', img_dir, ch,
+                            # '-inmarker', marker_dir + '/', '-io', str(za), str(ya), str(xa),
+                            # '-ie', str(ze), str(ye), str(xe),
+                            # '-lt', '50', '-pr', pr, '-bs', str(bs),
+                            # '-ct', '1', '-rl', res_lvl, '-outswc', 
+                            # swc_output_file, '-bg-thresh',
+                            # bkg_thresh, '-max', max_int]
                     # params = ['../bin/vaa3d_app2', img_dir, ch,
                             # '-inmarker', marker_file_path, '-io', str(za), str(ya), str(xa),
                             # '-ie', str(ze), str(ye), str(xe),
                             # '-lt', '50', '-fp', fp, '-pr', pr, '-bs', str(bs),
                             # '-ct', '1', '-rl', res_lvl, '-outswc',
                             # swc_output_file ]
-                    if parallel:
-                        params.append('-pl')
-                        params.append(str(thread))
-                    if rs > 0:
-                        params.append('-rs')
-                        params.append(str(rs))
+                    # if parallel:
+                        # params.append('-pl')
+                        # params.append(str(thread))
+                    # if rs > 0:
+                        # params.append('-rs')
+                        # params.append(str(rs))
 
                     # LOGGING
                     # perf wrap same parameters in cli call 
@@ -257,7 +263,7 @@ for grid_len in grid_lens:
                             # print('Total time: %.1f, update time: %.1f' %
                                     # (par_times[-1], par_update_times[ri][ni]))
                         # else:
-                        par_update_times[bi][ni] = parse_time(slog, 'Finished marching')
+                        # par_update_times[bi][ni] = parse_time(slog, 'Finished marching')
 
                         # perf logging
                         if perf:
@@ -284,68 +290,69 @@ for grid_len in grid_lens:
                             # print('Total time: %.1f, update time: %.1f' % (times[-1], update_times[-1]))
 
 # ANALYSIS
+if analyze:
 # means across N runs
-par_update_times_means = np.mean(par_update_times, axis=1)
-par_update_times_stds = np.std(par_update_times, axis=1)
-throughput = float(image_vox_num_scaled) / par_update_times
-throughput_means = np.mean(throughput, axis=1)
-throughput_stds = np.std(throughput, axis=1)
-error = 100 * ((correct_select_num - par_markers) / float(correct_select_num))
-error_means = error.mean(axis=1)
-error_stds = error.std(axis=1)
+    par_update_times_means = np.mean(par_update_times, axis=1)
+    par_update_times_stds = np.std(par_update_times, axis=1)
+    throughput = float(image_vox_num_scaled) / par_update_times
+    throughput_means = np.mean(throughput, axis=1)
+    throughput_stds = np.std(throughput, axis=1)
+    error = 100 * ((correct_select_num - par_markers) / float(correct_select_num))
+    error_means = error.mean(axis=1)
+    error_stds = error.std(axis=1)
 
 # PLOTTING ARGS
 # plt.style.use('seaborn')
-capsize = 2
+    capsize = 2
 # plt.rcParams.update({'lines.markeredgewidth':1})
 # fmt=[marker][line][color]
 
 # PRINTING
-print('Results for %s: ' % compile_option_run)
-print(par_update_times_means)
-print(throughput_means)
-print(error_means)
-print(par_update_times_stds)
-print(throughput_stds)
-print(error_stds)
+    print('Results for %s: ' % compile_option_run)
+    print(par_update_times_means)
+    print(throughput_means)
+    print(error_means)
+    print(par_update_times_stds)
+    print(throughput_stds)
+    print(error_stds)
 
 # PLOTTING
-plt.errorbar(block_sizes, par_update_times_means, yerr=par_update_times_stds, fmt='d--r', label='update time', capsize=capsize)
-plt.errorbar(block_sizes, throughput_means, yerr=throughput_stds, fmt='o--k', label='Voxel/s e7', capsize=capsize)
-plt.xlabel('Block sizes')
-plt.xticks(block_sizes, [str(i) for i in block_sizes])
-if parallel:
-    title = 'Block size and parallel FM runtime'
-else:
-    title = 'Block size and sequential FM runtime'
-plt.title(title)
-plt.ylabel('Mean FM times (s)')
-plt.xlim(max(block_sizes) + 5, min(block_sizes) -5)
-plt.legend()
-plt.tight_layout()
-fig_output_path = '%s/%s_%s_%s.png' % (fig_output_dir, compile_option_run, title.replace(' ', '_'), datetime.now().strftime(FORMAT))
-print(fig_output_path)
-plt.savefig(fig_output_path)
-if show_figs:
-    plt.show()
-plt.close()
+    plt.errorbar(block_sizes, par_update_times_means, yerr=par_update_times_stds, fmt='d--r', label='update time', capsize=capsize)
+    plt.errorbar(block_sizes, throughput_means, yerr=throughput_stds, fmt='o--k', label='Voxel/s e7', capsize=capsize)
+    plt.xlabel('Block sizes')
+    plt.xticks(block_sizes, [str(i) for i in block_sizes])
+    if parallel:
+        title = 'Block size and parallel FM runtime'
+    else:
+        title = 'Block size and sequential FM runtime'
+    plt.title(title)
+    plt.ylabel('Mean FM times (s)')
+    plt.xlim(max(block_sizes) + 5, min(block_sizes) -5)
+    plt.legend()
+    plt.tight_layout()
+    fig_output_path = '%s/%s_%s_%s.png' % (fig_output_dir, compile_option_run, title.replace(' ', '_'), datetime.now().strftime(FORMAT))
+    print(fig_output_path)
+    plt.savefig(fig_output_path)
+    if show_figs:
+        plt.show()
+    plt.close()
 
 # PLOTTING
-plt.errorbar(block_sizes, error_means, yerr=error_stds, fmt='d--r', label='error rate', capsize=capsize)
-plt.xlabel('Block sizes')
-plt.xticks(block_sizes, [str(i) for i in block_sizes])
-title = 'Block size and error rate'
-plt.title(title)
-plt.ylabel('Error rate by voxels (%)')
-plt.xlim(max(block_sizes) + 5, min(block_sizes) -5)
+    plt.errorbar(block_sizes, error_means, yerr=error_stds, fmt='d--r', label='error rate', capsize=capsize)
+    plt.xlabel('Block sizes')
+    plt.xticks(block_sizes, [str(i) for i in block_sizes])
+    title = 'Block size and error rate'
+    plt.title(title)
+    plt.ylabel('Error rate by voxels (%)')
+    plt.xlim(max(block_sizes) + 5, min(block_sizes) -5)
 # plt.legend()
-plt.tight_layout()
-fig_output_path = '%s/%s_%s_%s.png' % (fig_output_dir, compile_option_run, title.replace(' ', '_'), datetime.now().strftime(FORMAT))
-print(fig_output_path)
-plt.savefig(fig_output_path)
-if show_figs:
-    plt.show()
-plt.close()
+    plt.tight_layout()
+    fig_output_path = '%s/%s_%s_%s.png' % (fig_output_dir, compile_option_run, title.replace(' ', '_'), datetime.now().strftime(FORMAT))
+    print(fig_output_path)
+    plt.savefig(fig_output_path)
+    if show_figs:
+        plt.show()
+    plt.close()
 
 # FIXME should divide element wise across last dimension before averaging or stding
 if perf:
