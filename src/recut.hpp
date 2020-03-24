@@ -1384,7 +1384,7 @@ double Recut<image_t>::reconstruct_interval(VID_t interval_num, image_t* image) 
 
 #else // OMP strategy
 
-#pragma omp parallel for
+// #pragma omp parallel for
     for(VID_t block_num = 0;block_num<nblocks;++block_num) {
       march_narrow_band(image, interval_num, block_num);
     }
@@ -1407,7 +1407,7 @@ double Recut<image_t>::reconstruct_interval(VID_t interval_num, image_t* image) 
     //}
   //#else
 
-#pragma omp parallel for
+// #pragma omp parallel for
     for(VID_t block_num = 0;block_num<nblocks;++block_num)
     {
         integrate_updated_ghost(interval_num, block_num);
