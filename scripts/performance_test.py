@@ -219,6 +219,7 @@ for grid_len in grid_lens:
                     if perf:
                         # perf_params = ['perf stat --log-fd 2 --append -e' ]
                         perf_fn = perf_output_dir + '/perf_%s.log' % datetime.now().strftime(FORMAT)
+                        os.system('touch ' + perf_fn)
                         # perf does not redirect to output file properly when called from python at this time
                         # perf_params = ['perf stat -o %s -e' % perf_fn ]
                         perf_params = ['perf stat -e']
@@ -241,6 +242,7 @@ for grid_len in grid_lens:
                         # continue
                     slog = log.decode('ascii')
                     log_path = '%s%s_%s.log' % (log_dir_path, marker_file, datetime.now().strftime(FORMAT))
+                    os.system('touch ' + log_path)
                     if LOG:
                         logfile = open(log_path, 'w+')
                         logfile.write(jparams)
