@@ -44,7 +44,9 @@ static void bench_critical_loop(benchmark::State& state) {
   // while loop below
   // When we do `perf recut_bench` this
   // initialize portion will still be included
+  //state.PauseTiming();
   recut.initialize();
+  //state.ResumeTiming();
 
   // This is the performance loop where gbench
   // will execute until timing stats converge
@@ -66,6 +68,7 @@ static void bench_critical_loop(benchmark::State& state) {
   //state.SetBytesProcessed(long(state.iterations()) * long(bytes));
   //state.SetLabel(std::to_string(bytes / 1024) + "kb");
 }
-BENCHMARK(bench_critical_loop)->RangeMultiplier(2)->Range(32, 256)->ReportAggregatesOnly(true);
+BENCHMARK(bench_critical_loop)->Arg(256)->ReportAggregatesOnly(true);
+//BENCHMARK(bench_critical_loop)->RangeMultiplier(2)->Range(32, 256)->ReportAggregatesOnly(true);
 
 BENCHMARK_MAIN();
