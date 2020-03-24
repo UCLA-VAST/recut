@@ -4,6 +4,7 @@ import os
 import subprocess
 from datetime import datetime
 import matplotlib
+# this is so you can save plots without having X11 forwarding/ $DISPLAY set
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
@@ -17,13 +18,17 @@ perf_args = ['L1-dcache-misses', 'L1-dcache-loads', 'LLC-load-misses',
 # 'cache-misses', 'cache-references',
 perf_args_idx = [0 for i in perf_args] # get first arg
 
+# Google Benchmark parameters
+benchmark_looping_time = 1
+
 # Performance run behavior
 # Compiler variables
 compile_options = ['baseline', 'domain-split', 'reject-revisits', 'no-wait', 'work-stealing', 'mmap', 'infrastructure', 'data-structures']
 compile_option_idx = 2
 compile_option_run = compile_options[compile_option_idx]
 print('Currently running compile option: %s' % compile_option_run)
-show_figs = False
+show_figs = True
+save_plots = False
 parallel = True
 pr = '0' # bool to conduct hierarchical pruning after FM
 n_off = 0 # offset of which image to use
@@ -193,7 +198,7 @@ for grid_len in grid_lens:
                     swc_output_file = swc_output + '/' +  '_'.join([ str(z), str(y), str(x)]) + app_suff
                     os.system('touch ' + swc_output_file)
                     bfilter = '--benchmark_filter=bench_critical_loop/%d' % grid_len
-                    params = ['../bin/recut_bench', bfilter]
+                    params = ['../bin/recut_bench', bfilter, '--benchmark_min_time=%d' % benchmark_looping_time]
                     # params = ['../bin/recut', img_dir, ch,
                             # '-inmarker', marker_dir + '/', '-io', str(za), str(ya), str(xa),
                             # '-ie', str(ze), str(ye), str(xe),
@@ -214,51 +219,43 @@ for grid_len in grid_lens:
                         # params.append('-rs')
                         # params.append(str(rs))
 
-                    # LOGGING
                     # perf wrap same parameters in cli call 
                     if perf:
-                        # perf_params = ['perf stat --log-fd 2 --append -e' ]
-                        perf_fn = perf_output_dir + '/perf_%s.log' % datetime.now().strftime(FORMAT)
-                        os.system('touch ' + perf_fn)
-                        # perf does not redirect to output file properly when called from python at this time
-                        # perf_params = ['perf stat -o %s -e' % perf_fn ]
-                        perf_params = ['perf stat -e']
+                        perf_params = ['perf', 'stat', '-e']
                         perf_params.append(','.join(perf_args))
                         perf_params.extend(params)
-                        # instead redirect everything, saving google benchmarks stats as well
-                        # perf_params.append(' >& %s' % perf_fn)
-                        jparams = ' '.join(perf_params)
-                    else:
-                        jparams = ' '.join(params)
-                    print('\t' + jparams)
+                        params = perf_params
 
-                    try:
-                        log = subprocess.check_output(params)
+                    jparams = ' '.join(params)
+
+                    try:  # using shell True, security be damned, this was the first thing that captured perf's output
+                        print('\t' + jparams)
+                        log = subprocess.check_output(jparams, stderr=subprocess.STDOUT, shell=True)
                         print("Finished performance run... success\n")
                     except subprocess.CalledProcessError as e:
                         print(e.output)
                         print('Error running command: ' + '"' + str(e.cmd) + '"' + ' see above shell error')
                         print('Return code: ' + str(e.returncode))
-                        # continue
-                    slog = log.decode('ascii')
-                    log_path = '%s%s_%s.log' % (log_dir_path, marker_file, datetime.now().strftime(FORMAT))
-                    os.system('touch ' + log_path)
+
                     if LOG:
-                        logfile = open(log_path, 'w+')
+                        slog = log.decode('ascii')
+                        log_path = '%s%s_%s.log' % (log_dir_path, marker_file, datetime.now().strftime(FORMAT))
+                        os.system('touch ' + log_path)
+                        print(slog)
+                        logfile = open(log_path, 'rw+')
                         logfile.write(jparams)
                         logfile.write('\n')
                         logfile.write(slog)
                         logfile.close()
                     print('Created log for reconstruction: %s...' % log_path)
                     print('Created output: ' + swc_output_file)
-                    print('Passed perf output: ' + perf_fn)
 
                     # PARSING LOG -> SAVE TO ARRAY
                     if parallel:
-                        marker = parse_time(slog, 'Total marker size before pruning')
-                        if marker:
-                            par_markers[bi][ni] = marker
-                            print('Total markers: %d..' % int(marker))
+                        # marker = parse_time(slog, 'Total marker size before pruning')
+                        # if marker:
+                            # par_markers[bi][ni] = marker
+                            # print('Total markers: %d..' % int(marker))
                         # par_iteration.append(parse_time(slog, 'Total iteration'))
                         # par_iteration.append(parse_time(slog, 'block iterations', -1))
                         # if revisit:
@@ -288,9 +285,9 @@ for grid_len in grid_lens:
 
                         # perf logging
                         if perf:
-                            plog = open(perf_fn, 'r').read()
+                            # plog = open(logfile, 'r').read()
                             for i, (arg, idx) in enumerate(zip(perf_args, perf_args_idx)):
-                                perf_times[i][bi][ni] = parse_time(plog, arg, idx)
+                                perf_times[i][bi][ni] = parse_time(slog, arg, idx)
 
                         # if pr == '1':
                             # print('Total time: %.1f, update time: %.1f, prune time %.1f' % (par_times[-1], par_update_times[-1]), prune[-1])
@@ -352,8 +349,9 @@ if analyze:
     plt.legend()
     plt.tight_layout()
     fig_output_path = '%s/%s_%s_%s.png' % (fig_output_dir, compile_option_run, title.replace(' ', '_'), datetime.now().strftime(FORMAT))
-    print(fig_output_path)
-    plt.savefig(fig_output_path)
+    if savefig:
+        plt.savefig(fig_output_path)
+        print(fig_output_path)
     if show_figs:
         plt.show()
     plt.close()
@@ -369,8 +367,9 @@ if analyze:
 # plt.legend()
     plt.tight_layout()
     fig_output_path = '%s/%s_%s_%s.png' % (fig_output_dir, compile_option_run, title.replace(' ', '_'), datetime.now().strftime(FORMAT))
-    print(fig_output_path)
-    plt.savefig(fig_output_path)
+    if savefig:
+        plt.savefig(fig_output_path)
+        print(fig_output_path)
     if show_figs:
         plt.show()
     plt.close()
@@ -395,24 +394,27 @@ if perf:
 
     fig_output_path = '%s/%s_%s_%s.png' % (fig_output_dir, compile_option_run, title.replace(' ', '_'), datetime.now().strftime(FORMAT))
     print(fig_output_path)
-    plt.savefig(fig_output_path)
+    if savefig:
+        plt.savefig(fig_output_path)
     if show_figs:
         plt.show()
     plt.close()
 
 # FIXME page faults
-
-# plt.plot(block_sizes, perf_times)
-# if len(threads) > 1:
-# plt.plot(threads, par_update_times_means)
-# plt.plot(block_sizes, par_update_times_means)
-# plt.xlabel('Block size')
-# plt.title('Block size vs. FM runtime N=%d' % N)
-# plt.xlabel('Threads')
-# plt.title('Thread count vs. runtime N=%d' % N)
-# plt.savefig('%s/%s.png' % (run_dir, datetime.now().strftime(FORMAT)))
-    # plt.tight_layout()
-# plt.plot(block_sizes, update_times)
+plt.plot(block_sizes, perf_times)
+if len(threads) > 1:
+    plt.plot(threads, par_update_times_means)
+plt.plot(block_sizes, par_update_times_means)
+plt.xlabel('Block size')
+plt.title('Block size vs. FM runtime N=%d' % N)
+plt.xlabel('Threads')
+plt.title('Thread count vs. runtime N=%d' % N)
+plt.tight_layout()
+plt.plot(block_sizes, update_times)
+if savefig:
+    plt.savefig('%s/%s.png' % (run_dir, datetime.now().strftime(FORMAT)))
+if show_figs:
+    plt.show()
 
 # if parallel:
     # data['par_update_times'] = par_update_times
