@@ -12,6 +12,11 @@
 #include<fcntl.h>
 #include<unistd.h>
 
+#define MAP_HUGE_2MB    (21 << MAP_HUGE_SHIFT)
+#define MAP_HUGE_1GB    (30 << MAP_HUGE_SHIFT)
+
+#define HUGE_PAGE_2MB (2 << 20)
+
 // template <class T>
 class Interval
 {
@@ -28,6 +33,9 @@ public:
   {
       assert(nvid <= MAX_INTERVAL_VERTICES);
       mmap_length_ = sizeof(VertexAttr) * nvid_;
+
+      // TODO: For huge pages the length needs to be aligned to the nearest hugepages size
+      hp_mmap_length_ = ((mmap_length_ + HUGE_PAGE_2MB - 1) / HUGE_PAGE_2MB) * HUGE_PAGE_2MB;
   } 
 
   Interval(Interval&& m):
@@ -35,6 +43,7 @@ public:
       inmem_ptr0_(m.inmem_ptr0_),
       mmap_ptr_(m.mmap_ptr_),
       mmap_length_(m.mmap_length_),
+      hp_mmap_length_(m.hp_mmap_length_),
       unmap_(m.unmap_),
       offset_(m.offset_),
       nvid_(m.nvid_) //, heap_(nullptr)
@@ -48,11 +57,13 @@ public:
       if(unmap_)  /// Should never be used
       {
           assert(munmap(mmap_ptr_,mmap_length_)==0);
+          // assert(munmap(mmap_ptr_,hp_mmap_length_)==0);
       }
       in_mem_ = m.in_mem_;
       inmem_ptr0_ = m.inmem_ptr0_;
       mmap_ptr_ = m.mmap_ptr_;
       mmap_length_ = m.mmap_length_;
+      hp_mmap_length_ = m.hp_mmap_length_;
       unmap_ = m.unmap_;
       offset_ = m.offset_;
       nvid_ = m.nvid_;
@@ -66,6 +77,7 @@ public:
     // if its mmap strategy and is currently needs to be unmapped
     if(unmap_ && mmap_) {
       assert(munmap(mmap_ptr_,mmap_length_)==0);
+      //assert(munmap(mmap_ptr_,hp_mmap_length_)==0);
     } else { 
       if (in_mem_) {
         free(inmem_ptr0_);
@@ -96,6 +108,9 @@ public:
       cout << "mmap() fn: " << fn_ << endl;
 #endif
       assert((fd = open(fn_.c_str(), O_RDWR)) != -1);
+      // TODO: THIS IS THE CHANGE FOR HUGEPAGES
+      // assert((mmap_ptr_ = mmap(nullptr,mmap_length_,PROT_READ|PROT_WRITE,MAP_ANONYMOUS | MAP_PRIVATE | MAP_HUGETLB,-1,0))!=MAP_FAILED);
+      // assert(read(fd, mmap_ptr_, mmap_length_) > 0);
       assert((mmap_ptr_ = mmap(nullptr,mmap_length_,PROT_READ|PROT_WRITE,MAP_PRIVATE,fd,0))!=MAP_FAILED);
       assert(close(fd) != 1); // mmap increments the files ref counter, munmap will decrement so we can safely close
       unmap_ = true;
@@ -128,6 +143,7 @@ public:
 
     if (mmap_ && unmap_) {
       assert(munmap(mmap_ptr_,mmap_length_)==0);
+      //assert(munmap(mmap_ptr_,hp_mmap_length_)==0);
 #ifdef LOG_FULL
       cout << "unmapped fn: " << fn_ << endl;
 #endif
@@ -161,7 +177,8 @@ public:
     if (mmap_) {
       ofile.write((char*)mmap_ptr_, mmap_length_); 
       assert(unmap_);
-      assert(munmap(mmap_ptr_,mmap_length_)==0);
+      //assert(munmap(mmap_ptr_,mmap_length_)==0);
+      assert(munmap(mmap_ptr_,hp_mmap_length_)==0);
       unmap_ = false;
     } else {
       ofile.write((char*)inmem_ptr0_, mmap_length_); 
@@ -202,6 +219,7 @@ private:
   atomic<bool> active_;
   bool mmap_;
   size_t mmap_length_;
+  size_t hp_mmap_length_;
   bool unmap_;    /// Whether should call munmap on destructor
   VID_t offset_; // cont id of first element in interval
   VID_t nvid_;

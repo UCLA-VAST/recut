@@ -68,7 +68,7 @@ static void bench_critical_loop(benchmark::State& state) {
   //state.SetBytesProcessed(long(state.iterations()) * long(bytes));
   //state.SetLabel(std::to_string(bytes / 1024) + "kb");
 }
-BENCHMARK(bench_critical_loop)->Arg(256)->ReportAggregatesOnly(true);
+BENCHMARK(bench_critical_loop)->Arg(32)->ReportAggregatesOnly(true);
 //BENCHMARK(bench_critical_loop)->RangeMultiplier(2)->Range(32, 256)->ReportAggregatesOnly(true);
 
 BENCHMARK_MAIN();
