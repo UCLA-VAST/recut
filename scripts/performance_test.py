@@ -100,14 +100,30 @@ else:
 par_markers = np.zeros(par_update_times.shape)
 
 # Directory inputs and outputs
-curr = os.path.dirname(os.path.realpath(__file__))
-parent = os.path.abspath(os.path.join(curr, os.pardir))
+# curr = os.path.dirname(os.path.realpath(__file__))
+# parent = os.path.abspath(os.path.join(curr, os.pardir))
+parent = '/tmp'
 base_dir = parent + '/data'
-print(base_dir)
+if not os.path.exists(base_dir):
+    os.makedirs(base_dir)
+print("Output files have been written to %s" % base_dir)
+
 run_dir = base_dir + '/run_data'
+if not os.path.exists(run_dir):
+    os.makedirs(run_dir)
+
 swc_dir = base_dir + '/swcs'
+if not os.path.exists(swc_dir):
+    os.makedirs(swc_dir)
+
 perf_output_dir = base_dir + '/perf'
+if not os.path.exists(perf_output_dir):
+    os.makedirs(perf_output_dir)
+
 fig_output_dir = base_dir + '/fig'
+if not os.path.exists(fig_output_dir):
+    os.makedirs(fig_output_dir)
+
 # img_dir = base_dir + '/2019-02-07_16.07.27_Protocol_FusionStitcher_BCL11b_KO_CAMK2_cortex_resolution0_tif/'
 # segmentation_dir = base_dir + '/segmented'
 # filled_soma_dir = base_dir + '/filled'
@@ -203,6 +219,7 @@ for grid_len in grid_lens:
                     if perf:
                         # perf_params = ['perf stat --log-fd 2 --append -e' ]
                         perf_fn = perf_output_dir + '/perf_%s.log' % datetime.now().strftime(FORMAT)
+                        perf_fn = 'tset'
                         perf_params = ['perf stat -o %s -e' % perf_fn ]
                         perf_params.append(','.join(perf_args))
                         perf_params.extend(params)
