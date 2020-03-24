@@ -34,8 +34,10 @@ public:
       assert(nvid <= MAX_INTERVAL_VERTICES);
       mmap_length_ = sizeof(VertexAttr) * nvid_;
 
-      // TODO: For huge pages the length needs to be aligned to the nearest hugepages size
+ #ifdef USE_HUGE_PAGE
+      // For huge pages the length needs to be aligned to the nearest hugepages size
       hp_mmap_length_ = ((mmap_length_ + HUGE_PAGE_2MB - 1) / HUGE_PAGE_2MB) * HUGE_PAGE_2MB;
+ #endif
   } 
 
   Interval(Interval&& m):
@@ -43,7 +45,9 @@ public:
       inmem_ptr0_(m.inmem_ptr0_),
       mmap_ptr_(m.mmap_ptr_),
       mmap_length_(m.mmap_length_),
+ #ifdef USE_HUGE_PAGE
       hp_mmap_length_(m.hp_mmap_length_),
+ #endif
       unmap_(m.unmap_),
       offset_(m.offset_),
       nvid_(m.nvid_) //, heap_(nullptr)
@@ -56,14 +60,19 @@ public:
   {
       if(unmap_)  /// Should never be used
       {
+ #ifdef USE_HUGE_PAGE
+          assert(munmap(mmap_ptr_,hp_mmap_length_)==0);
+ #else
           assert(munmap(mmap_ptr_,mmap_length_)==0);
-          // assert(munmap(mmap_ptr_,hp_mmap_length_)==0);
+ #endif
       }
       in_mem_ = m.in_mem_;
       inmem_ptr0_ = m.inmem_ptr0_;
       mmap_ptr_ = m.mmap_ptr_;
       mmap_length_ = m.mmap_length_;
+ #ifdef USE_HUGE_PAGE
       hp_mmap_length_ = m.hp_mmap_length_;
+ #endif
       unmap_ = m.unmap_;
       offset_ = m.offset_;
       nvid_ = m.nvid_;
@@ -76,8 +85,11 @@ public:
   {
     // if its mmap strategy and is currently needs to be unmapped
     if(unmap_ && mmap_) {
+#ifdef USE_HUGE_PAGE
+      assert(munmap(mmap_ptr_,hp_mmap_length_)==0);
+#else
       assert(munmap(mmap_ptr_,mmap_length_)==0);
-      //assert(munmap(mmap_ptr_,hp_mmap_length_)==0);
+#endif
     } else { 
       if (in_mem_) {
         free(inmem_ptr0_);
@@ -142,8 +154,11 @@ public:
 #endif
 
     if (mmap_ && unmap_) {
+#ifdef USE_HUGE_PAGE
+      assert(munmap(mmap_ptr_,hp_mmap_length_)==0);
+#else
       assert(munmap(mmap_ptr_,mmap_length_)==0);
-      //assert(munmap(mmap_ptr_,hp_mmap_length_)==0);
+#endif
 #ifdef LOG_FULL
       cout << "unmapped fn: " << fn_ << endl;
 #endif
@@ -177,8 +192,11 @@ public:
     if (mmap_) {
       ofile.write((char*)mmap_ptr_, mmap_length_); 
       assert(unmap_);
-      //assert(munmap(mmap_ptr_,mmap_length_)==0);
+#ifdef USE_HUGE_PAGE
       assert(munmap(mmap_ptr_,hp_mmap_length_)==0);
+#else
+      assert(munmap(mmap_ptr_,mmap_length_)==0);
+#endif
       unmap_ = false;
     } else {
       ofile.write((char*)inmem_ptr0_, mmap_length_); 
@@ -219,7 +237,9 @@ private:
   atomic<bool> active_;
   bool mmap_;
   size_t mmap_length_;
+#ifdef USE_HUGE_PAGE
   size_t hp_mmap_length_;
+#endif
   bool unmap_;    /// Whether should call munmap on destructor
   VID_t offset_; // cont id of first element in interval
   VID_t nvid_;

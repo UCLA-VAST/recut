@@ -56,6 +56,7 @@ foreach(I ${ALL_TARGETS})
   message(STATUS "${I}")
   target_link_libraries(${I} PUBLIC OpenMP::OpenMP_CXX)
   target_compile_features(${I} PRIVATE cxx_std_17)
+  target_compile_definitions(${I} PUBLIC USE_HUGE_PAGE=${USE_HUGE_PAGE})
   # these are the actual flags passed during compilation
   target_compile_options(${I} PRIVATE -fno-omit-frame-pointer -g)
   set_target_properties(${I} PROPERTIES COMPILE_FLAGS "-save-temps") 
