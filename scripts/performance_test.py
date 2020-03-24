@@ -219,17 +219,18 @@ for grid_len in grid_lens:
                     if perf:
                         # perf_params = ['perf stat --log-fd 2 --append -e' ]
                         perf_fn = perf_output_dir + '/perf_%s.log' % datetime.now().strftime(FORMAT)
-                        perf_fn = 'tset'
-                        perf_params = ['perf stat -o %s -e' % perf_fn ]
+                        # perf does not redirect to output file properly when called from python at this time
+                        # perf_params = ['perf stat -o %s -e' % perf_fn ]
+                        perf_params = ['perf stat -e']
                         perf_params.append(','.join(perf_args))
                         perf_params.extend(params)
+                        # instead redirect everything, saving google benchmarks stats as well
+                        # perf_params.append(' >& %s' % perf_fn)
                         jparams = ' '.join(perf_params)
                     else:
                         jparams = ' '.join(params)
                     print('\t' + jparams)
 
-                    # if debug:
-                        # os.system(jparams) # print directly to stdout
                     try:
                         log = subprocess.check_output(params)
                         print("Finished performance run... success\n")
@@ -248,6 +249,7 @@ for grid_len in grid_lens:
                         logfile.close()
                     print('Created log for reconstruction: %s...' % log_path)
                     print('Created output: ' + swc_output_file)
+                    print('Passed perf output: ' + perf_fn)
 
                     # PARSING LOG -> SAVE TO ARRAY
                     if parallel:
