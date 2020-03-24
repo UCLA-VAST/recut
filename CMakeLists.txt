@@ -42,7 +42,7 @@ set(HEADER
   ${PROJECT_SOURCE_DIR}/src/markers.h
   )
 
-add_executable(recut ${SRC} ${HEADER})
+add_executable(recut ${SRC} ${HEADER} ${PARAMS})
 add_executable(recut_test test/recut_test.cpp ${HEADER} ${MARKERS} ${PARAMS})
 add_executable(recut_bench bench/recut_bench.cpp ${MARKERS} ${HEADER} ${PARAMS})
 
