@@ -22,13 +22,13 @@ static void bench_critical_loop(benchmark::State& state) {
   double slt_pct = 5;
   int tcase = 4;
   auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-  VID_t expected = (slt_pct / 100 ) * grid_size * grid_size * grid_size;
+  VID_t selected = args.recut_parameters().selected;
 
   // adjust final runtime parameters
   auto params = args.recut_parameters();
-  params.set_interval_size(grid_size);
-  // the total number of blocks allows more parallelism
-  // ideally nblocks >> thread count
+  // the total number of intervals allows more parallelism
+  // ideally intervals >> thread count
+  params.set_interval_size(state.range(0));
   params.set_block_size(state.range(0));
   // by setting the max intensities you do not need to recompute them
   // in the update function, this is critical for benchmarking
@@ -71,9 +71,9 @@ static void bench_critical_loop(benchmark::State& state) {
   // processed, note this is subject to the select percent
   // defined above as .01 which means on 1% of the total vertices
   // will be selected
-  state.SetBytesProcessed(state.iterations() * expected * 26);
-  state.SetLabel(std::to_string(expected * 26 / 1024) + "kB");
-  state.SetItemsProcessed(state.iterations() * expected);
+  state.SetBytesProcessed(state.iterations() * selected * 26);
+  state.SetLabel(std::to_string(selected * 26 / 1024) + "kB");
+  state.SetItemsProcessed(state.iterations() * selected);
 }
 BENCHMARK(bench_critical_loop)->RangeMultiplier(2)->Range(16, 256)->ReportAggregatesOnly(true)->Unit(benchmark::kMillisecond);
 
