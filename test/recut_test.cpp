@@ -1130,7 +1130,7 @@ TEST (RecutPipeline, DISABLED_StandardIntervalReadWrite256) {
 
 TEST (RecutPipeline, test_critical_loop) {
   // set params for a 10%, 256 run
-  auto grid_size = 256;
+  VID_t grid_size = 256;
   double slt_pct = 100;
   int tcase = 0;
   auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
@@ -1143,7 +1143,7 @@ TEST (RecutPipeline, test_critical_loop) {
     auto params = args.recut_parameters();
     // the total number of intervals allows more parallelism
     // ideally intervals >> thread count
-    params.set_interval_size(interval_size);
+    params.set_interval_size(grid_size);
     params.set_block_size(interval_size);
     // by setting the max intensities you do not need to recompute them
     // in the update function, this is critical for benchmarking

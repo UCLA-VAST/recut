@@ -60,7 +60,8 @@ public:
     inline VID_t GetNBlocks() const {return nblocks_;}
     inline void Release() const {
       for (auto& interval : intervals_) {
-        interval->Release();
+        if (interval->IsInMemory())
+          interval->Release();
       }
     }
 private:
