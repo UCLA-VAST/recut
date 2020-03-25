@@ -24,7 +24,7 @@ benchmark_looping_time = 1
 # Performance run behavior
 # Compiler variables
 compile_options = ['baseline', 'domain-split', 'reject-revisits', 'no-wait', 'work-stealing', 'mmap', 'infrastructure', 'data-structures']
-compile_option_idx = 2
+compile_option_idx = 0
 compile_option_run = compile_options[compile_option_idx]
 print('Currently running compile option: %s' % compile_option_run)
 show_figs = True
