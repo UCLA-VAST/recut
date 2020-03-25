@@ -283,6 +283,7 @@ RecutCommandLineArgs get_args(int grid_size, int slt_pct, int tcase,
     params.slt_pct = slt_pct;
     params.selected = img_vox_num * (slt_pct / (float) 100);
     params.root_vid = get_central_vid(grid_size);
+    params.set_user_thread_count(omp_get_max_threads());
   } else {
     args.set_image_root_dir(str_path + "/test_images/" + to_string(grid_size) + "/tcase" + to_string(tcase) + "/slt_pct" + to_string(slt_pct) + "/");
   }
