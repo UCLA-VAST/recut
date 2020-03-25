@@ -6,6 +6,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <fcntl.h>
 #include <bits/stdc++.h>
 //#include <opencv2/opencv.hpp> // imwrite
 //#include "image/mcp3d_voxel_types.hpp" // convert to CV type
@@ -230,7 +231,7 @@ TEST (Install, CreateIntervalBase) {
   bool rerun = false; // change to true if MAX_INTERVAL_VERTICES or the vertex struct has been changed in vertex_attr.h
   auto fn = INTERVAL_BASE;
   VID_t nvid = MAX_INTERVAL_VERTICES;
-  bool mmap_flag = false;
+  bool mmap_flag = true;
   if (!exists(fn) || rerun) {
     VID_t size = sizeof(VertexAttr) * nvid;
     cout << "Start creating " << fn << " cached total size: ~" << (size /
@@ -243,7 +244,8 @@ TEST (Install, CreateIntervalBase) {
     int fd;
     std::ofstream ofile;
     if (mmap_flag) {
-      fd = open(fn, O_RDWR);
+      //fd = open(fn, O_RDWR);
+      fd = open(fn, O_CREAT);
       assert((ptr = (struct VertexAttr*) mmap(nullptr, size, PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, fd, 0)) != MAP_FAILED);
 
       for (VID_t i=0; i < nvid; i++) {
@@ -1124,6 +1126,39 @@ TEST (RecutPipeline, DISABLED_StandardIntervalReadWrite256) {
   vector<MyMarker*> outtree;
   recut.finalize(outtree);
   EXPECT_NEAR(outtree.size(), selected, selected * EXP_DEV_LOW);
+}
+
+TEST (RecutPipeline, test_critical_loop) {
+  // set params for a 10%, 256 run
+  auto grid_size = 256;
+  double slt_pct = 100;
+  int tcase = 0;
+  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
+  auto selected = args.recut_parameters().selected;
+
+  std::vector<VID_t> interval_sizes = {grid_size, grid_size / 2,
+    grid_size / 4, grid_size / 8};
+  for (auto interval_size : interval_sizes) {
+    // adjust final runtime parameters
+    auto params = args.recut_parameters();
+    // the total number of intervals allows more parallelism
+    // ideally intervals >> thread count
+    params.set_interval_size(interval_size);
+    params.set_block_size(interval_size);
+    // by setting the max intensities you do not need to recompute them
+    // in the update function, this is critical for benchmarking
+    params.set_max_intensity(1);
+    params.set_min_intensity(0);
+    args.set_recut_parameters(params);
+
+    // run
+    auto recut= Recut<uint16_t>(args);
+    recut.initialize();
+    recut.update();
+    vector<MyMarker*> outtree;
+    recut.finalize(outtree);
+    ASSERT_NEAR(outtree.size() , selected, selected * EXP_DEV_LOW);
+  }
 }
 
 TEST (RecutPipeline, DISABLED_Mmap256) {
