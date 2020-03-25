@@ -34,6 +34,7 @@ public:
         interval_size_ = 1024;
         max_intensity_ = -1;
         min_intensity_ = -1;
+        user_thread_count_ = 1;
         // no getters or setters
         generate_image = false;
         tcase = -1; // -1 indicates it's not a test case
@@ -43,6 +44,7 @@ public:
     }
     std::string MetaString();
     // getters
+    int user_thread_count() {return user_thread_count_;}
     bool gsdt() const { return gsdt_; }
     bool coverage_prune() const  { return coverage_prune_; }
     int prune() const  { return prune_; }
@@ -66,6 +68,7 @@ public:
     double get_max_intensity() { return max_intensity_ ; }
     double get_min_intensity() { return min_intensity_ ; }
     // setters
+    void set_user_thread_count(int user_thread_count) { user_thread_count_ = user_thread_count;}
     void set_restart_factor(double factor) { restart_factor_ = factor; }
     void set_restart(bool restart) { restart_ = restart; }
     void set_parallel_num(int num) { parallel_num_ = num; }
@@ -102,7 +105,7 @@ private:
     bool gsdt_, coverage_prune_, allow_gap_,
          cube_256_, radius_from_2d_, swc_resample_,
          high_intensity_, brightfield_, restart_;
-    int background_thresh_, cnn_type_, parallel_num_, interval_size_, block_size_, prune_;
+    int user_thread_count_, background_thresh_, cnn_type_, parallel_num_, interval_size_, block_size_, prune_;
     double foreground_percent_, sr_ratio_, length_thresh_, restart_factor_, max_intensity_, min_intensity_;
     std::string marker_file_path_;
 };
