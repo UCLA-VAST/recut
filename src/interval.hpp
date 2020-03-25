@@ -14,8 +14,7 @@
 
 #define MAP_HUGE_2MB    (21 << MAP_HUGE_SHIFT)
 #define MAP_HUGE_1GB    (30 << MAP_HUGE_SHIFT)
-
-#define HUGE_PAGE_2MB (2 << 20)
+#define HUGE_PAGE_2MB   (2 << 20)
 
 // template <class T>
 class Interval
@@ -120,10 +119,12 @@ public:
       cout << "mmap() fn: " << fn_ << endl;
 #endif
       assert((fd = open(fn_.c_str(), O_RDWR)) != -1);
-      // TODO: THIS IS THE CHANGE FOR HUGEPAGES
-      // assert((mmap_ptr_ = mmap(nullptr,mmap_length_,PROT_READ|PROT_WRITE,MAP_ANONYMOUS | MAP_PRIVATE | MAP_HUGETLB,-1,0))!=MAP_FAILED);
-      // assert(read(fd, mmap_ptr_, mmap_length_) > 0);
+#ifdef USE_HUGE_PAGE
+      assert((mmap_ptr_ = mmap(nullptr,mmap_length_,PROT_READ|PROT_WRITE,MAP_ANONYMOUS | MAP_PRIVATE | MAP_HUGETLB,-1,0))!=MAP_FAILED);
+      assert(read(fd, mmap_ptr_, mmap_length_) > 0);
+#else
       assert((mmap_ptr_ = mmap(nullptr,mmap_length_,PROT_READ|PROT_WRITE,MAP_PRIVATE,fd,0))!=MAP_FAILED);
+#endif
       assert(close(fd) != 1); // mmap increments the files ref counter, munmap will decrement so we can safely close
       unmap_ = true;
     } else {
