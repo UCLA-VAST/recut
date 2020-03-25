@@ -58,7 +58,7 @@ public:
 
   Interval& operator=(Interval&& m)
   {
-      if(unmap_)  /// Should never be used
+      if(unmap_)  
       {
  #ifdef USE_HUGE_PAGE
           assert(munmap(mmap_ptr_,hp_mmap_length_)==0);
@@ -76,14 +76,13 @@ public:
       unmap_ = m.unmap_;
       offset_ = m.offset_;
       nvid_ = m.nvid_;
-       //heap_ = m.heap_;
       m.unmap_ = false;
       return *this;
   }
 
   ~Interval()
   {
-    // if its mmap strategy and is currently needs to be unmapped
+    // if its mmap strategy and currently needs to be unmapped
     if(unmap_ && mmap_) {
 #ifdef USE_HUGE_PAGE
       assert(munmap(mmap_ptr_,hp_mmap_length_)==0);
