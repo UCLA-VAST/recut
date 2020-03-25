@@ -1921,7 +1921,7 @@ void Recut<image_t>::initialize_globals(const VID_t& nintervals, const VID_t& nb
 template < class image_t>
 void Recut<image_t>::initialize() {
 
-#ifdef LOG
+//#ifdef LOG
 // stamp the compile time config
 // so that past logs are explicit about
 // their flags
@@ -1950,7 +1950,11 @@ void Recut<image_t>::initialize() {
   cout << "CONCURRENT_MAP" << endl;
 #endif
 
-#endif // LOG
+#ifdef USE_HUGE_PAGE
+  cout << "USE_HUGE_PAGE" << endl;
+#endif
+
+//#endif // LOG
 
   struct timespec time0,time1,time2, time3;
   uint64_t root_64bit;

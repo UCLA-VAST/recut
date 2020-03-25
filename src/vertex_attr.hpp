@@ -46,6 +46,7 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 
 // determines read speeds of vertex info from INTERVAL_BASE
 #define MMAP
+//#define USE_HUGE_PAGE
 
 // Parallel strategies other than OMP defined here
 //#define ASYNC // run without TF macro to use the std::async instead of TF thread pool, warning much much slower not recommended
