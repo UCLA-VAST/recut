@@ -14,8 +14,7 @@
 
 #define MAP_HUGE_2MB    (21 << MAP_HUGE_SHIFT)
 #define MAP_HUGE_1GB    (30 << MAP_HUGE_SHIFT)
-
-#define HUGE_PAGE_2MB (2 << 20)
+#define HUGE_PAGE_2MB   (2 << 20)
 
 // template <class T>
 class Interval
@@ -34,7 +33,7 @@ public:
       assert(nvid <= MAX_INTERVAL_VERTICES);
       mmap_length_ = sizeof(VertexAttr) * nvid_;
 
- #ifdef USE_HUGE_PAGE
+ #if USE_HUGE_PAGE
       // For huge pages the length needs to be aligned to the nearest hugepages size
       hp_mmap_length_ = ((mmap_length_ + HUGE_PAGE_2MB - 1) / HUGE_PAGE_2MB) * HUGE_PAGE_2MB;
  #endif
@@ -45,7 +44,7 @@ public:
       inmem_ptr0_(m.inmem_ptr0_),
       mmap_ptr_(m.mmap_ptr_),
       mmap_length_(m.mmap_length_),
- #ifdef USE_HUGE_PAGE
+ #if USE_HUGE_PAGE
       hp_mmap_length_(m.hp_mmap_length_),
  #endif
       unmap_(m.unmap_),
@@ -60,7 +59,7 @@ public:
   {
       if(unmap_)  
       {
- #ifdef USE_HUGE_PAGE
+ #if USE_HUGE_PAGE
           assert(munmap(mmap_ptr_,hp_mmap_length_)==0);
  #else
           assert(munmap(mmap_ptr_,mmap_length_)==0);
@@ -70,7 +69,7 @@ public:
       inmem_ptr0_ = m.inmem_ptr0_;
       mmap_ptr_ = m.mmap_ptr_;
       mmap_length_ = m.mmap_length_;
- #ifdef USE_HUGE_PAGE
+ #if USE_HUGE_PAGE
       hp_mmap_length_ = m.hp_mmap_length_;
  #endif
       unmap_ = m.unmap_;
@@ -84,7 +83,7 @@ public:
   {
     // if its mmap strategy and currently needs to be unmapped
     if(unmap_ && mmap_) {
-#ifdef USE_HUGE_PAGE
+#if USE_HUGE_PAGE
       assert(munmap(mmap_ptr_,hp_mmap_length_)==0);
 #else
       assert(munmap(mmap_ptr_,mmap_length_)==0);
@@ -119,10 +118,12 @@ public:
       cout << "mmap() fn: " << fn_ << endl;
 #endif
       assert((fd = open(fn_.c_str(), O_RDWR)) != -1);
-      // TODO: THIS IS THE CHANGE FOR HUGEPAGES
-      // assert((mmap_ptr_ = mmap(nullptr,mmap_length_,PROT_READ|PROT_WRITE,MAP_ANONYMOUS | MAP_PRIVATE | MAP_HUGETLB,-1,0))!=MAP_FAILED);
-      // assert(read(fd, mmap_ptr_, mmap_length_) > 0);
+#if USE_HUGE_PAGE
+      assert((mmap_ptr_ = mmap(nullptr,mmap_length_,PROT_READ|PROT_WRITE,MAP_ANONYMOUS | MAP_PRIVATE | MAP_HUGETLB,-1,0))!=MAP_FAILED);
+      assert(read(fd, mmap_ptr_, mmap_length_) > 0);
+#else
       assert((mmap_ptr_ = mmap(nullptr,mmap_length_,PROT_READ|PROT_WRITE,MAP_PRIVATE,fd,0))!=MAP_FAILED);
+#endif
       assert(close(fd) != 1); // mmap increments the files ref counter, munmap will decrement so we can safely close
       unmap_ = true;
     } else {
@@ -153,7 +154,7 @@ public:
 #endif
 
     if (mmap_ && unmap_) {
-#ifdef USE_HUGE_PAGE
+#if USE_HUGE_PAGE
       assert(munmap(mmap_ptr_,hp_mmap_length_)==0);
 #else
       assert(munmap(mmap_ptr_,mmap_length_)==0);
@@ -191,7 +192,7 @@ public:
     if (mmap_) {
       ofile.write((char*)mmap_ptr_, mmap_length_); 
       assert(unmap_);
-#ifdef USE_HUGE_PAGE
+#if USE_HUGE_PAGE
       assert(munmap(mmap_ptr_,hp_mmap_length_)==0);
 #else
       assert(munmap(mmap_ptr_,mmap_length_)==0);
@@ -236,7 +237,7 @@ private:
   atomic<bool> active_;
   bool mmap_;
   size_t mmap_length_;
-#ifdef USE_HUGE_PAGE
+#if USE_HUGE_PAGE
   size_t hp_mmap_length_;
 #endif
   bool unmap_;    /// Whether should call munmap on destructor
