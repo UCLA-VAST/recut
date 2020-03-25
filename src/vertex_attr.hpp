@@ -20,19 +20,20 @@ using std::ios;
 typedef uint64_t VID_t; // for multi-interval runs
 #include "utils.hpp"
 // pre-generated array of vertices initialized wth desired default values, useful for mmap
-#define INTERVAL_BASE "/tmp/interval_base_64bit.bin"; // must match the VID_t bit length type
+//#define INTERVAL_BASE "/tmp/interval_base_64bit.bin" // must match the VID_t bit length type
 #define assertm(exp, msg) assert(((void) msg, exp))
 
 // equivalent max allows up to interval actual size of 1024, 1024, 1024 with block_size 4 including padding (ghost cells)
 // WARNING: if you change this number you need to rerun CreateIntervalBase function in recut_tests.cpp
 // to save an interval at least that size at /tmp/
-const VID_t MAX_INTERVAL_VERTICES = 3700000000;
+//const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 
 // equivalent max allows up to interval actual size of 256, 256, 256 with block_size 4 including padding (ghost cells)
 // Note this is ~786 MB, for VertexAttr of size 24 bytes
 // WARNING: if you change this number you need to rerun CreateIntervalBase function in recut_tests.cpp
 // to save an interval at least that size at /tmp/
-//const VID_t MAX_INTERVAL_VERTICES = 32768000;
+const VID_t MAX_INTERVAL_VERTICES = 32768000;
+#define INTERVAL_BASE "/mnt/huge/interval_base_64bit.bin" // must match the VID_t bit length type
 
 // Define your logging level in order of increasing additive levels of specificity
 //#define LOG // overview logging details of the recut run, this suffices for basic timing info, granularity at interval level
