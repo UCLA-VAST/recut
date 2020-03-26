@@ -18,8 +18,8 @@
  * `./recut_bench --benchmark_filter=bench_critical_loop/128
  */
 static void bench_critical_loop(benchmark::State& state) {
-  auto grid_size = 256;
-  double slt_pct = 5;
+  auto grid_size = state.range(0);
+  double slt_pct = 1;
   int tcase = 4;
   auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
   VID_t selected = args.recut_parameters().selected;
@@ -28,8 +28,8 @@ static void bench_critical_loop(benchmark::State& state) {
   auto params = args.recut_parameters();
   // the total number of intervals allows more parallelism
   // ideally intervals >> thread count
-  params.set_interval_size(state.range(0));
-  params.set_block_size(state.range(0));
+  params.set_interval_size(grid_size);
+  params.set_block_size(grid_size);
   // by setting the max intensities you do not need to recompute them
   // in the update function, this is critical for benchmarking
   params.set_max_intensity(1);
@@ -72,9 +72,10 @@ static void bench_critical_loop(benchmark::State& state) {
   // defined above as .01 which means on 1% of the total vertices
   // will be selected
   state.SetBytesProcessed(state.iterations() * selected * 26);
-  state.SetLabel(std::to_string(selected * 26 / 1024) + "kB");
+  //state.SetLabel(std::to_string(selected * 26 / 1024) + "kB");
   state.SetItemsProcessed(state.iterations() * selected);
 }
 BENCHMARK(bench_critical_loop)->RangeMultiplier(2)->Range(16, 256)->ReportAggregatesOnly(true)->Unit(benchmark::kMillisecond);
+//BENCHMARK(bench_critical_loop)->Arg(16)->Arg(24)->Arg(32)->Arg(40)->Arg(64)->Arg(128)->Arg(256)->ReportAggregatesOnly(true)->Unit(benchmark::kMillisecond);
 
 BENCHMARK_MAIN();
