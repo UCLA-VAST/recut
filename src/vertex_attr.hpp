@@ -44,11 +44,12 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 
 // Define how revisits/reupdates to previous seen vertices is handled
 //#define RV // count the number of revisits or attempted revisits of vertices and log to stdout
-//#define NO_RV // reject any vertices from having new updated values after they have already been visited
+#define NO_RV // reject any vertices from having new updated values after they have already been visited
 
 // determines read speeds of vertex info from INTERVAL_BASE
 #define MMAP
-//#define USE_HUGE_PAGE
+#define USE_HUGE_PAGE
+//#define PARALLEL_FOR
 
 // Parallel strategies other than OMP defined here
 //#define ASYNC // run without TF macro to use the std::async instead of TF thread pool, warning much much slower not recommended

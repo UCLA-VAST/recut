@@ -1129,22 +1129,23 @@ TEST (RecutPipeline, DISABLED_StandardIntervalReadWrite256) {
 }
 
 TEST (RecutPipeline, test_critical_loop) {
-  // set params for a 10%, 256 run
-  VID_t grid_size = 256;
-  double slt_pct = 100;
-  int tcase = 0;
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-  auto selected = args.recut_parameters().selected;
+    VID_t grid_size = 256;
+  std::vector<VID_t> walk_sizes = {grid_size, grid_size / 2,
+    grid_size / 4, grid_size / 8, grid_size / 16};
+  for (auto walk_size : walk_sizes) {
+    grid_size = walk_size;
+    double slt_pct = 1;
+    int tcase = 4;
+    auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
+    auto selected = args.recut_parameters().selected;
 
-  std::vector<VID_t> interval_sizes = {grid_size, grid_size / 2,
-    grid_size / 4, grid_size / 8};
-  for (auto interval_size : interval_sizes) {
+    cout << walk_size << endl;
     // adjust final runtime parameters
     auto params = args.recut_parameters();
     // the total number of intervals allows more parallelism
     // ideally intervals >> thread count
     params.set_interval_size(grid_size);
-    params.set_block_size(interval_size);
+    params.set_block_size(grid_size);
     // by setting the max intensities you do not need to recompute them
     // in the update function, this is critical for benchmarking
     params.set_max_intensity(1);

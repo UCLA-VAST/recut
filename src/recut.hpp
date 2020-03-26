@@ -1384,7 +1384,9 @@ double Recut<image_t>::reconstruct_interval(VID_t interval_num, image_t* image) 
 
 #else // OMP strategy
 
+#ifdef PARALLEL_FOR
  #pragma omp parallel for
+#endif
     for(VID_t block_num = 0;block_num<nblocks;++block_num) {
       march_narrow_band(image, interval_num, block_num);
     }
@@ -1407,7 +1409,9 @@ double Recut<image_t>::reconstruct_interval(VID_t interval_num, image_t* image) 
     //}
   //#else
 
+#ifdef PARALLEL_FOR
  #pragma omp parallel for
+#endif
     for(VID_t block_num = 0;block_num<nblocks;++block_num)
     {
         integrate_updated_ghost(interval_num, block_num);
@@ -1954,11 +1958,15 @@ void Recut<image_t>::initialize() {
   cout << "USE_HUGE_PAGE" << endl;
 #endif
 
+#ifdef PARALLEL_FOR
+ cout << "PARALLEL_FOR" << endl;
+ cout << "User specific thread count " << params->user_thread_count() << endl;
+#endif
+
 //#endif // LOG
 
-#ifdef LOG
-  cout << "User specific thread count " << params->user_thread_count() << endl;
-#endif
+//#ifdef LOG
+//#endif
 
   omp_set_num_threads(params->user_thread_count());
   struct timespec time0,time1,time2, time3;

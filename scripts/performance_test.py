@@ -3,32 +3,41 @@ import glob
 import os
 import subprocess
 from datetime import datetime
+import pdb
 import matplotlib
-# this is so you can save plots without having X11 forwarding/ $DISPLAY set
-matplotlib.use('Agg')
+# set backend that allows save plots without X11 forwarding/
+# $DISPLAY set
+# matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 
 analyze = False
+FORMAT = '%m_%d_%H_%M_%S'
+runtime_stamp = datetime.now().strftime(FORMAT)
 
 # Perf vars
 perf = True
 perf_args = ['L1-dcache-misses', 'L1-dcache-loads', 'LLC-load-misses',
         'LLC-loads', 'faults', 'instructions', 'cycles']
+# perf_args = ['faults']
 # 'cache-misses', 'cache-references',
+# args_idx indicates the column your extracting from the line
+# in perf generally the first (0) column prints the stat 
 perf_args_idx = [0 for i in perf_args] # get first arg
 
 # Google Benchmark parameters
 benchmark_looping_time = 1
+# bench = True
+# bench_args = 
+# # args_idx indicates the column your extracting from the line
+# bench_args_idx = [0 for i in perf_args] # get first arg
 
 # Performance run behavior
 # Compiler variables
-compile_options = ['baseline', 'domain-split', 'reject-revisits', 'no-wait', 'work-stealing', 'mmap', 'infrastructure', 'data-structures']
-compile_option_idx = 0
-compile_option_run = compile_options[compile_option_idx]
-print('Currently running compile option: %s' % compile_option_run)
-show_figs = True
-save_plots = False
+# compile_options = ['baseline', 'domain-split', 'reject-revisits', 'no-wait', 'work-stealing', 'mmap', 'infrastructure', 'data-structures']
+compile_options = ['reject-revisits', 'mmap', 'use-huge-page']
+show_figs = False
+savefig = True
 parallel = True
 pr = '0' # bool to conduct hierarchical pruning after FM
 n_off = 0 # offset of which image to use
@@ -39,7 +48,11 @@ save_dat = False # good for long runs, bad when in active research mode
 LOG = True
 N = 1 # number of runs to repeat
 grid_len = 256
-grid_lens = [grid_len]
+total_grid_lens = 5
+grid_lens = [256]
+for i in range(1,total_grid_lens):
+    grid_lens.append( int(grid_lens[i-1]) / 2)
+print(grid_lens)
 # image_dims = [7680, 8448, 383]
 # image dims represent the total area to cover in a run,
 # note an image can be split in to subdomains for processing 
@@ -92,23 +105,24 @@ par_generating_times = []
 par_init_times = []
 update_times = []
 revisits = []
-perf_times = np.zeros((len(perf_args), len(block_sizes), N))
+perf_stats = np.zeros((len(perf_args), len(grid_lens), 
+    len(compile_options)))
 
-if len(block_sizes) > 1:
-    par_update_times = np.zeros((len(block_sizes), N))
-elif len(threads) > 1:
-    par_update_times = np.zeros((len(threads), N))
-elif len(restart_factors) > 1:
-    par_update_times = np.zeros((len(restart_factors), N))
-else:
-    par_update_times = np.zeros((N))
-par_markers = np.zeros(par_update_times.shape)
+# if len(grid_lens) > 1:
+    # par_update_times = np.zeros((len(grid_lens), N))
+# elif len(threads) > 1:
+    # par_update_times = np.zeros((len(threads), N))
+# elif len(restart_factors) > 1:
+    # par_update_times = np.zeros((len(restart_factors), N))
+# else:
+    # par_update_times = np.zeros((N))
+# par_markers = np.zeros(par_update_times.shape)
 
 # Directory inputs and outputs
 # curr = os.path.dirname(os.path.realpath(__file__))
 # parent = os.path.abspath(os.path.join(curr, os.pardir))
-parent = '/tmp'
-base_dir = parent + '/data'
+pardir = '/tmp'
+base_dir = pardir + '/data'
 if not os.path.exists(base_dir):
     os.makedirs(base_dir)
 print("Output files have been written to %s" % base_dir)
@@ -125,7 +139,8 @@ perf_output_dir = base_dir + '/perf'
 if not os.path.exists(perf_output_dir):
     os.makedirs(perf_output_dir)
 
-fig_output_dir = base_dir + '/fig'
+# fig_output_dir = base_dir + '/fig'
+fig_output_dir = '/curr/kdmarrett/cs251a-report/images'
 if not os.path.exists(fig_output_dir):
     os.makedirs(fig_output_dir)
 
@@ -141,7 +156,6 @@ swc_output = swc_dir;
 log_dir_path = '%s/logs/' % base_dir
 if not os.path.exists(log_dir_path):
     os.makedirs(log_dir_path)
-FORMAT = '%m_%d_%H_%M_%S'
 
 # Optionally save data to dict to save to json
 data = {}
@@ -167,23 +181,25 @@ def parse_time(log, phrase, token_idx=-2):
                 print('WARNING: no %s found' % phrase)
             return float(line.split()[token_idx])
 
-for grid_len in grid_lens:
+for gi, grid_len in enumerate(grid_lens):
     img_dir = '/curr/kdmarrett/mcp3d/bin/test_images/%d/tcase%d/slt_pct%d' % (grid_len, tcase, slt_pct)
     assert(os.path.exists(img_dir))
     marker_dir = img_dir.replace('images', 'markers')
     # print("Starting range with parallel: " + str(parallel))
     for ti, thread in enumerate(threads):
         for bi, bs in enumerate(block_sizes):
-            if parallel:
-                print('\n\nTesting bs: %d' % bs)
             if bs > grid_len:
-                continue
+                bs = grid_len
+            print('\n\nTesting bs: %d' % bs)
             for ri, rs in enumerate(restart_factors):
-                if parallel:
-                    print('\nTesting rs: %.3f' % rs)
+                # if parallel:
+                    # print('\nTesting rs: %.3f' % rs)
                 marker_file_path = ''
                 # for ni, marker_file_path in enumerate(glob.glob(marker_dir + '/marker_*')[n_off:(n_off + N)]):
-                for ni in range(N):
+                # for ni in range(N):
+                for ci, compile_option in enumerate( compile_options ):
+                    compile_option_run = compile_options[ci]
+                    print('Currently running compile option: %s' % compile_option_run)
                     marker_file_path = glob.glob(marker_dir + '/marker*')[0]
                     x, y, z = [int(i) for i in open(marker_file_path,
                             'r').read().split('\n')[1].split(',')]
@@ -198,7 +214,12 @@ for grid_len in grid_lens:
                     swc_output_file = swc_output + '/' +  '_'.join([ str(z), str(y), str(x)]) + app_suff
                     os.system('touch ' + swc_output_file)
                     bfilter = '--benchmark_filter=bench_critical_loop/%d' % grid_len
-                    params = ['../bin/recut_bench', bfilter, '--benchmark_min_time=%d' % benchmark_looping_time]
+                    bformat = '--benchmark_format=%s' % 'csv'
+                    params = ['../bin-%s/recut_bench' %
+                            compile_option, bfilter,
+                            '--benchmark_min_time=%d' %
+                            benchmark_looping_time,
+                            bformat]
                     # params = ['../bin/recut', img_dir, ch,
                             # '-inmarker', marker_dir + '/', '-io', str(za), str(ya), str(xa),
                             # '-ie', str(ze), str(ye), str(xe),
@@ -239,10 +260,10 @@ for grid_len in grid_lens:
 
                     if LOG:
                         slog = log.decode('ascii')
-                        log_path = '%s%s_%s.log' % (log_dir_path, marker_file, datetime.now().strftime(FORMAT))
+                        log_path = '%s%s_%s.log' % (log_dir_path, marker_file, runtime_stamp)
                         os.system('touch ' + log_path)
                         print(slog)
-                        logfile = open(log_path, 'rw+')
+                        logfile = open(log_path, 'w+')
                         logfile.write(jparams)
                         logfile.write('\n')
                         logfile.write(slog)
@@ -251,10 +272,12 @@ for grid_len in grid_lens:
                     print('Created output: ' + swc_output_file)
 
                     # PARSING LOG -> SAVE TO ARRAY
+                    for i, (arg, idx) in enumerate(zip(perf_args, perf_args_idx)):
+                        perf_stats[i,gi,ci] = parse_time(slog, arg, idx)
                     if parallel:
                         # marker = parse_time(slog, 'Total marker size before pruning')
                         # if marker:
-                            # par_markers[bi][ni] = marker
+                            # par_markers[bi,ni] = marker
                             # print('Total markers: %d..' % int(marker))
                         # par_iteration.append(parse_time(slog, 'Total iteration'))
                         # par_iteration.append(parse_time(slog, 'block iterations', -1))
@@ -269,25 +292,25 @@ for grid_len in grid_lens:
                         # par_times.append(parse_time(slog, 'Finished total updating'))
 
                         # if len(block_sizes) > 1:
-                            # par_update_times[bi][ni] = parse_time(slog, 'Finished updating')
+                            # par_update_times[bi,ni] = parse_time(slog, 'Finished updating')
                             # print('Total time: %.1f, update time: %.1f' %
-                                    # (par_times[-1], par_update_times[bi][ni]))
+                                    # (par_times[-1], par_update_times[bi,ni]))
                         # elif len(threads) > 1:
-                            # par_update_times[ti][ni] = parse_time(slog, 'Finished updating')
+                            # par_update_times[ti,ni] = parse_time(slog, 'Finished updating')
                             # print('Total time: %.1f, update time: %.1f' %
-                                    # (par_times[-1], par_update_times[ti][ni]))
+                                    # (par_times[-1], par_update_times[ti,ni]))
                         # elif len(restart_factors) > 1:
-                            # par_update_times[ri][ni] = parse_time(slog, 'Finished updating')
+                            # par_update_times[ri,ni] = parse_time(slog, 'Finished updating')
                             # print('Total time: %.1f, update time: %.1f' %
-                                    # (par_times[-1], par_update_times[ri][ni]))
+                                    # (par_times[-1], par_update_times[ri,ni]))
                         # else:
-                        # par_update_times[bi][ni] = parse_time(slog, 'Finished marching')
+                        # par_update_times[bi,ni] = parse_time(slog, 'Finished marching')
 
                         # perf logging
                         if perf:
                             # plog = open(logfile, 'r').read()
                             for i, (arg, idx) in enumerate(zip(perf_args, perf_args_idx)):
-                                perf_times[i][bi][ni] = parse_time(slog, arg, idx)
+                                perf_stats[i,gi,ci] = parse_time(slog, arg, idx)
 
                         # if pr == '1':
                             # print('Total time: %.1f, update time: %.1f, prune time %.1f' % (par_times[-1], par_update_times[-1]), prune[-1])
@@ -307,114 +330,153 @@ for grid_len in grid_lens:
                         # else:
                             # print('Total time: %.1f, update time: %.1f' % (times[-1], update_times[-1]))
 
-# ANALYSIS
-if analyze:
-# means across N runs
-    par_update_times_means = np.mean(par_update_times, axis=1)
-    par_update_times_stds = np.std(par_update_times, axis=1)
-    throughput = float(image_vox_num_scaled) / par_update_times
-    throughput_means = np.mean(throughput, axis=1)
-    throughput_stds = np.std(throughput, axis=1)
-    error = 100 * ((correct_select_num - par_markers) / float(correct_select_num))
-    error_means = error.mean(axis=1)
-    error_stds = error.std(axis=1)
+# # ANALYSIS
+# if analyze:
+# # means across N runs
+    # par_update_times_means = np.mean(par_update_times, axis=1)
+    # par_update_times_stds = np.std(par_update_times, axis=1)
+    # throughput = float(image_vox_num_scaled) / par_update_times
+    # throughput_means = np.mean(throughput, axis=1)
+    # throughput_stds = np.std(throughput, axis=1)
+    # error = 100 * ((correct_select_num - par_markers) / float(correct_select_num))
+    # error_means = error.mean(axis=1)
+    # error_stds = error.std(axis=1)
 
 # PLOTTING ARGS
 # plt.style.use('seaborn')
-    capsize = 2
+    # capsize = 2
 # plt.rcParams.update({'lines.markeredgewidth':1})
-# fmt=[marker][line][color]
+# fmt=[marker,line,color]
 
-# PRINTING
-    print('Results for %s: ' % compile_option_run)
-    print(par_update_times_means)
-    print(throughput_means)
-    print(error_means)
-    print(par_update_times_stds)
-    print(throughput_stds)
-    print(error_stds)
+# # PRINTING
+    # print('Results for %s: ' % compile_option_run)
+    # print(par_update_times_means)
+    # print(throughput_means)
+    # print(error_means)
+    # print(par_update_times_stds)
+    # print(throughput_stds)
+    # print(error_stds)
 
-# PLOTTING
-    plt.errorbar(block_sizes, par_update_times_means, yerr=par_update_times_stds, fmt='d--r', label='update time', capsize=capsize)
-    plt.errorbar(block_sizes, throughput_means, yerr=throughput_stds, fmt='o--k', label='Voxel/s e7', capsize=capsize)
-    plt.xlabel('Block sizes')
-    plt.xticks(block_sizes, [str(i) for i in block_sizes])
-    if parallel:
-        title = 'Block size and parallel FM runtime'
-    else:
-        title = 'Block size and sequential FM runtime'
-    plt.title(title)
-    plt.ylabel('Mean FM times (s)')
-    plt.xlim(max(block_sizes) + 5, min(block_sizes) -5)
-    plt.legend()
-    plt.tight_layout()
-    fig_output_path = '%s/%s_%s_%s.png' % (fig_output_dir, compile_option_run, title.replace(' ', '_'), datetime.now().strftime(FORMAT))
-    if savefig:
-        plt.savefig(fig_output_path)
-        print(fig_output_path)
-    if show_figs:
-        plt.show()
-    plt.close()
+# # PLOTTING
+    # plt.errorbar(grid_lens, par_update_times_means, yerr=par_update_times_stds, fmt='d--r', label='update time', capsize=capsize)
+    # plt.errorbar(grid_lens, throughput_means, yerr=throughput_stds, fmt='o--k', label='Voxel/s e7', capsize=capsize)
+    # plt.xlabel('Grid sizes')
+    # plt.xticks(grid_lens, [str(i) for i in grid_lens])
+    # if parallel:
+        # title = 'Grid size and parallel FM runtime'
+    # else:
+        # title = 'Grid size and sequential FM runtime'
+    # plt.title(title)
+    # plt.ylabel('Mean FM times (s)')
+    # plt.xlim(max(grid_lens) + 5, min(grid_lens) -5)
+    # plt.legend()
+    # plt.tight_layout()
+    # fig_output_path = '%s/%s_%s_%s.png' % (fig_output_dir, compile_option_run, title.replace(' ', '_'), runtime_stamp)
+    # if savefig:
+        # plt.savefig(fig_output_path)
+        # print(fig_output_path)
+    # if show_figs:
+        # plt.show()
+    # plt.close()
 
-# PLOTTING
-    plt.errorbar(block_sizes, error_means, yerr=error_stds, fmt='d--r', label='error rate', capsize=capsize)
-    plt.xlabel('Block sizes')
-    plt.xticks(block_sizes, [str(i) for i in block_sizes])
-    title = 'Block size and error rate'
-    plt.title(title)
-    plt.ylabel('Error rate by voxels (%)')
-    plt.xlim(max(block_sizes) + 5, min(block_sizes) -5)
-# plt.legend()
-    plt.tight_layout()
-    fig_output_path = '%s/%s_%s_%s.png' % (fig_output_dir, compile_option_run, title.replace(' ', '_'), datetime.now().strftime(FORMAT))
-    if savefig:
-        plt.savefig(fig_output_path)
-        print(fig_output_path)
-    if show_figs:
-        plt.show()
-    plt.close()
+# # PLOTTING
+    # plt.errorbar(grid_lens, error_means, yerr=error_stds, fmt='d--r', label='error rate', capsize=capsize)
+    # plt.xlabel('Grid sizes')
+    # plt.xticks(grid_lens, [str(i) for i in grid_lens])
+    # title = 'Grid size and error rate'
+    # plt.title(title)
+    # plt.ylabel('Error rate by voxels (%)')
+    # plt.xlim(max(grid_lens) + 5, min(grid_lens) -5)
+# # plt.legend()
+    # plt.tight_layout()
+    # fig_output_path = '%s/%s_%s_%s.png' % (fig_output_dir, compile_option_run, title.replace(' ', '_'), runtime_stamp)
+    # if savefig:
+        # plt.savefig(fig_output_path)
+        # print(fig_output_path)
+    # if show_figs:
+        # plt.show()
+    # plt.close()
 
 # FIXME should divide element wise across last dimension before averaging or stding
 if perf:
-    perf_times_means = np.mean(perf_times, axis=2)
-    perf_times_stds = np.std(perf_times, axis=2)
+    # perf_stats dims = ((len(perf_args), len(grid_lens), N))
+    # if N == 1:
+        # perf_stats_means = perf_stats[:,:,0]
+    # else:
+        # perf_stats_means = np.mean(perf_stats, axis=2)
+        # # perf_stats_stds = np.std(perf_stats, axis=2)
 
-    plt.plot(block_sizes, perf_times_means[0][:] / perf_times_means[1][:], 'r--d', label=perf_args[0])
-    plt.plot(block_sizes, perf_times_means[2][:] / perf_times_means[3][:], 'k--o', label=perf_args[2])
-    plt.plot(block_sizes, perf_times_means[6][:] / perf_times_means[5][:], 'g-->', label='CPI')
-    plt.xlabel('Block sizes')
-    plt.xticks(block_sizes, [str(i) for i in block_sizes])
-    plt.xlim(max(block_sizes) + 5, min(block_sizes) -5)
-    title = 'Block size and sequential cache performance'
-    # title = 'Block size and parallel cache performance'
+    colors = ['r', 'k', 'g']
+    styles = ['d', 'o', '>']
+
+    # L1 and LLC
+    for ci, (compile_option, color) in enumerate(zip(compile_options, colors)):
+        plt.plot(grid_lens, perf_stats[0,:,ci] / perf_stats[1,:,ci], '%s-x' % color, label=perf_args[0] + ' ' + compile_option)
+        plt.plot(grid_lens, perf_stats[2,:,ci] / perf_stats[3,:,ci], '%s-o' % color, label=perf_args[2] + ' ' + compile_option)
+    plt.xlabel('Grid sizes')
+    title = 'Grid size and sequential cache performance'
     plt.title(title)
     plt.ylabel('Miss rate %')
-    plt.legend()
+    plt.legend(loc='upper center',fontsize=6)
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.xticks(grid_lens, [str(i) for i in grid_lens])
     plt.tight_layout()
 
-    fig_output_path = '%s/%s_%s_%s.png' % (fig_output_dir, compile_option_run, title.replace(' ', '_'), datetime.now().strftime(FORMAT))
-    print(fig_output_path)
+    fig_output_path = '%s/%s.png' % (fig_output_dir, title.replace(' ', '_'))
     if savefig:
         plt.savefig(fig_output_path)
+        print(fig_output_path)
     if show_figs:
         plt.show()
-    plt.close()
+    else:
+        plt.close()
 
-# FIXME page faults
-plt.plot(block_sizes, perf_times)
-if len(threads) > 1:
-    plt.plot(threads, par_update_times_means)
-plt.plot(block_sizes, par_update_times_means)
-plt.xlabel('Block size')
-plt.title('Block size vs. FM runtime N=%d' % N)
-plt.xlabel('Threads')
-plt.title('Thread count vs. runtime N=%d' % N)
-plt.tight_layout()
-plt.plot(block_sizes, update_times)
-if savefig:
-    plt.savefig('%s/%s.png' % (run_dir, datetime.now().strftime(FORMAT)))
-if show_figs:
-    plt.show()
+    # CPI
+    for ci, (compile_option, color) in enumerate(zip(compile_options, colors)):
+        plt.plot(grid_lens, perf_stats[6,:,ci] / perf_stats[5,:,ci], '%s->' % color, label='CPI' + ' ' + compile_option)
+    plt.xlabel('Grid sizes')
+    title = 'Grid size and CPI'
+    plt.title(title)
+    plt.ylabel('Cycles per instruction')
+    plt.legend(loc='upper center')
+    plt.xscale("log")
+    # plt.yscale("log")
+    plt.xticks(grid_lens, [str(i) for i in grid_lens])
+    plt.tight_layout()
+
+    fig_output_path = '%s/%s.png' % (fig_output_dir, title.replace(' ', '_'))
+    if savefig:
+        plt.savefig(fig_output_path)
+        print(fig_output_path)
+    if show_figs:
+        plt.show()
+    else:
+        plt.close()
+
+    # page faults
+    perf_idx = 4
+    for ci, (compile_option, color) in enumerate(zip(compile_options,
+        colors)):
+        plt.plot(grid_lens, perf_stats[perf_idx,:,ci], '%s-x' % color,
+                label=compile_option)
+    plt.xlabel('Grid size')
+    plt.ylabel(perf_args[perf_idx])
+    title = 'Grid size vs. ' + perf_args[perf_idx] 
+    plt.title(title)
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.xticks(grid_lens, [str(i) for i in grid_lens])
+    plt.legend()
+    plt.tight_layout()
+    fig_output_path = '%s/%s.png' % (fig_output_dir, title.replace(' ', '_'))
+    if savefig:
+        plt.savefig(fig_output_path)
+        print(fig_output_path)
+    if show_figs:
+        plt.show()
+    else:
+        plt.close()
 
 # if parallel:
     # data['par_update_times'] = par_update_times
@@ -423,7 +485,7 @@ if show_figs:
     # data['update_times'] = update_times
     # data['times'] = times
 
-data_path = '%s/%s.json' % (run_dir, datetime.now().strftime(FORMAT))
+data_path = '%s/%s.json' % (run_dir, runtime_stamp)
 
 if save_dat:
     with open(data_path, 'w') as outfile:
