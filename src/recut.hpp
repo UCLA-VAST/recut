@@ -189,6 +189,12 @@ public:
     this->restart_factor = params->restart_factor();
   }
 
+  void run_pipeline();
+
+  void operator() () {
+    run_pipeline();
+  }
+
   inline void release() {super_interval.Release();}
   inline void reset() {
     release();
@@ -232,20 +238,21 @@ public:
   void place_ghost_update(VID_t interval_num, struct VertexAttr* dst, VID_t block_num, bool is_root) ;
   int get_parent_code(VID_t dst_id, VID_t src_id) ;
   bool accumulate(const image_t* img, VID_t interval_num, VID_t dst_id, VID_t block_num, struct VertexAttr* src, VID_t &revisits, 
-      double factor, int parent_code);
+      double factor, int parent_code, std::string stage);
   void update_neighbors(const image_t* img, VID_t interval_num, struct VertexAttr* min_attr, VID_t block_num,
-          VID_t &revisits) ;
+          VID_t &revisits, std::string stage);
   void integrate_updated_ghost(VID_t interval_num, VID_t block_num) ;
   bool integrate_vertex(VID_t interval_num, VID_t block_num, struct VertexAttr* updated_attr, 
       bool ignore_KNOWN_NEW, bool is_root) ;
   //void create_integrate_thread(VID_t interval_num, VID_t block_num) ;
-  void march_narrow_band(const image_t* img, VID_t interval_num, VID_t block_num);
+  void march_narrow_band(const image_t* img, VID_t interval_num, VID_t block_num,
+      std::string stage);
   void create_march_thread(VID_t interval_num, VID_t block_num) ;
 #ifdef USE_MCP3D
   void load_tile(VID_t interval_num, mcp3d::MImage &mcp3d_tile) ;
 #endif
-  double reconstruct_interval(VID_t interval_num, image_t* tile) ;
-  void update();
+  double process_interval(VID_t interval_num, image_t* tile, std::string stage) ;
+  void update(std::string stage);
   template<typename vertex_t>
   void update_shardless(vector<vertex_t> roots,const vector<int> image_offsets,
            image_t* inimg1d, VID_t nvid,
@@ -587,7 +594,7 @@ inline double Recut<image_t>::calc_weight(image_t pixel) {
 template < class image_t>
 bool Recut<image_t>::accumulate(const image_t* img, VID_t interval_num, VID_t
     dst_id, VID_t block_num, struct VertexAttr* src, VID_t &revisits,
-    double factor, int parent_code) {
+    double factor, int parent_code, std::string stage) {
 
   auto dst = get_attr_vid(interval_num, block_num, dst_id, nullptr);
   auto dst_vox = get_img_val(img, dst_id);
@@ -881,7 +888,8 @@ int Recut<image_t>::get_parent_code(VID_t dst_id, VID_t src_id) {
 // check and add src vertices in star stencil
 template <class image_t>
 void Recut<image_t>::update_neighbors(const image_t* img, VID_t interval_num, struct VertexAttr* min_attr, VID_t block_num,
-        VID_t &revisits) {
+        VID_t &revisits,
+        std::string stage) {
 
   auto vid = min_attr->vid;
   VID_t i, j, k;
@@ -925,7 +933,7 @@ void Recut<image_t>::update_neighbors(const image_t* img, VID_t interval_num, st
         cout << "  w " << w << " h " << h << " d " << d << " dst_id " << dst_id << " vid " << vid << endl;
 #endif 
         bool selected = accumulate(img, interval_num, dst_id, block_num,
-            min_attr, revisits, factor, parent_code);
+            min_attr, revisits, factor, parent_code, stage);
         //if (selected)
           //min_attr->mark_connect(daughter);
       }
@@ -1116,7 +1124,8 @@ bool Recut<image_t>::check_blocks_finish(VID_t interval_num) {
 }
 
 template <class image_t>
-void Recut<image_t>::march_narrow_band(const image_t* img, VID_t interval_num, VID_t block_num) {
+void Recut<image_t>::march_narrow_band(const image_t* img, VID_t interval_num,
+    VID_t block_num, std::string stage) {
 
 #ifdef LOG_FULL
   struct timespec time0, time1;
@@ -1166,7 +1175,8 @@ void Recut<image_t>::march_narrow_band(const image_t* img, VID_t interval_num, V
       min_attr = dummy_min; // set as root and initialize
       assert(min_attr->root());
     }
-    update_neighbors(img, interval_num, min_attr, block_num, revisits);
+    update_neighbors(img, interval_num, min_attr, block_num, revisits,
+        stage);
   } 
 
 #ifdef LOG_FULL
@@ -1338,7 +1348,8 @@ int Recut<image_t>::thresh_pct(const image_t* img, VID_t interval_vert_num,
 }
 
 template<class image_t>
-double Recut<image_t>::reconstruct_interval(VID_t interval_num, image_t* tile) {
+double Recut<image_t>::process_interval(VID_t interval_num, image_t* tile,
+    std::string stage) {
 
   struct timespec presave_time, postmarch_time, iter_start,
                   start_iter_loop_time, end_iter_time, postsave_time; 
@@ -1383,10 +1394,10 @@ double Recut<image_t>::reconstruct_interval(VID_t interval_num, image_t* tile) {
 
 #ifdef TF
           // FIXME check passing tile ptr as ref
-          prevent_destruction.back()->silent_emplace([=, &tile]() { march_narrow_band(tile, interval_num, block_num); });
+          prevent_destruction.back()->silent_emplace([=, &tile]() { march_narrow_band(tile, interval_num, block_num, stage); });
           added_task = true;
 #else
-          async(launch::async, &Recut<tile>::march_narrow_band, this, tile, interval_num, block_num);
+          async(launch::async, &Recut<tile>::march_narrow_band, this, tile, interval_num, block_num, stage);
 #endif // TF
 
         }
@@ -1413,7 +1424,7 @@ double Recut<image_t>::reconstruct_interval(VID_t interval_num, image_t* tile) {
  #pragma omp parallel for
 #endif
     for(VID_t block_num = 0;block_num<nblocks;++block_num) {
-      march_narrow_band(tile, interval_num, block_num);
+      march_narrow_band(tile, interval_num, block_num, stage);
     }
 
 #endif // ASYNC
@@ -1572,7 +1583,7 @@ void Recut<image_t>::load_tile(VID_t interval_num, mcp3d::MImage &mcp3d_tile) {
 #endif // only defined in USE_MCP3D is
 
 template <class image_t>
-void Recut<image_t>::update() {
+void Recut<image_t>::update(std::string stage) {
   // init all timers
   struct timespec update_start_time, update_finish_time; 
   double global_no_io_time;
@@ -1640,7 +1651,7 @@ void Recut<image_t>::update() {
         assertm(false, "If USE_MCP3D macro is not set, this->params->generate_image must be set to True");
       }
 #endif
-      global_no_io_time += reconstruct_interval(interval_num, tile);
+      global_no_io_time += process_interval(interval_num, tile, stage);
     } // if the interval is active
 
     // rotate interval number until all finished
@@ -2290,12 +2301,13 @@ void Recut<image_t>::finalize(vector<vertex_t> &outtree) {
 #endif
 }
 
-//template <class image_t>
-//vector<MyMarker*>& Recut<image_t>::run() {
-  //this->initialize();
-  //this->update();
-  // FIXME this is stack allocated so would cause a segfault
-  //vector<MyMarker*> outtree;
-  //this->finalize(outtree);
-  //return outtree;
-//}
+template <class image_t>
+void Recut<image_t>::run_pipeline() {
+  this->initialize();
+  this->update("march");
+  //this->setup_radius();
+  this->update("radius");
+  //this->setup_prune();
+  //this->update("prune");
+  this->finalize(this->args->output_tree);
+}

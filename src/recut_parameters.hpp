@@ -6,6 +6,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <limits>
+#include "markers.h"
 
 class RecutParameters
 {
@@ -64,7 +65,7 @@ public:
     bool high_intensity() const  { return high_intensity_; }
     bool brightfield() const  { return brightfield_; }
     std::string marker_file_path() const  { return marker_file_path_; }
-    bool parallel_num() const  { return parallel_num_; }
+    bool paralel_num() const  { return parallel_num_; }
     double get_max_intensity() { return max_intensity_ ; }
     double get_min_intensity() { return min_intensity_ ; }
     // setters
@@ -176,6 +177,7 @@ public:
         }
     }
 
+    std::vector<MyMarker*> output_tree;
 private:
     RecutParameters recut_parameters_;
     std::string image_root_dir_, swc_path_;

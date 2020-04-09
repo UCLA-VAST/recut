@@ -13,10 +13,7 @@ int main(int argc, char * argv[])
 	args.PrintParameters();
 
     auto recut = Recut<uint16_t>(args);
-    recut.initialize();
-    recut.update();
-    std::vector<MyMarker*> outtree;
-    recut.finalize(outtree);
+    recut();
 
 	return 0;
 }

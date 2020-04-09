@@ -56,7 +56,7 @@ static void bench_critical_loop(benchmark::State& state) {
     // from our gen img of initialize update
     // does fastmarching, updated vertices
     // are mmap'd
-    recut.update();
+    recut.update("march");
 
     // to destroy the information for this run
     // so that it doesn't affect the next run
