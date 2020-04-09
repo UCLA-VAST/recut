@@ -496,10 +496,7 @@ TEST (Image, ReadWrite) {
   auto args = get_args(grid_size, slt_pct, tcase,
       GEN_IMAGE);
   auto recut = Recut<uint16_t>(args);
-  recut.initialize();
-  recut.update();
-  vector<MyMarker*> outtree;
-  recut.finalize(outtree);
+  recut();
 
   // check again
   uint16_t* check3 = read_tiff(fn, grid_size);
@@ -827,8 +824,8 @@ TEST (RecutPipeline, DISABLED_4tcase4orig50) {
          sz2,
          1,
          bkg_thresh);
-  EXPECT_NEAR(outtree_seq.size(), selected, expected * EXP_DEV_LOW);
-  //error = absdiff((VID_t) outtree_seq.size(), selected) / (double) selected;
+  EXPECT_NEAR(args.output_tree_seq.size(), selected, expected * EXP_DEV_LOW);
+  //error = absdiff((VID_t) args.output_tree_seq.size(), selected) / (double) selected;
   //cout << "Error: " << error * 100 << "%" << endl;
 }
 #endif // APP2
@@ -858,11 +855,8 @@ TEST (RecutPipeline, 4tcase0) {
   auto args = get_args(grid_size, slt_pct, tcase,
       GEN_IMAGE);
   auto recut = Recut<uint16_t>(args);
-  recut.initialize();
-  recut.update();
-  vector<MyMarker*> outtree;
-  recut.finalize(outtree);
-  ASSERT_EQ(outtree.size() , grid_size * grid_size * grid_size);
+  recut();
+  ASSERT_EQ(args.output_tree.size() , grid_size * grid_size * grid_size);
 }
 
 TEST (RecutPipeline, 4tcase0MultiInterval) {
@@ -878,13 +872,10 @@ TEST (RecutPipeline, 4tcase0MultiInterval) {
 
   auto recut = Recut<uint16_t>(args);
   //recut.mmap_ = true;
-  recut.initialize();
-  recut.update();
-  vector<MyMarker*> outtree;
-  recut.finalize(outtree);
+  recut();
 
   interval_base_immutable(get_used_vertex_num(grid_size, grid_size / 2));
-  ASSERT_EQ(outtree.size() , grid_size * grid_size * grid_size);
+  ASSERT_EQ(args.output_tree.size() , grid_size * grid_size * grid_size);
 }
 
 TEST (RecutPipeline, 4tcase1) {
@@ -894,11 +885,8 @@ TEST (RecutPipeline, 4tcase1) {
   auto args = get_args(grid_size, slt_pct, tcase, 
       GEN_IMAGE);
   auto recut = Recut<uint16_t>(args);
-  recut.initialize();
-  recut.update();
-  vector<MyMarker*> outtree;
-  recut.finalize(outtree);
-  ASSERT_EQ(outtree.size() , grid_size * grid_size * grid_size);
+  recut();
+  ASSERT_EQ(args.output_tree.size() , grid_size * grid_size * grid_size);
 }
 
 TEST (RecutPipeline, 4tcase2) {
@@ -908,11 +896,8 @@ TEST (RecutPipeline, 4tcase2) {
   auto args = get_args(grid_size, slt_pct, tcase, 
       GEN_IMAGE);
   auto recut = Recut<uint16_t>(args);
-  recut.initialize();
-  recut.update();
-  vector<MyMarker*> outtree;
-  recut.finalize(outtree);
-  ASSERT_EQ(outtree.size() , grid_size * grid_size * grid_size);
+  recut();
+  ASSERT_EQ(args.output_tree.size() , grid_size * grid_size * grid_size);
 }
 
 TEST (RecutPipeline, 4tcase3) {
@@ -922,11 +907,8 @@ TEST (RecutPipeline, 4tcase3) {
   auto args = get_args(grid_size, slt_pct, tcase, 
       GEN_IMAGE);
   auto recut = Recut<uint16_t>(args);
-  recut.initialize();
-  recut.update();
-  vector<MyMarker*> outtree;
-  recut.finalize(outtree);
-  ASSERT_EQ(outtree.size() , grid_size * grid_size * grid_size);
+  recut();
+  ASSERT_EQ(args.output_tree.size() , grid_size * grid_size * grid_size);
 }
 
 TEST (RecutPipeline, 4tcase4) {
@@ -936,12 +918,9 @@ TEST (RecutPipeline, 4tcase4) {
   auto args = get_args(grid_size, slt_pct, tcase, 
       GEN_IMAGE);
   auto recut = Recut<uint16_t>(args);
-  recut.initialize();
-  recut.update();
-  vector<MyMarker*> outtree;
-  recut.finalize(outtree);
+  recut();
   VID_t expected = (slt_pct / 100 ) * grid_size * grid_size * grid_size;
-  EXPECT_NEAR(outtree.size() , (slt_pct / 100 ) * grid_size * grid_size * grid_size, expected * EXP_DEV_LOW );
+  EXPECT_NEAR(args.output_tree.size() , (slt_pct / 100 ) * grid_size * grid_size * grid_size, expected * EXP_DEV_LOW );
 }
 
 TEST (RecutPipeline, DISABLED_ScratchPad) {
@@ -964,12 +943,9 @@ TEST (RecutPipeline, DISABLED_ScratchPad) {
     args.set_recut_parameters(params);
 
     auto recut = Recut<uint16_t>(args);
-    recut.initialize();
-    recut.update();
-    vector<MyMarker*> outtree;
-    recut.finalize(outtree);
-    ASSERT_NEAR(outtree.size(), expected, expected * EXP_DEV_LOW);
-    cout << "Expected " << expected << " found " << outtree.size() << endl;
+    recut();
+    ASSERT_NEAR(args.output_tree.size(), expected, expected * EXP_DEV_LOW);
+    cout << "Expected " << expected << " found " << args.output_tree.size() << endl;
     cout << endl << endl;
   }
 }
@@ -981,12 +957,9 @@ TEST (RecutPipeline, DISABLED_256tcase4sltpct10) {
   auto args = get_args(grid_size, slt_pct, tcase,
       GEN_IMAGE);
   auto recut = Recut<uint16_t>(args);
-  recut.initialize();
-  recut.update();
-  vector<MyMarker*> outtree;
-  recut.finalize(outtree);
+  recut();
   VID_t expected = (slt_pct / 100 ) * grid_size * grid_size * grid_size;
-  EXPECT_NEAR(outtree.size(), expected, expected * EXP_DEV_LOW);
+  EXPECT_NEAR(args.output_tree.size(), expected, expected * EXP_DEV_LOW);
 }
 
 // FIXME Fixture not used
@@ -1024,12 +997,9 @@ TEST (RecutPipeline, DISABLED_512tcase0sltpct100) {
 
   auto recut = Recut<uint16_t>(args);
   recut.mmap_ = true;
-  recut.initialize();
-  recut.update();
-  vector<MyMarker*> outtree;
-  recut.finalize(outtree);
+  recut();
   VID_t expected = (slt_pct / 100 ) * grid_size * grid_size * grid_size;
-  EXPECT_NEAR(outtree.size(), expected, expected * EXP_DEV_LOW);
+  EXPECT_NEAR(args.output_tree.size(), expected, expected * EXP_DEV_LOW);
   interval_base_immutable(get_used_vertex_num(grid_size, block_size));
 }
 
@@ -1047,12 +1017,9 @@ TEST (RecutPipeline, DISABLED_1024tcase4sltpct1) {
 
   auto recut = Recut<uint16_t>(args);
   recut.mmap_ = true;
-  recut.initialize();
-  recut.update();
-  vector<MyMarker*> outtree;
-  recut.finalize(outtree);
+  recut();
   VID_t expected = (slt_pct / 100 ) * grid_size * grid_size * grid_size;
-  EXPECT_NEAR(outtree.size(), expected, expected * EXP_DEV_LOW);
+  EXPECT_NEAR(args.output_tree.size(), expected, expected * EXP_DEV_LOW);
 }
 
 #ifdef APP2
@@ -1097,10 +1064,7 @@ TEST (RecutPipeline, DISABLED_SequentialMatch1024) {
   //error = absdiff((VID_t) outtree_seq.size(), (VID_t) selected) / (double) selected;
   cout << "Found: " << outtree_seq.size() << endl; // " Error: " << error * 100 << "%" << endl;
   auto recut = Recut<uint16_t>(args);
-  recut.initialize();
-  recut.update();
-  vector<MyMarker*> outtree;
-  recut.finalize(outtree);
+  recut();
   EXPECT_NEAR(outtree.size() , outtree_seq.size(), expected * EXP_DEV_LOW);
   delete[] inimg1d;
 }
@@ -1162,11 +1126,8 @@ TEST (RecutPipeline, DISABLED_StandardIntervalReadWrite256) {
   auto args = get_args(grid_size, slt_pct, tcase,
       GEN_IMAGE);
   auto recut = Recut<uint16_t>(args);
-  recut.initialize();
-  recut.update();
-  vector<MyMarker*> outtree;
-  recut.finalize(outtree);
-  EXPECT_NEAR(outtree.size(), selected, selected * EXP_DEV_LOW);
+  recut();
+  EXPECT_NEAR(args.output_tree.size(), selected, selected * EXP_DEV_LOW);
 }
 
 TEST (RecutPipeline, test_critical_loop) {
@@ -1196,11 +1157,8 @@ TEST (RecutPipeline, test_critical_loop) {
 
     // run
     auto recut= Recut<uint16_t>(args);
-    recut.initialize();
-    recut.update();
-    vector<MyMarker*> outtree;
-    recut.finalize(outtree);
-    ASSERT_NEAR(outtree.size() , selected, selected * EXP_DEV_LOW);
+    recut();
+    ASSERT_NEAR(args.output_tree.size() , selected, selected * EXP_DEV_LOW);
   }
 }
 
@@ -1216,11 +1174,8 @@ TEST (RecutPipeline, DISABLED_Mmap256) {
       GEN_IMAGE);
   auto recut_mmap = Recut<uint16_t>(args);
   recut_mmap.mmap_ = true;
-  recut_mmap.initialize();
-  recut_mmap.update();
-  vector<MyMarker*> outtree_mmap;
-  recut_mmap.finalize(outtree_mmap);
-  EXPECT_NEAR(outtree_mmap.size() , selected, selected * EXP_DEV_LOW);
+  recut_mmap();
+  EXPECT_NEAR(args.output_tree.size() , selected, selected * EXP_DEV_LOW);
 }
 
 TEST (RecutPipeline, DISABLED_MmapMultiInterval256) {
@@ -1243,11 +1198,8 @@ TEST (RecutPipeline, DISABLED_MmapMultiInterval256) {
   // set mmap
   recut_mmap_multi.mmap_ = true;
 
-  recut_mmap_multi.initialize();
-  recut_mmap_multi.update();
-  vector<MyMarker*> outtree_mmap_multi;
-  recut_mmap_multi.finalize(outtree_mmap_multi);
-  EXPECT_NEAR(outtree_mmap_multi.size() , selected, selected * EXP_DEV_LOW);
+  recut_mmap_multi();
+  EXPECT_NEAR(args.output_tree.size() , selected, selected * EXP_DEV_LOW);
 
 }
 
