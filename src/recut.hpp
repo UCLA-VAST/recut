@@ -12,15 +12,8 @@
 #include<map>
 #include<unistd.h>
 #include<type_traits>
-#include<omp.h>
 #include"super_interval.hpp" 
 #include"recut_parameters.hpp"
-//#include "recut_prune.h"
-//#include "common/mcp3d_common.hpp"
-#include"markers.h"
-#include"fastmarching_macro.h"
-//#include "image/mcp3d_voxel_types.hpp"
-//#include "image/mcp3d_image.hpp"
 
 // taskflow significantly increases load times, avoid loading it if possible
 #ifdef TF
@@ -29,6 +22,10 @@
 
 #ifndef ABS
 #define ABS(x) ((x) > 0 ? (x) : (-(x)))
+#endif
+
+#ifdef USE_OMP
+#include<omp.h>
 #endif
 
 using namespace std;
@@ -67,18 +64,15 @@ struct atomwrapper
   }
 };
 
-inline double DiffTime(struct timespec time1,struct timespec time2){return time2.tv_sec-time1.tv_sec+(time2.tv_nsec-time1.tv_nsec)*1e-9;}
+// use in conjunction with clock_gettime
+inline double DiffTime(struct timespec time1,struct timespec time2){
+  return time2.tv_sec-time1.tv_sec+(time2.tv_nsec-time1.tv_nsec)*1e-9;}
 
 /* returns available memory to system in bytes
  */
 inline size_t GetAvailMem()
 {
-#if defined(_WIN32)
-  MEMORYSTATUSEX status;
-  status.dwLength = sizeof(status);
-  GlobalMemoryStatusEx( &status );
-  return (size_t)status.ullAvailPhys;
-#elif defined(_SC_AVPHYS_PAGES)
+#if defined(_SC_AVPHYS_PAGES)
   map<string,size_t> mem_info;
   std::ifstream read_mem("/proc/meminfo");
   string read_buf,last_buf;
@@ -99,6 +93,8 @@ inline size_t GetAvailMem()
 #endif
 }
 
+//const std::vector<double> givals[256] = {22026.5,   20368, 18840.3, 17432.5, 16134.8, 14938.4, 13834.9, 12816.8, 
+
 class SuperInterval;
 template <class image_t>
 class Recut
@@ -110,7 +106,6 @@ public:
   size_t iteration;
   int cnn_type;
   float bound_band;
-  VID_t interval_vert_num;
   float stride;
   double restart_factor;
   bool restart_bool;
@@ -148,12 +143,42 @@ public:
   RecutCommandLineArgs* args;
   RecutParameters* params;
   vector<VID_t> interval_sizes;
+  const std::vector<double> givals{22026.5,   20368, 18840.3, 17432.5, 16134.8, 14938.4, 13834.9, 12816.8, 
+  11877.4, 11010.2, 10209.4,  9469.8, 8786.47, 8154.96, 7571.17, 7031.33, 
+  6531.99, 6069.98, 5642.39, 5246.52, 4879.94, 4540.36, 4225.71, 3934.08, 
+   3663.7, 3412.95, 3180.34,  2964.5, 2764.16, 2578.14, 2405.39,  2244.9, 
+  2095.77, 1957.14, 1828.24, 1708.36, 1596.83, 1493.05, 1396.43, 1306.47, 
+  1222.68, 1144.62, 1071.87, 1004.06, 940.819, 881.837, 826.806, 775.448, 
+  727.504, 682.734, 640.916, 601.845, 565.329, 531.193, 499.271, 469.412, 
+  441.474, 415.327, 390.848, 367.926, 346.454, 326.336, 307.481, 289.804, 
+  273.227, 257.678, 243.089, 229.396, 216.541, 204.469, 193.129, 182.475, 
+  172.461, 163.047, 154.195, 145.868, 138.033, 130.659, 123.717, 117.179, 
+  111.022,  105.22, 99.7524, 94.5979, 89.7372, 85.1526,  80.827, 76.7447, 
+   72.891, 69.2522, 65.8152, 62.5681, 59.4994, 56.5987,  53.856, 51.2619, 
+  48.8078, 46.4854, 44.2872, 42.2059, 40.2348, 38.3676, 36.5982, 34.9212, 
+  33.3313, 31.8236, 30.3934, 29.0364, 27.7485,  26.526,  25.365, 24.2624, 
+  23.2148, 22.2193,  21.273, 20.3733, 19.5176, 18.7037, 17.9292,  17.192, 
+  16.4902,  15.822, 15.1855,  14.579, 14.0011, 13.4503, 12.9251, 12.4242, 
+  11.9464, 11.4905, 11.0554, 10.6401, 10.2435, 9.86473, 9.50289, 9.15713, 
+  8.82667, 8.51075, 8.20867, 7.91974, 7.64333, 7.37884, 7.12569, 6.88334, 
+  6.65128, 6.42902,  6.2161, 6.01209, 5.81655, 5.62911, 5.44938, 5.27701, 
+  5.11167, 4.95303, 4.80079, 4.65467, 4.51437, 4.37966, 4.25027, 4.12597, 
+  4.00654, 3.89176, 3.78144, 3.67537, 3.57337, 3.47528, 3.38092, 3.29013, 
+  3.20276, 3.11868, 3.03773,  2.9598, 2.88475, 2.81247, 2.74285, 2.67577, 
+  2.61113, 2.54884, 2.48881, 2.43093, 2.37513, 2.32132, 2.26944, 2.21939, 
+  2.17111, 2.12454, 2.07961, 2.03625, 1.99441, 1.95403, 1.91506, 1.87744, 
+  1.84113, 1.80608, 1.77223, 1.73956, 1.70802, 1.67756, 1.64815, 1.61976, 
+  1.59234, 1.56587, 1.54032, 1.51564, 1.49182, 1.46883, 1.44664, 1.42522, 
+  1.40455,  1.3846, 1.36536,  1.3468, 1.3289, 1.31164, 1.29501, 1.27898, 
+  1.26353, 1.24866, 1.23434, 1.22056, 1.2073, 1.19456, 1.18231, 1.17055, 
+  1.15927, 1.14844, 1.13807, 1.12814, 1.11864, 1.10956, 1.10089, 1.09262, 
+  1.08475, 1.07727, 1.07017, 1.06345, 1.05709, 1.05109, 1.04545, 1.04015, 
+  1.03521,  1.0306, 1.02633, 1.02239, 1.01878,  1.0155, 1.01253, 1.00989, 
+  1.00756, 1.00555, 1.00385, 1.00246, 1.00139, 1.00062, 1.00015,       1};
 
   Recut() {};
   Recut(RecutCommandLineArgs& args) : args(&args),
     params(&(args.recut_parameters())), global_revisits(0),
-    max_int(args.recut_parameters().get_max_intensity()),
-    min_int(args.recut_parameters().get_min_intensity()),
     user_def_block_size(args.recut_parameters().block_size()),
     cnn_type(1), mmap_(false) {
 
@@ -180,10 +205,12 @@ public:
   template<typename T, typename T2>
   T2 safe_pop(T &heap, VID_t block_num, VID_t interval_num) ;
 
+  inline double calc_weight(image_t pixel); 
   image_t get_img_val(const image_t* img, VID_t vid) ;
   inline VID_t rotate_index(VID_t img_sub, const VID_t current, const VID_t neighbor, const VID_t block_size, const VID_t pad_block_size) ;
-  int thresh_pct(const image_t* img) ;
-  void get_max_min(const image_t* img) ;
+  int thresh_pct(const image_t* img, VID_t interval_vert_num,
+      const double foreground_percent) ;
+  void get_max_min(const image_t* img, VID_t interval_vert_num) ;
   inline VertexAttr* get_attr_vid(VID_t interval_num, VID_t block_num, VID_t vid, VID_t* output_offset) ;
   inline VertexAttr* get_attr(VID_t interval_num, VID_t block_num,
     VID_t ii, VID_t jj, VID_t kk) ;
@@ -214,8 +241,10 @@ public:
   //void create_integrate_thread(VID_t interval_num, VID_t block_num) ;
   void march_narrow_band(const image_t* img, VID_t interval_num, VID_t block_num);
   void create_march_thread(VID_t interval_num, VID_t block_num) ;
-  void setup_interval_and_image_view(VID_t interval_num, image_t* image) ;
-  double reconstruct_interval(VID_t interval_num, image_t* image) ;
+#ifdef USE_MCP3D
+  void load_tile(VID_t interval_num, mcp3d::MImage &mcp3d_tile) ;
+#endif
+  double reconstruct_interval(VID_t interval_num, image_t* tile) ;
   void update();
   template<typename vertex_t>
   void update_shardless(vector<vertex_t> roots,const vector<int> image_offsets,
@@ -530,12 +559,18 @@ image_t Recut<image_t>::get_img_val(const image_t* img, VID_t vid) {
 #ifdef FULL_PRINT
   //cout<< "\ti: "<<i<<" j: "<<j <<" k: "<< k<< " dst vid: " << vid << endl;
   //cout<< "\n\tia: "<<ia<<" ja: "<<ja <<" ka: "<< ka<< " interval vid: " << interval_vid << endl;
-  //cout << "total interval size: " << interval_vert_num << endl;
 #endif
-  assert(interval_vid < interval_vert_num);
   auto val = img[interval_vid];
   return val;
 }
+
+template <class image_t>
+inline double Recut<image_t>::calc_weight(image_t pixel) { 
+  auto idx = (int) ((pixel - this->min_int) / this->max_int * 255);
+  assertm(idx < 256, "givals index can not exceed 255");
+  assertm(idx >= 0, "givals index negative");
+  return this->givals[idx];
+};
 
 /**
  * accumulate is the core function of fast marching, it can only operate
@@ -579,7 +614,7 @@ bool Recut<image_t>::accumulate(const image_t* img, VID_t interval_num, VID_t
 
   // solve for update value
   // dst_id and src->vid are linear idx relative to full image domain
-  float new_dist = src->value + (float) (GIP(get_img_val(img, src->vid)) + GIP(dst_vox)) * 0.5 * factor;
+  float new_dist = src->value + (float) (calc_weight(get_img_val(img, src->vid)) + calc_weight(dst_vox)) * 0.5 * factor;
   if(dst->value > new_dist) {
 
 #ifdef RV
@@ -674,7 +709,7 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_num, VID_t block_num, VID_t
   if (!vec) {
     vec = new std::vector<struct VertexAttr>;
   }
-  vec->emplace_back(dst->edge_state, dst->value, dst->vid);
+  vec->emplace_back(dst->edge_state, dst->value, dst->vid, dst->radius);
   // Note: this block is unique to a single thread, therefore no other
   // thread could have this same key, since the keys are unique with
   // respect to their permutation. This means that we do not need to 
@@ -684,7 +719,7 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_num, VID_t block_num, VID_t
   mutator.assignValue(vec); // assign via mutator vs. relookup
 #else
   updated_ghost_vec[nb_interval_num][block_num][nb].emplace_back(dst->edge_state,
-      dst->value, dst->vid);
+      dst->value, dst->vid, dst->radius);
 #endif
   active_neighbors[nb_interval_num][nb][block_num] = true;
 
@@ -1214,7 +1249,7 @@ void Recut<image_t>::get_interval_offsets(const VID_t interval_num, vector<int>&
 }
 
 template <class image_t>
-void Recut<image_t>::get_max_min(const image_t* img) {
+void Recut<image_t>::get_max_min(const image_t* img, VID_t interval_vert_num) {
 
   double elapsed_max_min = omp_get_wtime();
 
@@ -1254,22 +1289,22 @@ void Recut<image_t>::get_max_min(const image_t* img) {
 #endif
 }
 
-/*
- * DEPRECATED
- */
+// deprecated
 template <class image_t>
-int Recut<image_t>::thresh_pct(const image_t* img) {
+int Recut<image_t>::thresh_pct(const image_t* img, VID_t interval_vert_num,
+    const double foreground_percent) {
+#ifdef LOG
   cout<<"Determine thresholding value"<<endl;
+#endif
   int above = -1; //store next bkg_thresh value above desired bkg pct
   int below = -1; 
-  float above_pct = 0.0; // pct bkg at next above value
-  float below_pct = 0.0; // last below percentage
-  image_t local_bkg_thresh = 0;
-  double bkg_pct = 1 - params->foreground_percent();
+  float above_diff_pct = 0.0; // pct bkg at next above value
+  float below_diff_pct = 0.0; // last below percentage
+  double bkg_pct = 1 - foreground_percent;
   // test different background threshold values until finding
   // percentage above bkg_pct or when all pixels set to background
   int bkg_count = 0;                          
-  while (1) {
+  for (image_t local_bkg_thresh=0;;local_bkg_thresh++) {
       // Count total # of pixels under current thresh
       bkg_count = 0;                          
       #pragma omp parallel for reduction (+:bkg_count)
@@ -1283,37 +1318,27 @@ int Recut<image_t>::thresh_pct(const image_t* img) {
 
       // Check if above desired percent background
       float test_pct = bkg_count / (double) interval_vert_num;
-      cout<<"local_bkg_thresh="<<local_bkg_thresh<<" ("<<100 * test_pct<<"%)"<<endl;
+      //cout<<"local_bkg_thresh="<<local_bkg_thresh<<" ("<<100 * test_pct<<"%)"<<endl;
       float test_diff = abs(test_pct - bkg_pct);
-      if ((test_pct >= bkg_pct) || (bkg_count == interval_vert_num)) { 
+      if (test_pct >= bkg_pct) { 
+          // failure here means:
+          // all pixels labeled as background
+          // if no thresh below was ever found
+          assertm(below != -1, "All pixels value of 0");
           above = local_bkg_thresh;
-          above_pct = test_diff;
-          break;
+          above_diff_pct = test_diff;
+          if (above_diff_pct <= below_diff_pct) return above;
+          else return below;
       } else {
+          // this must be entered once
           below = local_bkg_thresh;
-          below_pct = test_diff;
-      }
-      local_bkg_thresh++;
-  }
-
-  // all pixels labeled as background
-  if (bkg_count == interval_vert_num)  {
-      // if no thresh below was ever found throw error
-      if (below == -1) { throw std::runtime_error("All pixels value of 0");
-      } else {
-          return below;
+          below_diff_pct = test_diff;
       }
   }
-
-  // if no thresh below was ever found take above
-  if (below == -1) return above;
-  // if thresh above is closer to desired pct, return it
-  if (above_pct <= below_pct) return above;
-  return below;
 }
 
 template<class image_t>
-double Recut<image_t>::reconstruct_interval(VID_t interval_num, image_t* image) {
+double Recut<image_t>::reconstruct_interval(VID_t interval_num, image_t* tile) {
 
   struct timespec presave_time, postmarch_time, iter_start,
                   start_iter_loop_time, end_iter_time, postsave_time; 
@@ -1357,11 +1382,11 @@ double Recut<image_t>::reconstruct_interval(VID_t interval_num, image_t* image) 
 #endif
 
 #ifdef TF
-          // FIXME check passing image ptr as ref
-          prevent_destruction.back()->silent_emplace([=, &image]() { march_narrow_band(image, interval_num, block_num); });
+          // FIXME check passing tile ptr as ref
+          prevent_destruction.back()->silent_emplace([=, &tile]() { march_narrow_band(tile, interval_num, block_num); });
           added_task = true;
 #else
-          async(launch::async, &Recut<image_t>::march_narrow_band, this, image, interval_num, block_num);
+          async(launch::async, &Recut<tile>::march_narrow_band, this, tile, interval_num, block_num);
 #endif // TF
 
         }
@@ -1384,11 +1409,11 @@ double Recut<image_t>::reconstruct_interval(VID_t interval_num, image_t* image) 
 
 #else // OMP strategy
 
-#ifdef PARALLEL_FOR
+#ifdef USE_OMP
  #pragma omp parallel for
 #endif
     for(VID_t block_num = 0;block_num<nblocks;++block_num) {
-      march_narrow_band(image, interval_num, block_num);
+      march_narrow_band(tile, interval_num, block_num);
     }
 
 #endif // ASYNC
@@ -1409,7 +1434,7 @@ double Recut<image_t>::reconstruct_interval(VID_t interval_num, image_t* image) 
     //}
   //#else
 
-#ifdef PARALLEL_FOR
+#ifdef USE_OMP
  #pragma omp parallel for
 #endif
     for(VID_t block_num = 0;block_num<nblocks;++block_num)
@@ -1452,8 +1477,10 @@ double Recut<image_t>::reconstruct_interval(VID_t interval_num, image_t* image) 
   return no_io_time;
 }
 
+#ifdef USE_MCP3D
 /*
- * The interval size and shape define the "view" of the image
+ * The interval size and shape define the requested "view" of the image
+ * an image view is referred to as a tile
  * that we will load at one time. There is a one to one mapping
  * of an image view and an interval. There is also a one to 
  * one mapping between each voxel of the image view and the
@@ -1461,58 +1488,55 @@ double Recut<image_t>::reconstruct_interval(VID_t interval_num, image_t* image) 
  * initialized unvisited structs so they start off at arbitrary
  * location but are defined as they are visited. When mmap
  * is defined all intervals follow copy on write semantics
- * at the granularity of page from the same array of structs
+ * at the granularity of a system page from the same array of structs
  * file INTERVAL_BASE
  */
 template <class image_t>
-void Recut<image_t>::setup_interval_and_image_view(VID_t interval_num, image_t* image) {
-  struct timespec interval_start, interval_load, image_load;
-  clock_gettime(CLOCK_REALTIME, &interval_start);
-  // only load the intervals needed (those that are activated)
-  if (!super_interval.GetInterval(interval_num)->IsInMemory()) 
-    super_interval.GetInterval(interval_num)->LoadFromDisk();
-
-  clock_gettime(CLOCK_REALTIME,&interval_load);
+void Recut<image_t>::load_tile(VID_t interval_num, mcp3d::MImage &mcp3d_tile) {
 #ifdef LOG
-  cout<<"Load interval " << interval_num << " in "<<DiffTime(interval_start,interval_load)<<" sec."<<endl;
+  struct timespec start, image_load;
+  clock_gettime(CLOCK_REALTIME, &start);
 #endif
 
   vector<int> interval_offsets;
   vector<int> interval_extents;
   vector<int> interval_dims;
 
-  //// read data
-  //try {
-    //get_interval_offsets(interval_num, interval_offsets, interval_extents);
-    //// use unit strides only
-    //mcp3d::MImageBlock block(interval_offsets, interval_extents);
-    //image.SelectView(block, args->resolution_level());
-    //image.ReadData(true, "quiet");
-  //} catch(...) {
-    //MCP3D_MESSAGE("error in image io. neuron tracing not performed")
-    //throw;
-  //}
+  // read image data
+  // FIXME check that this has no state that can 
+  // be corrupted in a shared setting
+  // otherwise just create copies of it if necessary
+  assertm(!(this->params->generate_image), "If USE_MCP3D macro is set, this->params->generate_image must be set to False");
+  mcp3d_tile.ReadImageInfo(args->image_root_dir());
+  // read data
+  try {
+    get_interval_offsets(interval_num, interval_offsets, interval_extents);
+    // use unit strides only
+    mcp3d::MImageBlock block(interval_offsets, interval_extents);
+    mcp3d_tile.SelectView(block, args->resolution_level());
+    mcp3d_tile.ReadData(true);
+    //mcp3d_tile.ReadData(true, "quiet");
+  } catch(...) {
+    MCP3D_MESSAGE("error in mcp3d_tile io. neuron tracing not performed")
+    throw;
+  }
 
   clock_gettime(CLOCK_REALTIME, &image_load);
 #ifdef LOG
-  //cout<<"Load image in "<< DiffTime(interval_load, image_load)<<" sec."<<endl;
+  cout<<"Load image in "<< DiffTime(start, image_load)<<" sec."<<endl;
   //cout << "fg " << params->foreground_percent() << endl;
 #endif
 
-  //interval_dims = image.loaded_view().view_xyz_dims();
-  // FIXME for now interval dims always equal the image for simplicity
-  interval_dims = args->image_extents();
-  this->interval_vert_num = interval_dims[0] * (VID_t) interval_dims[1] * interval_dims[2];
+  interval_dims = mcp3d_tile.loaded_view().view_xyz_dims();
+  auto interval_vert_num = interval_dims[0] * (VID_t) interval_dims[1] * interval_dims[2];
 
   // assign thresholding value
   // foreground parameter takes priority
   // Note if either foreground or background percent is equal to or greater than 0 than it
   // was changed by a user so it takes precedence over the defaults
-  double elapsed = omp_get_wtime();
   if (params->foreground_percent() >= 0) {
-    this->bkg_thresh = thresh_pct(image);
-    //this->bkg_thresh = mcp3d::TopPercentile<image_t>(image.Volume<image_t>(0), interval_dims,
-        //params->foreground_percent());
+    this->bkg_thresh = mcp3d::TopPercentile<image_t>(mcp3d_tile.Volume<image_t>(0), interval_dims,
+        params->foreground_percent());
   } else { // if bkg set explicitly and foreground wasn't
     if (params->background_thresh() >= 0) {
       this->bkg_thresh = params->background_thresh();
@@ -1520,31 +1544,32 @@ void Recut<image_t>::setup_interval_and_image_view(VID_t interval_num, image_t* 
       this->bkg_thresh = 0;
     }
   }
-  elapsed = omp_get_wtime() - elapsed;
 
-  // assign max and min ints for this interval
-  if (this->max_int < 0) { 
-    get_max_min(image); 
-  } else if (this->min_int < 0) {
+  // assign max and min ints for this tile
+  if (this->args->recut_parameters().get_max_intensity() < 0) { 
+    get_max_min(mcp3d_tile.Volume<image_t>(0), interval_vert_num); 
+  } else if (this->args->recut_parameters().get_min_intensity() < 0) {
     if (this->bkg_thresh >= 0) {
       this->min_int = this->bkg_thresh;
     } else  {
-      get_max_min(image); 
+      get_max_min(mcp3d_tile.Volume<image_t>(0), interval_vert_num); 
     }
+  } else {
+    // otherwise set global max min from recut_parameters
+    this->max_int = this->args->recut_parameters().get_max_intensity();
+    this->min_int = this->args->recut_parameters().get_min_intensity();
   }
 
 #ifdef LOG_FULL
   cout << "max_int: " << +(this->max_int) << " min_int: " << +(this->min_int) << endl;
-#endif
-
-#ifdef LOG_FULL
-  cout<<"bkg_thresh value = "<<this->bkg_thresh<<endl;
-  printf("Thresholding wtime: %.1f\n", elapsed);
+  cout << "bkg_thresh value = "<<this->bkg_thresh<<endl;
   cout << "interval dims x " << interval_dims[2] << " y " << interval_dims[1] << " z " << interval_dims[0] << endl;
   cout << "interval offsets x " << interval_offsets[2] << " y " << interval_offsets[1] << " z " << interval_offsets[0] << endl;
   cout << "interval extents x " << interval_extents[2] << " y " << interval_extents[1] << " z " << interval_extents[0] << endl;
 #endif
-} // end setup interval
+} // end load_tile()
+
+#endif // only defined in USE_MCP3D is
 
 template <class image_t>
 void Recut<image_t>::update() {
@@ -1564,22 +1589,6 @@ void Recut<image_t>::update() {
   //VID_t final_inner_iter = 0;
   VID_t outer_iteration_idx = 0;
   VID_t interval_num = 0;
-  // read image data
-  // FIXME check that this has no state that can 
-  // be corrupted in a shared setting
-  // otherwise just create copies of it if necessary
-  image_t* image;
-  assertm(this->params->generate_image, "Currently params->generate_image must be set to true");
-  if (this->params->generate_image) {
-    assertm(this->generated_image, "Image not generated by intialize");
-    image = this->generated_image;
-  } else {
-#ifdef IMAGE
-    mcp3d::MImage image;
-    image.ReadImageInfo(args->image_root_dir());
-    assertm(false, "set image to image.Volume(0)");
-#endif
-  }
 
   // begin processing all intervals
   // note this is a while since, intervals can be
@@ -1596,9 +1605,42 @@ void Recut<image_t>::update() {
     // only start intervals that have active processing to do
     if (super_interval.GetInterval(interval_num)->IsActive()) {
 
-      // Setup interval
-      setup_interval_and_image_view(interval_num, image);
-      global_no_io_time += reconstruct_interval(interval_num, image);
+#ifdef LOG
+      struct timespec interval_start, interval_load;
+      clock_gettime(CLOCK_REALTIME, &interval_start);
+#endif
+
+      // only load the intervals that are not already mapped or have been read already
+      // calling load when already present will throw
+      if (!super_interval.GetInterval(interval_num)->IsInMemory()) 
+        super_interval.GetInterval(interval_num)->LoadFromDisk();
+
+#ifdef LOG
+      clock_gettime(CLOCK_REALTIME,&interval_load);
+      cout<<"Load interval " << interval_num << " in "<<DiffTime(interval_start,interval_load)<<" sec."<<endl;
+#endif
+
+      image_t* tile;
+#ifdef USE_MCP3D
+      // mcp3d_tile must be kept in scope during the processing
+      // of this interval otherwise dangling reference then seg fault
+      // on image access
+      mcp3d::MImage mcp3d_tile;
+      load_tile(interval_num, mcp3d_tile);
+      // FIXME need a setup image for both
+      // This all needs to be designed in a way that keeps image around
+      tile = mcp3d_tile.Volume<image_t>(0);
+#else
+      // pre-generated images are for testing, or when an outside
+      // project wants to input images instead
+      if (this->params->generate_image) {
+        assertm(this->generated_image, "Image not generated or set by intialize");
+        tile = this->generated_image;
+      } else {
+        assertm(false, "If USE_MCP3D macro is not set, this->params->generate_image must be set to True");
+      }
+#endif
+      global_no_io_time += reconstruct_interval(interval_num, tile);
     } // if the interval is active
 
     // rotate interval number until all finished
@@ -1925,80 +1967,47 @@ void Recut<image_t>::initialize_globals(const VID_t& nintervals, const VID_t& nb
 template < class image_t>
 void Recut<image_t>::initialize() {
 
-//#ifdef LOG
-// stamp the compile time config
-// so that past logs are explicit about
-// their flags
-
-#ifdef RV
-  cout << "RV" << endl;
-#endif
-
-#ifdef NO_RV
-  cout << "NO_RV" << endl;
-#endif
-
-#ifdef MMAP
-  cout << "MMAP" << endl;
-#endif
-
-#ifdef ASYNC
-  cout << "ASYNC" << endl;
-#endif
-
-#ifdef TF
-  cout << "TF" << endl;
-#endif
-
-#ifdef CONCURRENT_MAP
-  cout << "CONCURRENT_MAP" << endl;
-#endif
-
-#ifdef USE_HUGE_PAGE
-  cout << "USE_HUGE_PAGE" << endl;
-#endif
-
-#ifdef PARALLEL_FOR
- cout << "PARALLEL_FOR" << endl;
+#ifdef USE_OMP
+  omp_set_num_threads(params->user_thread_count());
  cout << "User specific thread count " << params->user_thread_count() << endl;
 #endif
 
-//#endif // LOG
-
-//#ifdef LOG
-//#endif
-
-  omp_set_num_threads(params->user_thread_count());
   struct timespec time0,time1,time2, time3;
   uint64_t root_64bit;
 
+#ifdef USE_MCP3D
   // determine the image size
-  //mcp3d::MImage global_image;
-  //global_image.ReadImageInfo(args->image_root_dir());
-  //if (global_image.image_info().empty())
-  //{
-      //MCP3D_MESSAGE("no supported image formats found in " +
-                    //args->image_root_dir() + ", do nothing.")
-      //throw;
-  //}
-  //global_image.SaveImageInfo(); // save to __image_info__.json
-  //auto temp = global_image.xyz_dims(args->resolution_level()); 
+  mcp3d::MImage global_image;
+  global_image.ReadImageInfo(args->image_root_dir());
+  if (global_image.image_info().empty())
+  {
+      MCP3D_MESSAGE("no supported image formats found in " +
+                    args->image_root_dir() + ", do nothing.")
+      throw;
+  }
+  global_image.SaveImageInfo(); // save to __image_info__.json
+  // reflects the total global image domain 
+  auto global_image_dims = global_image.xyz_dims(args->resolution_level()); 
+#else
+  // for generated image runs trust the args->image_extents
+  // to reflect the total global image domain 
+  // see get_args() in utils.hpp
+  auto global_image_dims = args->image_extents();
+#endif
 
   // these 3 are in z y x order
   vector<int> off; 
   vector<int> ext;
   vector<int> end;
   
-  // FIXME the total reference image size for now will just be the input processing size
-  auto temp = args->image_extents();
   // account for image_offsets and args->image_extents()
   off = args->image_offsets(); // default start is {0, 0, 0} for full image
   ext = args->image_extents(); // default is {0, 0, 0} for full image
   // protect faulty out of bounds input if extents goes beyond
   // domain of full image, note: z, y, x order
-  auto endx = ext[2] ? min(off[2] + ext[2], temp[2]) : temp[2];
-  auto endy = ext[1] ? min(off[1] + ext[1], temp[1]) : temp[1];
-  auto endz = ext[0] ? min(off[0] + ext[0], temp[0]) : temp[0];
+  auto endx = ext[2] ? min(off[2] + ext[2], global_image_dims[2]) : global_image_dims[2];
+  auto endy = ext[1] ? min(off[1] + ext[1], global_image_dims[1]) : global_image_dims[1];
+  auto endz = ext[0] ? min(off[0] + ext[0], global_image_dims[0]) : global_image_dims[0];
   end = {endz, endy, endx}; // sanitized end pixel in each dimension
   // protect faulty offset values
   assert(endx - off[2] > 0);
@@ -2066,14 +2075,17 @@ void Recut<image_t>::initialize() {
   // there would be overflow
   if (nintervals > (2<<16) - 1) {
     cout << "Number of intervals too high: " << nintervals << " try increasing interval size";
+    assert(false);
   }
   if (nintervals > (2<<16) - 1) {
     cout << "Number of blocks too high: " << nblocks << " try increasing block size";
+    assert(false);
   }
   if (nvid > MAX_INTERVAL_VERTICES) {
     cout << "Number of total vertices too high: " << nvid << 
       " current max at: " << MAX_INTERVAL_VERTICES << 
       " try increasing MAX_INTERVAL_BASE and rerunning interval base generation in recut_test.hpp:CreateIntervalBase";
+    assert(false);
   }
 
   clock_gettime(CLOCK_REALTIME,&time0);
@@ -2096,6 +2108,9 @@ void Recut<image_t>::initialize() {
 #endif
 
   if (this->params->generate_image) {
+    this->bkg_thresh = 0;
+    this->min_int = 0;
+    this->max_int = 1;
     // This is where we set image to our desired values
     this->generated_image = new image_t[this->img_vox_num];
     // add the single root vid to the global state

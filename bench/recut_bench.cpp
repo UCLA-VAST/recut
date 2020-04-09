@@ -3,7 +3,7 @@
 #include <cstdlib> //rand srand
 #include <ctime> // for srand
 
-#ifdef IMAGE
+#ifdef USE_MCP3D
 #define GEN_IMAGE false
 #else
 #define GEN_IMAGE true

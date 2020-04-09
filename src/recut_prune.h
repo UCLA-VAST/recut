@@ -368,55 +368,52 @@ template<class T> bool happ(vector<MyMarker*> &inswc, vector<MyMarker*> & outswc
 			double sum_sig = 0;
 			double sum_rdc = 0;
 
-			if(1)
-			{
-				MyMarker * p = leaf_marker;
-				while(true) 
-				{ 
-					if(tmpimg1d[p->ind(sz0, sz01)] == 0){sum_rdc += inimg1d[p->ind(sz0, sz01)];}
-					else
-					{
-						if(0) sum_sig += inimg1d[p->ind(sz0, sz01)]; // simple stragety
-						if(1)// if sphere overlap
-						{
-							int r = p->radius;
-							int64_t x1 = p->x + 0.5;
-							int64_t y1 = p->y + 0.5;
-							int64_t z1 = p->z + 0.5;
-							double sum_sphere_size = 0.0;
-							double sum_delete_size = 0.0;
-							for(int64_t kk = -r; kk <= r; kk++)
-							{
-								int64_t z2 = z1 + kk;
-								if(z2 < 0 || z2 >= sz2) continue;
-								for(int64_t jj = -r; jj <= r; jj++)
-								{
-									int64_t y2 = y1 + jj;
-									if(y2 < 0 || y2 >= sz1) continue;
-									for(int64_t ii = -r; ii <= r; ii++)
-									{
-										int64_t x2 = x1 + ii;
-										if(x2 < 0 || x2 >= sz0) continue;
-										if(kk*kk + jj*jj + ii*ii > r*r) continue;
-										int64_t ind2 = z2 * sz01 + y2 * sz0 + x2;
-										sum_sphere_size++;
-										if(tmpimg1d[ind2] != inimg1d[ind2]){sum_delete_size ++;}
-									}
-								}
-							}
-							// the intersection between two sphere with equal size and distance = R is 5/16 (0.3125)
-							// sum_delete_size/sum_sphere_size should be < 5/16 for outsize points
-							if(sum_sphere_size > 0 && sum_delete_size/sum_sphere_size > 0.1) 
-							{
-								sum_rdc += inimg1d[p->ind(sz0, sz01)];
-							}
-							else sum_sig += inimg1d[p->ind(sz0, sz01)];
-						}
-					}
-					if(p == root_marker) break;
-					p = p->parent; 
-				}
-			}
+            MyMarker * p = leaf_marker;
+            while(true) 
+            { 
+                if(tmpimg1d[p->ind(sz0, sz01)] == 0){sum_rdc += inimg1d[p->ind(sz0, sz01)];}
+                else
+                {
+                    if(0) sum_sig += inimg1d[p->ind(sz0, sz01)]; // simple stragety
+                    if(1)// if sphere overlap
+                    {
+                        int r = p->radius;
+                        int64_t x1 = p->x + 0.5;
+                        int64_t y1 = p->y + 0.5;
+                        int64_t z1 = p->z + 0.5;
+                        double sum_sphere_size = 0.0;
+                        double sum_delete_size = 0.0;
+                        for(int64_t kk = -r; kk <= r; kk++)
+                        {
+                            int64_t z2 = z1 + kk;
+                            if(z2 < 0 || z2 >= sz2) continue;
+                            for(int64_t jj = -r; jj <= r; jj++)
+                            {
+                                int64_t y2 = y1 + jj;
+                                if(y2 < 0 || y2 >= sz1) continue;
+                                for(int64_t ii = -r; ii <= r; ii++)
+                                {
+                                    int64_t x2 = x1 + ii;
+                                    if(x2 < 0 || x2 >= sz0) continue;
+                                    if(kk*kk + jj*jj + ii*ii > r*r) continue;
+                                    int64_t ind2 = z2 * sz01 + y2 * sz0 + x2;
+                                    sum_sphere_size++;
+                                    if(tmpimg1d[ind2] != inimg1d[ind2]){sum_delete_size ++;}
+                                }
+                            }
+                        }
+                        // the intersection between two sphere with equal size and distance = R is 5/16 (0.3125)
+                        // sum_delete_size/sum_sphere_size should be < 5/16 for outsize points
+                        if(sum_sphere_size > 0 && sum_delete_size/sum_sphere_size > 0.1) 
+                        {
+                            sum_rdc += inimg1d[p->ind(sz0, sz01)];
+                        }
+                        else sum_sig += inimg1d[p->ind(sz0, sz01)];
+                    }
+                }
+                if(p == root_marker) break;
+                p = p->parent; 
+            }
 
 			//double sum_sig = total_sum_int - sum_rdc;
 			if(!seg->parent || sum_rdc == 0.0 || (sum_sig/sum_rdc >= SR_RATIO && sum_sig >= 1.0 * T_max))

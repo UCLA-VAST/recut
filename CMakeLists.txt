@@ -42,24 +42,46 @@ set(HEADER
   ${PROJECT_SOURCE_DIR}/src/markers.h
   )
 
+# must be defined before the executable or library
+# is defined, otherwise it is ignored
+# adding ../lib makes any executables truly relocatable
+# without it if they are make install, RPATH 
+# will not link shared dependencies properly
+#set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
+
 add_executable(recut ${SRC} ${HEADER} ${PARAMS})
 add_executable(recut_test test/recut_test.cpp ${HEADER} ${MARKERS} ${PARAMS})
 add_executable(recut_bench bench/recut_bench.cpp ${HEADER} ${MARKERS} ${PARAMS})
 
 include_directories(include)
 
-target_link_libraries(recut_test PUBLIC gtest)
-target_link_libraries(recut_bench PUBLIC benchmark)
+target_link_libraries(recut_test PRIVATE gtest)
+target_link_libraries(recut_bench PRIVATE benchmark)
 
 set(ALL_TARGETS recut recut_test recut_bench)
 foreach(I ${ALL_TARGETS})
   message(STATUS "${I}")
-  target_link_libraries(${I} PUBLIC OpenMP::OpenMP_CXX)
+  target_link_libraries(${I} PRIVATE OpenMP::OpenMP_CXX)
   target_compile_features(${I} PRIVATE cxx_std_17)
   #target_compile_definitions(${I} PUBLIC USE_HUGE_PAGE=${USE_HUGE_PAGE})
   # these are the actual flags passed during compilation
   target_compile_options(${I} PRIVATE -fno-omit-frame-pointer -g)
   install(TARGETS ${I} DESTINATION ${PROJECT_SOURCE_DIR}/bin)
+  target_include_directories(${I} PRIVATE ${PROJECT_SOURCE_DIR}/include)
+  target_link_libraries(${I} PRIVATE
+    ${PROJECT_SOURCE_DIR}/lib/libboost_filesystem.so.1.65.1
+    ${PROJECT_SOURCE_DIR}/lib/libboost_serialization.so.1.65.1
+    ${PROJECT_SOURCE_DIR}/lib/libboost_system.so.1.65.1
+    ${PROJECT_SOURCE_DIR}/lib/libhdf5.so.100.1.0
+    ${PROJECT_SOURCE_DIR}/lib/libhdf5.so.1.10.1
+    ${PROJECT_SOURCE_DIR}/lib/libmcp3d_algorithm.so
+    ${PROJECT_SOURCE_DIR}/lib/libmcp3d_common.so
+    ${PROJECT_SOURCE_DIR}/lib/libmcp3d_image.so
+    ${PROJECT_SOURCE_DIR}/lib/libmcp3d_project_structure.so
+    ${PROJECT_SOURCE_DIR}/lib/libopencv_imgcodecs.so
+    ${PROJECT_SOURCE_DIR}/lib/libopencv_core.so
+  )
+  set_target_properties(${I} PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
 endforeach()
 
 add_test(NAME recut_test COMMAND ${PROJECT_SOURCE_DIR}/bin/recut_test)

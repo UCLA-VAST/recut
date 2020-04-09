@@ -98,7 +98,8 @@ public:
     void set_max_intensity(double max_intensity) { max_intensity_ = max_intensity; }
     void set_min_intensity(double min_intensity) { min_intensity_ = min_intensity; }
     // no getters or setters
-    int generate_image, tcase, slt_pct;
+    bool generate_image;
+    int tcase, slt_pct;
     uint64_t selected, root_vid;
 
 private:

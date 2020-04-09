@@ -8,13 +8,16 @@
 #include <string>
 #include <fcntl.h>
 #include <bits/stdc++.h>
-//#include <opencv2/opencv.hpp> // imwrite
-//#include "image/mcp3d_voxel_types.hpp" // convert to CV type
-//#include "common/mcp3d_utility.hpp" // PadNumStr
+
+#ifdef USE_MCP3D
+#include <opencv2/opencv.hpp> // imwrite
+#include "image/mcp3d_voxel_types.hpp" // convert to CV type
+#include "common/mcp3d_utility.hpp" // PadNumStr
+#endif
 
 #define EXP_DEV_LOW .05
 
-#ifdef IMAGE
+#ifdef USE_MCP3D
 #define GEN_IMAGE false
 #else
 #define GEN_IMAGE true
@@ -231,21 +234,24 @@ TEST (Install, CreateIntervalBase) {
   bool rerun = false; // change to true if MAX_INTERVAL_VERTICES or the vertex struct has been changed in vertex_attr.h
   auto fn = INTERVAL_BASE;
   VID_t nvid = MAX_INTERVAL_VERTICES;
-  bool mmap_flag = true;
+  bool mmap_flag = false;
   if (!exists(fn) || rerun) {
     VID_t size = sizeof(VertexAttr) * nvid;
     cout << "Start creating " << fn << " cached total size: ~" << (size /
         (2<<19)) << " MB" << " for max vertices: " <<
       nvid << endl; // set the default values
 
-    // open output
-    remove_all(fn); // make sure it's an overwrite
+    // make sure it's an overwrite
+    if (exists(fn)) {
+      // delete previous
+      assertm(unlink(fn) != -1, "unlink not successful"); 
+      ASSERT_FALSE(exists(fn));
+    }
     struct VertexAttr* ptr;
     int fd;
     std::ofstream ofile;
     if (mmap_flag) {
-      //fd = open(fn, O_RDWR);
-      fd = open(fn, O_CREAT);
+      assertm((fd = open(fn, O_CREAT)) != -1, "open not successful");
       assert((ptr = (struct VertexAttr*) mmap(nullptr, size, PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, fd, 0)) != MAP_FAILED);
 
       for (VID_t i=0; i < nvid; i++) {
@@ -366,7 +372,7 @@ TEST (Install, DISABLED_CreateMarkersImages) {
   // Note this will delete anything in the
   // same directory before writing
   // tcase 5 is deprecated
-  std::vector<int> grid_sizes = {4, 8, 16, 32, 64, 128, 512};
+  std::vector<int> grid_sizes = {2, 4, 8, 16, 32, 64, 128, 256, 512};
   std::vector<int> testcases = {4, 3, 2, 1, 0};
   std::vector<double> selected_percents = {1, 10, 50, 100};
 
@@ -419,12 +425,12 @@ TEST (Install, DISABLED_CreateMarkersImages) {
         fn_marker = fn_marker + std::to_string((int) slt_pct);
         fn_marker = fn_marker + delim;
 
-#ifdef IMAGE
+#ifdef USE_MCP3D
         VID_t selected = tol_sz * (slt_pct / (float) 100); // for tcase 4
         // always select at least the root
         if (selected == 0) selected = 1;
         uint16_t* inimg1d = new uint16_t[tol_sz];
-        // sets all to 0 for tcase 4 and 5
+        // sets all to 0 for tcase 4
         get_grid(tcase, inimg1d, grid_size); 
         if (tcase == 4) 
           mesh_grid(root->vid, inimg1d, selected, grid_size); 
@@ -456,7 +462,7 @@ TEST (Install, DISABLED_CreateMarkersImages) {
   }
 }
 
-#ifdef IMAGE
+#ifdef USE_MCP3D
 TEST (Image, ReadWrite) {
   auto grid_size = 2;
   auto tcase = 4;
@@ -471,7 +477,7 @@ TEST (Image, ReadWrite) {
   VID_t selected = tol_sz * (slt_pct / 100); // for tcase 4
   //cout << endl << "Select: " << selected << " (" << slt_pct << "%)" << endl;
   uint16_t* inimg1d = new uint16_t[tol_sz];
-  get_grid(tcase, inimg1d, grid_size); // sets all to 0 for tcase > 3
+  get_grid(tcase, inimg1d, grid_size); // sets all to 0 for tcase 4
   mesh_grid(get_central_vid(grid_size), inimg1d, selected, grid_size);
   //print_image(inimg1d, grid_size * grid_size * grid_size);
   write_tiff(inimg1d, fn, grid_size) ;
@@ -633,6 +639,41 @@ TEST(VertexAttr, CopyOp) {
   ASSERT_NE(v1 , v2); // make sure they not just the same obj
 }
 
+TEST(Tcase, ByEye) { 
+  int grid_size = 8;
+  int slt_pct = 10;
+  VID_t tol_sz = (VID_t) grid_size * grid_size * grid_size;
+  uint16_t* inimg1d = new uint16_t[tol_sz];
+  uint16_t* radii_grid = new uint16_t[tol_sz];
+  uint16_t* radii_grid_xy = new uint16_t[tol_sz];
+  uint16_t bkg_thresh =0;
+  std::vector<int> tcases = {5};
+  for (auto& tcase : tcases) {
+    // build grid
+    get_grid(tcase, inimg1d, grid_size); 
+    if (tcase == 4) {
+        VID_t selected = tol_sz * (slt_pct / (float) 100); // for tcase 4
+        // always select at least the root
+        if (selected == 0) selected = 1;
+        // sets all to 0 for tcase 4
+        mesh_grid(get_central_vid(grid_size), inimg1d, selected, grid_size); 
+    }
+    std::cout << "Image grid" << endl;
+    print_image_3D(inimg1d, grid_size);
+
+    // build bkg radius
+    for (VID_t i = 0; i < tol_sz; i++) {
+      radii_grid[i] = get_radius_accurate(inimg1d, grid_size, i, bkg_thresh);
+      radii_grid_xy[i] = get_radius_hanchuan_XY(inimg1d, grid_size, i, bkg_thresh);
+    }
+    std::cout << "Accurate radii grid" << endl;
+    print_image_3D(radii_grid, grid_size);
+    std::cout << "XY radii grid" << endl;
+    print_image_3D(radii_grid_xy, grid_size);
+  }
+  delete[] inimg1d;
+}
+
 #ifdef APP2
 TEST(DISABLED_EndToEnd, Full) {
 
@@ -689,7 +730,7 @@ TEST(DISABLED_EndToEnd, Full) {
         VID_t selected = tol_sz * (slt_pct / 100); // for tcase 4
         cout << endl << "Select: " << selected << " (" << slt_pct << "%)" << endl;
         if (slt_pct == 100) { tcase = 1; }
-        get_grid(tcase, inimg1d, grid_size); // sets all to 0 for tcase > 3
+        get_grid(tcase, inimg1d, grid_size); // sets all to 0 for tcase 4
         if (tcase == 4) { mesh_grid(root->vid, inimg1d, selected, grid_size); }
         if (tcase == 5) { selected = lattice_grid(root->vid, inimg1d, line_per_dim, grid_size); }
 
@@ -1014,7 +1055,7 @@ TEST (RecutPipeline, DISABLED_1024tcase4sltpct1) {
   EXPECT_NEAR(outtree.size(), expected, expected * EXP_DEV_LOW);
 }
 
-#ifdef IMAGE
+#ifdef APP2
 TEST (RecutPipeline, DISABLED_SequentialMatch1024) {
   auto grid_size = 1024;
   double slt_pct = 10;
@@ -1136,7 +1177,8 @@ TEST (RecutPipeline, test_critical_loop) {
     grid_size = walk_size;
     double slt_pct = 1;
     int tcase = 4;
-    auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
+    auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE,
+        true);
     auto selected = args.recut_parameters().selected;
 
     cout << walk_size << endl;

@@ -20,7 +20,6 @@ using std::ios;
 //#define INTERVAL_BASE "/tmp/interval_base_32.bin";
 
 typedef uint64_t VID_t; // for multi-interval runs
-#include "utils.hpp"
 
 // pre-generated array of vertices initialized wth desired default values, useful for mmap
 #define INTERVAL_BASE "/tmp/interval_base_64bit.bin" // must match the VID_t bit length type
@@ -37,7 +36,7 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 //#define INTERVAL_BASE "/mnt/huge/interval_base_64bit.bin" // must match the VID_t bit length type
 
 // Define your logging level in order of increasing additive levels of specificity
-//#define LOG // overview logging details of the recut run, this suffices for basic timing info, granularity at interval level
+#define LOG // overview logging details of the recut run, this suffices for basic timing info, granularity at interval level
 //#define LOG_FULL // roughly block by block processing granularity
 //#define FULL_PRINT // vertex by vertex behavior
 //#define HLOG_FULL // log the behavior of the block heap methods
@@ -48,8 +47,10 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 
 // determines read speeds of vertex info from INTERVAL_BASE
 #define MMAP
-#define USE_HUGE_PAGE
-//#define PARALLEL_FOR
+//#define USE_HUGE_PAGE
+//#define USE_MCP3D
+
+//#define USE_OMP
 
 // Parallel strategies other than OMP defined here
 //#define ASYNC // run without TF macro to use the std::async instead of TF thread pool, warning much much slower not recommended
@@ -67,6 +68,8 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
   typedef junction::ConcurrentMap_Leapfrog<uint64_t, std::vector<struct VertexAttr>*> ConcurrentMap64;
   typedef junction::ConcurrentMap_Leapfrog<uint32_t, std::vector<struct VertexAttr>*> ConcurrentMap32;
 #endif
+
+#include "utils.hpp"
 
 struct bitfield {
     uint8_t field_;
@@ -140,14 +143,24 @@ struct VertexAttr {
   handle_t handle; // same type as VID_t
   float value; // distance to source: 4 bytes
   struct bitfield edge_state; // most sig. bits (little-endian) refer to state : 1 bytes
+  uint8_t radius;
 
-  VertexAttr() : edge_state(192), value(numeric_limits<float>::max()), vid(numeric_limits<VID_t>::max()), handle(numeric_limits<handle_t>::max()) {} 
-  VertexAttr(float value) : edge_state(192), value(value), vid(numeric_limits<VID_t>::max()), handle(numeric_limits<handle_t>::max()) {} 
+  // constructors
+  VertexAttr() : edge_state(192), value(numeric_limits<float>::max()),
+    vid(numeric_limits<VID_t>::max()), handle(numeric_limits<handle_t>::max()), 
+    radius(numeric_limits<uint8_t>::max()) {} 
+
+  VertexAttr(float value) : edge_state(192), value(value),
+    vid(numeric_limits<VID_t>::max()), handle(numeric_limits<handle_t>::max()),
+    radius(numeric_limits<uint8_t>::max())  {} 
+
   // copy constructor
-  VertexAttr(const VertexAttr& a) : edge_state(a.edge_state), value(a.value), vid(a.vid) {} 
+  VertexAttr(const VertexAttr& a) : edge_state(a.edge_state), value(a.value),
+    vid(a.vid), radius(a.radius) {} 
+
   // emplace back constructor
-  VertexAttr(struct bitfield edge_state, float value, VID_t vid) : 
-    edge_state(edge_state), value(value), vid(vid) {}
+  VertexAttr(struct bitfield edge_state, float value, VID_t vid, uint8_t radius) : 
+    edge_state(edge_state), value(value), vid(vid), radius(radius) {}
 
   bool root() {
     return (!edge_state.test(7) && !edge_state.test(6) ) ; // 00XX XXXX ROOT
@@ -162,6 +175,8 @@ struct VertexAttr {
     for (int i=7; i >= 0; i--) {
       descript += edge_state.test(i) ? "1" : "0";
     }
+    descript += "\n";
+    descript += "radius:" + std::to_string(radius);
     descript += "\n";
     return descript;
   }
@@ -211,6 +226,7 @@ struct VertexAttr {
       edge_state.field_ = a.edge_state.field_;
       vid = a.vid;
       value = a.value;
+      radius = a.radius;
       // do not copy handle_t
       return *this;
   }
@@ -219,14 +235,16 @@ struct VertexAttr {
   {
     return (value == a.value) &&
         (vid == a.vid) &&
-        (edge_state.field_ == a.edge_state.field_);
+        (edge_state.field_ == a.edge_state.field_) &&
+        (radius == a.radius);
   }
 
   bool operator!=(const VertexAttr& a) const
   {
     return (value != a.value) ||
         (vid != a.vid) ||
-        (edge_state.field_ != a.edge_state.field_);
+        (edge_state.field_ != a.edge_state.field_) ||
+        (radius == a.radius);
   }
 
   void mark_selected() {
