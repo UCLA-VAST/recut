@@ -4,7 +4,7 @@
 # jobs leveraging asynctasks.vim and asyncrun.vim
 
 [project-init]
-command=rm -rf build && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug -DUSE_HUGE_PAGE=True
+command=rm -rf build && mkdir build && cd build && ~/downloads/cmake-3.17.0-Linux-x86_64/bin/cmake .. -DCMAKE_BUILD_TYPE=Debug -DUSE_HUGE_PAGE=True
 #command=rm -rf build && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug 
 #RelWithDebInfo
 cwd=<root>

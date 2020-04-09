@@ -1,5 +1,5 @@
 logs/
-bin/
-build/
+bin*/
+build*/
 tags
 include

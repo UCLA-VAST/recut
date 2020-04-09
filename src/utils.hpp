@@ -5,7 +5,18 @@
 #include <ctime> // for srand
 #include <math.h>
 #include "recut_parameters.hpp"
+//#include "recut_prune.h"
+#include "markers.h"
 namespace fs = std::filesystem;
+
+#ifdef USE_MCP3D
+#include <opencv2/opencv.hpp> // imwrite
+#include "image/mcp3d_voxel_types.hpp" // convert to CV type
+#include "common/mcp3d_utility.hpp" // PadNumStr
+#include "common/mcp3d_common.hpp"
+#include "image/mcp3d_voxel_types.hpp"
+#include "image/mcp3d_image.hpp"
+#endif
 
 using fs::exists;
 using fs::remove;
@@ -24,11 +35,61 @@ std::string get_curr() {
     return canonical(full_path).string();
 }
 
+VID_t get_central_sub(int grid_size) {
+  return grid_size / 2 - 1; // place at center
+}
+
+VID_t get_central_vid(int grid_size) {
+  auto sub = get_central_sub(grid_size);
+  auto root_vid = (VID_t) sub * grid_size * grid_size + sub * grid_size + sub;
+  return root_vid; // place at center
+}
+
+VID_t get_central_diag_vid(int grid_size) {
+  auto sub = get_central_sub(grid_size);
+  sub++; // add 1 to all x, y, z
+  auto root_vid = (VID_t) sub * grid_size * grid_size + sub * grid_size + sub;
+  return root_vid; // place at center diag
+}
+
+/* interval_size parameter is actually irrelevant due to 
+ * copy on write, the chunk requested during reading
+ * or mmapping is
+ */
+VID_t get_used_vertex_num(VID_t grid_size, VID_t block_size) {
+  auto len = grid_size / block_size;
+  auto total_blocks = len * len * len;
+  auto pad_block_size = block_size + 2;
+  auto pad_block_num = pad_block_size * pad_block_size * pad_block_size;
+  // this is the total vertices that will be used including ghost cells
+  auto interval_vert_num = pad_block_num * total_blocks;
+  return interval_vert_num;
+}
+
+void print_image_3D(uint16_t* inimg1d, VID_t grid_size) {
+  for (int zi=0; zi < grid_size; zi++) {
+    cout << "y | Z=" << zi << endl;
+    for (int xi=0; xi < 2*grid_size + 4; xi++) {
+      cout << "-" ;
+    }
+    cout << endl;
+    for (int yi=0; yi < grid_size; yi++) {
+      cout << yi << " | ";
+      for (int xi=0; xi < grid_size; xi++) {
+        VID_t index = ((VID_t) xi) + yi * grid_size + zi * grid_size * grid_size;
+        //cout << i << " " ;
+        cout << +inimg1d[index] << " ";
+      }
+      cout << endl;
+    }
+    cout << endl;
+  }
+}
+
 void print_image(uint16_t* inimg1d, VID_t size) {
   cout << "print image " << endl;
   for (VID_t i=0; i < size; i++) {
-    //cout << i << " " << +inimg1d[i] << endl;
-    assert(inimg1d[i] <= 1);
+    cout << i << " " << +inimg1d[i] << endl;
   }
 }
 
@@ -62,8 +123,7 @@ void mesh_grid(VID_t id, uint16_t* inimg1d, VID_t selected, int grid_size) {
       k -= 1;
       id = id - grid_size * grid_size;
     } else if (dir == 2) {
-      if (j == 0) {continue;}
-      j -= 1;
+      if (j == 0) {continue;} j -= 1;
       id = id - grid_size ;
     } else if (dir == 0) {
       if (i == 0) {continue;}
@@ -100,17 +160,37 @@ void mesh_grid(VID_t id, uint16_t* inimg1d, VID_t selected, int grid_size) {
   }
 }
 
-// sets all to 1 for tcase 0
-// sets all to 0 for tcase > 3
-void get_grid(int tcase, uint16_t* inimg1d, int grid_size) {
+/*
+ * sets all to 1 for tcase 0
+ * sets all to 0 for tcase > 3
+ * tcase5 = Sphere grid
+ * takes an empty binarized inimg1d (all zeros)
+ * and creates a central sphere of specified
+ * radius directly in the center of the grid
+ */
+VID_t get_grid(int tcase, uint16_t* inimg1d, int grid_size) {
+  VID_t selected = 0;
+
+  // for tcase 5 sphere grid
+  auto radius = grid_size / 4;
+  assertm(grid_size / 2 >= radius, "Can't specify a radius larger than grid_size / 2");
+  auto root_x = get_central_sub(grid_size);
+  auto root_y = get_central_sub(grid_size);
+  auto root_z = get_central_sub(grid_size);
+  auto xmin = root_x - radius;
+  auto xmax = root_x + radius;
+  auto ymin = root_y - radius;
+  auto ymax = root_y + radius;
+  auto zmin = root_z - radius;
+  auto zmax = root_z + radius;
+
   double dh = 1 / grid_size;
   double x, y, z;
   double w = 1 / 24;
-  uint16_t trueval = 1;
   for (int xi=0; xi < grid_size; xi++) {
     for (int yi=0; yi < grid_size; yi++) {
       for (int zi=0; zi < grid_size; zi++) {
-        int index = int(xi + yi * grid_size + zi * grid_size * grid_size);
+        VID_t index = ((VID_t) xi) + yi * grid_size + zi * grid_size * grid_size;
         x = xi * dh - .5;
         y = yi * dh - .5;
         z = zi * dh - .5;
@@ -123,7 +203,7 @@ void get_grid(int tcase, uint16_t* inimg1d, int grid_size) {
         } else if (tcase == 3) {
           double r = sqrt(x * x + y * y);
           double R = sqrt(x * x + y * y + z * z);
-          inimg1d[index] = trueval;
+          inimg1d[index] = 1;
           std:vector<double> Rvecs = {.15, .25, .35, .45};
           for (int ri=0; ri < Rvecs.size(); ri++) {
             double Rvec = Rvecs[ri];
@@ -155,14 +235,32 @@ void get_grid(int tcase, uint16_t* inimg1d, int grid_size) {
             //}
             if (!condition0 != !condition1) { //xor / set difference
               inimg1d[index] = 0;
+            } else {
+              selected++;
             }
           }
-        } else { // 4 and 5 start with zero grids, and select
+        } else if (tcase == 4) { // 4 start with zero grid, and select in function mesh_grid
           inimg1d[index] = 0;
+        } else if (tcase == 5) {
+          inimg1d[index] = 0;
+          if ((xi >= xmin) && (xi <=xmax)) {
+            if ((yi >= ymin) && (yi <=ymax)) {
+              if ((zi >= zmin) && (zi <=zmax)) {
+                inimg1d[index] = 1;
+                selected++;
+              }
+            }
+          }
+        } else {
+          assertm(false, "tcase specified not recognized");
         }
       }
     }
   }
+  if (tcase < 3) {
+    selected = grid_size * grid_size * grid_size;
+  }
+  return selected;
 }
 
 /**
@@ -234,42 +332,9 @@ VID_t lattice_grid(VID_t start, uint16_t* inimg1d, int line_per_dim,
   return selected;
 }
 
-VID_t get_central_sub(int grid_size) {
-  return grid_size / 2 - 1; // place at center
-}
-
-VID_t get_central_vid(int grid_size) {
-  auto sub = get_central_sub(grid_size);
-  auto root_vid = (VID_t) sub * grid_size * grid_size + sub * grid_size + sub;
-  return root_vid; // place at center
-}
-
-VID_t get_central_diag_vid(int grid_size) {
-  auto sub = get_central_sub(grid_size);
-  sub++; // add 1 to all x, y, z
-  auto root_vid = (VID_t) sub * grid_size * grid_size + sub * grid_size + sub;
-  return root_vid; // place at center diag
-}
-
-/* interval_size parameter is actually irrelevant due to 
- * copy on write, the chunk requested during reading
- * or mmapping is
- */
-VID_t get_used_vertex_num(VID_t grid_size, VID_t block_size) {
-  auto len = grid_size / block_size;
-  auto total_blocks = len * len * len;
-  auto pad_block_size = block_size + 2;
-  auto pad_block_num = pad_block_size * pad_block_size * pad_block_size;
-  // this is the total vertices that will be used including ghost cells
-  auto interval_vert_num = pad_block_num * total_blocks;
-  return interval_vert_num;
-}
-
 RecutCommandLineArgs get_args(int grid_size, int slt_pct, int tcase,
     bool generate_image=false, bool print=false) {
   RecutCommandLineArgs args;
-  std::vector<int> extents = {grid_size, grid_size, grid_size};
-  args.set_image_extents(extents);
   auto params = args.recut_parameters();
   auto str_path = get_curr();
   params.set_marker_file_path(str_path + "/test_markers/" + to_string(grid_size) + "/tcase" + to_string(tcase) + "/slt_pct" + to_string(slt_pct) + "/");
@@ -284,6 +349,8 @@ RecutCommandLineArgs get_args(int grid_size, int slt_pct, int tcase,
     params.selected = img_vox_num * (slt_pct / (float) 100);
     params.root_vid = get_central_vid(grid_size);
     params.set_user_thread_count(omp_get_max_threads());
+    std::vector<int> extents = {grid_size, grid_size, grid_size};
+    args.set_image_extents(extents);
   } else {
     args.set_image_root_dir(str_path + "/test_images/" + to_string(grid_size) + "/tcase" + to_string(tcase) + "/slt_pct" + to_string(slt_pct) + "/");
   }
@@ -312,7 +379,7 @@ void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
   cout << "      Wrote marker: " << fn << endl;
 }
 
-#ifdef IMAGE
+#ifdef USE_MCP3D
 void write_tiff(uint16_t* inimg1d, std::string base, int grid_size) {
   remove_all(base); // make sure it's an overwrite
   cout << "      Delete old: " << base << endl;
@@ -379,3 +446,158 @@ uint16_t* read_tiff(std::string fn, int grid_size ) {
   return img;
 }
 #endif
+
+
+/*
+ * test function based off APP2 by hanchuan peng to test accuracy of fastmarching based
+ * calculate radius method
+ */
+template <class T> 
+uint16_t get_radius_accurate(T* inimg1d, int grid_size, VID_t current_vid, T thresh)
+{
+    std::vector<int> sz = {grid_size, grid_size, grid_size};
+    VID_t current_x,current_y,current_z;
+    get_img_subscript(current_vid, current_x, current_y, current_z, grid_size);
+
+	int max_r = grid_size / 2 - 1;
+	int r;
+	double tol_num, bak_num;
+	int mx = current_x + 0.5;
+	int my = current_y + 0.5;
+	int mz = current_z + 0.5;
+	//cout<<"mx = "<<mx<<" my = "<<my<<" mz = "<<mz<<endl;
+    int64_t x[2], y[2], z[2];
+
+	tol_num = bak_num = 0.0;
+    int64_t sz01 = sz[0] * sz[1];
+	for(r = 1; r <= max_r; r++)
+	{
+		double r1 = r - 0.5;
+		double r2 = r + 0.5;
+		double r1_r1 = r1 * r1;
+		double r2_r2 = r2 * r2;
+		double z_min = 0, z_max = r2;
+		for(int dz = z_min ; dz < z_max; dz++)
+		{
+			double dz_dz = dz * dz;
+			double y_min = 0;
+			double y_max = sqrt(r2_r2 - dz_dz);
+			for(int dy = y_min; dy < y_max; dy++)
+			{
+				double dy_dy = dy * dy;
+				double x_min = r1_r1 - dz_dz - dy_dy;
+				x_min = x_min > 0 ? sqrt(x_min)+1 : 0;
+				double x_max = sqrt(r2_r2 - dz_dz - dy_dy);
+				for(int dx = x_min; dx < x_max; dx++)
+				{
+					x[0] = mx - dx, x[1] = mx + dx;
+					y[0] = my - dy, y[1] = my + dy;
+					z[0] = mz - dz, z[1] = mz + dz;
+					for(char b = 0; b < 8; b++)
+					{
+						char ii = b & 0x01, jj = (b >> 1) & 0x01, kk = (b >> 2) & 0x01;
+						if(x[ii]<0 || x[ii] >= sz[0] || y[jj]<0 || y[jj] >= sz[1] || z[kk]<0 || z[kk] >= sz[2]) return r;
+						else
+						{
+							tol_num++;
+							long pos = z[kk]*sz01 + y[jj] * sz[0] + x[ii];
+							if(inimg1d[pos] <= thresh){bak_num++;}
+							if((bak_num / tol_num) > 0.0001) return r;
+						}
+					}
+				}
+			}
+		}
+	}
+	return r;
+}
+
+/*
+ * test function based off APP2 by hanchuan peng to test accuracy of fastmarching based
+ * calculate radius method
+ */
+template <class T> 
+uint16_t get_radius_hanchuan_XY(T* inimg1d, int grid_size, VID_t current_vid, T thresh)
+{
+    std::vector<int> sz = {grid_size, grid_size, grid_size};
+    VID_t x,y,z;
+    get_img_subscript(current_vid, x, y, z, grid_size);
+
+	long sz0 = sz[0];
+	long sz01 = sz[0] * sz[1];
+	double max_r = grid_size / 2 - 1;
+    if (max_r > sz[1]/2) max_r = sz[1]/2;
+
+    double total_num, background_num;
+    double ir;
+    for (ir=1; ir<=max_r; ir++)
+    {
+        total_num = background_num = 0;
+
+        double dz, dy, dx;
+        double zlower = 0, zupper = 0;
+        for (dz= zlower; dz <= zupper; ++dz)
+            for (dy= -ir; dy <= +ir; ++dy)
+                for (dx= -ir; dx <= +ir; ++dx)
+                {
+                    total_num++;
+
+                    double r = sqrt(dx*dx + dy*dy + dz*dz);
+                    if (r>ir-1 && r<=ir)
+                    {
+                        int64_t i = x+dx;   if (i<0 || i>=sz[0]) goto end1;
+                        int64_t j = y+dy;   if (j<0 || j>=sz[1]) goto end1;
+                        int64_t k = z+dz;   if (k<0 || k>=sz[2]) goto end1;
+
+                        if (inimg1d[k * sz01 + j * sz0 + i] <= thresh)
+                        {
+                            background_num++;
+
+                            if ((background_num/total_num) > 0.001) goto end1; //change 0.01 to 0.001 on 100104
+                        }
+                    }
+                }
+    }
+end1:
+    return ir;
+
+}
+
+// stamp the compile time config
+// so that past logs are explicit about
+// their flags
+void print_macros() {
+
+#ifdef RV
+  cout << "RV" << endl;
+#endif
+
+#ifdef NO_RV
+  cout << "NO_RV" << endl;
+#endif
+
+#ifdef MMAP
+  cout << "MMAP" << endl;
+#endif
+
+#ifdef ASYNC
+  cout << "ASYNC" << endl;
+#endif
+
+#ifdef TF
+  cout << "TF" << endl;
+#endif
+
+#ifdef CONCURRENT_MAP
+  cout << "CONCURRENT_MAP" << endl;
+#endif
+
+#ifdef USE_HUGE_PAGE
+  cout << "USE_HUGE_PAGE" << endl;
+#endif
+
+#ifdef USE_OMP
+ cout << "USE_OMP" << endl;
+#endif
+}
+
