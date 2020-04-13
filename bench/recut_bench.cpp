@@ -1,7 +1,5 @@
 #include <benchmark/benchmark.h>
 #include "../src/recut.hpp"
-#include <cstdlib> //rand srand
-#include <ctime> // for srand
 
 #ifdef USE_MCP3D
 #define GEN_IMAGE false
@@ -53,6 +51,10 @@ static void bench_critical_loop(benchmark::State& state) {
   // This is the performance loop where gbench
   // will execute until timing stats converge
   while (state.KeepRunning()) {
+    // reactivates
+    // the intervals of the root and readds
+    // them to the respective heaps
+    recut.setup_value();
     // from our gen img of initialize update
     // does fastmarching, updated vertices
     // are mmap'd
@@ -61,10 +63,8 @@ static void bench_critical_loop(benchmark::State& state) {
     // to destroy the information for this run
     // so that it doesn't affect the next run
     // the vertices must be unmapped
-    // done via `release()`, `reset` reactivates
-    // the intervals of the root and readds
-    // them to the respective heaps
-    recut.reset();
+    // done via `release()` 
+    recut.release();
     //benchmark::DoNotOptimize();
   }
   // items processed only refers to the total selected vertices

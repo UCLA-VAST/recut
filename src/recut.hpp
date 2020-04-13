@@ -195,21 +195,21 @@ public:
     run_pipeline();
   }
 
+    // to destroy the information for this run
+    // so that it doesn't affect the next run
+    // the vertices must be unmapped
+    // done via `release()` 
   inline void release() {super_interval.Release();}
-  inline void reset() {
-    release();
-    activate_roots();
-  }
   void initialize_globals(const VID_t& nintervals, const VID_t& nblocks) ;
 
   //template<typename T, typename T2>
   //void safe_increase(T &heap, T2* node) ;
+  template<typename T, typename T2, typename TNew>
+  void safe_update(T &heap, T2* node, TNew new_field, std::string cmp_field) ;
   template<typename T, typename T2>
-  void safe_update(T &heap, T2* node, VID_t handle) ;
+  void safe_push(T &heap, T2* node, VID_t interval_num, VID_t block_num, std::string cmp_field) ;
   template<typename T, typename T2>
-  void safe_push(T &heap, T2* node, VID_t interval_num, VID_t block_num) ;
-  template<typename T, typename T2>
-  T2 safe_pop(T &heap, VID_t block_num, VID_t interval_num) ;
+  T2 safe_pop(T &heap, VID_t block_num, VID_t interval_num, std::string cmp_field) ;
 
   inline double calc_weight(image_t pixel); 
   image_t get_img_val(const image_t* img, VID_t vid) ;
@@ -220,7 +220,8 @@ public:
   inline VertexAttr* get_attr_vid(VID_t interval_num, VID_t block_num, VID_t vid, VID_t* output_offset) ;
   inline VertexAttr* get_attr(VID_t interval_num, VID_t block_num,
     VID_t ii, VID_t jj, VID_t kk) ;
-  void place_vertex(VID_t nb_interval_num, VID_t block_num, VID_t nb, struct VertexAttr* dst, bool is_root ) ;
+  void place_vertex(VID_t nb_interval_num, VID_t block_num, VID_t nb, struct VertexAttr* dst, bool is_root,
+      std::string stage) ;
   bool check_blocks_finish(VID_t interval_num);
   bool check_intervals_finish();
   inline VID_t get_block_offset(VID_t id, VID_t offset) ;
@@ -235,15 +236,20 @@ public:
   inline VID_t get_block_num(VID_t id) ;
   VID_t get_interval_num(VID_t vid) ;
   VID_t get_sub_to_interval_num(VID_t i, VID_t j, VID_t k) ;
-  void place_ghost_update(VID_t interval_num, struct VertexAttr* dst, VID_t block_num, bool is_root) ;
-  int get_parent_code(VID_t dst_id, VID_t src_id) ;
-  bool accumulate(const image_t* img, VID_t interval_num, VID_t dst_id, VID_t block_num, struct VertexAttr* src, VID_t &revisits, 
-      double factor, int parent_code, std::string stage);
+  void place_ghost_update(VID_t interval_num, struct VertexAttr* dst, VID_t block_num, bool is_root, std::string stage) ;
+  int get_parent_code(VID_t dst_id, VID_t src_id);
+  bool accumulate_value(const image_t* img, VID_t interval_num, VID_t dst_id, VID_t block_num, struct VertexAttr* src, VID_t &revisits, 
+      double factor, int parent_code);
+  bool accumulate_radius(VID_t interval_num, VID_t dst_id, VID_t block_num, struct VertexAttr* src, VID_t &revisits, 
+      double factor, int parent_code);
+  template <typename TNew>
+  void vertex_update(VID_t interval_num, VID_t block_num, VertexAttr* dst, 
+      TNew new_field, std::string stage);
   void update_neighbors(const image_t* img, VID_t interval_num, struct VertexAttr* min_attr, VID_t block_num,
           VID_t &revisits, std::string stage);
-  void integrate_updated_ghost(VID_t interval_num, VID_t block_num) ;
+  void integrate_updated_ghost(VID_t interval_num, VID_t block_num, std::string stage) ;
   bool integrate_vertex(VID_t interval_num, VID_t block_num, struct VertexAttr* updated_attr, 
-      bool ignore_KNOWN_NEW, bool is_root) ;
+      bool ignore_KNOWN_NEW, bool is_root, std::string stage) ;
   //void create_integrate_thread(VID_t interval_num, VID_t block_num) ;
   void march_narrow_band(const image_t* img, VID_t interval_num, VID_t block_num,
       std::string stage);
@@ -263,9 +269,10 @@ public:
   void finalize(vector<vertex_t> &outtree);
   VID_t parentToVID(struct VertexAttr* attr) ;
   inline VID_t get_block_id(VID_t iblock, VID_t jblock, VID_t kblock) ;
-  void print_interval(VID_t interval_num) ;
+  void print_interval(VID_t interval_num, std::string stage) ;
   void check_image(const image_t* img, VID_t size) ;
-  void activate_roots() ;
+  void setup_radius() ;
+  void setup_value() ;
   void process_marker_dir(vector<int> off, vector<int> end) ;
   ~Recut<image_t>() ;
 };
@@ -332,8 +339,48 @@ void Recut<image_t>::process_marker_dir(vector<int> off, vector<int> end) {
   }
 }
 
+// activates
+// the intervals of the leaf and reads
+// them to the respective heaps
+// FIXME combine this with setup_value below 
 template <class image_t>
-void Recut<image_t>::activate_roots() {
+void Recut<image_t>::setup_radius() {
+    // FIXME what affect does this have for radius?
+    bool is_root = true; // changes behavior of place_ghost_update
+    for(size_t interval_num = 0;interval_num<super_interval.GetNIntervals(); ++interval_num)
+    {
+      Interval* interval = super_interval.GetInterval(interval_num);
+      if (interval->get_valid_start()) {
+        auto vid = interval->get_start_vertex();
+        auto interval_num = get_interval_num(vid);
+        auto block_num = get_block_num(vid);
+
+        interval->SetActive(true); 
+        VertexAttr* dummy_attr = new VertexAttr(); // march is protect from dummy values like this
+        dummy_attr->vid = vid;
+        dummy_attr->radius = 1;
+
+        safe_push(this->heap_vec[interval_num][block_num], dummy_attr, interval_num, block_num, "radius");
+        active_blocks[interval_num][block_num].store(true);
+        // place ghost update accounts for
+        // edges of intervals in addition to blocks
+        // this only adds to update_ghost_vec if the root happens
+        // to be on a boundary
+        place_ghost_update(interval_num, dummy_attr, block_num, is_root,
+            "radius"); // add to any other ghost zone blocks
+#ifdef LOG
+        cout << "Set interval " << interval_num << " block " << block_num << " to active ";
+        cout << "for marker vid " << vid << '\n';
+#endif 
+      }
+    }
+}
+
+// activates
+// the intervals of the root and readds
+// them to the respective heaps
+template <class image_t>
+void Recut<image_t>::setup_value() {
   bool is_root = true; // changes behavior of place_ghost_update
   for (VID_t vid : this->root_vids) {
     auto interval_num = get_interval_num(vid);
@@ -345,13 +392,14 @@ void Recut<image_t>::activate_roots() {
     dummy_attr->mark_root(vid); // 0000 0000, selected no parent, all zeros indicates KNOWN_FIX root
     dummy_attr->value = 0.0;
 
-    safe_push(this->heap_vec[interval_num][block_num], dummy_attr, interval_num, block_num);
+    safe_push(this->heap_vec[interval_num][block_num], dummy_attr, interval_num, block_num, "value");
     active_blocks[interval_num][block_num].store(true);
     // place ghost update accounts for
     // edges of intervals in addition to blocks
     // this only adds to update_ghost_vec if the root happens
     // to be on a boundary
-    place_ghost_update(interval_num, dummy_attr, block_num, is_root); // add to any other ghost zone blocks
+    place_ghost_update(interval_num, dummy_attr, block_num, is_root,
+        "value"); // add to any other ghost zone blocks
 #ifdef LOG
     cout << "Set interval " << interval_num << " block " << block_num << " to active ";
     cout << "for marker vid " << vid << endl;
@@ -360,12 +408,42 @@ void Recut<image_t>::activate_roots() {
 }
 
 template <class image_t>
-void Recut<image_t>::print_interval(VID_t interval_num) {
-  cout << "recut interval " << interval_num << endl;
+void Recut<image_t>::print_interval(VID_t interval_num, std::string stage) {
   auto interval = super_interval.GetInterval(interval_num);
-  for (VID_t i=0; i < interval->GetNVertices(); i++) {
-    auto v = interval->GetData()[i];
-    cout << i << endl << v.description() << endl;
+  //assertm(interval->GetNVertices() == x_interval_size * y_interval_size * z_interval_size, "Mismatched interval size");
+  assertm(interval->IsInMemory(), "Can not print interval not in memory");
+  cout << "Print recut interval " << interval_num << endl;
+  for (int zi=0; zi < z_interval_size; zi++) {
+    cout << "y | Z=" << zi << endl;
+    for (int xi=0; xi < 2* y_interval_size + 4; xi++) {
+      cout << "-" ;
+    }
+    cout << endl;
+    for (int yi=0; yi < y_interval_size; yi++) {
+      cout << yi << " | ";
+      for (int xi=0; xi < x_interval_size; xi++) {
+        VID_t index = ((VID_t) xi) + yi * x_interval_size + zi * x_interval_size * y_interval_size;
+        auto v = get_attr_vid(interval_num, 0, index, nullptr);
+        //cout << +inimg1d[index] << " ";
+        //auto v = interval->GetData()[index];
+        //cout << i << endl << v.description() << " ";
+        if (stage == "value") {
+          if (v->valid_value()) {
+            cout << v->value << " ";
+          } else {
+            cout << "NA ";
+          }
+        } else if (stage == "radius") {
+          if (v->valid_radius()) {
+            cout << +(v->radius) << " ";
+          } else {
+            cout << "NA ";
+          }
+        }
+      }
+      cout << endl;
+    }
+    cout << endl;
   }
 }
 
@@ -402,8 +480,8 @@ uint64_t triple_pack_key(VID_t one, VID_t two, VID_t three) {
 }
 
 
-template< typename T>
-T absdiff(const T& lhs, const T& rhs) {
+template< typename T, typename T2>
+T absdiff(const T& lhs, const T2& rhs) {
   return lhs>rhs ? lhs - rhs : rhs - lhs;
 }
 
@@ -476,7 +554,7 @@ VID_t Recut<image_t>::get_block_num(VID_t vid) {
  */
 template <class image_t>
 template <typename T, typename T2>
-T2 Recut<image_t>::safe_pop(T &heap, VID_t block_num, VID_t interval_num) {
+T2 Recut<image_t>::safe_pop(T &heap, VID_t block_num, VID_t interval_num, std::string cmp_field) {
 #ifdef HLOG_FULL
   //cout << "safe_pop ";
   assert(!heap.empty());
@@ -487,7 +565,7 @@ T2 Recut<image_t>::safe_pop(T &heap, VID_t block_num, VID_t interval_num) {
   assert(noderef->valid_handle());
 #endif
 
-  T2 node2 = heap.pop(block_num); // remove it
+  T2 node2 = heap.pop(block_num, cmp_field); // remove it
 
 #ifdef HLOG_FULL
     assert(!node2->valid_handle());
@@ -499,7 +577,7 @@ T2 Recut<image_t>::safe_pop(T &heap, VID_t block_num, VID_t interval_num) {
 // assign handle save to original attr not the heap copy
 template <class image_t>
 template<typename T_heap, typename T2>
-void Recut<image_t>::safe_push(T_heap &heap, T2* node, VID_t interval_num, VID_t block_num) {
+void Recut<image_t>::safe_push(T_heap &heap, T2* node, VID_t interval_num, VID_t block_num, std::string cmp_field) {
 #ifdef HLOG_FULL
   cout << "safe push heap size " << heap.size() << 
     " vid: " << node->vid << endl; //" handle: " << node->handles[block_num] ;
@@ -508,7 +586,7 @@ void Recut<image_t>::safe_push(T_heap &heap, T2* node, VID_t interval_num, VID_t
   //auto attr = get_attr_vid(interval_num, block_num, node->vid);
   //assert(attr->vid == node->vid);
 #endif
-  heap.push(node, block_num);
+  heap.push(node, block_num, cmp_field);
 #ifdef HLOG_FULL
   assert(node->valid_handle());
 #endif
@@ -516,14 +594,15 @@ void Recut<image_t>::safe_push(T_heap &heap, T2* node, VID_t interval_num, VID_t
 
 // assign handle save to original attr not the heap copy
 template <class image_t>
-template<typename T, typename T2>
-void Recut<image_t>::safe_update(T &heap, T2* node, VID_t handle) {
+template<typename T, typename T2, typename TNew>
+void Recut<image_t>::safe_update(T &heap, T2* node, TNew new_field, 
+    std::string cmp_field) {
 #ifdef HLOG_FULL
     assert(node->valid_handle());
     //cout << "safe update size " << heap.size() << 
       //" vid: " << node->vid << endl;
 #endif
-    heap.update(handle, node->value, 0); //block_num currently deprecated
+    heap.update(node, 0, new_field, cmp_field); //block_num currently deprecated
 }
 
 /* get the interval linear idx from it's subscripts
@@ -579,6 +658,92 @@ inline double Recut<image_t>::calc_weight(image_t pixel) {
   return this->givals[idx];
 };
 
+template <class image_t>
+template <typename TNew>
+void Recut<image_t>::vertex_update(VID_t interval_num, VID_t block_num,
+    VertexAttr* dst, TNew new_field, std::string stage) {
+  // if a visited node doesn't have a vid it will cause
+  // undefined behavior
+  if (dst->valid_handle()) { // in block_num heap
+    safe_update(heap_vec[interval_num][block_num], dst, new_field, stage);// increase priority, lowers value in min-heap
+#ifdef FULL_PRINT
+    cout << "\t\tupdate: change in heap for BAND value" << endl;
+#endif
+  } else {
+    if (stage == "value") {
+      dst->value = new_field;
+    } else if (stage == "radius") {
+      dst->radius = new_field;
+    } else {
+      assertm(false, "stage not recognized");
+    }
+    safe_push(heap_vec[interval_num][block_num], dst, interval_num, block_num, stage);
+#ifdef FULL_PRINT
+    cout << "\t\tupdate: add to heap: " << dst->vid << " value: " << dst->value << endl;
+#endif
+  }
+  place_ghost_update(interval_num, dst, block_num, false, stage);
+}
+
+/**
+ * accumulate is the core function of fast marching, it can only operate
+ * on VertexAttr that are within the current interval_num and block_num, since it is
+ * potentially adding these vertices to the unique heap of interval_num and block_num.
+ * only one parent when selected. If one of these vertexes on the edge but
+ * still within interval_num and block_num domain is updated it is the responsibility of
+ * place_ghost_update to take note of the update such that this update is propagated
+ * to the relevant interval and block see integrate_updated_ghost().
+ * dst_id : continuous vertex id VID_t of the dst vertex in question
+ * block_num : src block id
+ * src : minimum vertex attribute selected
+ * returns true if this vertex is unselected
+ */
+template < class image_t>
+bool Recut<image_t>::accumulate_radius(VID_t interval_num, VID_t
+    dst_id, VID_t block_num, struct VertexAttr* src, VID_t &revisits,
+    double factor, int parent_code) {
+
+  auto dst = get_attr_vid(interval_num, block_num, dst_id, nullptr);
+
+#ifdef FULL_PRINT
+  cout << "\tcheck dst vid: " << dst_id;
+#endif
+
+  // exclude all unselected values
+  if (!(dst->selected())) {
+#ifdef FULL_PRINT
+    cout << "\t\tfailed dst never selected" << endl;
+#endif
+    return true;
+  }
+
+  // solve for update value
+  // dst_id and src->vid are linear idx relative to full image domain
+  assertm(src->valid_radius(), "src radius had an invalid field");
+  auto new_field = src->radius + 1;
+
+  if(dst->radius > new_field) {
+
+#ifdef RV
+    if (dst->valid_radius()) { 
+      revisits += 1;
+#ifdef NO_RV
+      return false; // it was still a selected vertex
+#endif
+      //cout << "KNOWN_NEW revisited block_num " << block_num << " old val " << dst->value << " new field " << new_field <<  " revisits " << +revisits << endl;
+    }
+#endif
+
+    vertex_update(interval_num, block_num, dst, new_field, "radius");
+    assertm(dst->radius == new_field, "Accumulate radius did not properly set it's updated field");
+  } else {
+#ifdef FULL_PRINT
+    cout << "\t\tfailed: no radii change: " << dst->vid << " radii: " << dst->radius << endl;
+#endif
+  }
+  return false; // it was a selected vertex
+}
+
 /**
  * accumulate is the core function of fast marching, it can only operate
  * on VertexAttr that are within the current interval_num and block_num, since it is
@@ -592,15 +757,18 @@ inline double Recut<image_t>::calc_weight(image_t pixel) {
  * src : minimum vertex attribute selected
  */
 template < class image_t>
-bool Recut<image_t>::accumulate(const image_t* img, VID_t interval_num, VID_t
+bool Recut<image_t>::accumulate_value(const image_t* img, VID_t interval_num, VID_t
     dst_id, VID_t block_num, struct VertexAttr* src, VID_t &revisits,
-    double factor, int parent_code, std::string stage) {
+    double factor, int parent_code) {
 
+  assertm(dst_id < this->img_vox_num, "Outside bounds of current interval");
   auto dst = get_attr_vid(interval_num, block_num, dst_id, nullptr);
   auto dst_vox = get_img_val(img, dst_id);
 
 #ifdef FULL_PRINT
-  cout << "\tcheck dst vid: " << dst_id << " pixel " << dst_vox << " bkg_thresh " << +bkg_thresh << endl;
+  cout << "\tcheck dst vid: " << dst_id;
+  cout << " pixel " << dst_vox ;
+  cout << " bkg_thresh " << +bkg_thresh << endl;
 #endif
 
   // exclude all KNOWN_FIX values 00, this includes root and dummy
@@ -621,8 +789,9 @@ bool Recut<image_t>::accumulate(const image_t* img, VID_t interval_num, VID_t
 
   // solve for update value
   // dst_id and src->vid are linear idx relative to full image domain
-  float new_dist = src->value + (float) (calc_weight(get_img_val(img, src->vid)) + calc_weight(dst_vox)) * 0.5 * factor;
-  if(dst->value > new_dist) {
+  float new_field = src->value + (float) (calc_weight(get_img_val(img, src->vid)) + calc_weight(dst_vox)) * 0.5 * factor;
+
+  if(dst->value > new_field) {
 
 #ifdef RV
     if (dst->selected()) { // 10XX XXXX KNOWN NEW
@@ -630,29 +799,17 @@ bool Recut<image_t>::accumulate(const image_t* img, VID_t interval_num, VID_t
 #ifdef NO_RV
       return false;
 #endif
-      //cout << "KNOWN_NEW revisited block_num " << block_num << " old val " << dst->value << " new dist " << new_dist <<  " revisits " << +revisits << endl;
+      //cout << "KNOWN_NEW revisited block_num " << block_num << " old val " << dst->value << " new dist " << new_field <<  " revisits " << +revisits << endl;
     }
 #endif
 
     // add to band (01XX XXXX)
     dst->mark_band(dst_id);
     dst->mark_connect(parent_code);
-    dst->value = new_dist;
     assert(dst->valid_vid());
-    // if a visited node doesn't have a vid it will cause
-    // undefined behavior
-    if (dst->valid_handle()) { // in block_num heap
-      safe_update(heap_vec[interval_num][block_num], dst, dst->handle);// increase priority, lowers value in min-heap
-#ifdef FULL_PRINT
-      cout << "\t\tupdate: change in heap for BAND value" << endl;
-#endif
-    } else {
-      safe_push(heap_vec[interval_num][block_num], dst, interval_num, block_num);
-#ifdef FULL_PRINT
-      cout << "\t\tupdate: add to heap: " << dst->vid << " value: " << dst->value << endl;
-#endif
-    }
-    place_ghost_update(interval_num, dst, block_num, false) ;
+
+    vertex_update(interval_num, block_num, dst, new_field, "value");
+    assertm(dst->value == new_field, "Accumulate value did not properly set it's updated field");
     return true;
   } else {
 #ifdef FULL_PRINT
@@ -664,7 +821,7 @@ bool Recut<image_t>::accumulate(const image_t* img, VID_t interval_num, VID_t
 
 template <class image_t>
 void Recut<image_t>::place_vertex(VID_t nb_interval_num, VID_t block_num, VID_t
-    nb, struct VertexAttr* dst, bool is_root) {
+    nb, struct VertexAttr* dst, bool is_root, std::string stage) {
     
   // ASYNC option means that another block and thread can be started during the
   // processing of the current thread. If ASYNC is not defined then simply
@@ -681,7 +838,7 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_num, VID_t block_num, VID_t
     // will check if below band in march narrow
     // use processing blocks to make sure no other neighbor of nb is
     // modifying nb heap
-    bool dst_update_success = integrate_vertex(nb_interval_num, nb, dst, true, is_root);
+    bool dst_update_success = integrate_vertex(nb_interval_num, nb, dst, true, is_root, stage);
     if (dst_update_success) {// only update if it's true, allows for remaining true
       active_blocks[nb_interval_num][nb].store(dst_update_success);
       super_interval.GetInterval(nb_interval_num)->SetActive(true);
@@ -758,7 +915,7 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_num, VID_t block_num, VID_t
 */
 template <class image_t>
 void Recut<image_t>::place_ghost_update(VID_t interval_num, struct VertexAttr*
-    dst, VID_t block_num, bool is_root) {
+    dst, VID_t block_num, bool is_root, std::string stage) {
   VID_t i, j, k, ii, jj, kk, iii, jjj, kkk;
   vector<VID_t> interval_subs = {0,0,0};
   i= j= k= ii= jj= kk =0;
@@ -795,7 +952,7 @@ void Recut<image_t>::place_ghost_update(VID_t interval_num, struct VertexAttr*
         nb = get_block_id(nx_block - 1, jblock, kblock); 
       }
       if ((nb >=0) && (nb < tot_blocks))  // within valid block bounds
-        place_vertex(nb_interval_num, block_num, nb, dst, is_root);
+        place_vertex(nb_interval_num, block_num, nb, dst, is_root, stage);
     }
   }
   if (jj == 0) {
@@ -807,7 +964,7 @@ void Recut<image_t>::place_ghost_update(VID_t interval_num, struct VertexAttr*
         nb = get_block_id(iblock, ny_block - 1, kblock); 
       }
       if ((nb >=0) && (nb < tot_blocks))  // within valid block bounds
-        place_vertex(nb_interval_num, block_num, nb, dst, is_root);
+        place_vertex(nb_interval_num, block_num, nb, dst, is_root, stage);
     }
   }
   if (kk == 0) {
@@ -819,7 +976,7 @@ void Recut<image_t>::place_ghost_update(VID_t interval_num, struct VertexAttr*
         nb = get_block_id(iblock, jblock, nz_block - 1); 
       }
       if ((nb >=0) && (nb < tot_blocks))  // within valid block bounds
-        place_vertex(nb_interval_num, block_num, nb, dst, is_root);
+        place_vertex(nb_interval_num, block_num, nb, dst, is_root, stage);
     }
   }
 
@@ -832,7 +989,7 @@ void Recut<image_t>::place_ghost_update(VID_t interval_num, struct VertexAttr*
         nb = get_block_id(iblock, jblock, 0); 
       }
       if ((nb >=0) && (nb < tot_blocks))  // within valid block bounds
-        place_vertex(nb_interval_num, block_num, nb, dst, is_root);
+        place_vertex(nb_interval_num, block_num, nb, dst, is_root, stage);
     }
   }
   if (jj == y_block_size - 1) {
@@ -844,7 +1001,7 @@ void Recut<image_t>::place_ghost_update(VID_t interval_num, struct VertexAttr*
         nb = get_block_id(iblock, 0, kblock); 
       }
       if ((nb >=0) && (nb < tot_blocks))  // within valid block bounds
-        place_vertex(nb_interval_num, block_num, nb, dst, is_root);
+        place_vertex(nb_interval_num, block_num, nb, dst, is_root, stage);
     }
   }
   if (ii == z_block_size - 1) {
@@ -856,7 +1013,7 @@ void Recut<image_t>::place_ghost_update(VID_t interval_num, struct VertexAttr*
         nb = get_block_id(0, jblock, kblock); 
       }
       if ((nb >=0) && (nb < tot_blocks))  // within valid block bounds
-        place_vertex(nb_interval_num, block_num, nb, dst, is_root);
+        place_vertex(nb_interval_num, block_num, nb, dst, is_root, stage);
     }
   }
 }
@@ -898,7 +1055,7 @@ void Recut<image_t>::update_neighbors(const image_t* img, VID_t interval_num, st
 #ifdef FULL_PRINT
   // all block_nums are a linear row-wise idx, relative to current interval
   VID_t block = get_block_num(vid) ;
-  cout<< "\ni: "<<i<<" j: "<<j <<" k: "<< k<< " src vid: " << vid << " value: " << min_attr->value << endl;
+  cout<< "\ni: "<<i<<" j: "<<j <<" k: "<< k<< " src vid: " << vid << " value: " << min_attr->value << '\n';
   //" for block " << block_num << " within domain of block " << block << endl;
 #endif
 
@@ -930,12 +1087,27 @@ void Recut<image_t>::update_neighbors(const image_t* img, VID_t interval_num, st
 #ifdef FULL_PRINT
         //cout << "  nb " << nb << " ni " << ni << " block num " << block_num << " interval " << 
           //interval_num ;
-        cout << "  w " << w << " h " << h << " d " << d << " dst_id " << dst_id << " vid " << vid << endl;
+        cout << "w " << w << " h " << h << " d " << d << " dst_id " << dst_id << " vid " << vid << endl;
 #endif 
-        bool selected = accumulate(img, interval_num, dst_id, block_num,
-            min_attr, revisits, factor, parent_code, stage);
-        //if (selected)
-          //min_attr->mark_connect(daughter);
+        if (stage == "value") {
+          accumulate_value(img, interval_num, dst_id, block_num,
+              min_attr, revisits, factor, parent_code);
+        } else if (stage == "radius") {
+          bool found_unselected_neighbor = accumulate_radius(interval_num, dst_id, block_num,
+              min_attr, revisits, factor, parent_code);
+          if (found_unselected_neighbor && (min_attr->radius > 1)) {
+#ifdef FULL_PRINT
+            //cout << "  nb " << nb << " ni " << ni << " block num " << block_num << " interval " << 
+              //interval_num ;
+            cout << "Found unselected nb\n";
+#endif 
+            // min_attr is guaranteed to be within this processing domain
+            // nbs can be in ghost region
+            vertex_update(interval_num, block_num, min_attr, 1, "radius");
+            assertm(min_attr->radius == 1, "radius was not properly set to 1");
+            return; // exit early this is already on the stack
+          }
+        } 
       }
     }
   }
@@ -951,7 +1123,7 @@ void Recut<image_t>::update_neighbors(const image_t* img, VID_t interval_num, st
  */
 template <class image_t>
 bool Recut<image_t>::integrate_vertex(VID_t interval_num, VID_t block_num, struct VertexAttr* updated_attr,
-    bool ignore_KNOWN_NEW, bool is_root) {
+    bool ignore_KNOWN_NEW, bool is_root, std::string stage) {
   // get attr
   auto dst = get_attr_vid(interval_num, block_num, updated_attr->vid, nullptr);
 #ifdef NO_RV
@@ -984,7 +1156,6 @@ bool Recut<image_t>::integrate_vertex(VID_t interval_num, VID_t block_num, struc
   assert(updated_attr != NULL);
   if (dst->value > updated_attr->value) {
     float old_val = dst->value;
-    dst->value = updated_attr->value;
     dst->copy_edge_state(*updated_attr); // copy connection to dst
     if (is_root) {
       dst->mark_root(updated_attr->vid); // mark permanently as root
@@ -996,13 +1167,16 @@ bool Recut<image_t>::integrate_vertex(VID_t interval_num, VID_t block_num, struc
     }
     assert(dst->valid_vid());
     // if heap_vec does not contain this dst already
-    if(dst->valid_handle()) {  
-      safe_update(heap_vec[interval_num][block_num], dst, dst->handle);// increase priority, lowers value in min-heap
+    if(dst->valid_handle()) {  // already in the heap
+      // FIXME adapt this to handle radius as well
+      safe_update(heap_vec[interval_num][block_num], dst, 
+          updated_attr->value, stage);// increase priority, lowers value in min-heap 
 #ifdef FULL_PRINT
       //cout << "\tiupdate: change in heap" << " value: " << dst->value << " oldval " << old_val << endl;
 #endif
-    } else { // already in the stack
-      safe_push(heap_vec[interval_num][block_num], dst, interval_num, block_num); 
+    } else { 
+      dst->value = updated_attr->value;
+      safe_push(heap_vec[interval_num][block_num], dst, interval_num, block_num, stage); 
 #ifdef FULL_PRINT
       //cout << "\tipush: add to heap: " << dst->vid << " value: " << dst->value << " oldval " << old_val << endl;
 #endif
@@ -1022,7 +1196,8 @@ bool Recut<image_t>::integrate_vertex(VID_t interval_num, VID_t block_num, struc
  * safely to complete the iteration
  */
 template <class image_t>
-void Recut<image_t>::integrate_updated_ghost(VID_t interval_num, VID_t block_num) {
+void Recut<image_t>::integrate_updated_ghost(VID_t interval_num, VID_t block_num,
+    std::string stage) {
   VID_t tot_blocks = super_interval.GetNBlocks();
   for (VID_t nb=0; nb < tot_blocks; nb++) {
     // active_neighbors[x][a][b] in domain of b, in ghost of block a
@@ -1049,7 +1224,7 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_num, VID_t block_num
         cout << "integrate vid: " << updated_attr.vid << " ghost of block id: "
           << block_num << " in block domain of block id: " << nb << endl;
 #endif
-        integrate_vertex(interval_num, block_num, &updated_attr, false, false);
+        integrate_vertex(interval_num, block_num, &updated_attr, false, false, stage);
       } // end for each VertexAttr
       active_neighbors[interval_num][nb][block_num] = false; // reset to false
       // clear sets for all possible block connections of block_num from this iter
@@ -1138,6 +1313,8 @@ void Recut<image_t>::march_narrow_band(const image_t* img, VID_t interval_num,
 #endif
   VID_t revisits = 0;
 
+  VertexAttr* min_attr;
+
   while (!heap_vec[interval_num][block_num].empty()) { 
 
     if (restart_bool) {
@@ -1153,7 +1330,8 @@ void Recut<image_t>::march_narrow_band(const image_t* img, VID_t interval_num,
 
     // remove from this intervals heap
     struct VertexAttr* dummy_min = safe_pop<local_heap, struct
-      VertexAttr*>(heap_vec[interval_num][block_num], block_num, interval_num);
+      VertexAttr*>(heap_vec[interval_num][block_num], block_num, interval_num,
+          stage);
 
     // protect from dummy values added to the heap not inside
     // this block or interval
@@ -1161,20 +1339,27 @@ void Recut<image_t>::march_narrow_band(const image_t* img, VID_t interval_num,
     // having to load the full intervals into memory at that time
     // this retrieves the actual ptr to the vid of the root dummy min
     // values so that they can be properly initialized
-    auto min_attr = get_attr_vid(interval_num, block_num, dummy_min->vid, nullptr);
+    min_attr = get_attr_vid(interval_num, block_num, dummy_min->vid, nullptr);
+    if (stage == "value") {
 
-    // preserve state of roots
-    if (!(dummy_min->root())) {
-      min_attr->mark_selected(); // set as KNOWN NEW
-      assert(min_attr->valid_vid());
-      // Note: any adjustments to min_attr if in a neighboring domain
-      // i.e. min_attr->handles.contains(nb) are not in a data race with the
-      // nb thread. All VertexAttr have redundant copies in each
-      // ghost region
-    } else {
-      min_attr = dummy_min; // set as root and initialize
-      assert(min_attr->root());
+      // preserve state of roots
+      if (!(dummy_min->root())) {
+        min_attr->mark_selected(); // set as KNOWN NEW
+        assert(min_attr->valid_vid());
+        // Note: any adjustments to min_attr if in a neighboring domain
+        // i.e. min_attr->handles.contains(nb) are not in a data race with the
+        // nb thread. All VertexAttr have redundant copies in each
+        // ghost region
+      } else {
+        min_attr = dummy_min; // set as root and initialize
+        assert(min_attr->root());
+      }
+    } else if (stage == "radius") {
+      assertm(min_attr->selected(), "Can not process an unselected vertex");
+      min_attr->radius = dummy_min->radius;
+      min_attr->vid = dummy_min->vid;
     }
+
     update_neighbors(img, interval_num, min_attr, block_num, revisits,
         stage);
   } 
@@ -1191,6 +1376,14 @@ void Recut<image_t>::march_narrow_band(const image_t* img, VID_t interval_num,
   // unwanted or unexpected serial behavior between blocks
   global_revisits += revisits;
 #endif
+
+  // save the last value to help start different stages
+  // any last value is fine this does not need to be thread-safe
+  if (stage == "value") {
+    assertm(min_attr->selected(), "start vertex must be selected");
+    super_interval.GetInterval(interval_num)->set_start_vertex(min_attr->vid);
+    super_interval.GetInterval(interval_num)->set_valid_start(true);
+  }
 
   // Note: could set explicit memory ordering on atomic
   active_blocks[interval_num][block_num].store(false);
@@ -1450,7 +1643,7 @@ double Recut<image_t>::process_interval(VID_t interval_num, image_t* tile,
 #endif
     for(VID_t block_num = 0;block_num<nblocks;++block_num)
     {
-        integrate_updated_ghost(interval_num, block_num);
+        integrate_updated_ghost(interval_num, block_num, stage);
     }
 
   //#endif
@@ -1781,7 +1974,6 @@ inline VertexAttr* Recut<image_t>::get_attr_vid(const VID_t interval_num, const 
   VID_t pad_img_block_i, pad_img_block_j, pad_img_block_k;
   i= j= k= 0;
 
-  assertm(img_vid < this->img_vox_num, "Outside bounds of current interval");
   Interval* interval = super_interval.GetInterval(interval_num); 
   assert(interval->IsInMemory());
   VertexAttr* attr = interval->GetData(); // first vertex of entire interval
@@ -1882,14 +2074,14 @@ inline VertexAttr* Recut<image_t>::get_attr_vid(const VID_t interval_num, const 
 
   VertexAttr* match = first_block_attr + offset;
 #ifdef FULL_PRINT
-  cout << "\t\tget attr vid for img vid: "<< img_vid<< " pad_img_block_i " << pad_img_block_i << " pad_img_block_j " << pad_img_block_j << " pad_img_block_k " << pad_img_block_k<<endl;
-  //cout << "\t\ti " << i << " j " << j << " k " << k<<endl;
-  //cout << "\t\tia " << ia << " ja " << ja << " ka " << k<<endl;
-  cout << "\t\tblock_num " << block_num << " nb_block " << nb_block << " interval num " << interval_num << " nb_interval num " << nb_interval << endl;;;
-  cout << "\t\toffset " << offset << " block_start " << block_start << endl;
-  cout << "\t\ttotal interval size " << interval->GetNVertices() << endl;
-  assert(block_start + offset < interval->GetNVertices()); // no valid offset is beyond this val
-  cout << "\t\t match-vid " << match->vid << " match->value " << match->value << endl << endl;
+  //cout << "\t\tget attr vid for img vid: "<< img_vid<< " pad_img_block_i " << pad_img_block_i << " pad_img_block_j " << pad_img_block_j << " pad_img_block_k " << pad_img_block_k<<endl;
+  ////cout << "\t\ti " << i << " j " << j << " k " << k<<endl;
+  ////cout << "\t\tia " << ia << " ja " << ja << " ka " << k<<endl;
+  //cout << "\t\tblock_num " << block_num << " nb_block " << nb_block << " interval num " << interval_num << " nb_interval num " << nb_interval << endl;;;
+  //cout << "\t\toffset " << offset << " block_start " << block_start << endl;
+  //cout << "\t\ttotal interval size " << interval->GetNVertices() << endl;
+  //assert(block_start + offset < interval->GetNVertices()); // no valid offset is beyond this val
+  //cout << "\t\tmatch-vid " << match->vid << " match->value " << match->value << endl << endl;
 #endif
   return match;
 }
@@ -2130,23 +2322,25 @@ void Recut<image_t>::initialize() {
     assertm(root_vids.size() == 1, "Can only support 1 marker (root) at this time");
     assertm(this->params->tcase > -1, "Mismatched tcase for generate image");
     assertm(this->params->slt_pct > -1, "Mismatched slt_pct for generate image");
-    assertm(this->params->selected > -0, "Mismatched selected for generate image");
+    assertm(this->params->selected > 0, "Mismatched selected for generate image");
     assertm(this->params->root_vid != numeric_limits<uint64_t>::max(), "Root vid uninitialized");
 
     // both get_grid and mesh_grid take the length of one dimension
     // of the image, currently assuming all test images
     // are cubes
     // sets all to 0 for tcase 4 and 5
-    get_grid(this->params->tcase, this->generated_image, this->nx); 
+    auto selected = get_grid(this->params->tcase, this->generated_image, this->nx); 
     if (this->params->tcase == 4) 
       mesh_grid(this->root_vids[0], this->generated_image, this->params->selected, 
           this->nx); 
+    else {
+      this->params->selected = selected;
+    }
+
   } else {
     // adds all markers to this->root_vids
     process_marker_dir(off, end);
   }
-
-  activate_roots();
 }
 
 
@@ -2302,11 +2496,17 @@ void Recut<image_t>::finalize(vector<vertex_t> &outtree) {
 }
 
 template <class image_t>
+//void Recut<image_t>::run_pipeline(std::vector<string> stages={"all"}) {
 void Recut<image_t>::run_pipeline() {
   this->initialize();
-  this->update("march");
-  //this->setup_radius();
+
+  this->setup_value();
+  this->update("value");
+  //this->print_interval(0, "value");
+
+  this->setup_radius();
   this->update("radius");
+
   //this->setup_prune();
   //this->update("prune");
   this->finalize(this->args->output_tree);

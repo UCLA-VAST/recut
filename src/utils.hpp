@@ -66,7 +66,8 @@ VID_t get_used_vertex_num(VID_t grid_size, VID_t block_size) {
   return interval_vert_num;
 }
 
-void print_image_3D(uint16_t* inimg1d, VID_t grid_size) {
+template <typename T>
+void print_image_3D(T* inimg1d, VID_t grid_size) {
   for (int zi=0; zi < grid_size; zi++) {
     cout << "y | Z=" << zi << endl;
     for (int xi=0; xi < 2*grid_size + 4; xi++) {
@@ -338,8 +339,14 @@ RecutCommandLineArgs get_args(int grid_size, int slt_pct, int tcase,
   auto params = args.recut_parameters();
   auto str_path = get_curr();
   params.set_marker_file_path(str_path + "/test_markers/" + to_string(grid_size) + "/tcase" + to_string(tcase) + "/slt_pct" + to_string(slt_pct) + "/");
+  // by setting the max intensities you do not need to recompute them
+  // in the update function, this is critical for benchmarking
   params.set_max_intensity(1);
   params.set_min_intensity(0);
+  // the total number of blocks allows more parallelism
+  // ideally intervals >> thread count
+  params.set_interval_size(grid_size);
+  params.set_block_size(grid_size);
   VID_t img_vox_num = grid_size * grid_size * grid_size;
 
   if (generate_image) {

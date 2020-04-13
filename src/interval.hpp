@@ -228,11 +228,17 @@ public:
   // IsActive not currently checked in recut
   inline bool IsActive() const {return active_;}
   inline void SetActive(bool active) {active_ = active;}
+  inline void set_start_vertex(VID_t t_start_vertex) { start_vertex_ = t_start_vertex; }
+  inline VID_t get_start_vertex() { return start_vertex_; }
   inline std::string GetFn() {return fn_;}
+  inline void set_valid_start(bool t_val) { valid_start_ = t_val; };
+  inline bool get_valid_start() { return valid_start_; };
 
 private:
   bool in_mem_;   /// Use mmap if in_mem_, use vector otherwise
+  bool valid_start_ = false;
   VertexAttr* inmem_ptr0_;
+  VID_t start_vertex_;
   void* mmap_ptr_;
   atomic<bool> active_;
   bool mmap_;
