@@ -43,7 +43,7 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 
 // Define how revisits/reupdates to previous seen vertices is handled
 //#define RV // count the number of revisits or attempted revisits of vertices and log to stdout
-#define NO_RV // reject any vertices from having new updated values after they have already been visited
+//#define NO_RV // reject any vertices from having new updated values after they have already been visited
 
 // determines read speeds of vertex info from INTERVAL_BASE
 #define MMAP
@@ -123,14 +123,14 @@ struct bitfield {
 
 };
 
-//struct compare_VertexAttr; //predefine to avoid circular issues
-struct VertexAttr; //predefine to avoid circular issues
+////struct compare_VertexAttr; //predefine to avoid circular issues
+//struct VertexAttr; //predefine to avoid circular issues
 
-// min_heap
-struct compare_VertexAttr
-{
-    inline bool operator() (const struct VertexAttr* n1, const struct VertexAttr* n2) const;
-};
+//// min_heap
+//struct compare_VertexAttr
+//{
+    //inline bool operator() (const struct VertexAttr* n1, const struct VertexAttr* n2) const;
+//};
 
 typedef VID_t handle_t; // FIXME switch to from VID_t
 
@@ -143,7 +143,7 @@ struct VertexAttr {
   handle_t handle; // same type as VID_t
   float value; // distance to source: 4 bytes
   struct bitfield edge_state; // most sig. bits (little-endian) refer to state : 1 bytes
-  uint8_t radius;
+  uint8_t radius = std::numeric_limits<uint8_t>::max();
 
   // constructors
   VertexAttr() : edge_state(192), value(numeric_limits<float>::max()),
@@ -187,10 +187,16 @@ struct VertexAttr {
     return (handle != numeric_limits<handle_t>::max());
   }
 
+  /* returns whether this vertex has had its radius updated from the default max
+   */
+  bool valid_radius() {
+    return radius != numeric_limits<uint8_t>::max();
+  }
+
   /* returns whether this vertex has had its value updated from the default max
    */
   bool valid_value() {
-    return (value != numeric_limits<float>::max());
+    return value != numeric_limits<float>::max();
   }
 
   /* returns whether this vertex has been added to a heap
@@ -341,10 +347,10 @@ struct VertexAttr {
   //   to be reprocessed in ghost cell regions
 };
 
-// min_heap
-inline bool compare_VertexAttr::operator() (const struct VertexAttr* n1, const struct VertexAttr* n2) const {
-  return n1->value > n2->value;
-}
+//// min_heap
+//inline bool compare_VertexAttr::operator() (const struct VertexAttr* n1, const struct VertexAttr* n2) const {
+  //return n1->value > n2->value;
+//}
 
 template <class T>
 class NeighborHeap       // Basic Min heap
@@ -352,8 +358,22 @@ class NeighborHeap       // Basic Min heap
 public:
 	NeighborHeap()
 	{
+        // FIXME this is a disaster
 		elems.reserve(10000);
 	}
+
+    void print(std::string stage) {
+      if (stage == "radius") {
+        for (auto& vert : elems) {
+          cout << +(vert->radius) << " " ;
+        }
+      } else {
+        for (auto& vert : elems) {
+          cout << +(vert->value) << " " ;
+        }
+      }
+      cout << endl;
+    }
 
 	T* top() { 
 		if(empty()) {
@@ -367,7 +387,7 @@ public:
 		if(empty()) throw;
     }
 
-	T* pop(VID_t ib)
+	T* pop(VID_t ib, std::string cmp_field)
 	{
 		check_empty();
 		T* min_elem = elems[0];
@@ -378,7 +398,7 @@ public:
 			elems[0] = elems[elems.size() - 1];
             elems[0]->handle = 0; // update handle value
 			elems.erase(elems.begin() + elems.size() - 1);
-			down_heap(0, ib); 
+			down_heap(0, ib, cmp_field); 
 		}
         //min_elem->handles.erase(ib);
         //min_elem->handles[ib] = std::numeric_limits<handle_t>::max();
@@ -387,12 +407,12 @@ public:
 	}
 
     // FIXME return type to handle_t later
-	void push(T* t, VID_t ib)
+	void push(T* t, VID_t ib, std::string cmp_field)
 	{
 		elems.push_back(t);
         // mark handle such that all swaps are recorded in correct handle
         t->handle = elems.size() - 1;
-        up_heap(elems.size() - 1, ib);
+        up_heap(elems.size() - 1, ib, cmp_field);
         //return t->handle_nb;
 	}
 
@@ -402,27 +422,41 @@ public:
           return i;
         }
       }
-      //throw; // did not find
+      assertm(false, "Did not find vid in heap on call to vid"); // did not find
       return std::numeric_limits<handle_t>::max();
     }
 
 	bool empty(){return elems.empty();}
 
-	void update(handle_t id, float new_value, VID_t ib)
+    template <typename TNew>
+	void update(T* updated_node, VID_t ib, TNew new_field, std::string cmp_field)
 	{
+        handle_t id = updated_node->handle;
 		check_empty();
-		float old_value = elems[id]->value;
-		elems[id]->value = new_value;
-        elems[id]->handle = id;
-		if(new_value < old_value) up_heap(id, ib);
-		else if(new_value > old_value) down_heap(id, ib);
+        assertm(elems[id]->vid == updated_node->vid, "VID doesn't match");
+        assertm(elems[id]->handle == id, "handle doesn't match");
+        if (cmp_field == "value") {
+          auto old_value = elems[id]->value;
+          elems[id]->value = new_field;
+          //elems[id]->handle = id;
+          if(new_field < old_value) up_heap(id, ib, cmp_field);
+          else if(new_field > old_value) down_heap(id, ib, cmp_field);
+        } else if (cmp_field == "radius") {
+          auto old_radius = elems[id]->radius;
+          elems[id]->radius = new_field;
+          //elems[id]->handle = id;
+          if (new_field < old_radius) up_heap(id, ib, cmp_field);
+          else if(new_field > old_radius) down_heap(id, ib, cmp_field);
+        } else {
+          assertm(false, "`cmp_field` arg not recognized");
+        }
 	}
     int size() {return elems.size();}
 private:
 	vector<T*> elems;
 
     // used for indexing handle
-	bool swap_heap(int id1, int id2, VID_t ib)
+	bool swap_heap(int id1, int id2, VID_t ib, std::string cmp_field)
 	{
 		if(id1 < 0 || id1 >= elems.size() || id2 < 0 || id2 >= elems.size()) return false;
 		if(id1 == id2) return false;
@@ -430,37 +464,43 @@ private:
 		int cid = id1 > id2 ? id1 : id2;
 		assert(cid == 2*(pid+1) -1 || cid == 2*(pid+1));
 
-		if(elems[pid]->value <= elems[cid]->value) return false;
-		else
-		{
-			T * tmp = elems[pid];
-			elems[pid] = elems[cid];
-			elems[cid] = tmp;
-            elems[pid]->handle = pid;
-            elems[cid]->handle = cid;
-			return true;
-		}
+        if (cmp_field == "radius") {
+          if(elems[pid]->radius <= elems[cid]->radius) return false;
+        } else {
+          if(elems[pid]->value <= elems[cid]->value) return false;
+        }
+        T * tmp = elems[pid];
+        elems[pid] = elems[cid];
+        elems[cid] = tmp;
+        elems[pid]->handle = pid;
+        elems[cid]->handle = cid;
+        return true;
 	}
 
-	void up_heap(int id, VID_t ib)
+	void up_heap(int id, VID_t ib, std::string cmp_field)
 	{
 		int pid = (id+1)/2 - 1;
-		if(swap_heap(id, pid, ib)) up_heap(pid, ib);
+		if(swap_heap(id, pid, ib, cmp_field)) up_heap(pid, ib, cmp_field);
 	}
 
-	void down_heap(int id, VID_t ib)
+	void down_heap(int id, VID_t ib, std::string cmp_field)
 	{
 		int cid1 = 2*(id+1) -1;
 		int cid2 = 2*(id+1);
 		if(cid1 >= elems.size()) return;
 		else if(cid1 == elems.size() - 1)
 		{
-			swap_heap(id, cid1, ib);
+			swap_heap(id, cid1, ib, cmp_field);
 		}
 		else if(cid1 < elems.size() - 1)
 		{
-			int cid = elems[cid1]->value < elems[cid2]->value ? cid1 : cid2;
-			if(swap_heap(id, cid, ib)) down_heap(cid, ib);
+            int cid;
+            if (cmp_field == "radius") {
+			  cid = elems[cid1]->radius < elems[cid2]->radius ? cid1 : cid2;
+            } else {
+			  cid = elems[cid1]->value < elems[cid2]->value ? cid1 : cid2;
+            }
+			if(swap_heap(id, cid, ib, cmp_field)) down_heap(cid, ib, cmp_field);
 		}
 	}
 };

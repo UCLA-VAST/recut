@@ -8,6 +8,8 @@
 #include <string>
 #include <fcntl.h>
 #include <bits/stdc++.h>
+#include <cstdlib> //rand 
+#include <ctime> // for srand
 
 #ifdef USE_MCP3D
 #include <opencv2/opencv.hpp> // imwrite
@@ -23,6 +25,10 @@
 #define GEN_IMAGE true
 #endif
 
+// This is for functions or tests that include test macros only
+// note defining a function that contains test function MACROS
+// that returns a value will give strange: void value not ignored as it ought to be errors
+
 //VID_t compare_tree(const T seq, const T2 parallel, long
     //sz0, sz1, sz2) {
   //// get min of both sizes
@@ -34,9 +40,73 @@
   //}
 //}
 
+template <class T, typename DataType>
+void check_recut_error(T& recut, DataType* data, int grid_size, VID_t interval_num,
+    std::string stage, double& error_rate) {
+  auto tol_sz = static_cast<VID_t>(grid_size) * grid_size * grid_size;
+  //cout << "check image " << endl;
+  double error_sum = 0.0;
+  VID_t total_valid = 0;
+  auto interval = recut.super_interval.GetInterval(interval_num);
+  assertm(interval->IsInMemory(), "Can not print interval not in memory");
+  for (int zi=0; zi < recut.z_interval_size; zi++) {
+    for (int yi=0; yi < recut.y_interval_size; yi++) {
+      for (int xi=0; xi < recut.x_interval_size; xi++) {
+        VID_t index = ((VID_t) xi) + yi * recut.x_interval_size + zi * recut.x_interval_size * recut.y_interval_size;
+        VertexAttr* v = recut.get_attr_vid(interval_num, 0, index, nullptr);
+        //cout << i << endl << v.description() << " ";
+        if (stage == "value") {
+          bool valid_value = v->value != std::numeric_limits<uint8_t>::max();
+          if (recut.generated_image[index]) {
+            ASSERT_TRUE(valid_value);
+          }
+          if (v->valid_value()) {
+            ASSERT_EQ(recut.generated_image[index], 1);
+          }
+          if (v->valid_value()) {
+            //error_sum += absdiff(data[index], v->value);
+            //cout << v->value << " ";
+          } 
+        } else if (stage == "radius") {
+          if (recut.generated_image[index]) {
+            ASSERT_TRUE(v->valid_radius());
+          }
+          if (v->valid_radius()) {
+            ASSERT_EQ(recut.generated_image[index], 1);
+          }
+          //if (v->valid_radius()) {
+          if (recut.generated_image[index]) {
+            error_sum += absdiff(data[index], v->radius);
+            ++total_valid;
+            //cout << +(v->radius) << " ";
+          } 
+        }
+      }
+    }
+  }
+  ASSERT_EQ(total_valid, recut.params->selected);
+  error_rate = 100* error_sum / static_cast<double>(tol_sz);
+}
 
-void check_image(uint16_t* inimg1d, uint16_t* check,int grid_size) {
-  cout << "check image " << endl;
+void check_image_error(uint16_t* inimg1d, uint16_t* baseline, uint16_t* check,int grid_size,
+    VID_t selected, double& error_rate) {
+  auto tol_sz = grid_size * grid_size * grid_size;
+  VID_t total_valid = 0;
+  //cout << "check image " << endl;
+  VID_t error_sum = 0;
+  for (VID_t i=0; i < tol_sz; i++) {
+    if (inimg1d[i]) {
+      //cout << i << " " << +inimg1d[i] << endl;
+      error_sum += absdiff(baseline[i], check[i]);
+      ++total_valid;
+    }
+  }
+  ASSERT_EQ(total_valid, selected);
+  error_rate = 100* error_sum / static_cast<double>(tol_sz);
+}
+
+void check_image_equality(uint16_t* inimg1d, uint16_t* check,int grid_size) {
+  //cout << "check image " << endl;
   for (VID_t i=0; i < (grid_size * grid_size * grid_size); i++) {
     //cout << i << " " << +inimg1d[i] << endl;
     ASSERT_LE(inimg1d[i] , 1);
@@ -141,6 +211,7 @@ void test_get_attr_vid(bool mmap, int grid_size, int interval_size, int block_si
   recut.mmap_ = mmap;
 
   recut.initialize();
+  recut.setup_value();
 
   ASSERT_EQ(recut.nx, grid_size);
   ASSERT_EQ(recut.ny, grid_size);
@@ -149,7 +220,7 @@ void test_get_attr_vid(bool mmap, int grid_size, int interval_size, int block_si
   // these tests make sure get_attr_vid always returns a pointer to underlying vertex
   // data and does not copy by value the vertex struct
   for (auto& vid : vids) {
-    cout << "TESTING vid " << vid << endl;
+    //cout << "TESTING vid " << vid << endl;
     ASSERT_LT(vid, nvid);
     auto current_interval_num = recut.get_interval_num(vid);
     auto current_block_num = recut.get_block_num(vid);
@@ -190,10 +261,10 @@ void test_get_attr_vid(bool mmap, int grid_size, int interval_size, int block_si
 
     VID_t output_offset;
     for (auto& interval_num : test_intervals ) {
-      cout << "interval_num " << interval_num << endl;
+      //cout << "interval_num " << interval_num << endl;
       recut.super_interval.GetInterval(interval_num)->LoadFromDisk();
       for (auto& block_num : test_blocks ) {
-        cout << "\tblock_num " << block_num << endl;
+        //cout << "\tblock_num " << block_num << endl;
         // TEST 1
         // Assert upstream changes (by pointer)
         auto attr = recut.get_attr_vid(interval_num, block_num, vid, &output_offset);
@@ -219,6 +290,87 @@ void test_get_attr_vid(bool mmap, int grid_size, int interval_size, int block_si
       }
       recut.super_interval.GetInterval(interval_num)->Release();
       ASSERT_FALSE(recut.super_interval.GetInterval(interval_num)->IsInMemory());
+    }
+  }
+}
+
+TEST (Heap, PushUpdate) {
+  VID_t N = 1<<10;
+  bool update_values = true;
+
+  std::vector<std::string> stages = {"value", "radius"};
+  //float mval = std::numeric_limits<float>::max();
+  float mval = 255;
+  srand(time(0));
+  std::vector<uint8_t> vr;
+  std::vector<float> vv;
+  for (auto& stage : stages) {
+    NeighborHeap<VertexAttr> heap;
+    uint8_t radius;
+    float value;
+    uint8_t updated_radius;
+    float updated_value;
+    for (VID_t i=0; i < N; i++) {
+      auto vert = new VertexAttr;
+      ASSERT_FALSE(vert->valid_handle());
+      if (stage == "radius" ) {
+        radius = (uint8_t) rand() % std::numeric_limits<uint8_t>::max();
+        updated_radius = (uint8_t) rand() % std::numeric_limits<uint8_t>::max();
+        vert->radius = radius;
+        vr.push_back(radius);
+        ASSERT_EQ(vert->radius, radius);
+      } else if (stage == "value") {
+        value = static_cast <float> (rand()) / (static_cast <float> (RAND_MAX/mval));
+        updated_value = static_cast <float> (rand()) / (static_cast <float> (RAND_MAX/mval));
+        vert->value = value;
+        vv.push_back(value);
+      }
+      heap.push(vert, 0, stage);
+      ASSERT_TRUE(vert->valid_handle());
+
+      /* for even element, update it with some random number
+       * to make sure the update can still retain proper
+       * ordering
+       */
+      if (update_values && (i % 2)) {
+        //cout << "elems pre-update: " << " i " << i << endl;
+        //heap.print(stage);
+
+        if (stage == "radius" ) {
+          //vert->radius = updated_radius;
+          vr.pop_back();
+          vr.push_back(updated_radius);
+          heap.update(vert, 0, updated_radius, stage);
+        } else {
+          //vert->value = updated_value;
+          vv.pop_back();
+          vv.push_back(updated_value);
+          heap.update(vert, 0, updated_value, stage);
+        }
+      }
+
+      //cout << "elems: " << endl;
+      //heap.print(stage);
+    }
+
+    // make sure all in heap are popped in 
+    // non-increasing order
+    if (stage == "radius") {
+      sort(vr.begin(), vr.end());
+      for (auto& val : vr) {
+        auto min_attr = heap.pop(0, stage);
+        ASSERT_FALSE(min_attr->valid_handle());
+        auto hval = min_attr->radius;
+        ASSERT_EQ(val, hval) << "hval " << +hval << " val " << +val;
+      }
+    } else {
+      sort(vv.begin(), vv.end());
+      for (auto& val : vv) {
+        auto min_attr = heap.pop(0, stage);
+        ASSERT_FALSE(min_attr->valid_handle());
+        auto hval = min_attr->value;
+        ASSERT_EQ(val, hval) << "hval " << +hval << " val " << +val;
+      }
     }
   }
 }
@@ -483,14 +635,14 @@ TEST (Image, ReadWrite) {
   write_tiff(inimg1d, fn, grid_size) ;
   uint16_t* check = read_tiff(fn, grid_size);
   //print_image(check, grid_size * grid_size * grid_size);
-  check_image(inimg1d, check, grid_size);
+  check_image_equality(inimg1d, check, grid_size);
 
   // This extra dim was only useful for a different grid size
   // due to the cached __image_.json saved by mcp3d that causes errs
   //// write then check again
   //write_tiff(check, fn, grid_size);
   //uint16_t* check2 = read_tiff(fn, grid_size);
-  //check_image(inimg1d, check2, grid_size);
+  //check_image_equality(inimg1d, check2, grid_size);
 
   // run recut over the image
   auto args = get_args(grid_size, slt_pct, tcase,
@@ -500,7 +652,7 @@ TEST (Image, ReadWrite) {
 
   // check again
   uint16_t* check3 = read_tiff(fn, grid_size);
-  check_image(inimg1d, check3, grid_size);
+  check_image_equality(inimg1d, check3, grid_size);
 
   delete[] inimg1d;
 }
@@ -557,7 +709,7 @@ TEST (VertexAttr, ReadWrite) {
   auto fn = base + "interval0.bin";
   //remove_all(fn); // make sure it's an overwrite
   create_directories(base);
-  cout << "fn: " << fn << endl;
+  //cout << "fn: " << fn << endl;
 
   // open output
   std::ofstream ofile(fn, ios::out | ios::binary); // read-mode
@@ -637,15 +789,46 @@ TEST(VertexAttr, CopyOp) {
 }
 
 TEST(Tcase, ByEye) { 
-  int grid_size = 8;
+  int grid_size = 128;
   int slt_pct = 10;
+  std::vector<int> tcases = {5};
+  //int grid_size = 2;
+  //int slt_pct = 100;
+  //std::vector<int> tcases = {0};
   VID_t tol_sz = (VID_t) grid_size * grid_size * grid_size;
   uint16_t* inimg1d = new uint16_t[tol_sz];
   uint16_t* radii_grid = new uint16_t[tol_sz];
   uint16_t* radii_grid_xy = new uint16_t[tol_sz];
   uint16_t bkg_thresh =0;
-  std::vector<int> tcases = {5};
   for (auto& tcase : tcases) {
+    auto args = get_args(grid_size, slt_pct, tcase, true,
+        true);
+    auto selected = args.recut_parameters().selected;
+
+    // adjust final runtime parameters
+    auto params = args.recut_parameters();
+    // the total number of blocks allows more parallelism
+    // ideally intervals >> thread count
+    params.set_interval_size(grid_size);
+    params.set_block_size(grid_size);
+    args.set_recut_parameters(params);
+
+    // run
+    auto recut= Recut<uint16_t>(args);
+    recut.initialize();
+
+    recut.setup_value();
+    recut.update("value");
+    //recut.print_interval(0, "value");
+
+    recut.setup_radius();
+    recut.update("radius");
+
+    //std::cout << "recut image grid" << endl;
+    //print_image_3D(recut.generated_image, grid_size);
+
+    // FIXME replace this by using recut's image, and check for
+    // equality first
     // build grid
     get_grid(tcase, inimg1d, grid_size); 
     if (tcase == 4) {
@@ -655,20 +838,32 @@ TEST(Tcase, ByEye) {
         // sets all to 0 for tcase 4
         mesh_grid(get_central_vid(grid_size), inimg1d, selected, grid_size); 
     }
-    std::cout << "Image grid" << endl;
-    print_image_3D(inimg1d, grid_size);
+
+    //std::cout << "Image grid" << endl;
+    //print_image_3D(inimg1d, grid_size);
+    //check_image_equality(inimg1d, recut.generated_image, grid_size);
 
     // build bkg radius
     for (VID_t i = 0; i < tol_sz; i++) {
       radii_grid[i] = get_radius_accurate(inimg1d, grid_size, i, bkg_thresh);
       radii_grid_xy[i] = get_radius_hanchuan_XY(inimg1d, grid_size, i, bkg_thresh);
     }
-    std::cout << "Accurate radii grid" << endl;
-    print_image_3D(radii_grid, grid_size);
-    std::cout << "XY radii grid" << endl;
-    print_image_3D(radii_grid_xy, grid_size);
+
+    //std::cout << "Accurate radii grid" << endl;
+    //print_image_3D(radii_grid, grid_size);
+    //std::cout << "XY radii grid" << endl;
+    //print_image_3D(radii_grid_xy, grid_size);
+    //std::cout << "Recut radii\n";
+    //recut.print_interval(0, "radius");
+
+    double xy_err, recut_err;
+    check_image_error(inimg1d, radii_grid, radii_grid_xy, grid_size, recut.params->selected, xy_err);
+    check_recut_error(recut, radii_grid, grid_size, 0, "radius", recut_err);
+
+    cout << "xy error % " << xy_err << '\n';
+    cout << "recut error % " << recut_err << '\n';
   }
-  delete[] inimg1d;
+  //delete[] inimg1d;
 }
 
 #ifdef APP2
@@ -944,9 +1139,7 @@ TEST (RecutPipeline, DISABLED_ScratchPad) {
 
     auto recut = Recut<uint16_t>(args);
     recut();
-    ASSERT_NEAR(args.output_tree.size(), expected, expected * EXP_DEV_LOW);
-    cout << "Expected " << expected << " found " << args.output_tree.size() << endl;
-    cout << endl << endl;
+    ASSERT_NEAR(args.output_tree.size(), expected, expected * EXP_DEV_LOW) << "Expected " << expected << " found " << args.output_tree.size() << endl;
   }
 }
 
@@ -1062,7 +1255,7 @@ TEST (RecutPipeline, DISABLED_SequentialMatch1024) {
          bkg_thresh);
   EXPECT_NEAR(outtree_seq.size(), selected, expected * EXP_DEV_LOW);
   //error = absdiff((VID_t) outtree_seq.size(), (VID_t) selected) / (double) selected;
-  cout << "Found: " << outtree_seq.size() << endl; // " Error: " << error * 100 << "%" << endl;
+  //cout << "Found: " << outtree_seq.size() << endl; // " Error: " << error * 100 << "%" << endl;
   auto recut = Recut<uint16_t>(args);
   recut();
   EXPECT_NEAR(outtree.size() , outtree_seq.size(), expected * EXP_DEV_LOW);
@@ -1130,29 +1323,55 @@ TEST (RecutPipeline, DISABLED_StandardIntervalReadWrite256) {
   EXPECT_NEAR(args.output_tree.size(), selected, selected * EXP_DEV_LOW);
 }
 
-TEST (RecutPipeline, test_critical_loop) {
-    VID_t grid_size = 256;
+TEST (RecutPipeline, test_real_data) {
+  VID_t grid_size = 256;
+  double slt_pct = 1;
+  int tcase = 4;
   std::vector<VID_t> walk_sizes = {grid_size, grid_size / 2,
     grid_size / 4, grid_size / 8, grid_size / 16};
   for (auto walk_size : walk_sizes) {
+    cout << walk_size << endl;
     grid_size = walk_size;
-    double slt_pct = 1;
-    int tcase = 4;
     auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE,
         true);
     auto selected = args.recut_parameters().selected;
 
-    cout << walk_size << endl;
     // adjust final runtime parameters
     auto params = args.recut_parameters();
-    // the total number of intervals allows more parallelism
+    args.set_image_root_dir("../../data/filled/");
+    params.set_marker_file_path("../../data/marker_files");
+    // the total number of blocks allows more parallelism
     // ideally intervals >> thread count
     params.set_interval_size(grid_size);
     params.set_block_size(grid_size);
-    // by setting the max intensities you do not need to recompute them
-    // in the update function, this is critical for benchmarking
-    params.set_max_intensity(1);
-    params.set_min_intensity(0);
+    args.set_recut_parameters(params);
+
+    // run
+    auto recut= Recut<uint16_t>(args);
+    recut();
+    ASSERT_NEAR(args.output_tree.size() , selected, selected * EXP_DEV_LOW);
+  }
+}
+
+TEST (RecutPipeline, test_critical_loop) {
+  VID_t grid_size = 256;
+  double slt_pct = 1;
+  int tcase = 4;
+  std::vector<VID_t> walk_sizes = {grid_size, grid_size / 2,
+    grid_size / 4, grid_size / 8, grid_size / 16};
+  for (auto walk_size : walk_sizes) {
+    cout << walk_size << endl;
+    grid_size = walk_size;
+    auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE,
+        true);
+    auto selected = args.recut_parameters().selected;
+
+    // adjust final runtime parameters
+    auto params = args.recut_parameters();
+    // the total number of blocks allows more parallelism
+    // ideally intervals >> thread count
+    params.set_interval_size(grid_size);
+    params.set_block_size(grid_size);
     args.set_recut_parameters(params);
 
     // run
