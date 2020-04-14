@@ -366,8 +366,7 @@ void Recut<image_t>::setup_radius() {
         // edges of intervals in addition to blocks
         // this only adds to update_ghost_vec if the root happens
         // to be on a boundary
-        place_ghost_update(interval_num, dummy_attr, block_num, is_root,
-            "radius"); // add to any other ghost zone blocks
+        //place_ghost_update(interval_num, dummy_attr, block_num, is_root, "radius"); // add to any other ghost zone blocks
 #ifdef LOG
         cout << "Set interval " << interval_num << " block " << block_num << " to active ";
         cout << "for marker vid " << vid << '\n';
@@ -1380,6 +1379,9 @@ void Recut<image_t>::march_narrow_band(const image_t* img, VID_t interval_num,
   // save the last value to help start different stages
   // any last value is fine this does not need to be thread-safe
   if (stage == "value") {
+#ifdef LOG_FULL
+    cout << interval_num << ',' << block_num << min_attr->description();
+#endif
     assertm(min_attr->selected(), "start vertex must be selected");
     super_interval.GetInterval(interval_num)->set_start_vertex(min_attr->vid);
     super_interval.GetInterval(interval_num)->set_valid_start(true);
@@ -1785,7 +1787,7 @@ void Recut<image_t>::update(std::string stage) {
   VID_t nintervals = super_interval.GetNIntervals();
 
 #ifdef LOG
-  cout<<"Start updating."<<endl;
+  cout<<"Start updating stage "<< stage << '\n';
 #endif
   clock_gettime(CLOCK_REALTIME,&update_start_time);
 
@@ -2205,6 +2207,7 @@ void Recut<image_t>::initialize() {
   
   // account for image_offsets and args->image_extents()
   off = args->image_offsets(); // default start is {0, 0, 0} for full image
+  // image_extents is set to grid_size for generate_image option, otherwise 0,0,0
   ext = args->image_extents(); // default is {0, 0, 0} for full image
   // protect faulty out of bounds input if extents goes beyond
   // domain of full image, note: z, y, x order

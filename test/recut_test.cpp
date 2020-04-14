@@ -788,82 +788,85 @@ TEST(VertexAttr, CopyOp) {
   ASSERT_NE(v1 , v2); // make sure they not just the same obj
 }
 
-TEST(Tcase, ByEye) { 
-  int grid_size = 128;
-  int slt_pct = 10;
+TEST(Radius, DISABLED_Full) { 
+  int max_size = 128;
+  std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4, max_size / 2,
+    max_size};
+  // tcase 5 is a sphere of radius grid_size / 4 centered
+  // in the middle of an image
   std::vector<int> tcases = {5};
-  //int grid_size = 2;
-  //int slt_pct = 100;
-  //std::vector<int> tcases = {0};
-  VID_t tol_sz = (VID_t) grid_size * grid_size * grid_size;
-  uint16_t* inimg1d = new uint16_t[tol_sz];
-  uint16_t* radii_grid = new uint16_t[tol_sz];
-  uint16_t* radii_grid_xy = new uint16_t[tol_sz];
+  int slt_pct = 100;
+  bool print_all = false;
   uint16_t bkg_thresh =0;
-  for (auto& tcase : tcases) {
-    auto args = get_args(grid_size, slt_pct, tcase, true,
-        true);
-    auto selected = args.recut_parameters().selected;
+  cout << "name,iterations,error_rate(%)\n";
+  for (auto& grid_size : grid_sizes) {
+    VID_t tol_sz = (VID_t) grid_size * grid_size * grid_size;
+    uint16_t* radii_grid = new uint16_t[tol_sz];
+    uint16_t* radii_grid_xy = new uint16_t[tol_sz];
+    for (auto& tcase : tcases) {
+      auto args = get_args(grid_size, slt_pct, tcase, true);
 
-    // adjust final runtime parameters
-    auto params = args.recut_parameters();
-    // the total number of blocks allows more parallelism
-    // ideally intervals >> thread count
-    params.set_interval_size(grid_size);
-    params.set_block_size(grid_size);
-    args.set_recut_parameters(params);
+      // adjust final runtime parameters
+      auto params = args.recut_parameters();
+      // the total number of blocks allows more parallelism
+      // ideally intervals >> thread count
+      params.set_interval_size(grid_size);
+      params.set_block_size(grid_size);
+      args.set_recut_parameters(params);
 
-    // run
-    auto recut= Recut<uint16_t>(args);
-    recut.initialize();
+      // run
+      auto recut= Recut<uint16_t>(args);
+      recut.initialize();
+      auto selected = args.recut_parameters().selected;
 
-    recut.setup_value();
-    recut.update("value");
-    //recut.print_interval(0, "value");
+      recut.setup_value();
+      recut.update("value");
+      if (print_all) {
+        recut.print_interval(0, "value");
+      }
 
-    recut.setup_radius();
-    recut.update("radius");
+      recut.setup_radius();
+      recut.update("radius");
+      VID_t interval_num = 0;
 
-    //std::cout << "recut image grid" << endl;
-    //print_image_3D(recut.generated_image, grid_size);
+      if (print_all) {
+        std::cout << "recut image grid" << endl;
+        print_image_3D(recut.generated_image, grid_size);
+      }
 
-    // FIXME replace this by using recut's image, and check for
-    // equality first
-    // build grid
-    get_grid(tcase, inimg1d, grid_size); 
-    if (tcase == 4) {
-        VID_t selected = tol_sz * (slt_pct / (float) 100); // for tcase 4
-        // always select at least the root
-        if (selected == 0) selected = 1;
-        // sets all to 0 for tcase 4
-        mesh_grid(get_central_vid(grid_size), inimg1d, selected, grid_size); 
+      auto total_visited = 0; 
+      for (VID_t i = 0; i < tol_sz; i++) {
+        if (recut.generated_image[i]) {
+          // calculate radius with baseline accurate method
+          radii_grid[i] = get_radius_accurate(recut.generated_image, grid_size, i, bkg_thresh);
+          // build original production version
+          radii_grid_xy[i] = get_radius_hanchuan_XY(recut.generated_image, grid_size, i, bkg_thresh);
+          ++total_visited;
+        }
+      }
+      ASSERT_EQ(total_visited, selected);
+
+      // Debug by eye
+      if (print_all) {
+        cout << "accuracy_radius\n";
+        print_image_3D(radii_grid, grid_size);
+        std::cout << "XY radii grid" << endl;
+        print_image_3D(radii_grid_xy, grid_size);
+        std::cout << "Recut radii\n";
+        recut.print_interval(0, "radius");
+      }
+
+      double xy_err, recut_err;
+      check_image_error(recut.generated_image, radii_grid, radii_grid_xy, grid_size, recut.params->selected, xy_err);
+      check_recut_error(recut, radii_grid, grid_size, 0, "radius", recut_err);
+
+      std::cout << "\"accurate_radius/" << grid_size << "\",1,0\n";
+      std::cout << "\"xy_radius/" << grid_size << "\",1," << xy_err << '\n';
+      std::cout << "\"fast_marching_radius/" << grid_size << "\",1," << recut_err << '\n';
     }
-
-    //std::cout << "Image grid" << endl;
-    //print_image_3D(inimg1d, grid_size);
-    //check_image_equality(inimg1d, recut.generated_image, grid_size);
-
-    // build bkg radius
-    for (VID_t i = 0; i < tol_sz; i++) {
-      radii_grid[i] = get_radius_accurate(inimg1d, grid_size, i, bkg_thresh);
-      radii_grid_xy[i] = get_radius_hanchuan_XY(inimg1d, grid_size, i, bkg_thresh);
-    }
-
-    //std::cout << "Accurate radii grid" << endl;
-    //print_image_3D(radii_grid, grid_size);
-    //std::cout << "XY radii grid" << endl;
-    //print_image_3D(radii_grid_xy, grid_size);
-    //std::cout << "Recut radii\n";
-    //recut.print_interval(0, "radius");
-
-    double xy_err, recut_err;
-    check_image_error(inimg1d, radii_grid, radii_grid_xy, grid_size, recut.params->selected, xy_err);
-    check_recut_error(recut, radii_grid, grid_size, 0, "radius", recut_err);
-
-    cout << "xy error % " << xy_err << '\n';
-    cout << "recut error % " << recut_err << '\n';
+    delete[] radii_grid;
+    delete[] radii_grid_xy;
   }
-  //delete[] inimg1d;
 }
 
 #ifdef APP2
@@ -1054,7 +1057,7 @@ TEST (RecutPipeline, 4tcase0) {
   ASSERT_EQ(args.output_tree.size() , grid_size * grid_size * grid_size);
 }
 
-TEST (RecutPipeline, 4tcase0MultiInterval) {
+TEST (RecutPipeline, DISABLED_4tcase0MultiInterval) {
   auto grid_size = 4;
   double slt_pct = 100; // NA
   int tcase = 0;
@@ -1323,7 +1326,7 @@ TEST (RecutPipeline, DISABLED_StandardIntervalReadWrite256) {
   EXPECT_NEAR(args.output_tree.size(), selected, selected * EXP_DEV_LOW);
 }
 
-TEST (RecutPipeline, test_real_data) {
+TEST (RecutPipeline, DISABLED_test_real_data) {
   VID_t grid_size = 256;
   double slt_pct = 1;
   int tcase = 4;
@@ -1332,14 +1335,15 @@ TEST (RecutPipeline, test_real_data) {
   for (auto walk_size : walk_sizes) {
     cout << walk_size << endl;
     grid_size = walk_size;
-    auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE,
-        true);
+    auto args = get_args(grid_size, slt_pct, tcase, false);
     auto selected = args.recut_parameters().selected;
 
     // adjust final runtime parameters
     auto params = args.recut_parameters();
-    args.set_image_root_dir("../../data/filled/");
-    params.set_marker_file_path("../../data/marker_files");
+    //args.set_image_root_dir("../../data/filled/");
+    //params.set_marker_file_path("../../data/marker_files");
+    args.set_image_root_dir("../../data/manual_modification/");
+    params.set_marker_file_path("../../data/manual_modification/marker_files/");
     // the total number of blocks allows more parallelism
     // ideally intervals >> thread count
     params.set_interval_size(grid_size);
@@ -1349,11 +1353,11 @@ TEST (RecutPipeline, test_real_data) {
     // run
     auto recut= Recut<uint16_t>(args);
     recut();
-    ASSERT_NEAR(args.output_tree.size() , selected, selected * EXP_DEV_LOW);
+    //ASSERT_NEAR(args.output_tree.size() , selected, selected * EXP_DEV_LOW);
   }
 }
 
-TEST (RecutPipeline, test_critical_loop) {
+TEST (RecutPipeline, DISABLED_test_critical_loop) {
   VID_t grid_size = 256;
   double slt_pct = 1;
   int tcase = 4;
@@ -1362,8 +1366,7 @@ TEST (RecutPipeline, test_critical_loop) {
   for (auto walk_size : walk_sizes) {
     cout << walk_size << endl;
     grid_size = walk_size;
-    auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE,
-        true);
+    auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
     auto selected = args.recut_parameters().selected;
 
     // adjust final runtime parameters
