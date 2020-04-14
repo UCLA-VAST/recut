@@ -37,7 +37,7 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 
 // Define your logging level in order of increasing additive levels of specificity
 #define LOG // overview logging details of the recut run, this suffices for basic timing info, granularity at interval level
-//#define LOG_FULL // roughly block by block processing granularity
+#define LOG_FULL // roughly block by block processing granularity
 //#define FULL_PRINT // vertex by vertex behavior
 //#define HLOG_FULL // log the behavior of the block heap methods
 
@@ -48,7 +48,7 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 // determines read speeds of vertex info from INTERVAL_BASE
 #define MMAP
 //#define USE_HUGE_PAGE
-//#define USE_MCP3D
+#define USE_MCP3D
 
 //#define USE_OMP
 

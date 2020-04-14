@@ -334,7 +334,13 @@ VID_t lattice_grid(VID_t start, uint16_t* inimg1d, int line_per_dim,
 }
 
 RecutCommandLineArgs get_args(int grid_size, int slt_pct, int tcase,
-    bool generate_image=false, bool print=false) {
+    bool generate_image=false) {
+
+  bool print = false;
+#ifdef LOG
+  print = true;
+#endif
+
   RecutCommandLineArgs args;
   auto params = args.recut_parameters();
   auto str_path = get_curr();
@@ -460,7 +466,7 @@ uint16_t* read_tiff(std::string fn, int grid_size ) {
  * calculate radius method
  */
 template <class T> 
-uint16_t get_radius_accurate(T* inimg1d, int grid_size, VID_t current_vid, T thresh)
+uint16_t get_radius_accurate(const T* inimg1d, int grid_size, VID_t current_vid, T thresh)
 {
     std::vector<int> sz = {grid_size, grid_size, grid_size};
     VID_t current_x,current_y,current_z;
@@ -524,7 +530,7 @@ uint16_t get_radius_accurate(T* inimg1d, int grid_size, VID_t current_vid, T thr
  * calculate radius method
  */
 template <class T> 
-uint16_t get_radius_hanchuan_XY(T* inimg1d, int grid_size, VID_t current_vid, T thresh)
+uint16_t get_radius_hanchuan_XY(const T* inimg1d, int grid_size, VID_t current_vid, T thresh)
 {
     std::vector<int> sz = {grid_size, grid_size, grid_size};
     VID_t x,y,z;
