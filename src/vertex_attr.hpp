@@ -1,49 +1,55 @@
 #ifndef VERTEX_ATTR_H_
 #define VERTEX_ATTR_H_
+#include <cassert>
+#include <cstring>
+#include <iostream>
 #include <limits>
 #include <vector>
-#include <cstring>
-#include <cassert>
-#include <iostream>
 
-using std::numeric_limits;
-using std::atomic;
 using std::cout;
-using std::endl;
-using std::vector;
 using std::ios;
+using std::numeric_limits;
+using std::vector;
 
-#define assertm(exp, msg) assert(((void) msg, exp))
+#define assertm(exp, msg) assert(((void)msg, exp))
 
 // overflows at ~2e9 nodes, ~ 1024 * 1024 * 1024 * 2
-//typedef uint32_t VID_t; // overflows after ~2e9 ~= 2 1024^3 tiles
+// typedef uint32_t VID_t; // overflows after ~2e9 ~= 2 1024^3 tiles
 //#define INTERVAL_BASE "/tmp/interval_base_32.bin";
 
 typedef uint64_t VID_t; // for multi-interval runs
 
-// pre-generated array of vertices initialized wth desired default values, useful for mmap
-#define INTERVAL_BASE "/tmp/interval_base_64bit.bin" // must match the VID_t bit length type
-// equivalent max allows up to interval actual size of 1024, 1024, 1024 with block_size 4 including padding (ghost cells)
-// WARNING: if you change this number you need to rerun CreateIntervalBase function in recut_tests.cpp
-// to save an interval at least that size at /tmp/
+// pre-generated array of vertices initialized wth desired default values,
+// useful for mmap
+#define INTERVAL_BASE                                                          \
+  "/tmp/interval_base_64bit.bin" // must match the VID_t bit length type
+// equivalent max allows up to interval actual size of 1024, 1024, 1024 with
+// block_size 4 including padding (ghost cells) WARNING: if you change this
+// number you need to rerun CreateIntervalBase function in recut_tests.cpp to
+// save an interval at least that size at /tmp/
 const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 
-// equivalent max allows up to interval actual size of 256, 256, 256 with block_size 4 including padding (ghost cells)
-// Note this is ~786 MB, for VertexAttr of size 24 bytes
-// WARNING: if you change this number you need to rerun CreateIntervalBase function in recut_tests.cpp
-// to save an interval at least that size at /tmp/
-//const VID_t MAX_INTERVAL_VERTICES = 32768000;
-//#define INTERVAL_BASE "/mnt/huge/interval_base_64bit.bin" // must match the VID_t bit length type
+// equivalent max allows up to interval actual size of 256, 256, 256 with
+// block_size 4 including padding (ghost cells) Note this is ~786 MB, for
+// VertexAttr of size 24 bytes WARNING: if you change this number you need to
+// rerun CreateIntervalBase function in recut_tests.cpp to save an interval at
+// least that size at /tmp/
+// const VID_t MAX_INTERVAL_VERTICES = 32768000;
+//#define INTERVAL_BASE "/mnt/huge/interval_base_64bit.bin" // must match the
+// VID_t bit length type
 
-// Define your logging level in order of increasing additive levels of specificity
-#define LOG // overview logging details of the recut run, this suffices for basic timing info, granularity at interval level
+// Define your logging level in order of increasing additive levels of
+// specificity
+#define LOG      // overview logging details of the recut run, this suffices for
+                 // basic timing info, granularity at interval level
 #define LOG_FULL // roughly block by block processing granularity
 //#define FULL_PRINT // vertex by vertex behavior
 //#define HLOG_FULL // log the behavior of the block heap methods
 
 // Define how revisits/reupdates to previous seen vertices is handled
-//#define RV // count the number of revisits or attempted revisits of vertices and log to stdout
-//#define NO_RV // reject any vertices from having new updated values after they have already been visited
+//#define RV // count the number of revisits or attempted revisits of vertices
+// and log to stdout #define NO_RV // reject any vertices from having new
+// updated values after they have already been visited
 
 // determines read speeds of vertex info from INTERVAL_BASE
 #define MMAP
@@ -53,10 +59,11 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 //#define USE_OMP
 
 // Parallel strategies other than OMP defined here
-//#define ASYNC // run without TF macro to use the std::async instead of TF thread pool, warning much much slower not recommended
-//#define TF // if defined, use CPP taskflow to use a workstealing thread pool for new blocks
-// TF must be used in conjucntion with ASYNC macro to allow asynchronous starts of
-// new blocks during the marching step
+//#define ASYNC // run without TF macro to use the std::async instead of TF
+// thread pool, warning much much slower not recommended #define TF // if
+// defined, use CPP taskflow to use a workstealing thread pool for new blocks
+// TF must be used in conjucntion with ASYNC macro to allow asynchronous starts
+// of new blocks during the marching step
 #ifdef TF
 #define ASYNC
 #endif
@@ -64,72 +71,62 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 // Define which optimized data structures to utilize
 //#define CONCURRENT_MAP
 #ifdef CONCURRENT_MAP
-#include<junction/ConcurrentMap_Leapfrog.h>
-  typedef junction::ConcurrentMap_Leapfrog<uint64_t, std::vector<struct VertexAttr>*> ConcurrentMap64;
-  typedef junction::ConcurrentMap_Leapfrog<uint32_t, std::vector<struct VertexAttr>*> ConcurrentMap32;
+#include <junction/ConcurrentMap_Leapfrog.h>
+typedef junction::ConcurrentMap_Leapfrog<uint64_t,
+                                         std::vector<struct VertexAttr> *>
+    ConcurrentMap64;
+typedef junction::ConcurrentMap_Leapfrog<uint32_t,
+                                         std::vector<struct VertexAttr> *>
+    ConcurrentMap32;
 #endif
 
 #include "utils.hpp"
 
 struct bitfield {
-    uint8_t field_;
+  uint8_t field_;
 
-    void set() {
-        //field_ |= 1 << 0;
-        //field_ |= 1 << 1;
-        //field_ |= 1 << 2;
-        //field_ |= 1 << 3;
-        //field_ |= 1 << 4;
-        //field_ |= 1 << 5;
-        //field_ |= 1 << 6;
-        //field_ |= 1 << 7;
-        field_ = 255;
-    }
+  void set() {
+    // field_ |= 1 << 0;
+    // field_ |= 1 << 1;
+    // field_ |= 1 << 2;
+    // field_ |= 1 << 3;
+    // field_ |= 1 << 4;
+    // field_ |= 1 << 5;
+    // field_ |= 1 << 6;
+    // field_ |= 1 << 7;
+    field_ = 255;
+  }
 
-    void reset() {
-        field_ = 0;
-    }
+  void reset() { field_ = 0; }
 
-    bool test(int idx) {
-        return static_cast<bool>(field_ & (1 << idx));
-    }
+  bool test(int idx) { return static_cast<bool>(field_ & (1 << idx)); }
 
-    void set(int idx) {
-        field_ |= 1 << idx;
-    }
+  void set(int idx) { field_ |= 1 << idx; }
 
-    void unset(int idx) {
-        field_ &= ~(1 << idx);
-    }
+  void unset(int idx) { field_ &= ~(1 << idx); }
 
-    bool none() {
-        return field_ == 0;
-    }
+  bool none() { return field_ == 0; }
 
-    bitfield& operator=(const bitfield& a) 
-    {
-        this->field_ = a.field_;
-        return *this;
-    }
+  bitfield &operator=(const bitfield &a) {
+    this->field_ = a.field_;
+    return *this;
+  }
 
-    bool operator==(const bitfield& a) const
-    {
-        return a.field_ == this->field_;
-    }
+  bool operator==(const bitfield &a) const { return a.field_ == this->field_; }
 
-    // defaults as 1100 0000 unvisited with no connections
-    bitfield() : field_(192) {}
-    bitfield(uint8_t field) : field_(field) {}
-
+  // defaults as 1100 0000 unvisited with no connections
+  bitfield() : field_(192) {}
+  bitfield(uint8_t field) : field_(field) {}
 };
 
 ////struct compare_VertexAttr; //predefine to avoid circular issues
-//struct VertexAttr; //predefine to avoid circular issues
+// struct VertexAttr; //predefine to avoid circular issues
 
 //// min_heap
-//struct compare_VertexAttr
+// struct compare_VertexAttr
 //{
-    //inline bool operator() (const struct VertexAttr* n1, const struct VertexAttr* n2) const;
+// inline bool operator() (const struct VertexAttr* n1, const struct VertexAttr*
+// n2) const;
 //};
 
 typedef VID_t handle_t; // FIXME switch to from VID_t
@@ -141,29 +138,34 @@ struct VertexAttr {
   // size of this map is max 4 since a corner voxel can it at most
   // 3 other blocks ghost zones
   handle_t handle; // same type as VID_t
-  float value; // distance to source: 4 bytes
-  struct bitfield edge_state; // most sig. bits (little-endian) refer to state : 1 bytes
+  float value;     // distance to source: 4 bytes
+  struct bitfield
+      edge_state; // most sig. bits (little-endian) refer to state : 1 bytes
   uint8_t radius = std::numeric_limits<uint8_t>::max();
 
   // constructors
-  VertexAttr() : edge_state(192), value(numeric_limits<float>::max()),
-    vid(numeric_limits<VID_t>::max()), handle(numeric_limits<handle_t>::max()), 
-    radius(numeric_limits<uint8_t>::max()) {} 
+  VertexAttr()
+      : edge_state(192), value(numeric_limits<float>::max()),
+        vid(numeric_limits<VID_t>::max()),
+        handle(numeric_limits<handle_t>::max()),
+        radius(numeric_limits<uint8_t>::max()) {}
 
-  VertexAttr(float value) : edge_state(192), value(value),
-    vid(numeric_limits<VID_t>::max()), handle(numeric_limits<handle_t>::max()),
-    radius(numeric_limits<uint8_t>::max())  {} 
+  VertexAttr(float value)
+      : edge_state(192), value(value), vid(numeric_limits<VID_t>::max()),
+        handle(numeric_limits<handle_t>::max()),
+        radius(numeric_limits<uint8_t>::max()) {}
 
   // copy constructor
-  VertexAttr(const VertexAttr& a) : edge_state(a.edge_state), value(a.value),
-    vid(a.vid), radius(a.radius) {} 
+  VertexAttr(const VertexAttr &a)
+      : edge_state(a.edge_state), value(a.value), vid(a.vid), radius(a.radius) {
+  }
 
   // emplace back constructor
-  VertexAttr(struct bitfield edge_state, float value, VID_t vid, uint8_t radius) : 
-    edge_state(edge_state), value(value), vid(vid), radius(radius) {}
+  VertexAttr(struct bitfield edge_state, float value, VID_t vid, uint8_t radius)
+      : edge_state(edge_state), value(value), vid(vid), radius(radius) {}
 
   bool root() {
-    return (!edge_state.test(7) && !edge_state.test(6) ) ; // 00XX XXXX ROOT
+    return (!edge_state.test(7) && !edge_state.test(6)); // 00XX XXXX ROOT
   }
 
   std::string description() {
@@ -172,7 +174,7 @@ struct VertexAttr {
     descript += "value:" + std::to_string(value);
     descript += "\n";
     descript += "state:";
-    for (int i=7; i >= 0; i--) {
+    for (int i = 7; i >= 0; i--) {
       descript += edge_state.test(i) ? "1" : "0";
     }
     descript += "\n";
@@ -183,36 +185,27 @@ struct VertexAttr {
 
   /* returns whether this vertex has been added to a heap
    */
-  bool valid_handle() {
-    return (handle != numeric_limits<handle_t>::max());
-  }
+  bool valid_handle() { return (handle != numeric_limits<handle_t>::max()); }
 
   /* returns whether this vertex has had its radius updated from the default max
    */
-  bool valid_radius() {
-    return radius != numeric_limits<uint8_t>::max();
-  }
+  bool valid_radius() { return radius != numeric_limits<uint8_t>::max(); }
 
   /* returns whether this vertex has had its value updated from the default max
    */
-  bool valid_value() {
-    return value != numeric_limits<float>::max();
-  }
+  bool valid_value() { return value != numeric_limits<float>::max(); }
 
   /* returns whether this vertex has been added to a heap
    */
-  bool valid_vid() {
-    return (vid != numeric_limits<VID_t>::max());
-  }
+  bool valid_vid() { return (vid != numeric_limits<VID_t>::max()); }
 
   bool selected() {
-    return (edge_state.test(7) && !edge_state.test(6)) ; // 10XX XXXX KNOWN NEW
+    return (edge_state.test(7) && !edge_state.test(6)); // 10XX XXXX KNOWN NEW
   }
 
   /* can not be above idx value 5
    */
-  template <typename T>
-  void mark_connect(T idx) {
+  template <typename T> void mark_connect(T idx) {
     edge_state.unset(5); // if only 1 connection allowed
     edge_state.unset(4);
     edge_state.unset(3);
@@ -222,35 +215,25 @@ struct VertexAttr {
     edge_state.set(idx);
   }
 
-  void copy_edge_state(const VertexAttr& a) 
-  {
-      edge_state = a.edge_state;
+  void copy_edge_state(const VertexAttr &a) { edge_state = a.edge_state; }
+
+  VertexAttr &operator=(const VertexAttr &a) {
+    edge_state.field_ = a.edge_state.field_;
+    vid = a.vid;
+    value = a.value;
+    radius = a.radius;
+    // do not copy handle_t
+    return *this;
   }
 
-  VertexAttr& operator=(const VertexAttr& a) 
-  {
-      edge_state.field_ = a.edge_state.field_;
-      vid = a.vid;
-      value = a.value;
-      radius = a.radius;
-      // do not copy handle_t
-      return *this;
+  bool operator==(const VertexAttr &a) const {
+    return (value == a.value) && (vid == a.vid) &&
+           (edge_state.field_ == a.edge_state.field_) && (radius == a.radius);
   }
 
-  bool operator==(const VertexAttr& a) const
-  {
-    return (value == a.value) &&
-        (vid == a.vid) &&
-        (edge_state.field_ == a.edge_state.field_) &&
-        (radius == a.radius);
-  }
-
-  bool operator!=(const VertexAttr& a) const
-  {
-    return (value != a.value) ||
-        (vid != a.vid) ||
-        (edge_state.field_ != a.edge_state.field_) ||
-        (radius == a.radius);
+  bool operator!=(const VertexAttr &a) const {
+    return (value != a.value) || (vid != a.vid) ||
+           (edge_state.field_ != a.edge_state.field_) || (radius == a.radius);
   }
 
   void mark_selected() {
@@ -259,15 +242,15 @@ struct VertexAttr {
   }
 
   bool unvisited() { // 11XX XXXX default unvisited state
-    return edge_state.test(6) && edge_state.test(7); 
+    return edge_state.test(6) && edge_state.test(7);
   }
 
-  /* returns true if X1XX XXXX 
+  /* returns true if X1XX XXXX
    * means node is either BAND or unvisited
    * and has not been selected as KNOWN_NEW
    */
-  bool unselected() { 
-    //return edge_state.test(6); 
+  bool unselected() {
+    // return edge_state.test(6);
     return !selected();
   }
 
@@ -278,46 +261,45 @@ struct VertexAttr {
   }
 
   void mark_band(VID_t set_vid) {
-    // add to band (01XX XXXX) 
+    // add to band (01XX XXXX)
     edge_state.unset(7);
     edge_state.set(6);
     vid = set_vid;
   }
 
   /**
-  *  remaining 6 bits indicate connections with neighbors:
-  *  each value is a boolean indicating a connection with that neighbor
-  *  from least sig. to most sig bit the connections are ordered as follows:
-  *  bit | connection
-  *  ----------------
-  *  0   | x - 1
-  *  1   | x + 1
-  *  2   | y - 1
-  *  3   | y + 1
-  *  4   | z - 1
-  *  5   | z + 1
-  */
-  template <typename T>
-  std::vector<VID_t> connections(T nxpad, T nxypad) {
+   *  remaining 6 bits indicate connections with neighbors:
+   *  each value is a boolean indicating a connection with that neighbor
+   *  from least sig. to most sig bit the connections are ordered as follows:
+   *  bit | connection
+   *  ----------------
+   *  0   | x - 1
+   *  1   | x + 1
+   *  2   | y - 1
+   *  3   | y + 1
+   *  4   | z - 1
+   *  5   | z + 1
+   */
+  template <typename T> std::vector<VID_t> connections(T nxpad, T nxypad) {
     std::vector<VID_t> connect;
     connect.reserve(6);
     // returns vid of itself if there are no connections
     if (!edge_state.test(5) && !edge_state.test(4) && !edge_state.test(3) &&
         !edge_state.test(2) && !edge_state.test(1) && !edge_state.test(0))
-      connect.push_back(vid); 
+      connect.push_back(vid);
     // accessed from lowest to highest address to faciliate coalescing
     if (edge_state.test(4))
-      connect.push_back(vid - nxypad ); 
+      connect.push_back(vid - nxypad);
     if (edge_state.test(2))
-      connect.push_back(vid - nxpad );
+      connect.push_back(vid - nxpad);
     if (edge_state.test(0))
-      connect.push_back(vid - 1 );
+      connect.push_back(vid - 1);
     if (edge_state.test(1))
-      connect.push_back(vid + 1 );
+      connect.push_back(vid + 1);
     if (edge_state.test(3))
-      connect.push_back(vid + nxpad );
+      connect.push_back(vid + nxpad);
     if (edge_state.test(5))
-      connect.push_back(vid + nxypad );
+      connect.push_back(vid + nxypad);
     return connect;
   }
 
@@ -335,11 +317,11 @@ struct VertexAttr {
   // 6-7 | 11 indicates unvisited
   // 6-7 | 01 indicates band
   // 6-7 | 10 indicates KNOWN_NEW
-  // 6-7 | 00 indicates KNOWN_FIX of 
+  // 6-7 | 00 indicates KNOWN_FIX of
   //       0000 0000, KNOWN_FIX ROOT
   //
   // Ex.
-  // 192 = 1100 0000 : 
+  // 192 = 1100 0000 :
   //   initial state of all but root node, no connections to any neighbors
   // 2 = 0000 0010 :
   //   indicates a selected node with one connection at x + 1
@@ -348,161 +330,166 @@ struct VertexAttr {
 };
 
 //// min_heap
-//inline bool compare_VertexAttr::operator() (const struct VertexAttr* n1, const struct VertexAttr* n2) const {
-  //return n1->value > n2->value;
+// inline bool compare_VertexAttr::operator() (const struct VertexAttr* n1,
+// const struct VertexAttr* n2) const { return n1->value > n2->value;
 //}
 
 template <class T>
-class NeighborHeap       // Basic Min heap
+class NeighborHeap // Basic Min heap
 {
 public:
-	NeighborHeap()
-	{
-        // FIXME this is a disaster
-		elems.reserve(10000);
-	}
+  NeighborHeap() {
+    // FIXME this is a disaster
+    elems.reserve(10000);
+  }
 
-    void print(std::string stage) {
-      if (stage == "radius") {
-        for (auto& vert : elems) {
-          cout << +(vert->radius) << " " ;
-        }
-      } else {
-        for (auto& vert : elems) {
-          cout << +(vert->value) << " " ;
-        }
+  void print(std::string stage) {
+    if (stage == "radius") {
+      for (auto &vert : elems) {
+        cout << +(vert->radius) << " ";
       }
-      cout << endl;
-    }
-
-	T* top() { 
-		if(empty()) {
-          throw; return 0;
-        } else { 
-          return elems[0];
-        }
-    }
-
-    void check_empty() {
-		if(empty()) throw;
-    }
-
-	T* pop(VID_t ib, std::string cmp_field)
-	{
-		check_empty();
-		T* min_elem = elems[0];
-
-		if(elems.size()==1) elems.clear();
-		else
-		{
-			elems[0] = elems[elems.size() - 1];
-            elems[0]->handle = 0; // update handle value
-			elems.erase(elems.begin() + elems.size() - 1);
-			down_heap(0, ib, cmp_field); 
-		}
-        //min_elem->handles.erase(ib);
-        //min_elem->handles[ib] = std::numeric_limits<handle_t>::max();
-        min_elem->handle = std::numeric_limits<handle_t>::max();
-		return min_elem;
-	}
-
-    // FIXME return type to handle_t later
-	void push(T* t, VID_t ib, std::string cmp_field)
-	{
-		elems.push_back(t);
-        // mark handle such that all swaps are recorded in correct handle
-        t->handle = elems.size() - 1;
-        up_heap(elems.size() - 1, ib, cmp_field);
-        //return t->handle_nb;
-	}
-
-    handle_t find(handle_t vid) {
-      for (handle_t i = 0; i < elems.size(); i++) {
-        if (elems[i]->vid == vid) {
-          return i;
-        }
+    } else {
+      for (auto &vert : elems) {
+        cout << +(vert->value) << " ";
       }
-      assertm(false, "Did not find vid in heap on call to vid"); // did not find
-      return std::numeric_limits<handle_t>::max();
     }
+    cout << '\n';
+  }
 
-	bool empty(){return elems.empty();}
+  T *top() {
+    if (empty()) {
+      throw;
+      return 0;
+    } else {
+      return elems[0];
+    }
+  }
 
-    template <typename TNew>
-	void update(T* updated_node, VID_t ib, TNew new_field, std::string cmp_field)
-	{
-        handle_t id = updated_node->handle;
-		check_empty();
-        assertm(elems[id]->vid == updated_node->vid, "VID doesn't match");
-        assertm(elems[id]->handle == id, "handle doesn't match");
-        if (cmp_field == "value") {
-          auto old_value = elems[id]->value;
-          elems[id]->value = new_field;
-          //elems[id]->handle = id;
-          if(new_field < old_value) up_heap(id, ib, cmp_field);
-          else if(new_field > old_value) down_heap(id, ib, cmp_field);
-        } else if (cmp_field == "radius") {
-          auto old_radius = elems[id]->radius;
-          elems[id]->radius = new_field;
-          //elems[id]->handle = id;
-          if (new_field < old_radius) up_heap(id, ib, cmp_field);
-          else if(new_field > old_radius) down_heap(id, ib, cmp_field);
-        } else {
-          assertm(false, "`cmp_field` arg not recognized");
-        }
-	}
-    int size() {return elems.size();}
+  void check_empty() {
+    if (empty())
+      throw;
+  }
+
+  T *pop(VID_t ib, std::string cmp_field) {
+    check_empty();
+    T *min_elem = elems[0];
+
+    if (elems.size() == 1)
+      elems.clear();
+    else {
+      elems[0] = elems[elems.size() - 1];
+      elems[0]->handle = 0; // update handle value
+      elems.erase(elems.begin() + elems.size() - 1);
+      down_heap(0, ib, cmp_field);
+    }
+    // min_elem->handles.erase(ib);
+    // min_elem->handles[ib] = std::numeric_limits<handle_t>::max();
+    min_elem->handle = std::numeric_limits<handle_t>::max();
+    return min_elem;
+  }
+
+  // FIXME return type to handle_t later
+  void push(T *t, VID_t ib, std::string cmp_field) {
+    elems.push_back(t);
+    // mark handle such that all swaps are recorded in correct handle
+    t->handle = elems.size() - 1;
+    up_heap(elems.size() - 1, ib, cmp_field);
+    // return t->handle_nb;
+  }
+
+  handle_t find(handle_t vid) {
+    for (handle_t i = 0; i < elems.size(); i++) {
+      if (elems[i]->vid == vid) {
+        return i;
+      }
+    }
+    assertm(false, "Did not find vid in heap on call to vid"); // did not find
+    return std::numeric_limits<handle_t>::max();
+  }
+
+  bool empty() { return elems.empty(); }
+
+  template <typename TNew>
+  void update(T *updated_node, VID_t ib, TNew new_field,
+              std::string cmp_field) {
+    handle_t id = updated_node->handle;
+    check_empty();
+    assertm(elems[id]->vid == updated_node->vid, "VID doesn't match");
+    assertm(elems[id]->handle == id, "handle doesn't match");
+    if (cmp_field == "value") {
+      auto old_value = elems[id]->value;
+      elems[id]->value = new_field;
+      // elems[id]->handle = id;
+      if (new_field < old_value)
+        up_heap(id, ib, cmp_field);
+      else if (new_field > old_value)
+        down_heap(id, ib, cmp_field);
+    } else if (cmp_field == "radius") {
+      auto old_radius = elems[id]->radius;
+      elems[id]->radius = new_field;
+      // elems[id]->handle = id;
+      if (new_field < old_radius)
+        up_heap(id, ib, cmp_field);
+      else if (new_field > old_radius)
+        down_heap(id, ib, cmp_field);
+    } else {
+      assertm(false, "`cmp_field` arg not recognized");
+    }
+  }
+  int size() { return elems.size(); }
+
 private:
-	vector<T*> elems;
+  vector<T *> elems;
 
-    // used for indexing handle
-	bool swap_heap(int id1, int id2, VID_t ib, std::string cmp_field)
-	{
-		if(id1 < 0 || id1 >= elems.size() || id2 < 0 || id2 >= elems.size()) return false;
-		if(id1 == id2) return false;
-		int pid = id1 < id2 ? id1 : id2;
-		int cid = id1 > id2 ? id1 : id2;
-		assert(cid == 2*(pid+1) -1 || cid == 2*(pid+1));
+  // used for indexing handle
+  bool swap_heap(int id1, int id2, VID_t ib, std::string cmp_field) {
+    if (id1 < 0 || id1 >= elems.size() || id2 < 0 || id2 >= elems.size())
+      return false;
+    if (id1 == id2)
+      return false;
+    int pid = id1 < id2 ? id1 : id2;
+    int cid = id1 > id2 ? id1 : id2;
+    assert(cid == 2 * (pid + 1) - 1 || cid == 2 * (pid + 1));
 
-        if (cmp_field == "radius") {
-          if(elems[pid]->radius <= elems[cid]->radius) return false;
-        } else {
-          if(elems[pid]->value <= elems[cid]->value) return false;
-        }
-        T * tmp = elems[pid];
-        elems[pid] = elems[cid];
-        elems[cid] = tmp;
-        elems[pid]->handle = pid;
-        elems[cid]->handle = cid;
-        return true;
-	}
+    if (cmp_field == "radius") {
+      if (elems[pid]->radius <= elems[cid]->radius)
+        return false;
+    } else {
+      if (elems[pid]->value <= elems[cid]->value)
+        return false;
+    }
+    T *tmp = elems[pid];
+    elems[pid] = elems[cid];
+    elems[cid] = tmp;
+    elems[pid]->handle = pid;
+    elems[cid]->handle = cid;
+    return true;
+  }
 
-	void up_heap(int id, VID_t ib, std::string cmp_field)
-	{
-		int pid = (id+1)/2 - 1;
-		if(swap_heap(id, pid, ib, cmp_field)) up_heap(pid, ib, cmp_field);
-	}
+  void up_heap(int id, VID_t ib, std::string cmp_field) {
+    int pid = (id + 1) / 2 - 1;
+    if (swap_heap(id, pid, ib, cmp_field))
+      up_heap(pid, ib, cmp_field);
+  }
 
-	void down_heap(int id, VID_t ib, std::string cmp_field)
-	{
-		int cid1 = 2*(id+1) -1;
-		int cid2 = 2*(id+1);
-		if(cid1 >= elems.size()) return;
-		else if(cid1 == elems.size() - 1)
-		{
-			swap_heap(id, cid1, ib, cmp_field);
-		}
-		else if(cid1 < elems.size() - 1)
-		{
-            int cid;
-            if (cmp_field == "radius") {
-			  cid = elems[cid1]->radius < elems[cid2]->radius ? cid1 : cid2;
-            } else {
-			  cid = elems[cid1]->value < elems[cid2]->value ? cid1 : cid2;
-            }
-			if(swap_heap(id, cid, ib, cmp_field)) down_heap(cid, ib, cmp_field);
-		}
-	}
+  void down_heap(int id, VID_t ib, std::string cmp_field) {
+    int cid1 = 2 * (id + 1) - 1;
+    int cid2 = 2 * (id + 1);
+    if (cid1 >= elems.size())
+      return;
+    else if (cid1 == elems.size() - 1) {
+      swap_heap(id, cid1, ib, cmp_field);
+    } else if (cid1 < elems.size() - 1) {
+      int cid;
+      if (cmp_field == "radius") {
+        cid = elems[cid1]->radius < elems[cid2]->radius ? cid1 : cid2;
+      } else {
+        cid = elems[cid1]->value < elems[cid2]->value ? cid1 : cid2;
+      }
+      if (swap_heap(id, cid, ib, cmp_field))
+        down_heap(cid, ib, cmp_field);
+    }
+  }
 };
 
 using local_heap = NeighborHeap<VertexAttr>;
