@@ -4,3 +4,9 @@
 [submodule "extern/googletest"]
 	path = extern/googletest
 	url = git@github.com:google/googletest.git
+[submodule "extern/junction"]
+	path = extern/junction
+	url = https://github.com/preshing/junction.git
+[submodule "extern/turf"]
+	path = extern/turf
+	url = https://github.com/preshing/turf.git
