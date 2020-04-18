@@ -60,7 +60,7 @@ template <typename T> struct atomwrapper {
 };
 
 // use in conjunction with clock_gettime
-inline double DiffTime(struct timespec time1, struct timespec time2) {
+inline double diff_time(struct timespec time1, struct timespec time2) {
   return time2.tv_sec - time1.tv_sec + (time2.tv_nsec - time1.tv_nsec) * 1e-9;
 }
 
@@ -88,8 +88,11 @@ inline size_t GetAvailMem() {
 #endif
 }
 
-// const std::vector<double> givals[256] = {22026.5,   20368, 18840.3, 17432.5,
-// 16134.8, 14938.4, 13834.9, 12816.8,
+template <class image_t> struct TileThresholds {
+  double max_int;
+  double min_int;
+  image_t bkg_thresh;
+};
 
 class SuperInterval;
 template <class image_t> class Recut {
@@ -207,7 +210,8 @@ public:
   T2 safe_pop(T &heap, VID_t block_num, VID_t interval_num,
               std::string cmp_field);
 
-  inline double calc_weight(image_t pixel);
+  inline double calc_weight(image_t pixel,
+                            TileThresholds<image_t> tile_thresholds);
   image_t get_img_val(const image_t *img, VID_t vid);
   inline VID_t rotate_index(VID_t img_sub, const VID_t current,
                             const VID_t neighbor, const VID_t block_size,
@@ -243,7 +247,8 @@ public:
   int get_parent_code(VID_t dst_id, VID_t src_id);
   bool accumulate_value(const image_t *img, VID_t interval_num, VID_t dst_id,
                         VID_t block_num, struct VertexAttr *src,
-                        VID_t &revisits, double factor, int parent_code);
+                        VID_t &revisits, double factor, int parent_code,
+                        TileThresholds<image_t> tile_thresholds);
   bool accumulate_radius(VID_t interval_num, VID_t dst_id, VID_t block_num,
                          struct VertexAttr *src, VID_t &revisits, double factor,
                          int parent_code);
@@ -252,7 +257,8 @@ public:
                      TNew new_field, std::string stage);
   void update_neighbors(const image_t *img, VID_t interval_num,
                         struct VertexAttr *min_attr, VID_t block_num,
-                        VID_t &revisits, std::string stage);
+                        VID_t &revisits, std::string stage,
+                        TileThresholds<image_t> tile_thresholds);
   void integrate_updated_ghost(VID_t interval_num, VID_t block_num,
                                std::string stage);
   bool integrate_vertex(VID_t interval_num, VID_t block_num,
@@ -260,12 +266,15 @@ public:
                         bool is_root, std::string stage);
   // void create_integrate_thread(VID_t interval_num, VID_t block_num) ;
   void march_narrow_band(const image_t *img, VID_t interval_num,
-                         VID_t block_num, std::string stage);
+                         VID_t block_num, std::string stage,
+                         TileThresholds<image_t> tile_thresholds);
   void create_march_thread(VID_t interval_num, VID_t block_num);
 #ifdef USE_MCP3D
-  void load_tile(VID_t interval_num, mcp3d::MImage &mcp3d_tile);
+  const TileThresholds<image_t> load_tile(VID_t interval_num,
+                                          mcp3d::MImage &mcp3d_tile);
 #endif
-  double process_interval(VID_t interval_num, image_t *tile, std::string stage);
+  double process_interval(VID_t interval_num, image_t *tile, std::string stage,
+                          const TileThresholds<image_t> tile_thresholds);
   void update(std::string stage);
   template <typename vertex_t>
   void update_shardless(vector<vertex_t> roots, const vector<int> image_offsets,
@@ -675,7 +684,9 @@ image_t Recut<image_t>::get_img_val(const image_t *img, VID_t vid) {
 }
 
 template <class image_t>
-inline double Recut<image_t>::calc_weight(image_t pixel) {
+inline double
+Recut<image_t>::calc_weight(image_t pixel,
+                            TileThresholds<image_t> tile_thresholds) {
   auto idx = (int)((pixel - this->min_int) / this->max_int * 255);
   assertm(idx < 256, "givals index can not exceed 255");
   assertm(idx >= 0, "givals index negative");
@@ -792,7 +803,8 @@ template <class image_t>
 bool Recut<image_t>::accumulate_value(const image_t *img, VID_t interval_num,
                                       VID_t dst_id, VID_t block_num,
                                       struct VertexAttr *src, VID_t &revisits,
-                                      double factor, int parent_code) {
+                                      double factor, int parent_code,
+                                      TileThresholds<image_t> tile_thresholds) {
 
   assertm(dst_id < this->img_vox_num, "Outside bounds of current interval");
   auto dst = get_attr_vid(interval_num, block_num, dst_id, nullptr);
@@ -801,7 +813,7 @@ bool Recut<image_t>::accumulate_value(const image_t *img, VID_t interval_num,
 #ifdef FULL_PRINT
   cout << "\tcheck dst vid: " << dst_id;
   cout << " pixel " << dst_vox;
-  cout << " bkg_thresh " << +bkg_thresh << '\n';
+  cout << " bkg_thresh " << +tile_thresholds.bkg_thresh << '\n';
 #endif
 
   // exclude all KNOWN_FIX values 00, this includes root and dummy
@@ -813,9 +825,9 @@ bool Recut<image_t>::accumulate_value(const image_t *img, VID_t interval_num,
   }
 
   // skip backgrounds
-  if (dst_vox <= bkg_thresh) {
+  if (dst_vox <= tile_thresholds.bkg_thresh) {
 #ifdef FULL_PRINT
-    cout << "\t\tfailed bkg_thresh" << '\n';
+    cout << "\t\tfailed tile_thresholds.bkg_thresh" << '\n';
 #endif
     return false;
   }
@@ -1102,7 +1114,8 @@ template <class image_t>
 void Recut<image_t>::update_neighbors(const image_t *img, VID_t interval_num,
                                       struct VertexAttr *min_attr,
                                       VID_t block_num, VID_t &revisits,
-                                      std::string stage) {
+                                      std::string stage,
+                                      TileThresholds<image_t> tile_thresholds) {
 
   auto vid = min_attr->vid;
   VID_t i, j, k;
@@ -1381,8 +1394,9 @@ bool Recut<image_t>::check_blocks_finish(VID_t interval_num) {
 }
 
 template <class image_t>
-void Recut<image_t>::march_narrow_band(const image_t *img, VID_t interval_num,
-                                       VID_t block_num, std::string stage) {
+void Recut<image_t>::march_narrow_band(
+    const image_t *img, VID_t interval_num, VID_t block_num, std::string stage,
+    TileThresholds<image_t> tile_thresholds) {
 
 #ifdef LOG_FULL
   struct timespec time0, time1;
@@ -1450,7 +1464,7 @@ void Recut<image_t>::march_narrow_band(const image_t *img, VID_t interval_num,
     clock_gettime(CLOCK_REALTIME, &time1);
     cout << "Marched block: " << block_num << " start size " << start_size
          << " visiting " << visited << " revisits " << revisits << " in "
-         << DiffTime(time0, time1) << " s" << '\n';
+         << diff_time(time0, time1) << " s" << '\n';
   }
 #endif
 
@@ -1639,8 +1653,9 @@ int Recut<image_t>::thresh_pct(const image_t *img, VID_t interval_vert_num,
 }
 
 template <class image_t>
-double Recut<image_t>::process_interval(VID_t interval_num, image_t *tile,
-                                        std::string stage) {
+double Recut<image_t>::process_interval(
+    VID_t interval_num, image_t *tile, std::string stage,
+    const TileThresholds<image_t> tile_thresholds) {
 
   struct timespec presave_time, postmarch_time, iter_start,
       start_iter_loop_time, end_iter_time, postsave_time;
@@ -1689,12 +1704,13 @@ double Recut<image_t>::process_interval(VID_t interval_num, image_t *tile,
 #ifdef TF
           // FIXME check passing tile ptr as ref
           prevent_destruction.back()->silent_emplace([=, &tile]() {
-            march_narrow_band(tile, interval_num, block_num, stage);
+            march_narrow_band(tile, interval_num, block_num, stage,
+                              tile_thresholds);
           });
           added_task = true;
 #else
           async(launch::async, &Recut<tile>::march_narrow_band, this, tile,
-                interval_num, block_num, stage);
+                interval_num, block_num, stage, tile_thresholds);
 #endif // TF
         }
       }
@@ -1720,7 +1736,7 @@ double Recut<image_t>::process_interval(VID_t interval_num, image_t *tile,
 #pragma omp parallel for
 #endif
     for (VID_t block_num = 0; block_num < nblocks; ++block_num) {
-      march_narrow_band(tile, interval_num, block_num, stage);
+      march_narrow_band(tile, interval_num, block_num, stage, tile_thresholds);
     }
 
 #endif // ASYNC
@@ -1731,7 +1747,7 @@ double Recut<image_t>::process_interval(VID_t interval_num, image_t *tile,
     if (restart_bool) {
       cout << " with bound_band: " << bound_band;
     }
-    cout << " in " << DiffTime(iter_start, postmarch_time) << " sec." << '\n';
+    cout << " in " << diff_time(iter_start, postmarch_time) << " sec." << '\n';
 #endif
 
     //#ifdef ASYNC
@@ -1753,7 +1769,7 @@ double Recut<image_t>::process_interval(VID_t interval_num, image_t *tile,
 #ifdef LOG_FULL
     clock_gettime(CLOCK_REALTIME, &end_iter_time);
     cout << "inner_iteration_idx " << inner_iteration_idx << " in "
-         << DiffTime(iter_start, end_iter_time) << " sec." << '\n';
+         << diff_time(iter_start, end_iter_time) << " sec." << '\n';
 #endif
 
     if (check_blocks_finish(interval_num)) {
@@ -1773,14 +1789,14 @@ double Recut<image_t>::process_interval(VID_t interval_num, image_t *tile,
 
   clock_gettime(CLOCK_REALTIME, &postsave_time);
 
-  no_io_time = DiffTime(start_iter_loop_time, presave_time);
+  no_io_time = diff_time(start_iter_loop_time, presave_time);
   // global_no_io_time += no_io_time;
 #ifdef LOG_FULL
   cout << "Interval: " << interval_num << " (no I/O) within " << no_io_time
        << " sec." << '\n';
   if (!this->mmap_)
     cout << "Finished saving interval in "
-         << DiffTime(presave_time, postsave_time) << " sec." << '\n';
+         << diff_time(presave_time, postsave_time) << " sec." << '\n';
 #endif
 
   super_interval.GetInterval(interval_num)->SetActive(false);
@@ -1802,11 +1818,14 @@ double Recut<image_t>::process_interval(VID_t interval_num, image_t *tile,
  * file INTERVAL_BASE
  */
 template <class image_t>
-void Recut<image_t>::load_tile(VID_t interval_num, mcp3d::MImage &mcp3d_tile) {
+const TileThresholds<image_t>
+Recut<image_t>::load_tile(VID_t interval_num, mcp3d::MImage &mcp3d_tile) {
 #ifdef LOG
   struct timespec start, image_load;
   clock_gettime(CLOCK_REALTIME, &start);
 #endif
+  double max_int, min_int;
+  image_t bkg_thresh;
 
   vector<int> interval_offsets;
   vector<int> interval_extents;
@@ -1835,7 +1854,7 @@ void Recut<image_t>::load_tile(VID_t interval_num, mcp3d::MImage &mcp3d_tile) {
 
   clock_gettime(CLOCK_REALTIME, &image_load);
 #ifdef LOG
-  cout << "Load image in " << DiffTime(start, image_load) << " sec." << '\n';
+  cout << "Load image in " << diff_time(start, image_load) << " sec." << '\n';
   // cout << "fg " << params->foreground_percent() << '\n';
 #endif
 
@@ -1848,14 +1867,14 @@ void Recut<image_t>::load_tile(VID_t interval_num, mcp3d::MImage &mcp3d_tile) {
   // Note if either foreground or background percent is equal to or greater than
   // 0 than it was changed by a user so it takes precedence over the defaults
   if (params->foreground_percent() >= 0) {
-    this->bkg_thresh = mcp3d::TopPercentile<image_t>(
-        mcp3d_tile.Volume<image_t>(0), interval_dims,
-        params->foreground_percent());
+    bkg_thresh = mcp3d::TopPercentile<image_t>(mcp3d_tile.Volume<image_t>(0),
+                                               interval_dims,
+                                               params->foreground_percent());
   } else { // if bkg set explicitly and foreground wasn't
     if (params->background_thresh() >= 0) {
-      this->bkg_thresh = params->background_thresh();
+      bkg_thresh = params->background_thresh();
     } else {
-      this->bkg_thresh = 0;
+      bkg_thresh = 0;
     }
   }
 
@@ -1863,21 +1882,20 @@ void Recut<image_t>::load_tile(VID_t interval_num, mcp3d::MImage &mcp3d_tile) {
   if (this->args->recut_parameters().get_max_intensity() < 0) {
     get_max_min(mcp3d_tile.Volume<image_t>(0), interval_vert_num);
   } else if (this->args->recut_parameters().get_min_intensity() < 0) {
-    if (this->bkg_thresh >= 0) {
-      this->min_int = this->bkg_thresh;
+    if (bkg_thresh >= 0) {
+      min_int = bkg_thresh;
     } else {
       get_max_min(mcp3d_tile.Volume<image_t>(0), interval_vert_num);
     }
   } else {
     // otherwise set global max min from recut_parameters
-    this->max_int = this->args->recut_parameters().get_max_intensity();
-    this->min_int = this->args->recut_parameters().get_min_intensity();
+    max_int = this->args->recut_parameters().get_max_intensity();
+    min_int = this->args->recut_parameters().get_min_intensity();
   }
 
 #ifdef LOG_FULL
-  cout << "max_int: " << +(this->max_int) << " min_int: " << +(this->min_int)
-       << '\n';
-  cout << "bkg_thresh value = " << this->bkg_thresh << '\n';
+  cout << "max_int: " << +(max_int) << " min_int: " << +(min_int) << '\n';
+  cout << "bkg_thresh value = " << bkg_thresh << '\n';
   cout << "interval dims x " << interval_dims[2] << " y " << interval_dims[1]
        << " z " << interval_dims[0] << '\n';
   cout << "interval offsets x " << interval_offsets[2] << " y "
@@ -1885,6 +1903,8 @@ void Recut<image_t>::load_tile(VID_t interval_num, mcp3d::MImage &mcp3d_tile) {
   cout << "interval extents x " << interval_extents[2] << " y "
        << interval_extents[1] << " z " << interval_extents[0] << '\n';
 #endif
+  const TileThresholds<image_t> returnp{max_int, min_int, bkg_thresh};
+  return returnp;
 } // end load_tile()
 
 #endif // only defined in USE_MCP3D is
@@ -1935,7 +1955,7 @@ template <class image_t> void Recut<image_t>::update(std::string stage) {
 #ifdef LOG
       clock_gettime(CLOCK_REALTIME, &interval_load);
       cout << "Load interval " << interval_num << " in "
-           << DiffTime(interval_start, interval_load) << " sec." << '\n';
+           << diff_time(interval_start, interval_load) << " sec." << '\n';
 #endif
 
       image_t *tile;
@@ -1944,7 +1964,7 @@ template <class image_t> void Recut<image_t>::update(std::string stage) {
       // of this interval otherwise dangling reference then seg fault
       // on image access
       mcp3d::MImage mcp3d_tile;
-      load_tile(interval_num, mcp3d_tile);
+      auto tile_thresholds = load_tile(interval_num, mcp3d_tile);
       // FIXME need a setup image for both
       // This all needs to be designed in a way that keeps image around
       tile = mcp3d_tile.Volume<image_t>(0);
@@ -1955,12 +1975,14 @@ template <class image_t> void Recut<image_t>::update(std::string stage) {
         assertm(this->generated_image,
                 "Image not generated or set by intialize");
         tile = this->generated_image;
+        const TileThresholds<image_t> tile_thresholds{1, 0, 0};
       } else {
         assertm(false, "If USE_MCP3D macro is not set, "
                        "this->params->generate_image must be set to True");
       }
 #endif
-      global_no_io_time += process_interval(interval_num, tile, stage);
+      global_no_io_time +=
+          process_interval(interval_num, tile, stage, tile_thresholds);
     } // if the interval is active
 
     // rotate interval number until all finished
@@ -1971,7 +1993,7 @@ template <class image_t> void Recut<image_t>::update(std::string stage) {
 
 #ifdef LOG
   cout << "Finished total updating within "
-       << DiffTime(update_start_time, update_finish_time) << " sec." << '\n';
+       << diff_time(update_start_time, update_finish_time) << " sec." << '\n';
   cout << "Finished marching (no I/O) within " << global_no_io_time << " sec."
        << '\n';
   cout << "Total interval iterations: " << outer_iteration_idx << '\n';
@@ -2474,7 +2496,7 @@ template <class image_t> void Recut<image_t>::initialize() {
   clock_gettime(CLOCK_REALTIME, &time2);
 
 #ifdef LOG
-  cout << "Created super interval in " << DiffTime(time0, time2) << " s";
+  cout << "Created super interval in " << diff_time(time0, time2) << " s";
   cout << " with total intervals: " << nintervals << '\n';
 #endif
 
@@ -2483,13 +2505,11 @@ template <class image_t> void Recut<image_t>::initialize() {
   clock_gettime(CLOCK_REALTIME, &time3);
 
 #ifdef LOG
-  cout << "Initialized globals" << DiffTime(time2, time3) << '\n';
+  cout << "Initialized globals" << diff_time(time2, time3) << '\n';
 #endif
 
   if (this->params->generate_image) {
-    this->bkg_thresh = 0;
-    this->min_int = 0;
-    this->max_int = 1;
+    const TileThresholds<image_t> tile_thresholds{1, 0, 0};
     // This is where we set image to our desired values
     this->generated_image = new image_t[this->img_vox_num];
     // add the single root vid to the global state
@@ -2681,7 +2701,7 @@ void Recut<image_t>::finalize(vector<vertex_t> &outtree) {
 
   clock_gettime(CLOCK_REALTIME, &time1);
 #ifdef LOG
-  cout << "Finished generating results within " << DiffTime(time0, time1)
+  cout << "Finished generating results within " << diff_time(time0, time1)
        << " sec." << '\n';
 #endif
 }
