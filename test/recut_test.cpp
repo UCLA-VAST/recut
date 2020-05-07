@@ -8,8 +8,11 @@
 #include <fcntl.h>
 #include <fstream>
 #include <iostream>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
+
+using json = nlohmann::json;
 
 #ifdef USE_MCP3D
 #include "common/mcp3d_utility.hpp"    // PadNumStr
@@ -42,7 +45,7 @@
 //}
 
 template <class T, typename DataType>
-void check_recut_error(T &recut, DataType *data, int grid_size,
+void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
                        VID_t interval_num, std::string stage,
                        double &error_rate) {
   auto tol_sz = static_cast<VID_t>(grid_size) * grid_size * grid_size;
@@ -67,10 +70,20 @@ void check_recut_error(T &recut, DataType *data, int grid_size,
             ASSERT_EQ(recut.generated_image[index], 1);
           }
           if (v->valid_value()) {
-            // error_sum += absdiff(data[index], v->value);
+            // error_sum += absdiff(ground_truth[index], v->value);
             // cout << v->value << " ";
           }
         } else if (stage == "radius") {
+          // if truth shows a value of 1 it is a surface
+          // vertex, therefore surface_vec should also
+          // contain this value
+          if (ground_truth[index] == 1) {
+            // deque of ptrs
+            auto found =
+                std::count(recut.surface_vec[interval_num][0].begin(),
+                           recut.surface_vec[interval_num][0].end(), v);
+            ASSERT_TRUE(found);
+          }
           if (recut.generated_image[index]) {
             ASSERT_TRUE(v->valid_radius());
           }
@@ -79,16 +92,30 @@ void check_recut_error(T &recut, DataType *data, int grid_size,
           }
           // if (v->valid_radius()) {
           if (recut.generated_image[index]) {
-            error_sum += absdiff(data[index], v->radius);
+            error_sum += absdiff(ground_truth[index], v->radius);
             ++total_valid;
             // cout << +(v->radius) << " ";
+          }
+        } else if (stage == "surface") {
+          // if truth shows a value of 1 it is a surface
+          // vertex, therefore surface_vec should also
+          // contain this value
+          if (ground_truth[index] == 1) {
+            // deque of ptrs
+            auto found =
+                std::count(recut.surface_vec[interval_num][0].begin(),
+                           recut.surface_vec[interval_num][0].end(), v);
+            ASSERT_TRUE(found);
+            // cout << "index: " << index << '\n';
           }
         }
       }
     }
   }
-  ASSERT_EQ(total_valid, recut.params->selected);
-  error_rate = 100 * error_sum / static_cast<double>(tol_sz);
+  if (stage != "surface") {
+    ASSERT_EQ(total_valid, recut.params->selected);
+    error_rate = 100 * error_sum / static_cast<double>(tol_sz);
+  }
 }
 
 void check_image_error(uint16_t *inimg1d, uint16_t *baseline, uint16_t *check,
@@ -136,9 +163,9 @@ void load_save(bool mmap_) {
   auto nvid = 64;
   auto fn = get_curr() + "/interval0.bin";
   auto base = INTERVAL_BASE;
-  remove(fn); // for safety, but done automatically via ~Interval
-  ASSERT_FALSE(exists(fn));
-  ASSERT_TRUE(exists(base));
+  fs::remove(fn); // for safety, but done automatically via ~Interval
+  ASSERT_FALSE(fs::exists(fn));
+  ASSERT_TRUE(fs::exists(base));
 
   // create
   auto interval = new Interval(0, nvid, 0, base, mmap_);
@@ -153,7 +180,7 @@ void load_save(bool mmap_) {
   interval->SaveToDisk();
   ASSERT_EQ(interval->GetFn(), fn);
   ASSERT_FALSE(interval->IsInMemory());
-  ASSERT_TRUE(exists(fn));
+  ASSERT_TRUE(fs::exists(fn));
 
   // load and check
   interval->LoadFromDisk();
@@ -163,7 +190,7 @@ void load_save(bool mmap_) {
   ASSERT_EQ(interval->GetData()[1].vid, 1);
   ASSERT_TRUE(interval->GetData()->unvisited());
   delete interval;
-  ASSERT_FALSE(exists(fn));
+  ASSERT_FALSE(fs::exists(fn));
 
   // check interval can't delete interval_base_64bit.bin
   // create
@@ -171,8 +198,8 @@ void load_save(bool mmap_) {
   interval2->LoadFromDisk();
   delete interval2;
 
-  ASSERT_FALSE(exists(fn));
-  ASSERT_TRUE(exists(base));
+  ASSERT_FALSE(fs::exists(fn));
+  ASSERT_TRUE(fs::exists(base));
 
   interval_base_immutable(nvid);
 }
@@ -408,17 +435,17 @@ TEST(Install, CreateIntervalBase) {
   auto fn = INTERVAL_BASE;
   VID_t nvid = MAX_INTERVAL_VERTICES;
   bool mmap_flag = false;
-  if (!exists(fn) || rerun) {
+  if (!fs::exists(fn) || rerun) {
     VID_t size = sizeof(VertexAttr) * nvid;
     cout << "Start creating " << fn << " cached total size: ~"
          << (size / (2 << 19)) << " MB"
          << " for max vertices: " << nvid << endl; // set the default values
 
     // make sure it's an overwrite
-    if (exists(fn)) {
+    if (fs::exists(fn)) {
       // delete previous
       assertm(unlink(fn) != -1, "unlink not successful");
-      ASSERT_FALSE(exists(fn));
+      ASSERT_FALSE(fs::exists(fn));
     }
     struct VertexAttr *ptr;
     int fd;
@@ -462,7 +489,7 @@ TEST(Install, CreateIntervalBase) {
 
       // close file
       ofile.close();
-      ASSERT_TRUE(exists(fn));
+      ASSERT_TRUE(fs::exists(fn));
     }
 
     cout << "finished interval creation" << endl;
@@ -540,7 +567,7 @@ TEST(Interval, GetAttrVidMultiInterval) {
  * system for all the necessary configurations of grid_sizes, tcases and
  * selected percents
  */
-TEST(Install, DISABLED_CreateMarkersImages) {
+TEST(Install, DISABLED_CreateImagesMarkers) {
   // change these to desired params
   // Note this will delete anything in the
   // same directory before writing
@@ -656,7 +683,6 @@ TEST(Image, ReadWrite) {
   uint16_t *inimg1d = new uint16_t[tol_sz];
   get_grid(tcase, inimg1d, grid_size); // sets all to 0 for tcase 4
   mesh_grid(get_central_vid(grid_size), inimg1d, selected, grid_size);
-  // print_image(inimg1d, grid_size * grid_size * grid_size);
   write_tiff(inimg1d, fn, grid_size);
   uint16_t *check = read_tiff(fn, grid_size);
   // print_image(check, grid_size * grid_size * grid_size);
@@ -669,8 +695,9 @@ TEST(Image, ReadWrite) {
   // uint16_t* check2 = read_tiff(fn, grid_size);
   // check_image_equality(inimg1d, check2, grid_size);
 
-  // run recut over the image
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
+  // run recut over the image, force it to run in read image
+  // non-generated mode since MCP3D is guaranteed here
+  auto args = get_args(grid_size, slt_pct, tcase, false);
   auto recut = Recut<uint16_t>(args);
   recut();
 
@@ -682,7 +709,7 @@ TEST(Image, ReadWrite) {
 }
 #endif
 
-TEST(Helpers, DoublePackKey) {
+TEST(Helpers, DISABLED_DoublePackKey) {
   {
     VID_t block_num = 5;
     VID_t nb_block_num = 13;
@@ -703,7 +730,7 @@ TEST(Helpers, DoublePackKey) {
   }
 }
 
-TEST(Helpers, TriplePackKey) {
+TEST(Helpers, DISABLED_TriplePackKey) {
   {
     VID_t interval_num = 2;
     VID_t block_num = 5;
@@ -724,6 +751,73 @@ TEST(Helpers, TriplePackKey) {
   }
 }
 
+TEST(Helpers, DISABLED_ConcurrentMap) {
+  // auto surface_map = std::make_unique<junction::ConcurrentMap_Leapfrog<
+  // uint32_t, std::vector<VertexAttr *> *>>();
+  // FIXME could be due to wrong type, std::vector in particular not allowed
+  // no call to the destructor
+
+  auto surface_map = std::make_unique<
+      junction::ConcurrentMap_Leapfrog<uint32_t, VertexAttr *>>();
+
+  std::vector<int> dim_range(2, 0);
+  std::transform(dim_range.begin(), dim_range.end(), ++dim_range.begin(),
+                 std::bind2nd(plus<int>(), 1));
+
+  for (VID_t interval_num : dim_range) {
+    for (VID_t block_num : dim_range) {
+
+      uint32_t key = double_pack_key(interval_num, block_num);
+      cout << "interval_num " << interval_num << " block_num " << block_num
+           << "key " << key << '\n';
+      //{
+      auto mutator = surface_map->insertOrFind(key);
+      auto v = mutator.getValue();
+      ASSERT_EQ(v, nullptr);
+      // std::vector<struct VertexAttr *> *vec = mutator.getValue();
+      // ASSERT_EQ(vec, nullptr);
+      // if (!vec) {
+      // vec = new std::vector<struct VertexAttr *>;
+      //}
+      v = new VertexAttr();
+      v->vid = static_cast<VID_t>(key);
+      // vec->push_back(v);
+      // Note: this block is unique to a single thread, therefore no other
+      // thread could have this same key, since the keys are unique with
+      // respect to their permutation. This means that we do not need to
+      // protect from two threads modifying the same key simultaneously
+      // in this design. If this did need to protected from see documentation
+      // at preshing.com/20160201/new-concurrent-hash-maps-for-cpp/ for
+      // details
+      mutator.exchangeValue(v); // assign via mutator vs. relookup
+      // auto post = new std::vector<VertexAttr *>();
+      // surface_map->assign(key, &(std::move(*post)));
+      //}
+
+      // std::vector<VertexAttr *> *check = surface_map->get(key);
+      auto mutator2 = surface_map->insertOrFind(key);
+      auto check = mutator2.getValue();
+      ASSERT_NE(check, nullptr);
+      ASSERT_EQ(check->vid, static_cast<VID_t>(key));
+    }
+  }
+
+  for (VID_t interval_num : dim_range) {
+    for (VID_t block_num : dim_range) {
+      uint32_t key = double_pack_key(interval_num, block_num);
+      cout << "interval_num " << interval_num << " block_num " << block_num
+           << "key " << key << '\n';
+      auto mutator = surface_map->insertOrFind(key);
+      auto v = mutator.getValue();
+      // std::vector<VertexAttr *> *vec = mutator.getValue();
+      // ASSERT_NE(vec, nullptr);
+      // VertexAttr *v = vec->back();
+      ASSERT_NE(v, nullptr);
+      ASSERT_EQ(v->vid, static_cast<VID_t>(key));
+    }
+  }
+}
+
 TEST(VertexAttr, ReadWrite) {
   auto nvid = 4;
   auto ptr = new VertexAttr[nvid];
@@ -731,8 +825,8 @@ TEST(VertexAttr, ReadWrite) {
   // path logic
   auto base = get_curr() + "/test_data/";
   auto fn = base + "interval0.bin";
-  // remove_all(fn); // make sure it's an overwrite
-  create_directories(base);
+  // fs::remove_all(fn); // make sure it's an overwrite
+  fs::create_directories(base);
   // cout << "fn: " << fn << endl;
 
   // open output
@@ -748,7 +842,8 @@ TEST(VertexAttr, ReadWrite) {
   ofile.close();
 
   VertexAttr *iptr = (VertexAttr *)malloc(size);
-  std::ifstream ifile(fn, ios::in | ios::binary | ios::ate); // write-mode, end
+  std::ifstream ifile(fn,
+                      ios::in | ios::binary | ios::ate); // write-mode, end
   // open input
   ASSERT_TRUE(ifile.is_open());
   ASSERT_TRUE(ifile.good());
@@ -812,21 +907,26 @@ TEST(VertexAttr, CopyOp) {
   ASSERT_NE(v1, v2); // make sure they not just the same obj
 }
 
-TEST(Radius, DISABLED_Full) {
-  int max_size = 128;
-  std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
-                                 max_size / 2, max_size};
+TEST(Radius, Full) {
+  // int max_size = 128;
+  // std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
+  // max_size / 2, max_size};
+  std::vector<int> grid_sizes = {4};
   // tcase 5 is a sphere of radius grid_size / 4 centered
   // in the middle of an image
   std::vector<int> tcases = {5};
   int slt_pct = 100;
-  bool print_all = false;
+  bool print_all = true;
+  bool check_xy = false;
   uint16_t bkg_thresh = 0;
+  std::unique_ptr<uint16_t[]> radii_grid_xy;
   cout << "name,iterations,error_rate(%)\n";
   for (auto &grid_size : grid_sizes) {
     VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
-    uint16_t *radii_grid = new uint16_t[tol_sz];
-    uint16_t *radii_grid_xy = new uint16_t[tol_sz];
+    auto radii_grid = std::make_unique<uint16_t[]>(tol_sz);
+    if (check_xy) {
+      radii_grid_xy = std::make_unique<uint16_t[]>(tol_sz);
+    }
     for (auto &tcase : tcases) {
       auto args = get_args(grid_size, slt_pct, tcase, true);
 
@@ -843,20 +943,21 @@ TEST(Radius, DISABLED_Full) {
       recut.initialize();
       auto selected = args.recut_parameters().selected;
 
+      if (print_all) {
+        std::cout << "recut image grid" << endl;
+        print_image_3D(recut.generated_image, grid_size);
+      }
+
       recut.setup_value();
       recut.update("value");
       if (print_all) {
         recut.print_interval(0, "value");
+        recut.print_interval(0, "surface");
       }
 
       recut.setup_radius();
       recut.update("radius");
       VID_t interval_num = 0;
-
-      if (print_all) {
-        std::cout << "recut image grid" << endl;
-        print_image_3D(recut.generated_image, grid_size);
-      }
 
       auto total_visited = 0;
       for (VID_t i = 0; i < tol_sz; i++) {
@@ -864,9 +965,11 @@ TEST(Radius, DISABLED_Full) {
           // calculate radius with baseline accurate method
           radii_grid[i] = get_radius_accurate(recut.generated_image, grid_size,
                                               i, bkg_thresh);
-          // build original production version
-          radii_grid_xy[i] = get_radius_hanchuan_XY(recut.generated_image,
-                                                    grid_size, i, bkg_thresh);
+          if (check_xy) {
+            // build original production version
+            radii_grid_xy[i] = get_radius_hanchuan_XY(recut.generated_image,
+                                                      grid_size, i, bkg_thresh);
+          }
           ++total_visited;
         }
       }
@@ -875,31 +978,42 @@ TEST(Radius, DISABLED_Full) {
       // Debug by eye
       if (print_all) {
         cout << "accuracy_radius\n";
-        print_image_3D(radii_grid, grid_size);
-        std::cout << "XY radii grid" << endl;
-        print_image_3D(radii_grid_xy, grid_size);
+        print_image_3D(radii_grid.get(), grid_size);
+        if (check_xy) {
+          std::cout << "XY radii grid\n";
+          print_image_3D(radii_grid_xy.get(), grid_size);
+        }
         std::cout << "Recut radii\n";
         recut.print_interval(0, "radius");
       }
 
       double xy_err, recut_err;
-      check_image_error(recut.generated_image, radii_grid, radii_grid_xy,
-                        grid_size, recut.params->selected, xy_err);
-      check_recut_error(recut, radii_grid, grid_size, 0, "radius", recut_err);
+      if (check_xy) {
+        check_image_error(recut.generated_image, radii_grid.get(),
+                          radii_grid_xy.get(), grid_size,
+                          recut.params->selected, xy_err);
+      }
+      // make sure all surface vertices were identified correctly
+      check_recut_error(recut, radii_grid.get(), grid_size, 0, "surface",
+                        recut_err);
+      check_recut_error(recut, radii_grid.get(), grid_size, 0, "radius",
+                        recut_err);
+      ASSERT_EQ(recut_err, 0.);
 
-      std::cout << "\"accurate_radius/" << grid_size << "\",1,0\n";
-      std::cout << "\"xy_radius/" << grid_size << "\",1," << xy_err << '\n';
-      std::cout << "\"fast_marching_radius/" << grid_size << "\",1,"
-                << recut_err << '\n';
+      if (print_all) {
+        std::cout << "\"accurate_radius/" << grid_size << "\",1,0\n";
+        if (check_xy) {
+          std::cout << "\"xy_radius/" << grid_size << "\",1," << xy_err << '\n';
+        }
+        std::cout << "\"fast_marching_radius/" << grid_size << "\",1,"
+                  << recut_err << '\n';
+      }
     }
-    delete[] radii_grid;
-    delete[] radii_grid_xy;
   }
 }
 
 #ifdef APP2
 TEST(DISABLED_EndToEnd, Full) {
-
   MCP3D_RUNTIME_ERROR(
       "This API is currently deprecated use the main executable ./recut");
   int grid_size = 256;
@@ -1264,8 +1378,8 @@ TEST(RecutPipeline, DISABLED_SequentialMatch1024) {
                     bkg_thresh);
   EXPECT_NEAR(outtree_seq.size(), selected, expected * EXP_DEV_LOW);
   // error = absdiff((VID_t) outtree_seq.size(), (VID_t) selected) / (double)
-  // selected; cout << "Found: " << outtree_seq.size() << endl; // " Error: " <<
-  // error * 100 << "%" << endl;
+  // selected; cout << "Found: " << outtree_seq.size() << endl; // " Error: "
+  // << error * 100 << "%" << endl;
   auto recut = Recut<uint16_t>(args);
   recut();
   EXPECT_NEAR(outtree.size(), outtree_seq.size(), expected * EXP_DEV_LOW);
@@ -1273,7 +1387,6 @@ TEST(RecutPipeline, DISABLED_SequentialMatch1024) {
 }
 
 TEST(RecutPipeline, DISABLED_SequentialMatch256) {
-
   // set params for a 10%, 256 run
   auto grid_size = 256;
   double slt_pct = 10;
@@ -1352,7 +1465,8 @@ TEST(RecutPipeline, DISABLED_test_real_data) {
     // run
     auto recut = Recut<uint16_t>(args);
     recut();
-    // ASSERT_NEAR(args.output_tree.size() , selected, selected * EXP_DEV_LOW);
+    // ASSERT_NEAR(args.output_tree.size() , selected, selected *
+    // EXP_DEV_LOW);
   }
 }
 

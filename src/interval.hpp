@@ -94,9 +94,9 @@ public:
 #endif
 
     // don't delete the original file protect if haven't written yet
-    if (exists(fn_) && (base_ != fn_)) {
-      remove(fn_);
-      assert(!exists(fn_));
+    if (fs::exists(fn_) && (base_ != fn_)) {
+      fs::remove(fn_);
+      assert(!fs::exists(fn_));
 #ifdef LOG_FULL
       cout << "~Interval deleted fn " << fn_ << '\n';
 #endif
@@ -129,7 +129,7 @@ public:
 #ifdef LOG_FULL
       cout << "LoadFromDisk() fn: " << fn_ << '\n';
 #endif
-      assert(exists(fn_));
+      assert(fs::exists(fn_));
       std::ifstream ifile(
           fn_, ios::in | ios::binary); // ifstream is default read only mode
       // open input
