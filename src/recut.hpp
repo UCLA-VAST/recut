@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <bitset>
 #include <cstdlib>
+#include <deque>
 #include <fstream>
 #include <future>
 #include <iostream>
@@ -27,8 +28,6 @@
 #ifdef USE_OMP
 #include <omp.h>
 #endif
-
-using namespace std;
 
 // this is not thread safe if concurrent threads
 // add or subtract elements from vector.
@@ -173,6 +172,7 @@ public:
   vector<vector<atomwrapper<bool>>> active_blocks;
   vector<vector<atomwrapper<bool>>> processing_blocks;
   vector<vector<local_heap>> heap_vec;
+  vector<vector<deque<VertexAttr *>>> surface_vec;
   // runtime global data structures
   vector<vector<vector<vector<struct VertexAttr>>>> updated_ghost_vec;
   vector<vector<vector<bool>>> active_neighbors;
@@ -257,17 +257,19 @@ public:
   bool accumulate_value(const image_t *img, VID_t interval_num, VID_t dst_id,
                         VID_t block_num, struct VertexAttr *src,
                         VID_t &revisits, double factor, int parent_code,
-                        const TileThresholds<image_t> *tile_thresholds);
+                        const TileThresholds<image_t> *tile_thresholds,
+                        bool &found_background);
   bool accumulate_radius(VID_t interval_num, VID_t dst_id, VID_t block_num,
                          struct VertexAttr *src, VID_t &revisits, double factor,
-                         int parent_code);
+                         int parent_code, bool &found_adjacent_invalid);
   template <typename TNew>
   void vertex_update(VID_t interval_num, VID_t block_num, VertexAttr *dst,
                      TNew new_field, std::string stage);
   void update_neighbors(const image_t *img, VID_t interval_num,
                         struct VertexAttr *min_attr, VID_t block_num,
                         VID_t &revisits, std::string stage,
-                        const TileThresholds<image_t> *tile_thresholds);
+                        const TileThresholds<image_t> *tile_thresholds,
+                        bool &found_adjacent_invalid);
   void integrate_updated_ghost(VID_t interval_num, VID_t block_num,
                                std::string stage);
   bool integrate_vertex(VID_t interval_num, VID_t block_num,
@@ -346,7 +348,7 @@ void Recut<image_t>::process_marker_dir(vector<int> off, vector<int> end) {
 
   vector<MyMarker> inmarkers;
   for (const auto &marker_file :
-       directory_iterator(params->marker_file_path())) {
+       fs::directory_iterator(params->marker_file_path())) {
     const auto marker_name = marker_file.path().filename().string();
     const auto full_marker_name = params->marker_file_path() + marker_name;
     inmarkers = readMarker_file(full_marker_name);
@@ -416,6 +418,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
 // them to the respective heaps
 template <class image_t> void Recut<image_t>::setup_value() {
   bool is_root = true; // changes behavior of place_ghost_update
+  assertm(!(this->root_vids.empty()), "Must have at least one root");
   for (VID_t vid : this->root_vids) {
     auto interval_num = get_interval_num(vid);
     auto block_num = get_block_num(vid);
@@ -464,6 +467,10 @@ void Recut<image_t>::print_interval(VID_t interval_num, std::string stage) {
         VID_t index = ((VID_t)xi) + yi * x_interval_size +
                       zi * x_interval_size * y_interval_size;
         auto v = get_attr_vid(interval_num, 0, index, nullptr);
+        if (v->root()) {
+          assertm(v->value == 0., "root value must be 0.");
+          assertm(v->valid_value(), "root must have valid value");
+        }
         // cout << +inimg1d[index] << " ";
         // auto v = interval->GetData()[index];
         // cout << i << '\n' << v.description() << " ";
@@ -478,6 +485,16 @@ void Recut<image_t>::print_interval(VID_t interval_num, std::string stage) {
             cout << +(v->radius) << " ";
           } else {
             cout << "NA ";
+          }
+        } else if (stage == "surface") {
+          // for now just print the first block of the
+          // interval
+          auto surface = this->surface_vec[interval_num][0];
+          assertm(surface.size() != 0, "surface size is zero");
+          if (std::count(surface.begin(), surface.end(), v)) {
+            cout << "S ";
+          } else {
+            cout << "- ";
           }
         }
       }
@@ -734,13 +751,14 @@ void Recut<image_t>::vertex_update(VID_t interval_num, VID_t block_num,
  * that this update is propagated to the relevant interval and block see
  * integrate_updated_ghost(). dst_id : continuous vertex id VID_t of the dst
  * vertex in question block_num : src block id src : minimum vertex attribute
- * selected returns true if this vertex is unselected
+ * selected returns true if this vertex is unselected (and not a root)
  */
 template <class image_t>
 bool Recut<image_t>::accumulate_radius(VID_t interval_num, VID_t dst_id,
                                        VID_t block_num, struct VertexAttr *src,
                                        VID_t &revisits, double factor,
-                                       int parent_code) {
+                                       int parent_code,
+                                       bool &found_adjacent_invalid) {
 
   auto dst = get_attr_vid(interval_num, block_num, dst_id, nullptr);
 
@@ -748,12 +766,14 @@ bool Recut<image_t>::accumulate_radius(VID_t interval_num, VID_t dst_id,
   cout << "\tcheck dst vid: " << dst_id;
 #endif
 
-  // exclude all unselected values
-  if (!(dst->selected())) {
+  // exclude all unselected values, check that it is not a root value as well
+  // since roots counterintuitively have a separate tag value than selected
+  if (dst->unselected() && !(dst->root())) {
 #ifdef FULL_PRINT
-    cout << "\t\tfailed dst never selected" << '\n';
+    cout << "\t\treturn true since unselected neighbor was found" << '\n';
 #endif
-    return true;
+    found_adjacent_invalid = true;
+    return false;
   }
 
   // solve for update value
@@ -762,27 +782,16 @@ bool Recut<image_t>::accumulate_radius(VID_t interval_num, VID_t dst_id,
   auto new_field = src->radius + 1;
 
   if (dst->radius > new_field) {
-
-#ifdef RV
-    if (dst->valid_radius()) {
-      revisits += 1;
-#ifdef NO_RV
-      return false; // it was still a selected vertex
-#endif
-      // cout << "KNOWN_NEW revisited block_num " << block_num << " old val "
-      // << dst->value << " new field " << new_field <<  " revisits " <<
-      // +revisits
-      // << '\n';
-    }
-#endif
-
+    // TODO enforce this with a vector
+    // assertm(!(dst->valid_radius), "A previously seen radius can not be "
+    //"processed in current implementation");
     vertex_update(interval_num, block_num, dst, new_field, "radius");
     assertm(dst->radius == new_field,
             "Accumulate radius did not properly set it's updated field");
   } else {
 #ifdef FULL_PRINT
     cout << "\t\tfailed: no radii change: " << dst->vid
-         << " radii: " << dst->radius << '\n';
+         << " radii: " << +(dst->radius) << '\n';
 #endif
   }
   return false; // it was a selected vertex
@@ -804,7 +813,7 @@ template <class image_t>
 bool Recut<image_t>::accumulate_value(
     const image_t *img, VID_t interval_num, VID_t dst_id, VID_t block_num,
     struct VertexAttr *src, VID_t &revisits, double factor, int parent_code,
-    const TileThresholds<image_t> *tile_thresholds) {
+    const TileThresholds<image_t> *tile_thresholds, bool &found_background) {
 
   assertm(dst_id < this->img_vox_num, "Outside bounds of current interval");
   auto dst = get_attr_vid(interval_num, block_num, dst_id, nullptr);
@@ -816,43 +825,33 @@ bool Recut<image_t>::accumulate_value(
   cout << " bkg_thresh " << +tile_thresholds->bkg_thresh << '\n';
 #endif
 
-  // exclude all KNOWN_FIX values 00, this includes root and dummy
-  if (dst->root()) {
-#ifdef FULL_PRINT
-    cout << "\t\tfailed dst already selected" << '\n';
-#endif
-    return false;
-  }
-
   // skip backgrounds
+  // the image voxel of this dst vertex is the primary method to exclude this
+  // pixel/vertex for the remainder of all processing
   if (dst_vox <= tile_thresholds->bkg_thresh) {
 #ifdef FULL_PRINT
     cout << "\t\tfailed tile_thresholds->bkg_thresh" << '\n';
 #endif
+    found_background = true;
     return false;
   }
 
   // solve for update value
   // dst_id and src->vid are linear idx relative to full image domain
-  float new_field =
-      src->value +
-      (float)(tile_thresholds->calc_weight(get_img_val(img, src->vid)) +
-              tile_thresholds->calc_weight(dst_vox)) *
-          0.5 * factor;
+  float new_field = static_cast<float>(
+      src->value + (tile_thresholds->calc_weight(get_img_val(img, src->vid)) +
+                    tile_thresholds->calc_weight(dst_vox)) *
+                       0.5 * factor);
 
+  // this automatically excludes any root vertex since they have a value of 0.
   if (dst->value > new_field) {
 
 #ifdef RV
-    if (dst->selected()) { // 10XX XXXX KNOWN NEW
+    if (dst->selected()) {
       revisits += 1;
 #ifdef NO_RV
       return false;
 #endif
-      // cout << "KNOWN_NEW revisited block_num " << block_num << " old val "
-      // << dst->value << " new dist " << new_field <<  " revisits " <<
-      // +revisits
-      // <<
-      // '\n';
     }
 #endif
 
@@ -881,7 +880,7 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_num, VID_t block_num,
 
   // ASYNC option means that another block and thread can be started during
   // the processing of the current thread. If ASYNC is not defined then simply
-  // save all possible updates for checking in the integrate_updated_ghost
+  // save all possible updates for checking in the integrate_updated_ghost()
   // function after all blocks have been marched
 #ifdef ASYNC
   // if not currently processing, set atomically set to true and
@@ -918,7 +917,8 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_num, VID_t block_num,
   }
 #endif
 
-  // save vertex for later processing
+  // save vertex for later processing putting it in an overflow that will
+  // be emptied in integrate_updated_ghost()
   // updated_ghost_vec[x][a][b] in domain of a, in ghost of block b
   // active_neighbors[x][a][b] in domain of b, in ghost of block a
   // in the synchronous case simply place all neighboring interval / block
@@ -1118,7 +1118,8 @@ template <class image_t>
 void Recut<image_t>::update_neighbors(
     const image_t *img, VID_t interval_num, struct VertexAttr *min_attr,
     VID_t block_num, VID_t &revisits, std::string stage,
-    const TileThresholds<image_t> *tile_thresholds) {
+    const TileThresholds<image_t> *tile_thresholds,
+    bool &found_adjacent_invalid) {
 
   auto vid = min_attr->vid;
   VID_t i, j, k;
@@ -1139,16 +1140,22 @@ void Recut<image_t>::update_neighbors(
   int parent_code;
   for (int kk = -1; kk <= 1; kk++) {
     d = ((int)k) + kk;
-    if (d < 0 || d >= nz)
+    if (d < 0 || d >= nz) {
+      found_adjacent_invalid = true;
       continue;
+    }
     for (int jj = -1; jj <= 1; jj++) {
       h = ((int)j) + jj;
-      if (h < 0 || h >= nz)
+      if (h < 0 || h >= nz) {
+        found_adjacent_invalid = true;
         continue;
+      }
       for (int ii = -1; ii <= 1; ii++) {
         w = ((int)i) + ii;
-        if (w < 0 || w >= nx)
+        if (w < 0 || w >= nx) {
+          found_adjacent_invalid = true;
           continue;
+        }
         int offset = ABS(ii) + ABS(jj) + ABS(kk);
         if (offset == 0 || offset > cnn_type)
           continue;
@@ -1167,35 +1174,25 @@ void Recut<image_t>::update_neighbors(
                 : ((offset == 2) ? 1.414214 : ((offset == 3) ? 1.732051 : 0.0));
         parent_code = get_parent_code(dst_id, vid);
 #ifdef FULL_PRINT
-        // cout << "  nb " << nb << " ni " << ni << " block num " << block_num
-        // << " interval " << interval_num ;
         cout << "w " << w << " h " << h << " d " << d << " dst_id " << dst_id
              << " vid " << vid << '\n';
 #endif
         if (stage == "value") {
           accumulate_value(img, interval_num, dst_id, block_num, min_attr,
-                           revisits, factor, parent_code, tile_thresholds);
+                           revisits, factor, parent_code, tile_thresholds,
+                           found_adjacent_invalid);
         } else if (stage == "radius") {
-          bool found_unselected_neighbor =
-              accumulate_radius(interval_num, dst_id, block_num, min_attr,
-                                revisits, factor, parent_code);
-          if (found_unselected_neighbor && (min_attr->radius > 1)) {
-#ifdef FULL_PRINT
-            // cout << "  nb " << nb << " ni " << ni << " block num " <<
-            // block_num << " interval " << interval_num ;
-            cout << "Found unselected nb\n";
-#endif
-            // min_attr is guaranteed to be within this processing domain
-            // nbs can be in ghost region
-            vertex_update(interval_num, block_num, min_attr, 1, "radius");
-            assertm(min_attr->radius == 1, "radius was not properly set to 1");
-            return; // exit early this is already on the stack
-          }
+          if (found_adjacent_invalid)
+            return;
+          accumulate_radius(interval_num, dst_id, block_num, min_attr, revisits,
+                            factor, parent_code, found_adjacent_invalid);
+          if (found_adjacent_invalid)
+            return;
         }
       }
     }
   }
-}
+} // end update_neighbors()
 
 /*
  * returns true if the vertex updated to the proper interval and block false
@@ -1272,11 +1269,10 @@ bool Recut<image_t>::integrate_vertex(VID_t interval_num, VID_t block_num,
 #endif
     }
     return true;
-  } else {
-#ifdef FULL_PRINT
-    cout << "\tfailed: no value change in heap" << '\n';
-#endif
   }
+#ifdef FULL_PRINT
+  cout << "\tfailed: no value change in heap" << '\n';
+#endif
   return false;
 } // end for each VertexAttr
 
@@ -1410,11 +1406,35 @@ void Recut<image_t>::march_narrow_band(
     cout << "Start marching block: " << block_num << '\n';
   }
 #endif
+
+  // auto surface_vertices = this->surface_vec[interval_num][block_num];
+  // auto surface_map = std::make_unique<ConcurrentMap32>();
+  // auto mutator =
+  // surface_map->insertOrFind(double_pack_key(interval_num, block_num));
+
+  // std::vector<struct VertexAttr> *vec = mutator.getValue();
+  // if (!vec) {
+  // vec = new std::vector<struct VertexAttr>;
+  //}
+
+  // vec->emplace_back(dst->edge_state, dst->value, dst->vid, dst->radius);
+  //// Note: this block is unique to a single thread, therefore no other
+  //// thread could have this same key, since the keys are unique with
+  //// respect to their permutation. This means that we do not need to
+  //// protect from two threads modifying the same key simultaneously
+  //// in this design. If this did need to protected from see documentation
+  //// at preshing.com/20160201/new-concurrent-hash-maps-for-cpp/ for details
+  // mutator.assignValue(vec); // assign via mutator vs. relookup
+
   VID_t revisits = 0;
-
   VertexAttr *min_attr;
-
+  bool found_adjacent_invalid;
+  int temp = 0;
   while (!heap_vec[interval_num][block_num].empty()) {
+    temp++;
+    if (temp > 100) {
+      std::abort();
+    }
 
     if (restart_bool) {
       struct VertexAttr *top =
@@ -1450,17 +1470,37 @@ void Recut<image_t>::march_narrow_band(
         // nb thread. All VertexAttr have redundant copies in each
         // ghost region
       } else {
-        min_attr = dummy_min; // set as root and initialize
+        min_attr = dummy_min; // set as root and copy members
         assert(min_attr->root());
+        assertm(min_attr->value == 0, "root value not set properly");
       }
     } else if (stage == "radius") {
-      assertm(min_attr->selected(), "Can not process an unselected vertex");
+      assertm(min_attr->selected() || min_attr->root(),
+              "Can not process an invalid vertex");
       min_attr->radius = dummy_min->radius;
       min_attr->vid = dummy_min->vid;
     }
 
+    // invalid can either be out of range of the entire global image or it can
+    // be a background vertex which occurs due to pixel value below the
+    // threshold
+    found_adjacent_invalid = false;
     update_neighbors(img, interval_num, min_attr, block_num, revisits, stage,
-                     tile_thresholds);
+                     tile_thresholds, found_adjacent_invalid);
+    if (found_adjacent_invalid) {
+      if (stage == "value") {
+        // cout << "found surface vertex " << min_attr->vid << '\n';
+        this->surface_vec[interval_num][block_num].push_back(min_attr);
+      } else if (stage == "radius") {
+        if (min_attr->radius != 1) {
+          // a vertex with an invalid adjacent (neighbor) always has a radius of
+          // 1 put this vertex back for processing, in case it's neighbors were
+          // improperly set before finding the invalid
+          vertex_update(interval_num, block_num, min_attr, 1, "radius");
+          assertm(min_attr->radius == 1, "radius was not properly set to 1");
+        }
+      }
+    }
   }
 
 #ifdef LOG_FULL
@@ -1484,9 +1524,15 @@ void Recut<image_t>::march_narrow_band(
 #ifdef LOG_FULL
     cout << interval_num << ',' << block_num << min_attr->description();
 #endif
-    assertm(min_attr->selected(), "start vertex must be selected");
+    assertm(min_attr->selected() || min_attr->root(),
+            "Saving start, but vertex must be selected");
     super_interval.GetInterval(interval_num)->set_start_vertex(min_attr->vid);
     super_interval.GetInterval(interval_num)->set_valid_start(true);
+    // assertm(surface_vertices.size() != 0, "surface size is zero");
+    assertm(this->surface_vec[interval_num][block_num].size() != 0,
+            "surface size is zero");
+    // collect all border/surface vertices i.e. those that share at least one
+    // adjacent edge with a background pixel
   }
 
   // Note: could set explicit memory ordering on atomic
@@ -1857,8 +1903,8 @@ Recut<image_t>::load_tile(VID_t interval_num, mcp3d::MImage &mcp3d_tile) {
     throw;
   }
 
-  clock_gettime(CLOCK_REALTIME, &image_load);
 #ifdef LOG
+  clock_gettime(CLOCK_REALTIME, &image_load);
   cout << "Load image in " << diff_time(start, image_load) << " sec." << '\n';
   // cout << "fg " << params->foreground_percent() << '\n';
 #endif
@@ -1968,28 +2014,34 @@ template <class image_t> void Recut<image_t>::update(std::string stage) {
       image_t *tile;
       const TileThresholds<image_t> *tile_thresholds =
           new TileThresholds<image_t>(1, 0, 0);
-      // const TileThresholds<image_t> tile_thresholds{1, 0, 0};
-#ifdef USE_MCP3D
-      // mcp3d_tile must be kept in scope during the processing
-      // of this interval otherwise dangling reference then seg fault
-      // on image access
-      mcp3d::MImage mcp3d_tile;
-      tile_thresholds = load_tile(interval_num, mcp3d_tile);
-      // FIXME need a setup image for both
-      // This all needs to be designed in a way that keeps image around
-      tile = mcp3d_tile.Volume<image_t>(0);
-#else
       // pre-generated images are for testing, or when an outside
       // project wants to input images instead
       if (this->params->generate_image) {
         assertm(this->generated_image,
                 "Image not generated or set by intialize");
         tile = this->generated_image;
-      } else {
+      }
+
+#ifdef USE_MCP3D
+      mcp3d::MImage
+          mcp3d_tile; // prevent destruction before calling process_interval
+      if (!(this->params->generate_image)) {
+        // mcp3d_tile must be kept in scope during the processing
+        // of this interval otherwise dangling reference then seg fault
+        // on image access
+        tile_thresholds = load_tile(interval_num, mcp3d_tile);
+        // FIXME need a setup image for both
+        // This all needs to be designed in a way that keeps image around
+        cout << "before reassign to tile\n";
+        tile = mcp3d_tile.Volume<image_t>(0);
+      }
+#else
+      if (!(this->params->generate_image)) {
         assertm(false, "If USE_MCP3D macro is not set, "
                        "this->params->generate_image must be set to True");
       }
 #endif
+
       global_no_io_time +=
           process_interval(interval_num, tile, stage, tile_thresholds);
     } // if the interval is active
@@ -2306,6 +2358,14 @@ void Recut<image_t>::initialize_globals(const VID_t &nintervals,
   cout << "Created global heap_vec" << '\n';
 #endif
 
+  this->surface_vec = std::vector<std::vector<std::deque<VertexAttr *>>>(
+      nintervals, std::vector<std::deque<VertexAttr *>>(
+                      nblocks, std::deque<VertexAttr *>()));
+
+#ifdef LOG_FULL
+  cout << "Created global surface_vec" << '\n';
+#endif
+
   // active boolean for in interval domain in block_num ghost region, in
   // domain of block
   this->active_neighbors = vector<vector<vector<bool>>>(
@@ -2371,23 +2431,24 @@ template <class image_t> void Recut<image_t>::initialize() {
   struct timespec time0, time1, time2, time3;
   uint64_t root_64bit;
 
-#ifdef USE_MCP3D
-  // determine the image size
-  mcp3d::MImage global_image;
-  global_image.ReadImageInfo(args->image_root_dir());
-  if (global_image.image_info().empty()) {
-    MCP3D_MESSAGE("no supported image formats found in " +
-                  args->image_root_dir() + ", do nothing.")
-    throw;
-  }
-  global_image.SaveImageInfo(); // save to __image_info__.json
-  // reflects the total global image domain
-  auto global_image_dims = global_image.xyz_dims(args->resolution_level());
-#else
   // for generated image runs trust the args->image_extents
   // to reflect the total global image domain
   // see get_args() in utils.hpp
   auto global_image_dims = args->image_extents();
+#ifdef USE_MCP3D
+  if (!this->params->generate_image) {
+    // determine the image size
+    mcp3d::MImage global_image;
+    global_image.ReadImageInfo(args->image_root_dir());
+    if (global_image.image_info().empty()) {
+      MCP3D_MESSAGE("no supported image formats found in " +
+                    args->image_root_dir() + ", do nothing.")
+      throw;
+    }
+    global_image.SaveImageInfo(); // save to __image_info__.json
+    // reflects the total global image domain
+    global_image_dims = global_image.xyz_dims(args->resolution_level());
+  }
 #endif
 
   // these 3 are in z y x order

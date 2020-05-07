@@ -1,8 +1,9 @@
 #pragma once
 
 #include "recut_parameters.hpp"
-#include <cstdlib> //rand srand
-#include <ctime>   // for srand
+#include <algorithm> //min
+#include <cstdlib>   //rand srand
+#include <ctime>     // for srand
 #include <filesystem>
 #include <math.h>
 //#include "recut_prune.h"
@@ -18,21 +19,11 @@ namespace fs = std::filesystem;
 #include <opencv2/opencv.hpp> // imwrite
 #endif
 
-using fs::canonical;
-using fs::create_directories;
-using fs::current_path;
-using fs::directory_iterator;
-using fs::exists;
-using fs::path;
-using fs::remove;
-using fs::remove_all;
-using std::to_string;
-
 #define PI 3.14159265
 
 std::string get_curr() {
-  path full_path(current_path());
-  return canonical(full_path).string();
+  fs::path full_path(fs::current_path());
+  return fs::canonical(full_path).string();
 }
 
 VID_t get_central_sub(int grid_size) {
@@ -189,17 +180,19 @@ VID_t get_grid(int tcase, uint16_t *inimg1d, int grid_size) {
 
   // for tcase 5 sphere grid
   auto radius = grid_size / 4;
+  radius = radius > 1 ? radius : 1; // clamp to 1
+
   assertm(grid_size / 2 >= radius,
           "Can't specify a radius larger than grid_size / 2");
-  auto root_x = get_central_sub(grid_size);
-  auto root_y = get_central_sub(grid_size);
-  auto root_z = get_central_sub(grid_size);
-  auto xmin = root_x - radius;
-  auto xmax = root_x + radius;
-  auto ymin = root_y - radius;
-  auto ymax = root_y + radius;
-  auto zmin = root_z - radius;
-  auto zmax = root_z + radius;
+  auto root_x = static_cast<int>(get_central_sub(grid_size));
+  auto root_y = static_cast<int>(get_central_sub(grid_size));
+  auto root_z = static_cast<int>(get_central_sub(grid_size));
+  auto xmin = std::clamp(root_x - radius, 0, grid_size - 1);
+  auto xmax = std::clamp(root_x + radius, 0, grid_size - 1);
+  auto ymin = std::clamp(root_y - radius, 0, grid_size - 1);
+  auto ymax = std::clamp(root_y + radius, 0, grid_size - 1);
+  auto zmin = std::clamp(root_z - radius, 0, grid_size - 1);
+  auto zmax = std::clamp(root_z + radius, 0, grid_size - 1);
 
   double dh = 1 / grid_size;
   double x, y, z;
@@ -366,8 +359,8 @@ RecutCommandLineArgs get_args(int grid_size, int slt_pct, int tcase,
   auto params = args.recut_parameters();
   auto str_path = get_curr();
   params.set_marker_file_path(
-      str_path + "/test_markers/" + to_string(grid_size) + "/tcase" +
-      to_string(tcase) + "/slt_pct" + to_string(slt_pct) + "/");
+      str_path + "/test_markers/" + std::to_string(grid_size) + "/tcase" +
+      std::to_string(tcase) + "/slt_pct" + std::to_string(slt_pct) + "/");
   // by setting the max intensities you do not need to recompute them
   // in the update function, this is critical for benchmarking
   params.set_max_intensity(1);
@@ -388,9 +381,9 @@ RecutCommandLineArgs get_args(int grid_size, int slt_pct, int tcase,
     std::vector<int> extents = {grid_size, grid_size, grid_size};
     args.set_image_extents(extents);
   } else {
-    args.set_image_root_dir(str_path + "/test_images/" + to_string(grid_size) +
-                            "/tcase" + to_string(tcase) + "/slt_pct" +
-                            to_string(slt_pct) + "/");
+    args.set_image_root_dir(
+        str_path + "/test_images/" + std::to_string(grid_size) + "/tcase" +
+        std::to_string(tcase) + "/slt_pct" + std::to_string(slt_pct) + "/");
   }
 
   // For now, params are only saved if this
@@ -405,9 +398,9 @@ RecutCommandLineArgs get_args(int grid_size, int slt_pct, int tcase,
 }
 
 void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
-  remove_all(fn); // make sure it's an overwrite
+  fs::remove_all(fn); // make sure it's an overwrite
   cout << "      Delete old: " << fn << '\n';
-  create_directories(fn);
+  fs::create_directories(fn);
   fn = fn + "marker";
   std::ofstream mf;
   mf.open(fn);
@@ -419,9 +412,9 @@ void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
 
 #ifdef USE_MCP3D
 void write_tiff(uint16_t *inimg1d, std::string base, int grid_size) {
-  remove_all(base); // make sure it's an overwrite
+  fs::remove_all(base); // make sure it's an overwrite
   cout << "      Delete old: " << base << '\n';
-  create_directories(base);
+  fs::create_directories(base);
   // print_image(inimg1d, grid_size * grid_size * grid_size);
   for (int zi = 0; zi < grid_size; zi++) {
     std::string fn = base;
