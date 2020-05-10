@@ -74,18 +74,10 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
             // cout << v->value << " ";
           }
         } else if (stage == "radius") {
-          // if truth shows a value of 1 it is a surface
-          // vertex, therefore surface_vec should also
-          // contain this value
-          if (ground_truth[index] == 1) {
-            // deque of ptrs
-            auto found =
-                std::count(recut.surface_vec[interval_num][0].begin(),
-                           recut.surface_vec[interval_num][0].end(), v);
-            ASSERT_TRUE(found);
-          }
           if (recut.generated_image[index]) {
-            ASSERT_TRUE(v->valid_radius());
+            ASSERT_TRUE(v->valid_radius())
+                << " index " << index << " recut radius "
+                << recut.generated_image[index];
           }
           if (v->valid_radius()) {
             ASSERT_EQ(recut.generated_image[index], 1);
@@ -101,11 +93,16 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
           // vertex, therefore surface_vec should also
           // contain this value
           if (ground_truth[index] == 1) {
-            // deque of ptrs
-            auto found =
-                std::count(recut.surface_vec[interval_num][0].begin(),
-                           recut.surface_vec[interval_num][0].end(), v);
-            ASSERT_TRUE(found);
+            auto found = false;
+            for (auto iter : recut.surface_vec[interval_num][0]) {
+              if (iter->vid == v->vid)
+                found = true;
+            }
+            // if truth shows a value of 1 it is a surface
+            // vertex, therefore surface_vec should also
+            // contain this value
+            ASSERT_TRUE(found)
+                << "index " << index << " v->vid " << v->vid << '\n';
             // cout << "index: " << index << '\n';
           }
         }
@@ -953,12 +950,14 @@ TEST(Radius, Full) {
       if (print_all) {
         recut.print_interval(0, "value");
         recut.print_interval(0, "surface");
+        cout << "All surface vids: \n";
+        for (auto v : recut.surface_vec[0][0]) {
+          cout << v->vid << '\n';
+        }
       }
 
-      recut.setup_radius();
-      recut.update("radius");
-      VID_t interval_num = 0;
-
+      // Get accurate and approximate radii according to APP2
+      // methods
       auto total_visited = 0;
       for (VID_t i = 0; i < tol_sz; i++) {
         if (recut.generated_image[i]) {
@@ -975,6 +974,16 @@ TEST(Radius, Full) {
       }
       ASSERT_EQ(total_visited, selected);
 
+      // make sure all surface vertices were identified correctly
+      double xy_err, recut_err;
+      check_recut_error(recut, radii_grid.get(), grid_size, 0, "surface",
+                        recut_err);
+
+      recut.setup_radius();
+      // conducting update on radius consumes all recut.surface_vec values
+      recut.update("radius");
+      VID_t interval_num = 0;
+
       // Debug by eye
       if (print_all) {
         cout << "accuracy_radius\n";
@@ -987,18 +996,14 @@ TEST(Radius, Full) {
         recut.print_interval(0, "radius");
       }
 
-      double xy_err, recut_err;
       if (check_xy) {
         check_image_error(recut.generated_image, radii_grid.get(),
                           radii_grid_xy.get(), grid_size,
                           recut.params->selected, xy_err);
       }
-      // make sure all surface vertices were identified correctly
-      check_recut_error(recut, radii_grid.get(), grid_size, 0, "surface",
-                        recut_err);
       check_recut_error(recut, radii_grid.get(), grid_size, 0, "radius",
                         recut_err);
-      ASSERT_EQ(recut_err, 0.);
+      ASSERT_NEAR(recut_err, 0., .001);
 
       if (print_all) {
         std::cout << "\"accurate_radius/" << grid_size << "\",1,0\n";
