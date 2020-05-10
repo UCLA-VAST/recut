@@ -46,45 +46,45 @@ using json = nlohmann::json;
 
 template <class T, typename DataType>
 void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
-                       VID_t interval_num, std::string stage,
-                       double &error_rate) {
+                       std::string stage, double &error_rate) {
   auto tol_sz = static_cast<VID_t>(grid_size) * grid_size * grid_size;
   // cout << "check image " << endl;
   double error_sum = 0.0;
   VID_t total_valid = 0;
-  auto interval = recut.super_interval.GetInterval(interval_num);
-  assertm(interval->IsInMemory(), "Can not print interval not in memory");
-  for (int zi = 0; zi < recut.z_interval_size; zi++) {
-    for (int yi = 0; yi < recut.y_interval_size; yi++) {
-      for (int xi = 0; xi < recut.x_interval_size; xi++) {
-        VID_t index = ((VID_t)xi) + yi * recut.x_interval_size +
-                      zi * recut.x_interval_size * recut.y_interval_size;
-        VertexAttr *v = recut.get_attr_vid(interval_num, 0, index, nullptr);
+  for (int zi = 0; zi < recut.nz; zi++) {
+    for (int yi = 0; yi < recut.ny; yi++) {
+      for (int xi = 0; xi < recut.nx; xi++) {
+        VID_t vid = recut.get_img_vid(xi, yi, zi);
+        auto interval_num = recut.get_interval_num(vid);
+        auto block_num = recut.get_block_num(vid);
+        auto interval = recut.super_interval.GetInterval(interval_num);
+        assertm(interval->IsInMemory(), "Can not print interval not in memory");
+        VertexAttr *v =
+            recut.get_attr_vid(interval_num, block_num, vid, nullptr);
         // cout << i << endl << v.description() << " ";
         if (stage == "value") {
           bool valid_value = v->value != std::numeric_limits<uint8_t>::max();
-          if (recut.generated_image[index]) {
+          if (recut.generated_image[vid]) {
             ASSERT_TRUE(valid_value);
           }
           if (v->valid_value()) {
-            ASSERT_EQ(recut.generated_image[index], 1);
+            ASSERT_EQ(recut.generated_image[vid], 1);
           }
           if (v->valid_value()) {
-            // error_sum += absdiff(ground_truth[index], v->value);
+            // error_sum += absdiff(ground_truth[vid], v->value);
             // cout << v->value << " ";
           }
         } else if (stage == "radius") {
-          if (recut.generated_image[index]) {
-            ASSERT_TRUE(v->valid_radius())
-                << " index " << index << " recut radius "
-                << recut.generated_image[index];
+          if (recut.generated_image[vid]) {
+            ASSERT_TRUE(v->valid_radius()) << " vid " << vid << " recut radius "
+                                           << recut.generated_image[vid];
           }
           if (v->valid_radius()) {
-            ASSERT_EQ(recut.generated_image[index], 1);
+            ASSERT_EQ(recut.generated_image[vid], 1);
           }
           // if (v->valid_radius()) {
-          if (recut.generated_image[index]) {
-            error_sum += absdiff(ground_truth[index], v->radius);
+          if (recut.generated_image[vid]) {
+            error_sum += absdiff(ground_truth[vid], v->radius);
             ++total_valid;
             // cout << +(v->radius) << " ";
           }
@@ -92,18 +92,16 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
           // if truth shows a value of 1 it is a surface
           // vertex, therefore surface_vec should also
           // contain this value
-          if (ground_truth[index] == 1) {
+          if (ground_truth[vid] == 1) {
             auto found = false;
-            for (auto iter : recut.surface_vec[interval_num][0]) {
+            for (auto iter : recut.surface_vec[interval_num][block_num]) {
               if (iter->vid == v->vid)
                 found = true;
             }
             // if truth shows a value of 1 it is a surface
             // vertex, therefore surface_vec should also
             // contain this value
-            ASSERT_TRUE(found)
-                << "index " << index << " v->vid " << v->vid << '\n';
-            // cout << "index: " << index << '\n';
+            ASSERT_TRUE(found) << "vid " << vid << " v->vid " << v->vid << '\n';
           }
         }
       }
@@ -909,6 +907,8 @@ TEST(Radius, Full) {
   // std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
   // max_size / 2, max_size};
   std::vector<int> grid_sizes = {4};
+  std::vector<int> interval_sizes = {4, 2};
+  std::vector<int> block_sizes = {4, 2};
   // tcase 5 is a sphere of radius grid_size / 4 centered
   // in the middle of an image
   std::vector<int> tcases = {5};
@@ -924,94 +924,107 @@ TEST(Radius, Full) {
     if (check_xy) {
       radii_grid_xy = std::make_unique<uint16_t[]>(tol_sz);
     }
-    for (auto &tcase : tcases) {
-      auto args = get_args(grid_size, slt_pct, tcase, true);
+    for (auto &interval_size : interval_sizes) {
+      for (auto &block_size : block_sizes) {
+        for (auto &tcase : tcases) {
+          auto args = get_args(grid_size, slt_pct, tcase, true);
 
-      // adjust final runtime parameters
-      auto params = args.recut_parameters();
-      // the total number of blocks allows more parallelism
-      // ideally intervals >> thread count
-      params.set_interval_size(grid_size);
-      params.set_block_size(grid_size);
-      args.set_recut_parameters(params);
+          // adjust final runtime parameters
+          auto params = args.recut_parameters();
+          // the total number of blocks allows more parallelism
+          // ideally intervals >> thread count
+          interval_size = interval_size > grid_size ? grid_size : interval_size;
+          block_size = block_size > interval_size ? interval_size : block_size;
+          cout << "interval size " << interval_size << " block_size "
+               << block_size << '\n';
+          params.set_interval_size(interval_size);
+          params.set_block_size(block_size);
+          args.set_recut_parameters(params);
 
-      // run
-      auto recut = Recut<uint16_t>(args);
-      recut.initialize();
-      auto selected = args.recut_parameters().selected;
+          // run
+          auto recut = Recut<uint16_t>(args);
+          recut.initialize();
+          auto selected = args.recut_parameters().selected;
 
-      if (print_all) {
-        std::cout << "recut image grid" << endl;
-        print_image_3D(recut.generated_image, grid_size);
-      }
-
-      recut.setup_value();
-      recut.update("value");
-      if (print_all) {
-        recut.print_interval(0, "value");
-        recut.print_interval(0, "surface");
-        cout << "All surface vids: \n";
-        for (auto v : recut.surface_vec[0][0]) {
-          cout << v->vid << '\n';
-        }
-      }
-
-      // Get accurate and approximate radii according to APP2
-      // methods
-      auto total_visited = 0;
-      for (VID_t i = 0; i < tol_sz; i++) {
-        if (recut.generated_image[i]) {
-          // calculate radius with baseline accurate method
-          radii_grid[i] = get_radius_accurate(recut.generated_image, grid_size,
-                                              i, bkg_thresh);
-          if (check_xy) {
-            // build original production version
-            radii_grid_xy[i] = get_radius_hanchuan_XY(recut.generated_image,
-                                                      grid_size, i, bkg_thresh);
+          if (print_all) {
+            std::cout << "recut image grid" << endl;
+            print_image_3D(recut.generated_image, grid_size);
           }
-          ++total_visited;
+
+          recut.setup_value();
+          recut.update("value");
+          if (print_all) {
+            recut.print_grid("value");
+            recut.print_grid("surface");
+            cout << "All surface vids: \n";
+            for (auto &outer : recut.surface_vec) {
+              for (auto &inner : outer) {
+                for (auto &v : inner) {
+                  cout << '\t' << v->vid << '\n';
+                }
+              }
+            }
+          }
+
+          // Get accurate and approximate radii according to APP2
+          // methods
+          auto total_visited = 0;
+          for (VID_t i = 0; i < tol_sz; i++) {
+            if (recut.generated_image[i]) {
+              // calculate radius with baseline accurate method
+              radii_grid[i] = get_radius_accurate(recut.generated_image,
+                                                  grid_size, i, bkg_thresh);
+              if (check_xy) {
+                // build original production version
+                radii_grid_xy[i] = get_radius_hanchuan_XY(
+                    recut.generated_image, grid_size, i, bkg_thresh);
+              }
+              ++total_visited;
+            }
+          }
+          ASSERT_EQ(total_visited, selected);
+
+          // make sure all surface vertices were identified correctly
+          double xy_err, recut_err;
+          check_recut_error(recut, radii_grid.get(), grid_size, "surface",
+                            recut_err);
+
+          recut.setup_radius();
+          // conducting update on radius consumes all recut.surface_vec values
+          recut.update("radius");
+          VID_t interval_num = 0;
+
+          // Debug by eye
+          if (print_all) {
+            cout << "accuracy_radius\n";
+            print_image_3D(radii_grid.get(), grid_size);
+            if (check_xy) {
+              std::cout << "XY radii grid\n";
+              print_image_3D(radii_grid_xy.get(), grid_size);
+            }
+            std::cout << "Recut radii\n";
+            recut.print_grid("radius");
+          }
+
+          if (check_xy) {
+            check_image_error(recut.generated_image, radii_grid.get(),
+                              radii_grid_xy.get(), grid_size,
+                              recut.params->selected, xy_err);
+          }
+          check_recut_error(recut, radii_grid.get(), grid_size, "radius",
+                            recut_err);
+          ASSERT_NEAR(recut_err, 0., .001);
+
+          if (print_all) {
+            std::cout << "\"accurate_radius/" << grid_size << "\",1,0\n";
+            if (check_xy) {
+              std::cout << "\"xy_radius/" << grid_size << "\",1," << xy_err
+                        << '\n';
+            }
+            std::cout << "\"fast_marching_radius/" << grid_size << "\",1,"
+                      << recut_err << '\n';
+          }
         }
-      }
-      ASSERT_EQ(total_visited, selected);
-
-      // make sure all surface vertices were identified correctly
-      double xy_err, recut_err;
-      check_recut_error(recut, radii_grid.get(), grid_size, 0, "surface",
-                        recut_err);
-
-      recut.setup_radius();
-      // conducting update on radius consumes all recut.surface_vec values
-      recut.update("radius");
-      VID_t interval_num = 0;
-
-      // Debug by eye
-      if (print_all) {
-        cout << "accuracy_radius\n";
-        print_image_3D(radii_grid.get(), grid_size);
-        if (check_xy) {
-          std::cout << "XY radii grid\n";
-          print_image_3D(radii_grid_xy.get(), grid_size);
-        }
-        std::cout << "Recut radii\n";
-        recut.print_interval(0, "radius");
-      }
-
-      if (check_xy) {
-        check_image_error(recut.generated_image, radii_grid.get(),
-                          radii_grid_xy.get(), grid_size,
-                          recut.params->selected, xy_err);
-      }
-      check_recut_error(recut, radii_grid.get(), grid_size, 0, "radius",
-                        recut_err);
-      ASSERT_NEAR(recut_err, 0., .001);
-
-      if (print_all) {
-        std::cout << "\"accurate_radius/" << grid_size << "\",1,0\n";
-        if (check_xy) {
-          std::cout << "\"xy_radius/" << grid_size << "\",1," << xy_err << '\n';
-        }
-        std::cout << "\"fast_marching_radius/" << grid_size << "\",1,"
-                  << recut_err << '\n';
       }
     }
   }

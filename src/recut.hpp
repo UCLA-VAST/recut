@@ -251,8 +251,9 @@ public:
   inline VID_t get_block_num(VID_t id);
   VID_t get_interval_num(VID_t vid);
   VID_t get_sub_to_interval_num(VID_t i, VID_t j, VID_t k);
-  void place_ghost_update(VID_t interval_num, struct VertexAttr *dst,
-                          VID_t block_num, bool is_root, std::string stage);
+  void place_ghost_update(VID_t interval_num, VID_t block_num,
+                          struct VertexAttr *dst, bool is_root,
+                          std::string stage);
   int get_parent_code(VID_t dst_id, VID_t src_id);
   bool accumulate_value(const image_t *img, VID_t interval_num, VID_t dst_id,
                         VID_t block_num, struct VertexAttr *src,
@@ -298,6 +299,7 @@ public:
   VID_t parentToVID(struct VertexAttr *attr);
   inline VID_t get_block_id(VID_t iblock, VID_t jblock, VID_t kblock);
   void print_interval(VID_t interval_num, std::string stage);
+  void print_grid(std::string stage);
   void check_image(const image_t *img, VID_t size);
   void setup_radius();
   void setup_value();
@@ -443,13 +445,20 @@ template <class image_t> void Recut<image_t>::setup_value() {
     // edges of intervals in addition to blocks
     // this only adds to update_ghost_vec if the root happens
     // to be on a boundary
-    place_ghost_update(interval_num, dummy_attr, block_num, is_root,
+    place_ghost_update(interval_num, block_num, dummy_attr, is_root,
                        "value"); // add to any other ghost zone blocks
 #ifdef LOG
     cout << "Set interval " << interval_num << " block " << block_num
          << " to active ";
     cout << "for marker vid " << vid << '\n';
 #endif
+  }
+}
+
+template <class image_t> void Recut<image_t>::print_grid(std::string stage) {
+  for (size_t interval_num = 0; interval_num < super_interval.GetNIntervals();
+       ++interval_num) {
+    print_interval(interval_num, stage);
   }
 }
 
@@ -469,15 +478,16 @@ void Recut<image_t>::print_interval(VID_t interval_num, std::string stage) {
     for (int yi = 0; yi < y_interval_size; yi++) {
       cout << yi << " | ";
       for (int xi = 0; xi < x_interval_size; xi++) {
-        VID_t index = ((VID_t)xi) + yi * x_interval_size +
-                      zi * x_interval_size * y_interval_size;
-        auto v = get_attr_vid(interval_num, 0, index, nullptr);
+        VID_t vid = ((VID_t)xi) + yi * x_interval_size +
+                    zi * x_interval_size * y_interval_size;
+        auto block_num = get_block_num(vid);
+        auto v = get_attr_vid(interval_num, block_num, vid, nullptr);
         if (v->root()) {
           assertm(v->value == 0., "root value must be 0.");
           assertm(v->valid_value(), "root must have valid value");
         }
-        // cout << +inimg1d[index] << " ";
-        // auto v = interval->GetData()[index];
+        // cout << +inimg1d[vid] << " ";
+        // auto v = interval->GetData()[vid];
         // cout << i << '\n' << v.description() << " ";
         if (stage == "value") {
           if (v->valid_value()) {
@@ -494,7 +504,7 @@ void Recut<image_t>::print_interval(VID_t interval_num, std::string stage) {
         } else if (stage == "surface") {
           // for now just print the first block of the
           // interval
-          auto surface = this->surface_vec[interval_num][0];
+          auto surface = this->surface_vec[interval_num][block_num];
           assertm(surface.size() != 0, "surface size is zero");
           if (std::count(surface.begin(), surface.end(), v)) {
             cout << "S ";
@@ -743,7 +753,7 @@ void Recut<image_t>::vertex_update(VID_t interval_num, VID_t block_num,
          << '\n';
 #endif
   }
-  place_ghost_update(interval_num, dst, block_num, false, stage);
+  place_ghost_update(interval_num, block_num, dst, false, stage);
 }
 
 /**
@@ -888,6 +898,9 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_num, VID_t block_num,
   // save all possible updates for checking in the integrate_updated_ghost()
   // function after all blocks have been marched
 #ifdef ASYNC
+  if (stage != "value") {
+    assertm(false, "not currently adjusted to work for non-value stage");
+  }
   // if not currently processing, set atomically set to true and
   // potentially modify a neighbors heap
   // if neighbors heap is modified it will cause an async launch of a thread
@@ -981,9 +994,9 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_num, VID_t block_num,
  * issues
  */
 template <class image_t>
-void Recut<image_t>::place_ghost_update(VID_t interval_num,
-                                        struct VertexAttr *dst, VID_t block_num,
-                                        bool is_root, std::string stage) {
+void Recut<image_t>::place_ghost_update(VID_t interval_num, VID_t block_num,
+                                        struct VertexAttr *dst, bool is_root,
+                                        std::string stage) {
   VID_t i, j, k, ii, jj, kk, iii, jjj, kkk;
   vector<VID_t> interval_subs = {0, 0, 0};
   i = j = k = ii = jj = kk = 0;
@@ -1213,6 +1226,16 @@ bool Recut<image_t>::integrate_vertex(VID_t interval_num, VID_t block_num,
                                       std::string stage) {
   // get attr
   auto dst = get_attr_vid(interval_num, block_num, updated_attr->vid, nullptr);
+
+  // handle simpler radii stage and exit
+  if (stage == "radius") {
+    if (dst->radius > updated_attr->radius) {
+      this->surface_vec[interval_num][block_num].push_back(dst);
+      return true;
+    }
+    return false;
+  }
+
 #ifdef NO_RV
   if (ignore_KNOWN_NEW) {
     if (dst->selected()) { // 10XX XXXX KNOWN NEW
@@ -1343,6 +1366,14 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_num,
 #endif
       active_blocks[interval_num][block_num].store(true);
     }
+  } else if (stage == "radius") {
+    if (!surface_vec[interval_num][block_num].empty()) {
+#ifdef FULL_PRINT
+      cout << "Setting interval: " << interval_num << " block: " << block_num
+           << " to active\n";
+#endif
+      active_blocks[interval_num][block_num].store(true);
+    }
   }
 }
 
@@ -1432,13 +1463,22 @@ void Recut<image_t>::march_narrow_band(
       // can be a background vertex which occurs due to pixel value below the
       // threshold
       found_adjacent_invalid = false;
-      auto z_stride = static_cast<int64_t>(x_pad_block_size * y_pad_block_size);
-      std::vector<int64_t> directions{-1,
-                                      1,
-                                      -static_cast<int64_t>(x_pad_block_size),
-                                      static_cast<int64_t>(x_pad_block_size),
-                                      -z_stride,
-                                      z_stride};
+      // FIXME these should be global
+      auto z_pad_stride =
+          static_cast<int64_t>(x_pad_block_size * y_pad_block_size);
+      std::vector<int64_t> pad_strides{-1,
+                                       1,
+                                       -static_cast<int64_t>(x_pad_block_size),
+                                       static_cast<int64_t>(x_pad_block_size),
+                                       -z_pad_stride,
+                                       z_pad_stride};
+      auto z_stride = static_cast<int64_t>(x_block_size * y_block_size);
+      std::vector<int64_t> strides{-1,
+                                   1,
+                                   -static_cast<int64_t>(x_block_size),
+                                   static_cast<int64_t>(x_block_size),
+                                   -z_stride,
+                                   z_stride};
       VertexAttr *found_higher_parent = nullptr;
       VertexAttr *same_radius_adjacent = nullptr;
       VID_t i, j, k;
@@ -1447,46 +1487,61 @@ void Recut<image_t>::march_narrow_band(
       cout << "\ncurrent->vid " << current->vid << " radius "
            << +(current->radius) << " i " << i << " j " << j << " k " << k
            << '\n';
-      for (auto &stride : directions) {
-        // front vertex is always within this block and interval
-        // and each block, interval have a ghost region
-        // therefore this pointer arithmetic is always valid
-        auto dst = current + stride;
-        // all block_nums are a linear row-wise idx, relative to current
-        // interval
-        auto dst_block = get_block_num(dst->vid);
-        auto dst_interval = get_interval_num(dst->vid);
-        get_img_subscript(dst->vid, i, j, k);
+      uint8_t updated_radius = 1 + current->radius;
+      int64_t pad_stride, stride;
+      VID_t expected_dst_vid;
+      for (int idx = 0; idx < pad_strides.size(); idx++) {
+        pad_stride = pad_strides[idx];
+        stride = strides[idx];
+
+        // note the current vertex can belong in the boundary
+        // region of a separate block /interval and is only
+        // within this block /interval's ghost region
+        // therefore all neighbors / destinations of current
+        // must be checked to make sure they protude into
+        // the actual current block / interval region
+        expected_dst_vid = current->vid + stride;
+        get_img_subscript(expected_dst_vid, i, j, k);
+        cout << "i " << i << " j " << j << " k " << k << " vid "
+             << expected_dst_vid << '\n';
+        auto dst_block = get_block_num(expected_dst_vid);
+        auto dst_interval = get_interval_num(expected_dst_vid);
+
+        // Filter all dsts that don't protude into current
+        // block and interval region, ghost destinations
+        // can not be added in to processing stack
+        // ghost vertices can only be added in to the stack
+        // during `integrate_updated_ghost()`
         if (dst_interval != interval_num) {
           continue; // can't add verts of other blocks
         }
         if (dst_block != block_num) {
           continue; // can't add verts of other blocks
         }
-        // if it's selected and radius not already set
-        cout << "i " << i << " j " << j << " k " << k << " vid " << dst->vid
-             << " radius " << +(dst->radius) << '\n';
+
+        // current vertex is not always within this block and interval
+        // and each block, interval have a ghost region
+        // after filter above this pointer arithmetic is always valid
+        auto dst = current + pad_stride;
+        cout << " radius " << +(dst->radius) << '\n';
+        assertm(expected_dst_vid == dst->vid, "pointer arithmetic invalid");
+        // all block_nums are a linear row-wise idx, relative to current
+        // interval
         if (dst->selected()) {
           if (dst->radius == current->radius) {
             cout << "\tAdjacent same\n";
             // any match adjacent same match will do
             same_radius_adjacent = dst;
-          } else if (!(dst->valid_radius())) {
-            // radius has not been set yet
+          } else if (!(dst->valid_radius()) || (dst->radius > updated_radius)) {
+            // if radius has not been set yet
             // this necessitates it is 1 higher than current
+            // OR an update from another block / interval
+            // creates new lower updates
             cout << "\tAdjacent higher\n";
             found_higher_parent = dst;
-            dst->radius = 1 + current->radius;
-            assertm(dst->radius == 1 + current->radius,
-                    "not properly assigned");
+            dst->radius = updated_radius;
             this->surface_vec[interval_num][block_num].push_back(dst);
-            // place_ghost_update(interval_num, dst, block_num, false, stage);
-          } else if (dst->radius > current->radius) {
-            found_higher_parent = dst;
-            cout << "\tAdjacent higher already added\n";
-            cout << "radius " << +(dst->radius) << '\n';
-            assertm(dst->radius == (1 + current->radius),
-                    "implementation error");
+            place_ghost_update(interval_num, block_num, dst, false, stage);
           }
         } else {
           cout << "\tUnselected\n";
@@ -1557,7 +1612,9 @@ void Recut<image_t>::march_narrow_band(
                        tile_thresholds, found_adjacent_invalid);
       if (found_adjacent_invalid) {
         if (stage == "value") {
-          // cout << "found surface vertex " << current->vid << '\n';
+#ifdef FULL_PRINT
+          cout << "found surface vertex " << current->vid << '\n';
+#endif
           current->radius = 1;
           assertm(current->selected(), "surface was not selected");
           this->surface_vec[interval_num][block_num].push_back(current);
@@ -1600,9 +1657,6 @@ void Recut<image_t>::march_narrow_band(
             "Saving start, but vertex must be selected");
     super_interval.GetInterval(interval_num)->set_start_vertex(current->vid);
     super_interval.GetInterval(interval_num)->set_valid_start(true);
-    // assertm(surface_vertices.size() != 0, "surface size is zero");
-    assertm(this->surface_vec[interval_num][block_num].size() != 0,
-            "surface size is zero");
     // collect all border/surface vertices i.e. those that share at least one
     // adjacent edge with a background pixel
   }
@@ -2856,7 +2910,6 @@ void Recut<image_t>::run_pipeline() {
 
   this->setup_value();
   this->update("value");
-  // this->print_interval(0, "value");
 
   this->setup_radius();
   this->update("radius");
