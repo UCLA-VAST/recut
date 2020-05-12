@@ -31,8 +31,8 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 #define LOG // overview logging details of the recut run, this suffices
 // for
 // basic timing info, granularity at interval level
-//#define LOG_FULL   // roughly block by block processing granularity
-//#define FULL_PRINT // vertex by vertex behavior
+#define LOG_FULL   // roughly block by block processing granularity
+#define FULL_PRINT // vertex by vertex behavior
 //#define HLOG_FULL // log the behavior of the block heap methods
 
 // Define how revisits/reupdates to previous seen vertices is handled

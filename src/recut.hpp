@@ -143,7 +143,6 @@ public:
   vector<VID_t> root_vids;
   bool mmap_;
   size_t iteration;
-  int cnn_type;
   float bound_band;
   float stride;
   double restart_factor;
@@ -189,7 +188,7 @@ public:
   Recut(){};
   Recut(RecutCommandLineArgs &args)
       : args(&args), params(&(args.recut_parameters())), global_revisits(0),
-        user_def_block_size(args.recut_parameters().block_size()), cnn_type(1),
+        user_def_block_size(args.recut_parameters().block_size()),
         mmap_(false) {
 
 #ifdef MMAP
@@ -230,8 +229,6 @@ public:
   void get_max_min(const image_t *img, VID_t interval_vert_num);
   inline VertexAttr *get_attr_vid(VID_t interval_num, VID_t block_num,
                                   VID_t vid, VID_t *output_offset);
-  inline VertexAttr *get_attr(VID_t interval_num, VID_t block_num, VID_t ii,
-                              VID_t jj, VID_t kk);
   void place_vertex(VID_t nb_interval_num, VID_t block_num, VID_t nb,
                     struct VertexAttr *dst, bool is_root, std::string stage);
   bool check_blocks_finish(VID_t interval_num);
@@ -256,21 +253,26 @@ public:
                           std::string stage);
   int get_parent_code(VID_t dst_id, VID_t src_id);
   bool accumulate_value(const image_t *img, VID_t interval_num, VID_t dst_id,
-                        VID_t block_num, struct VertexAttr *src,
-                        VID_t &revisits, double factor, int parent_code,
+                        VID_t block_num, struct VertexAttr *current,
+                        VID_t &revisits, int parent_code,
                         const TileThresholds<image_t> *tile_thresholds,
                         bool &found_background);
-  bool accumulate_radius(VID_t interval_num, VID_t dst_id, VID_t block_num,
-                         struct VertexAttr *src, VID_t &revisits, double factor,
-                         int parent_code, bool &found_adjacent_invalid);
+  void accumulate_radius(VID_t interval_num, VID_t dst_id, VID_t block_num,
+                         struct VertexAttr *current, VID_t &revisits,
+                         int parent_code, bool &found_adjacent_invalid,
+                         VertexAttr *found_higher_parent,
+                         VertexAttr *same_radius_adjacent, int stride,
+                         int pad_stride);
   template <typename TNew>
   void vertex_update(VID_t interval_num, VID_t block_num, VertexAttr *dst,
                      TNew new_field, std::string stage);
-  void update_neighbors(const image_t *img, VID_t interval_num,
-                        struct VertexAttr *current, VID_t block_num,
-                        VID_t &revisits, std::string stage,
+  void update_neighbors(const image_t *img, VID_t interval_num, VID_t block_num,
+                        struct VertexAttr *current, VID_t &revisits,
+                        std::string stage,
                         const TileThresholds<image_t> *tile_thresholds,
-                        bool &found_adjacent_invalid);
+                        bool &found_adjacent_invalid,
+                        VertexAttr *found_higher_parent,
+                        VertexAttr *same_radius_adjacent);
   void integrate_updated_ghost(VID_t interval_num, VID_t block_num,
                                std::string stage);
   bool integrate_vertex(VID_t interval_num, VID_t block_num,
@@ -468,7 +470,8 @@ void Recut<image_t>::print_interval(VID_t interval_num, std::string stage) {
   // assertm(interval->GetNVertices() == x_interval_size * y_interval_size *
   // z_interval_size, "Mismatched interval size");
   assertm(interval->IsInMemory(), "Can not print interval not in memory");
-  cout << "Print recut interval " << interval_num << '\n';
+  cout << "Print recut interval " << interval_num << " stage: " << stage
+       << '\n';
   for (int zi = 0; zi < z_interval_size; zi++) {
     cout << "y | Z=" << zi << '\n';
     for (int xi = 0; xi < 2 * y_interval_size + 4; xi++) {
@@ -478,9 +481,15 @@ void Recut<image_t>::print_interval(VID_t interval_num, std::string stage) {
     for (int yi = 0; yi < y_interval_size; yi++) {
       cout << yi << " | ";
       for (int xi = 0; xi < x_interval_size; xi++) {
-        VID_t vid = ((VID_t)xi) + yi * x_interval_size +
-                    zi * x_interval_size * y_interval_size;
+        VID_t i, j, k, xadjust, yadjust, zadjust;
+        get_interval_subscript(interval_num, i, j, k);
+        xadjust = xi + i * x_interval_size;
+        yadjust = yi + j * y_interval_size;
+        zadjust = zi + k * z_interval_size;
+        VID_t vid = ((VID_t)xadjust) + yadjust * x_interval_size +
+                    zadjust * x_interval_size * y_interval_size;
         auto block_num = get_block_num(vid);
+        cout << "\nvid " << vid << " block " << block_num << '\n';
         auto v = get_attr_vid(interval_num, block_num, vid, nullptr);
         if (v->root()) {
           assertm(v->value == 0., "root value must be 0.");
@@ -572,6 +581,7 @@ template <class image_t> VID_t Recut<image_t>::get_interval_num(VID_t vid) {
   VID_t i, j, k;
   i = j = k = 0;
   get_img_subscript(vid, i, j, k);
+  cout << "i " << i << " j " << j << " k " << k << '\n';
   return get_sub_to_interval_num(i, j, k);
 }
 
@@ -587,6 +597,8 @@ VID_t Recut<image_t>::get_sub_to_interval_num(VID_t i, VID_t j, VID_t k) {
   auto k_interval = k / z_interval_size;
   auto interval_num = i_interval + j_interval * x_interval_num +
                       k_interval * x_interval_num * y_interval_num;
+  cout << "i_interval " << i_interval << " j_interval " << j_interval
+       << " k_interval " << k_interval << '\n';
   assert(interval_num < super_interval.GetNIntervals());
   return interval_num;
 }
@@ -653,8 +665,6 @@ void Recut<image_t>::safe_push(T_heap &heap, T2 *node, VID_t interval_num,
        << '\n'; //" handle: " << node->handles[block_num] ;
   assert(!node->valid_handle());
   assert(node->valid_vid());
-  // auto attr = get_attr_vid(interval_num, block_num, node->vid);
-  // assert(attr->vid == node->vid);
 #endif
   heap.push(node, block_num, cmp_field);
 #ifdef HLOG_FULL
@@ -765,51 +775,68 @@ void Recut<image_t>::vertex_update(VID_t interval_num, VID_t block_num,
  * is the responsibility of place_ghost_update to take note of the update such
  * that this update is propagated to the relevant interval and block see
  * integrate_updated_ghost(). dst_id : continuous vertex id VID_t of the dst
- * vertex in question block_num : src block id src : minimum vertex attribute
- * selected returns true if this vertex is unselected (and not a root)
+ * vertex in question block_num : current block id current : minimum vertex
+ * attribute selected
  */
 template <class image_t>
-bool Recut<image_t>::accumulate_radius(VID_t interval_num, VID_t dst_id,
-                                       VID_t block_num, struct VertexAttr *src,
-                                       VID_t &revisits, double factor,
-                                       int parent_code,
-                                       bool &found_adjacent_invalid) {
+void Recut<image_t>::accumulate_radius(
+    VID_t interval_num, VID_t dst_id, VID_t block_num,
+    struct VertexAttr *current, VID_t &revisits, int parent_code,
+    bool &found_adjacent_invalid, VertexAttr *found_higher_parent,
+    VertexAttr *same_radius_adjacent, int stride, int pad_stride) {
 
+  // note the current vertex can belong in the boundary
+  // region of a separate block /interval and is only
+  // within this block /interval's ghost region
+  // therefore all neighbors / destinations of current
+  // must be checked to make sure they protude into
+  // the actual current block / interval region
+  // current vertex is not always within this block and interval
+  // and each block, interval have a ghost region
+  // after filter in update_neighbors this pointer arithmetic is always valid
   auto dst = get_attr_vid(interval_num, block_num, dst_id, nullptr);
+  // if (dst->selected()) {
+  // auto expected_dst_vid = current->vid + stride;
+  // cout << " expected vid " << expected_dst_vid << '\n';
+  // assertm(expected_dst_vid == dst->vid, "pointer arithmetic invalid");
+  //}
 
-#ifdef FULL_PRINT
-  cout << "\tcheck dst vid: " << dst_id;
-#endif
-
-  // exclude all unselected values, check that it is not a root value as well
-  // since roots counterintuitively have a separate tag value than selected
-  if (dst->unselected() && !(dst->root())) {
-#ifdef FULL_PRINT
-    cout << "\t\treturn true since unselected neighbor was found" << '\n';
-#endif
-    found_adjacent_invalid = true;
-    return false;
-  }
-
-  // solve for update value
-  // dst_id and src->vid are linear idx relative to full image domain
-  assertm(src->valid_radius(), "src radius had an invalid field");
-  auto new_field = src->radius + 1;
-
-  if (dst->radius > new_field) {
-    // TODO enforce this with a vector
-    // assertm(!(dst->valid_radius), "A previously seen radius can not be "
-    //"processed in current implementation");
-    vertex_update(interval_num, block_num, dst, new_field, "radius");
-    assertm(dst->radius == new_field,
-            "Accumulate radius did not properly set it's updated field");
+  assertm(current->valid_radius(), "current radius had an invalid field");
+  uint8_t updated_radius = 1 + current->radius;
+  if (dst->selected()) {
+    assertm(dst->valid_vid(), "selected must have a valid vid");
+    assertm(dst->vid == dst_id, "get_attr_vid failed getting correct vertex");
+    // FIXME would be more efficient
+    // auto check_dst = current + pad_stride;
+    // cout << "dst " << dst->vid << " check " << check_dst->vid << '\n';
+    // assertm(dst->vid == check_dst->vid,
+    //"get_attr_vid doesn't match pad stride arithmetic");
+    if (dst->radius == current->radius) {
+      cout << "\tAdjacent same\n";
+      // any match adjacent same match will do
+      same_radius_adjacent = dst;
+    } else if (!(dst->valid_radius()) || (dst->radius > updated_radius)) {
+      // if radius has not been set yet
+      // this necessitates it is 1 higher than current
+      // OR an update from another block / interval
+      // creates new lower updates
+      found_higher_parent = dst;
+      dst->radius = updated_radius;
+      cout << "\tAdjacent higher"
+           << " radius " << +(dst->radius) << '\n';
+      this->surface_vec[interval_num][block_num].push_back(dst);
+      place_ghost_update(interval_num, block_num, dst, false, "radius");
+    }
   } else {
+    // exclude all unselected values, check that it is not a root value as well
+    // since roots counterintuitively have a separate tag value than selected
+    if (!(dst->root())) {
 #ifdef FULL_PRINT
-    cout << "\t\tfailed: no radii change: " << dst->vid
-         << " radii: " << +(dst->radius) << '\n';
+      cout << "\tunselected neighbor was found" << '\n';
 #endif
+      found_adjacent_invalid = true;
+    }
   }
-  return false; // it was a selected vertex
 }
 
 /**
@@ -821,13 +848,13 @@ bool Recut<image_t>::accumulate_radius(VID_t interval_num, VID_t dst_id,
  * is the responsibility of place_ghost_update to take note of the update such
  * that this update is propagated to the relevant interval and block see
  * integrate_updated_ghost(). dst_id : continuous vertex id VID_t of the dst
- * vertex in question block_num : src block id src : minimum vertex attribute
- * selected
+ * vertex in question block_num : current block id current : minimum vertex
+ * attribute selected
  */
 template <class image_t>
 bool Recut<image_t>::accumulate_value(
     const image_t *img, VID_t interval_num, VID_t dst_id, VID_t block_num,
-    struct VertexAttr *src, VID_t &revisits, double factor, int parent_code,
+    struct VertexAttr *current, VID_t &revisits, int parent_code,
     const TileThresholds<image_t> *tile_thresholds, bool &found_background) {
 
   assertm(dst_id < this->img_vox_num, "Outside bounds of current interval");
@@ -852,11 +879,12 @@ bool Recut<image_t>::accumulate_value(
   }
 
   // solve for update value
-  // dst_id and src->vid are linear idx relative to full image domain
+  // dst_id and current->vid are linear idx relative to full image domain
   float new_field = static_cast<float>(
-      src->value + (tile_thresholds->calc_weight(get_img_val(img, src->vid)) +
-                    tile_thresholds->calc_weight(dst_vox)) *
-                       0.5 * factor);
+      current->value +
+      (tile_thresholds->calc_weight(get_img_val(img, current->vid)) +
+       tile_thresholds->calc_weight(dst_vox)) *
+          0.5);
 
   // this automatically excludes any root vertex since they have a value of 0.
   if (dst->value > new_field) {
@@ -1100,14 +1128,14 @@ void Recut<image_t>::place_ghost_update(VID_t interval_num, VID_t block_num,
   }
 }
 
-/* check and add src vertices in star stencil
- * if the src is greater the parent code will be greater
+/* check and add current vertices in star stencil
+ * if the current is greater the parent code will be greater
  * see struct definition in vertex_attr.h for full
  * list of VertexAttr parent codes and their meaning
  */
 template <class image_t>
 int Recut<image_t>::get_parent_code(VID_t dst_id, VID_t src_id) {
-  auto src_gr = src_id > dst_id ? true : false; // src greater
+  auto src_gr = src_id > dst_id ? true : false; // current greater
   auto adiff = absdiff(dst_id, src_id);
   if ((adiff % nxy) == 0) {
     if (src_gr)
@@ -1126,86 +1154,95 @@ int Recut<image_t>::get_parent_code(VID_t dst_id, VID_t src_id) {
       return 0;
   }
   // FIXME check this
-  cout << "get_parent_code failed at src " << src_id << " dst_id " << dst_id
+  cout << "get_parent_code failed at current " << src_id << " dst_id " << dst_id
        << " absdiff " << adiff << '\n';
   throw;
 }
 
-// check and add src vertices in star stencil
+// check and add current vertices in star stencil
 template <class image_t>
 void Recut<image_t>::update_neighbors(
-    const image_t *img, VID_t interval_num, struct VertexAttr *current,
-    VID_t block_num, VID_t &revisits, std::string stage,
+    const image_t *img, VID_t interval_num, VID_t block_num,
+    struct VertexAttr *current, VID_t &revisits, std::string stage,
     const TileThresholds<image_t> *tile_thresholds,
-    bool &found_adjacent_invalid) {
+    bool &found_adjacent_invalid, VertexAttr *found_higher_parent,
+    VertexAttr *same_radius_adjacent) {
 
-  auto vid = current->vid;
   VID_t i, j, k;
   i = j = k = 0;
-  get_img_subscript(vid, i, j, k);
+  get_img_subscript(current->vid, i, j, k);
 #ifdef FULL_PRINT
   // all block_nums are a linear row-wise idx, relative to current interval
-  VID_t block = get_block_num(vid);
-  cout << "\ni: " << i << " j: " << j << " k: " << k << " src vid: " << vid
-       << " value: " << current->value << '\n';
+  VID_t block = get_block_num(current->vid);
+  cout << "\ni: " << i << " j: " << j << " k: " << k
+       << " current vid: " << current->vid << " value: " << current->value
+       << " interval " << interval_num << " block " << block_num << '\n';
   //" for block " << block_num << " within domain of block " << block << '\n';
 #endif
 
-  // Warning: currently only supports cnn-type = 1
-  // i.e. only +-1 in x, y, z
+  // only supports +-1 in x, y, z
   VID_t dst_id;
-  int w, h, d;
+  int x, y, z;
   int parent_code;
+  int stride, pad_stride;
+  int z_stride = this->x_block_size * this->y_block_size;
+  int z_pad_stride = this->x_pad_block_size * this->y_pad_block_size;
   for (int kk = -1; kk <= 1; kk++) {
-    d = ((int)k) + kk;
-    if (d < 0 || d >= nz) {
+    z = ((int)k) + kk;
+    if (z < 0 || z >= nz) {
       found_adjacent_invalid = true;
       continue;
     }
     for (int jj = -1; jj <= 1; jj++) {
-      h = ((int)j) + jj;
-      if (h < 0 || h >= nz) {
+      y = ((int)j) + jj;
+      if (y < 0 || y >= ny) {
         found_adjacent_invalid = true;
         continue;
       }
       for (int ii = -1; ii <= 1; ii++) {
-        w = ((int)i) + ii;
-        if (w < 0 || w >= nx) {
+        x = ((int)i) + ii;
+        if (x < 0 || x >= nx) {
           found_adjacent_invalid = true;
           continue;
         }
         int offset = ABS(ii) + ABS(jj) + ABS(kk);
-        if (offset == 0 || offset > cnn_type)
+        if (offset == 0 || offset > 1)
           continue;
-        dst_id = get_img_vid(w, h, d);
-        // all block_nums are a linear row-wise idx, relative to current
-        // interval
+        dst_id = get_img_vid(x, y, z);
+
+        // all block_nums and interval_nums are a linear
+        // row-wise idx, relative to current interval
         auto nb = get_block_num(dst_id);
-        auto ni = get_sub_to_interval_num(w, h, d);
+        auto ni = get_sub_to_interval_num(x, y, z);
+
+        // Filter all dsts that don't protude into current
+        // block and interval region, ghost destinations
+        // can not be added in to processing stack
+        // ghost vertices can only be added in to the stack
+        // during `integrate_updated_ghost()`
         if (ni != interval_num)
-          continue; // can't add verts of other blocks
+          continue; // can't add verts of other intervals
         if (nb != block_num)
           continue; // can't add verts of other blocks
-        double factor =
-            (offset == 1)
-                ? 1.0
-                : ((offset == 2) ? 1.414214 : ((offset == 3) ? 1.732051 : 0.0));
-        parent_code = get_parent_code(dst_id, vid);
+
+        parent_code = get_parent_code(dst_id, current->vid);
+        // note although this is summed only one of ii,jj,kk
+        // will be not equal to 0
+        stride = ii + jj * this->x_block_size + kk * z_stride;
+        pad_stride = ii + jj * this->x_pad_block_size + kk * z_pad_stride;
 #ifdef FULL_PRINT
-        cout << "w " << w << " h " << h << " d " << d << " dst_id " << dst_id
-             << " vid " << vid << '\n';
+        cout << "x " << x << " y " << y << " z " << z << " dst_id " << dst_id
+             << " vid " << current->vid << '\n';
 #endif
         if (stage == "value") {
           accumulate_value(img, interval_num, dst_id, block_num, current,
-                           revisits, factor, parent_code, tile_thresholds,
+                           revisits, parent_code, tile_thresholds,
                            found_adjacent_invalid);
         } else if (stage == "radius") {
-          if (found_adjacent_invalid)
-            return;
           accumulate_radius(interval_num, dst_id, block_num, current, revisits,
-                            factor, parent_code, found_adjacent_invalid);
-          if (found_adjacent_invalid)
-            return;
+                            parent_code, found_adjacent_invalid,
+                            found_higher_parent, same_radius_adjacent, stride,
+                            pad_stride);
         }
       }
     }
@@ -1458,95 +1495,22 @@ void Recut<image_t>::march_narrow_band(
       // pointers must still be in memory
       VertexAttr *current = this->surface_vec[interval_num][block_num].front();
       this->surface_vec[interval_num][block_num].pop_front();
-      // assertm(current != NULL, "pointers must still be in memory");
+
+#ifdef LOG_FULL
+      visited += 1;
+#endif
+
       // invalid can either be out of range of the entire global image or it
       // can be a background vertex which occurs due to pixel value below the
       // threshold
       found_adjacent_invalid = false;
-      // FIXME these should be global
-      auto z_pad_stride =
-          static_cast<int64_t>(x_pad_block_size * y_pad_block_size);
-      std::vector<int64_t> pad_strides{-1,
-                                       1,
-                                       -static_cast<int64_t>(x_pad_block_size),
-                                       static_cast<int64_t>(x_pad_block_size),
-                                       -z_pad_stride,
-                                       z_pad_stride};
-      auto z_stride = static_cast<int64_t>(x_block_size * y_block_size);
-      std::vector<int64_t> strides{-1,
-                                   1,
-                                   -static_cast<int64_t>(x_block_size),
-                                   static_cast<int64_t>(x_block_size),
-                                   -z_stride,
-                                   z_stride};
       VertexAttr *found_higher_parent = nullptr;
       VertexAttr *same_radius_adjacent = nullptr;
-      VID_t i, j, k;
-      i = j = k = 0;
-      get_img_subscript(current->vid, i, j, k);
-      cout << "\ncurrent->vid " << current->vid << " radius "
-           << +(current->radius) << " i " << i << " j " << j << " k " << k
-           << '\n';
-      uint8_t updated_radius = 1 + current->radius;
-      int64_t pad_stride, stride;
-      VID_t expected_dst_vid;
-      for (int idx = 0; idx < pad_strides.size(); idx++) {
-        pad_stride = pad_strides[idx];
-        stride = strides[idx];
+      update_neighbors(img, interval_num, block_num, current, revisits, stage,
+                       tile_thresholds, found_adjacent_invalid,
+                       found_higher_parent, same_radius_adjacent);
 
-        // note the current vertex can belong in the boundary
-        // region of a separate block /interval and is only
-        // within this block /interval's ghost region
-        // therefore all neighbors / destinations of current
-        // must be checked to make sure they protude into
-        // the actual current block / interval region
-        expected_dst_vid = current->vid + stride;
-        get_img_subscript(expected_dst_vid, i, j, k);
-        cout << "i " << i << " j " << j << " k " << k << " vid "
-             << expected_dst_vid << '\n';
-        auto dst_block = get_block_num(expected_dst_vid);
-        auto dst_interval = get_interval_num(expected_dst_vid);
-
-        // Filter all dsts that don't protude into current
-        // block and interval region, ghost destinations
-        // can not be added in to processing stack
-        // ghost vertices can only be added in to the stack
-        // during `integrate_updated_ghost()`
-        if (dst_interval != interval_num) {
-          continue; // can't add verts of other blocks
-        }
-        if (dst_block != block_num) {
-          continue; // can't add verts of other blocks
-        }
-
-        // current vertex is not always within this block and interval
-        // and each block, interval have a ghost region
-        // after filter above this pointer arithmetic is always valid
-        auto dst = current + pad_stride;
-        cout << " radius " << +(dst->radius) << '\n';
-        assertm(expected_dst_vid == dst->vid, "pointer arithmetic invalid");
-        // all block_nums are a linear row-wise idx, relative to current
-        // interval
-        if (dst->selected()) {
-          if (dst->radius == current->radius) {
-            cout << "\tAdjacent same\n";
-            // any match adjacent same match will do
-            same_radius_adjacent = dst;
-          } else if (!(dst->valid_radius()) || (dst->radius > updated_radius)) {
-            // if radius has not been set yet
-            // this necessitates it is 1 higher than current
-            // OR an update from another block / interval
-            // creates new lower updates
-            cout << "\tAdjacent higher\n";
-            found_higher_parent = dst;
-            dst->radius = updated_radius;
-            this->surface_vec[interval_num][block_num].push_back(dst);
-            place_ghost_update(interval_num, block_num, dst, false, stage);
-          }
-        } else {
-          cout << "\tUnselected\n";
-        }
-      }
+      // Prune logic
       // set the proper parent, either a same or a higher adjacent
       // if (found_higher_parent && alsdkfj) {
       //}
@@ -1556,7 +1520,7 @@ void Recut<image_t>::march_narrow_band(
       // if ((current->radius >= 2) && !(current->root())) {
       //}
     }
-  } else {
+  } else if (stage == "value") {
     while (!heap_vec[interval_num][block_num].empty()) {
 
       if (restart_bool) {
@@ -1582,50 +1546,37 @@ void Recut<image_t>::march_narrow_band(
       // this retrieves the actual ptr to the vid of the root dummy min
       // values so that they can be properly initialized
       current = get_attr_vid(interval_num, block_num, dummy_min->vid, nullptr);
-      if (stage == "value") {
 
-        // preserve state of roots
-        if (!(dummy_min->root())) {
-          current->mark_selected(); // set as KNOWN NEW
-          assert(current->valid_vid());
-          // Note: any adjustments to current if in a neighboring domain
-          // i.e. current->handles.contains(nb) are not in a data race
-          // with the nb thread. All VertexAttr have redundant copies in each
-          // ghost region
-        } else {
-          current = dummy_min; // set as root and copy members
-          assert(current->root());
-          assertm(current->value == 0, "root value not set properly");
-        }
-      } else if (stage == "radius") {
-        assertm(current->selected() || current->root(),
-                "Can not process an invalid vertex");
-        current->radius = dummy_min->radius;
-        current->vid = dummy_min->vid;
+      // preserve state of roots
+      if (!(dummy_min->root())) {
+        current->mark_selected(); // set as KNOWN NEW
+        assert(current->valid_vid());
+        // Note: any adjustments to current if in a neighboring domain
+        // i.e. current->handles.contains(nb) are not in a data race
+        // with the nb thread. All VertexAttr have redundant copies in each
+        // ghost region
+      } else {
+        current = dummy_min; // set as root and copy members
+        assert(current->root());
+        assertm(current->value == 0, "root value not set properly");
       }
 
       // invalid can either be out of range of the entire global image or it
       // can be a background vertex which occurs due to pixel value below the
       // threshold
       found_adjacent_invalid = false;
-      update_neighbors(img, interval_num, current, block_num, revisits, stage,
-                       tile_thresholds, found_adjacent_invalid);
+      update_neighbors(img, interval_num, block_num, current, revisits, stage,
+                       tile_thresholds, found_adjacent_invalid, nullptr,
+                       nullptr);
       if (found_adjacent_invalid) {
         if (stage == "value") {
 #ifdef FULL_PRINT
           cout << "found surface vertex " << current->vid << '\n';
 #endif
           current->radius = 1;
-          assertm(current->selected(), "surface was not selected");
+          assertm(current->selected() || current->root(),
+                  "surface was not selected");
           this->surface_vec[interval_num][block_num].push_back(current);
-        } else if (stage == "radius") {
-          if (current->radius != 1) {
-            // a vertex with an invalid adjacent (neighbor) always has a
-            // radius of 1 put this vertex back for processing, in case it's
-            // neighbors were improperly set before finding the invalid
-            vertex_update(interval_num, block_num, current, 1, "radius");
-            assertm(current->radius == 1, "radius was not properly set to 1");
-          }
         }
       }
     }
@@ -1638,7 +1589,7 @@ void Recut<image_t>::march_narrow_band(
        << " start size " << start_size << " visiting " << visited
        << " revisits " << revisits << " in " << diff_time(time0, time1) << " s"
        << '\n';
-  //}
+//}
 #endif
 
 #ifdef RV
@@ -1646,20 +1597,6 @@ void Recut<image_t>::march_narrow_band(
   // unwanted or unexpected serial behavior between blocks
   global_revisits += revisits;
 #endif
-
-  // save the last value to help start different stages
-  // any last value is fine this does not need to be thread-safe
-  if (stage == "value") {
-#ifdef LOG_FULL
-    cout << interval_num << ',' << block_num << current->description();
-#endif
-    assertm(current->selected() || current->root(),
-            "Saving start, but vertex must be selected");
-    super_interval.GetInterval(interval_num)->set_start_vertex(current->vid);
-    super_interval.GetInterval(interval_num)->set_valid_start(true);
-    // collect all border/surface vertices i.e. those that share at least one
-    // adjacent edge with a background pixel
-  }
 
   // Note: could set explicit memory ordering on atomic
   active_blocks[interval_num][block_num].store(false);
@@ -2341,15 +2278,16 @@ Recut<image_t>::get_attr_vid(const VID_t interval_num, const VID_t block_num,
   img_block_i = ia % x_block_size;
   img_block_j = ja % y_block_size;
   img_block_k = ka % z_block_size;
-  // cout << "\timg vid: "<< img_vid<< " img_block_i " << img_block_i << "
-  // img_block_j " << img_block_j << " img_block_k " << img_block_k<<'\n';
+  // cout << "\timg vid: " << img_vid << " img_block_i " << img_block_i
+  //<< " img_block_j " << img_block_j << " img_block_k " << img_block_k<<'\n';
 
   // which block domain and interval does this img_vid actually belong to
-  // ignoring ghost regions denoted nb_* since it may belong in the domain of
-  // a neighbors block or interval all block_nums are a linear row-wise idx,
-  // relative to current interval
+  // ignoring ghost regions denoted nb_* since it may belong in the domain
+  // of a neighbors block or interval all block_nums are a linear row-wise
+  // idx, relative to current interval
   int nb_block = (int)get_block_num(img_vid);
   int nb_interval = (int)get_interval_num(img_vid);
+  cout << "nb_interval " << nb_interval << " nb_block " << nb_block << '\n';
 
   // adjust block subscripts so they reflect the interval or block they belong
   // to also adjust based on actual 3D padding of block Rotate all values
@@ -2450,19 +2388,6 @@ Recut<image_t>::get_attr_vid(const VID_t interval_num, const VID_t block_num,
   // " match->value " << match->value << '\n' << '\n';
 #endif
   return match;
-}
-
-/* DEPRECATED
- */
-template <class image_t>
-inline VertexAttr *Recut<image_t>::get_attr(VID_t interval_num, VID_t block_num,
-                                            VID_t ii, VID_t jj, VID_t kk) {
-  Interval *interval = super_interval.GetInterval(interval_num);
-  struct VertexAttr *attr = interval->GetData(); // first location of block
-  VID_t block_start = pad_block_offset * block_num;
-  auto offset =
-      ii + x_pad_block_size * jj + kk * x_pad_block_size * y_pad_block_size;
-  return attr + block_start + offset;
 }
 
 template <class image_t>
@@ -2610,7 +2535,7 @@ template <class image_t> void Recut<image_t>::initialize() {
   this->img_vox_num = nx * ny * nz;
 
   // the image size and offsets override the user inputted interval size
-  // continuous id's are the same for src or dst intervals
+  // continuous id's are the same for current or dst intervals
   // round up (pad)
   // Determine the size of each interval in each dim
   // constrict so less data is allocated especially in z dimension
