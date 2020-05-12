@@ -20,18 +20,19 @@
 class Interval {
 public:
   /*
-   * nvid : number of total vertices to load
+   * interval_vertex_pad_size : number of total vertices to load
    * interval_id : save a unique identifier for the interval
    * base : load the interval from a immutable base interval with all vertices
    * set to defaults
    */
-  Interval(const VID_t offset, VID_t nvid, int interval_id, std::string base,
+  Interval(VID_t interval_vertex_pad_size, int interval_id, std::string base,
            bool mmap_ = false)
       : in_mem_(false), inmem_ptr0_(nullptr), unmap_(false), active_(false),
-        base_(base), fn_(base), nvid_(nvid), offset_(offset),
+        base_(base), fn_(base),
+        interval_vertex_pad_size_(interval_vertex_pad_size),
         interval_id_(interval_id), mmap_(mmap_) {
-    assert(nvid <= MAX_INTERVAL_VERTICES);
-    mmap_length_ = sizeof(VertexAttr) * nvid_;
+    assert(interval_vertex_pad_size <= MAX_INTERVAL_VERTICES);
+    mmap_length_ = sizeof(VertexAttr) * interval_vertex_pad_size_;
 
 #ifdef USE_HUGE_PAGE
     // For huge pages the length needs to be aligned to the nearest hugepages
@@ -47,7 +48,8 @@ public:
 #ifdef USE_HUGE_PAGE
         hp_mmap_length_(m.hp_mmap_length_),
 #endif
-        unmap_(m.unmap_), offset_(m.offset_), nvid_(m.nvid_) //, heap_(nullptr)
+        unmap_(m.unmap_), interval_vertex_pad_size_(
+                              m.interval_vertex_pad_size_) //, heap_(nullptr)
 
   {
     m.unmap_ = false;
@@ -69,8 +71,7 @@ public:
     hp_mmap_length_ = m.hp_mmap_length_;
 #endif
     unmap_ = m.unmap_;
-    offset_ = m.offset_;
-    nvid_ = m.nvid_;
+    interval_vertex_pad_size_ = m.interval_vertex_pad_size_;
     m.unmap_ = false;
     return *this;
   }
@@ -208,7 +209,7 @@ public:
 
   // treat mmap'd as in memory
   inline bool IsInMemory() const { return in_mem_; };
-  inline VID_t GetNVertices() const { return nvid_; }
+  inline VID_t GetNVertices() const { return interval_vertex_pad_size_; }
 
   inline VertexAttr *GetData() {
     assert(in_mem_);
@@ -220,8 +221,6 @@ public:
     }
   }
 
-  // GetOffset not currently checked in recut
-  inline VID_t GetOffset() const { return offset_; }
   // IsActive not currently checked in recut
   inline bool IsActive() const { return active_; }
   inline void SetActive(bool active) { active_ = active; }
@@ -245,9 +244,8 @@ private:
 #ifdef USE_HUGE_PAGE
   size_t hp_mmap_length_;
 #endif
-  bool unmap_;   /// Whether should call munmap on destructor
-  VID_t offset_; // cont id of first element in interval
-  VID_t nvid_;
+  bool unmap_; /// Whether should call munmap on destructor
+  VID_t interval_vertex_pad_size_;
   std::string fn_;
   std::string base_;
   int interval_id_;

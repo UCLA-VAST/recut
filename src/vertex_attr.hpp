@@ -11,8 +11,6 @@ using std::ios;
 using std::numeric_limits;
 using std::vector;
 
-#define assertm(exp, msg) assert(((void)msg, exp))
-
 #include "config.hpp"
 #include "utils.hpp"
 

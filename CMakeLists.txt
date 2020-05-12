@@ -15,6 +15,7 @@ add_subdirectory(extern/googletest/googletest)
 set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "Suppressing benchmark's tests" FORCE)
 set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "Don't install benchmark" FORCE)
 add_subdirectory(extern/benchmark)
+#add_subdirectory(extern/fmt)
 
 # works for cmake 3.9+
 find_package(OpenMP REQUIRED)
@@ -35,11 +36,13 @@ set(SRC
 set(HEADER
   ${PROJECT_SOURCE_DIR}/src/recut.hpp
   ${PROJECT_SOURCE_DIR}/src/recut_parameters.hpp
-  ${PROJECT_SOURCE_DIR}/src/super_interval.hpp
+  ${PROJECT_SOURCE_DIR}/src/grid.hpp
   ${PROJECT_SOURCE_DIR}/src/interval.hpp
   ${PROJECT_SOURCE_DIR}/src/vertex_attr.hpp
   ${PROJECT_SOURCE_DIR}/src/utils.hpp
-  ${PROJECT_SOURCE_DIR}/src/markers.h
+  ${PROJECT_SOURCE_DIR}/src/config.hpp
+  ${PROJECT_SOURCE_DIR}/src/tile_thresholds.hpp
+  ${PROJECT_SOURCE_DIR}/src/markers.h # TODO remove this
   )
 
 # must be defined before the executable or library
@@ -49,9 +52,9 @@ set(HEADER
 # will not link shared dependencies properly
 #set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
 
-add_executable(recut ${SRC} ${HEADER} ${PARAMS})
+#add_executable(recut ${SRC} ${HEADER} ${PARAMS})
 add_executable(recut_test test/recut_test.cpp ${HEADER} ${MARKERS} ${PARAMS})
-add_executable(recut_bench bench/recut_bench.cpp ${HEADER} ${MARKERS} ${PARAMS})
+#add_executable(recut_bench bench/recut_bench.cpp ${HEADER} ${MARKERS} ${PARAMS})
 
 include_directories(include)
 
@@ -62,9 +65,10 @@ add_subdirectory("extern/junction" junction)
 include_directories(${JUNCTION_ALL_INCLUDE_DIRS})
 
 target_link_libraries(recut_test PRIVATE gtest)
-target_link_libraries(recut_bench PRIVATE benchmark)
+#target_link_libraries(recut_bench PRIVATE benchmark)
 
-set(ALL_TARGETS recut recut_test recut_bench)
+#set(ALL_TARGETS recut recut_test recut_bench)
+set(ALL_TARGETS recut_test)
 foreach(I ${ALL_TARGETS})
   message(STATUS "${I}")
   target_link_libraries(${I} PRIVATE ${JUNCTION_ALL_LIBRARIES})
