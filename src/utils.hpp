@@ -1,13 +1,12 @@
 #pragma once
 
+#include "markers.h"
 #include "recut_parameters.hpp"
 #include <algorithm> //min
 #include <cstdlib>   //rand srand
 #include <ctime>     // for srand
 #include <filesystem>
 #include <math.h>
-//#include "recut_prune.h"
-#include "markers.h"
 namespace fs = std::filesystem;
 
 #ifdef USE_MCP3D
@@ -20,6 +19,7 @@ namespace fs = std::filesystem;
 #endif
 
 #define PI 3.14159265
+#define assertm(exp, msg) assert(((void)msg, exp))
 
 std::string get_curr() {
   fs::path full_path(fs::current_path());
@@ -47,7 +47,7 @@ VID_t get_central_diag_vid(int grid_size) {
  * copy on write, the chunk requested during reading
  * or mmapping is
  */
-VID_t get_used_vertex_num(VID_t grid_size, VID_t block_size) {
+VID_t get_used_vertex_size(VID_t grid_size, VID_t block_size) {
   auto len = grid_size / block_size;
   auto total_blocks = len * len * len;
   auto pad_block_size = block_size + 2;
@@ -631,5 +631,63 @@ void print_macros() {
 
 #ifdef USE_OMP
   cout << "USE_OMP" << '\n';
+#endif
+}
+
+// this is not thread safe if concurrent threads
+// add or subtract elements from vector.
+// added such that vectors of atomics can
+// be created more cleanly while retaining atomicity
+template <typename T> struct atomwrapper {
+  atomic<T> _a;
+
+  T load() { return _a.load(); }
+
+  void store(T val, memory_order order = memory_order_release) {
+    _a.store(val, order);
+  }
+
+  bool compare_exchange_strong(bool val, bool val2) {
+    return _a.compare_exchange_strong(val, val2);
+  }
+
+  atomwrapper() : _a() {}
+
+  atomwrapper(const atomic<T> &a) : _a(a.load()) {}
+
+  atomwrapper(const atomwrapper &other) : _a(other._a.load()) {}
+
+  atomwrapper &operator=(const atomwrapper &other) {
+    _a.store(other._a.load());
+    return *this;
+  }
+};
+
+// use in conjunction with clock_gettime
+inline double diff_time(struct timespec time1, struct timespec time2) {
+  return time2.tv_sec - time1.tv_sec + (time2.tv_nsec - time1.tv_nsec) * 1e-9;
+}
+
+/* returns available memory to system in bytes
+ */
+inline size_t GetAvailMem() {
+#if defined(_SC_AVPHYS_PAGES)
+  map<string, size_t> mem_info;
+  std::ifstream read_mem("/proc/meminfo");
+  string read_buf, last_buf;
+  for (; !read_mem.eof();) {
+    read_mem >> read_buf;
+    if (read_buf[read_buf.size() - 1] == ':') {
+      last_buf = read_buf.substr(0, read_buf.size() - 1);
+    } else {
+      if (!last_buf.empty()) {
+        mem_info[last_buf] = atoll(read_buf.c_str());
+      }
+      last_buf.clear();
+    }
+  }
+  return (mem_info["MemFree"] + mem_info["Cached"]) * 1024;
+#else
+  return 0L;
 #endif
 }

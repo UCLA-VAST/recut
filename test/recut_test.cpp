@@ -51,16 +51,15 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
   // cout << "check image " << endl;
   double error_sum = 0.0;
   VID_t total_valid = 0;
-  for (int zi = 0; zi < recut.nz; zi++) {
-    for (int yi = 0; yi < recut.ny; yi++) {
-      for (int xi = 0; xi < recut.nx; xi++) {
+  for (int zi = 0; zi < recut.image_length_z; zi++) {
+    for (int yi = 0; yi < recut.image_length_y; yi++) {
+      for (int xi = 0; xi < recut.image_length_x; xi++) {
         VID_t vid = recut.get_img_vid(xi, yi, zi);
-        auto interval_num = recut.get_interval_num(vid);
-        auto block_num = recut.get_block_num(vid);
-        auto interval = recut.super_interval.GetInterval(interval_num);
+        auto interval_id = recut.get_interval_id(vid);
+        auto block_id = recut.get_block_id(vid);
+        auto interval = recut.grid.GetInterval(interval_id);
         assertm(interval->IsInMemory(), "Can not print interval not in memory");
-        VertexAttr *v =
-            recut.get_attr_vid(interval_num, block_num, vid, nullptr);
+        VertexAttr *v = recut.get_attr_vid(interval_id, block_id, vid, nullptr);
         // cout << i << endl << v.description() << " ";
         if (stage == "value") {
           bool valid_value = v->value != std::numeric_limits<uint8_t>::max();
@@ -94,7 +93,7 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
           // contain this value
           if (ground_truth[vid] == 1) {
             auto found = false;
-            for (auto iter : recut.surface_vec[interval_num][block_num]) {
+            for (auto iter : recut.surface_vec[interval_id][block_id]) {
               if (iter->vid == v->vid)
                 found = true;
             }
@@ -144,7 +143,7 @@ void interval_base_immutable(VID_t nvid) {
   ASSERT_LE(nvid, MAX_INTERVAL_VERTICES);
   // check that interval_base has not changed
   auto base = INTERVAL_BASE;
-  auto interval = new Interval(0, nvid, 0, base);
+  auto interval = new Interval(nvid, 0, base);
   interval->LoadFromDisk();
   for (int i = 0; i < nvid; i++) {
     ASSERT_TRUE(interval->GetData()[i].unvisited())
@@ -163,7 +162,7 @@ void load_save(bool mmap_) {
   ASSERT_TRUE(fs::exists(base));
 
   // create
-  auto interval = new Interval(0, nvid, 0, base, mmap_);
+  auto interval = new Interval(nvid, 0, base, mmap_);
   ASSERT_FALSE(interval->IsInMemory());
   interval->LoadFromDisk();
   ASSERT_TRUE(interval->IsInMemory());
@@ -189,7 +188,7 @@ void load_save(bool mmap_) {
 
   // check interval can't delete interval_base_64bit.bin
   // create
-  auto interval2 = new Interval(0, nvid, 0, base, mmap_);
+  auto interval2 = new Interval(nvid, 0, base, mmap_);
   interval2->LoadFromDisk();
   delete interval2;
 
@@ -203,12 +202,12 @@ void load_save(bool mmap_) {
 //// a unique vid even in padded regions. This is especially
 //// useful for testing get_attr_vid is returning the correct
 //// vid
-// void assign_super_interval_vids(Recut recut) {
+// void assign_grid(Recut recut) {
 //// test that get_attr_vid returns the right match in various scenarios
 //// assign all vids for testing purposes
 // VID_t index = 0;
-// for (int i=0; i < recut.super_interval.GetNIntervals(); i++) {
-// auto interval = recut.super_interval.GetInterval(i);
+// for (int i=0; i < recut.grid.GetNIntervals(); i++) {
+// auto interval = recut.grid.GetInterval(i);
 // auto attr = interval->GetData();
 // for (int j=0; j < interval->GetNVertices(); j++) {
 // auto current = attr + index; // get the appropriate vertex
@@ -239,27 +238,27 @@ void test_get_attr_vid(bool mmap, int grid_size, int interval_size,
   recut.initialize();
   recut.setup_value();
 
-  ASSERT_EQ(recut.nx, grid_size);
-  ASSERT_EQ(recut.ny, grid_size);
-  ASSERT_EQ(recut.nz, grid_size);
+  ASSERT_EQ(recut.image_length_x, grid_size);
+  ASSERT_EQ(recut.image_length_y, grid_size);
+  ASSERT_EQ(recut.image_length_z, grid_size);
 
   // these tests make sure get_attr_vid always returns a pointer to underlying
   // vertex data and does not copy by value the vertex struct
   for (auto &vid : vids) {
     // cout << "TESTING vid " << vid << endl;
     ASSERT_LT(vid, nvid);
-    auto current_interval_num = recut.get_interval_num(vid);
-    auto current_block_num = recut.get_block_num(vid);
+    auto current_interval_id = recut.get_interval_id(vid);
+    auto current_block_id = recut.get_block_id(vid);
     std::vector<VID_t> test_blocks = {};
-    test_blocks.push_back(current_block_num);
+    test_blocks.push_back(current_block_id);
     std::vector<VID_t> test_intervals = {};
-    test_intervals.push_back(current_interval_num);
+    test_intervals.push_back(current_interval_id);
 
     if (grid_size / interval_size == 2) {
       VID_t iinterval, jinterval, kinterval;
       // the interval is a linear index into the 3D row-wise arrangement of
       // interval, converting to subscript makes adjustments easier
-      recut.get_interval_subscript(current_interval_num, iinterval, jinterval,
+      recut.get_interval_subscript(current_interval_id, iinterval, jinterval,
                                    kinterval);
       if (vid == root_vid) {
         test_intervals.push_back(
@@ -278,9 +277,9 @@ void test_get_attr_vid(bool mmap, int grid_size, int interval_size,
       }
     } else if (interval_size / block_size == 2) {
       VID_t iblock, jblock, kblock;
-      // the block_num is a linear index into the 3D row-wise arrangement of
+      // the block_id is a linear index into the 3D row-wise arrangement of
       // blocks, converting to subscript makes adjustments easier
-      recut.get_block_subscript(current_block_num, iblock, jblock, kblock);
+      recut.get_block_subscript(current_block_id, iblock, jblock, kblock);
       if (vid == root_vid) {
         test_blocks.push_back(recut.get_block_id(iblock + 1, jblock, kblock));
         test_blocks.push_back(recut.get_block_id(iblock, jblock + 1, kblock));
@@ -293,19 +292,19 @@ void test_get_attr_vid(bool mmap, int grid_size, int interval_size,
     }
 
     VID_t output_offset;
-    for (auto &interval_num : test_intervals) {
-      // cout << "interval_num " << interval_num << endl;
-      recut.super_interval.GetInterval(interval_num)->LoadFromDisk();
-      for (auto &block_num : test_blocks) {
-        // cout << "\tblock_num " << block_num << endl;
+    for (auto &interval_id : test_intervals) {
+      // cout << "interval_id " << interval_id << endl;
+      recut.grid.GetInterval(interval_id)->LoadFromDisk();
+      for (auto &block_id : test_blocks) {
+        // cout << "\tblock_id " << block_id << endl;
         // TEST 1
         // Assert upstream changes (by pointer)
         auto attr =
-            recut.get_attr_vid(interval_num, block_num, vid, &output_offset);
+            recut.get_attr_vid(interval_id, block_id, vid, &output_offset);
         attr->vid = vid;
         attr->value = 3;
         auto attr2 =
-            recut.get_attr_vid(interval_num, block_num, vid, &output_offset);
+            recut.get_attr_vid(interval_id, block_id, vid, &output_offset);
         ASSERT_EQ(attr, attr2); // upstream changes?
 
         // TEST 2
@@ -318,18 +317,17 @@ void test_get_attr_vid(bool mmap, int grid_size, int interval_size,
         dummy_attr->value = 1.0;
         dummy_attr->vid = vid;
         auto embedded_attr = recut.get_attr_vid(
-            interval_num, block_num, dummy_attr->vid, &output_offset);
+            interval_id, block_id, dummy_attr->vid, &output_offset);
         *embedded_attr = *dummy_attr;
         ASSERT_EQ(embedded_attr->vid, dummy_attr->vid);
         auto embedded_attr2 = recut.get_attr_vid(
-            interval_num, block_num, dummy_attr->vid, &output_offset);
+            interval_id, block_id, dummy_attr->vid, &output_offset);
         ASSERT_EQ(embedded_attr2, embedded_attr); // same obj?
         ASSERT_EQ(embedded_attr2->vid, dummy_attr->vid);
         ASSERT_EQ(*embedded_attr2, *dummy_attr); // same values?
       }
-      recut.super_interval.GetInterval(interval_num)->Release();
-      ASSERT_FALSE(
-          recut.super_interval.GetInterval(interval_num)->IsInMemory());
+      recut.grid.GetInterval(interval_id)->Release();
+      ASSERT_FALSE(recut.grid.GetInterval(interval_id)->IsInMemory());
     }
   }
 }
@@ -512,7 +510,7 @@ TEST(Interval, GetAttrVid) {
 
   test_get_attr_vid(mmap_, grid_size, grid_size, grid_size);
   // make sure base interval is implemented in a read-only manner
-  interval_base_immutable(get_used_vertex_num(grid_size, grid_size));
+  interval_base_immutable(get_used_vertex_size(grid_size, grid_size));
 }
 
 TEST(Interval, GetAttrVidMmap) {
@@ -522,14 +520,14 @@ TEST(Interval, GetAttrVidMmap) {
 
   test_get_attr_vid(mmap_, grid_size, grid_size, grid_size);
   // make sure base interval is implemented in a read-only manner
-  interval_base_immutable(get_used_vertex_num(grid_size, grid_size));
+  interval_base_immutable(get_used_vertex_size(grid_size, grid_size));
 }
 
 TEST(Interval, GetAttrVidMultiBlock) {
   VID_t grid_size = 8;
   VID_t block_size = grid_size / 2;
   // this is the total vertices that will be used including ghost cells
-  auto interval_vert_num = get_used_vertex_num(grid_size, block_size);
+  auto interval_vert_num = get_used_vertex_size(grid_size, block_size);
   // check it can handle this amount
   // interval_base_immutable(interval_vert_num) ;
   // this is the domain size not counting ghost cells
@@ -546,7 +544,7 @@ TEST(Interval, GetAttrVidMultiInterval) {
   VID_t grid_size = 8;
   auto interval_size = grid_size / 2;
   VID_t nvid = grid_size * grid_size * grid_size;
-  auto interval_vert_num = get_used_vertex_num(grid_size, interval_size);
+  auto interval_vert_num = get_used_vertex_size(grid_size, interval_size);
   // interval_base_immutable(interval_vert_num) ;
 
   bool mmap_ = true;
@@ -907,8 +905,8 @@ TEST(Radius, Full) {
   // std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
   // max_size / 2, max_size};
   std::vector<int> grid_sizes = {4};
-  std::vector<int> interval_sizes = {4, 2};
-  std::vector<int> block_sizes = {4, 2};
+  std::vector<int> interval_sizes = {4};
+  std::vector<int> block_sizes = {2};
   // tcase 5 is a sphere of radius grid_size / 4 centered
   // in the middle of an image
   std::vector<int> tcases = {5};
@@ -1192,9 +1190,9 @@ TEST(RecutPipeline, DISABLED_PrintDefaultInfo) {
   cout << "MAX_INTERVAL_VERTICES " << MAX_INTERVAL_VERTICES << std::scientific
        << endl;
   cout << "Vertices needed for a 1024^3 interval block size 4 : "
-       << get_used_vertex_num(1024, 4) << std::scientific << endl;
+       << get_used_vertex_size(1024, 4) << std::scientific << endl;
   cout << "Vertices needed for a 2048^3 interval block size 4 : "
-       << get_used_vertex_num(2048, 4) << std::scientific << endl;
+       << get_used_vertex_size(2048, 4) << std::scientific << endl;
 }
 
 TEST(RecutPipeline, 4tcase0) {
@@ -1221,7 +1219,7 @@ TEST(RecutPipeline, DISABLED_4tcase0MultiInterval) {
   // recut.mmap_ = true;
   recut();
 
-  interval_base_immutable(get_used_vertex_num(grid_size, grid_size / 2));
+  interval_base_immutable(get_used_vertex_size(grid_size, grid_size / 2));
   ASSERT_EQ(args.output_tree.size(), grid_size * grid_size * grid_size);
 }
 
@@ -1327,7 +1325,7 @@ TEST(RecutPipeline, DISABLED_256tcase4sltpct10) {
 TEST(RecutPipeline, DISABLED_512tcase0sltpct100) {
   VID_t grid_size = 512;
   auto block_size = grid_size / 4;
-  // interval_base_immutable(get_used_vertex_num(grid_size, block_size));
+  // interval_base_immutable(get_used_vertex_size(grid_size, block_size));
   double slt_pct = 100;
   int tcase = 0;
   auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
@@ -1342,7 +1340,7 @@ TEST(RecutPipeline, DISABLED_512tcase0sltpct100) {
   recut();
   VID_t expected = (slt_pct / 100) * grid_size * grid_size * grid_size;
   EXPECT_NEAR(args.output_tree.size(), expected, expected * EXP_DEV_LOW);
-  interval_base_immutable(get_used_vertex_num(grid_size, block_size));
+  interval_base_immutable(get_used_vertex_size(grid_size, block_size));
 }
 
 TEST(RecutPipeline, DISABLED_1024tcase4sltpct1) {
