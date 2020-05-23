@@ -1,6 +1,6 @@
 enable_testing()
 # note this is set to 3.9 because of
-# cpp 17 features that we found not to work
+# cpp 17 features that don't work
 # on older version during linking
 # we strongly suggest upgrading to this version
 # or higher to build this code from source
@@ -15,13 +15,13 @@ add_subdirectory(extern/googletest/googletest)
 set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "Suppressing benchmark's tests" FORCE)
 set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "Don't install benchmark" FORCE)
 add_subdirectory(extern/benchmark)
-#add_subdirectory(extern/fmt)
 
 # works for cmake 3.9+
 find_package(OpenMP REQUIRED)
 
 set(MARKERS ${PROJECT_SOURCE_DIR}/src/markers.cpp)
 set(PARAMS ${PROJECT_SOURCE_DIR}/src/recut_parameters.cpp)
+set(APP2 ${PROJECT_SOURCE_DIR}/test/app2_helpers.hpp)
 
 # These define the executable and command line processing
 # if a recut command line tool is needed
@@ -53,22 +53,21 @@ set(HEADER
 #set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
 
 #add_executable(recut ${SRC} ${HEADER} ${PARAMS})
-add_executable(recut_test test/recut_test.cpp ${HEADER} ${MARKERS} ${PARAMS})
-#add_executable(recut_bench bench/recut_bench.cpp ${HEADER} ${MARKERS} ${PARAMS})
+add_executable(recut_test test/recut_test.cpp ${HEADER} ${MARKERS} ${PARAMS} ${APP2})
+add_executable(recut_bench bench/recut_bench.cpp ${HEADER} ${MARKERS} ${PARAMS} ${APP2})
 
 include_directories(include)
 
-# Turf dependencies
-# Add Junction (and Turf) build targets to the CMake project.
+# Turf dependencies Add Junction (and Turf) build targets to the CMake project.
 # This defines JUNCTION_ALL_INCLUDE_DIRS and JUNCTION_ALL_LIBRARIES.
 add_subdirectory("extern/junction" junction)
 include_directories(${JUNCTION_ALL_INCLUDE_DIRS})
 
 target_link_libraries(recut_test PRIVATE gtest)
-#target_link_libraries(recut_bench PRIVATE benchmark)
+target_link_libraries(recut_bench PRIVATE benchmark)
 
 #set(ALL_TARGETS recut recut_test recut_bench)
-set(ALL_TARGETS recut_test)
+set(ALL_TARGETS recut_test recut_bench)
 foreach(I ${ALL_TARGETS})
   message(STATUS "${I}")
   target_link_libraries(${I} PRIVATE ${JUNCTION_ALL_LIBRARIES})

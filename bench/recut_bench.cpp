@@ -1,4 +1,5 @@
 #include "../src/recut.hpp"
+#include "../test/app2_helpers.hpp"
 #include <benchmark/benchmark.h>
 
 #ifdef USE_MCP3D
@@ -79,7 +80,7 @@ BENCHMARK(bench_critical_loop)
     ->ReportAggregatesOnly(true)
     ->Unit(benchmark::kMillisecond);
 
-static void fast_marching_radius(benchmark::State &state) {
+static void recut_radius(benchmark::State &state) {
   std::vector<int> tcases = {5};
   int slt_pct = 100;
   bool print_all = false;
@@ -114,7 +115,7 @@ static void fast_marching_radius(benchmark::State &state) {
     }
   }
 }
-BENCHMARK(fast_marching_radius)
+BENCHMARK(recut_radius)
     ->RangeMultiplier(2)
     ->Range(8, 128)
     ->Unit(benchmark::kMillisecond);

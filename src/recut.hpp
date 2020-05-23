@@ -72,9 +72,6 @@ public:
   double restart_factor;
   bool restart_bool;
   image_t bkg_thresh;
-  // max and min set as double to align with look up table for value
-  // estimation
-  double max_int, min_int;
   atomic<VID_t> global_revisits;
   VID_t vertex_issue; // default heuristic per thread for roughly best
                       // performance
@@ -137,14 +134,13 @@ public:
   T2 safe_pop(T &heap, VID_t block_id, VID_t interval_id,
               std::string cmp_field);
 
-  image_t get_img_val(const image_t *img, VID_t vid);
+  image_t get_img_val(const image_t *tile, VID_t vid);
   inline VID_t rotate_index(VID_t img_sub, const VID_t current,
                             const VID_t neighbor,
                             const VID_t interval_block_size,
                             const VID_t pad_block_size);
-  int thresh_pct(const image_t *img, VID_t interval_vertex_size,
+  int thresh_pct(const image_t *tile, VID_t interval_vertex_size,
                  const double foreground_percent);
-  void get_max_min(const image_t *img, VID_t interval_vertex_size);
   inline VertexAttr *get_attr_vid(VID_t interval_id, VID_t block_id, VID_t vid,
                                   VID_t *output_offset);
   void place_vertex(VID_t nb_interval_id, VID_t block_id, VID_t nb,
@@ -168,7 +164,7 @@ public:
                           struct VertexAttr *dst, bool is_root,
                           std::string stage);
   int get_parent_code(VID_t dst_id, VID_t src_id);
-  bool accumulate_value(const image_t *img, VID_t interval_id, VID_t dst_id,
+  bool accumulate_value(const image_t *tile, VID_t interval_id, VID_t dst_id,
                         VID_t block_id, struct VertexAttr *current,
                         VID_t &revisits, int parent_code,
                         const TileThresholds<image_t> *tile_thresholds,
@@ -182,7 +178,7 @@ public:
   template <typename TNew>
   void vertex_update(VID_t interval_id, VID_t block_id, VertexAttr *dst,
                      TNew new_field, std::string stage);
-  void update_neighbors(const image_t *img, VID_t interval_id, VID_t block_id,
+  void update_neighbors(const image_t *tile, VID_t interval_id, VID_t block_id,
                         struct VertexAttr *current, VID_t &revisits,
                         std::string stage,
                         const TileThresholds<image_t> *tile_thresholds,
@@ -195,7 +191,7 @@ public:
                         struct VertexAttr *updated_attr, bool ignore_KNOWN_NEW,
                         bool is_root, std::string stage);
   // void create_integrate_thread(VID_t interval_id, VID_t block_id) ;
-  void march_narrow_band(const image_t *img, VID_t interval_id, VID_t block_id,
+  void march_narrow_band(const image_t *tile, VID_t interval_id, VID_t block_id,
                          std::string stage,
                          const TileThresholds<image_t> *tile_thresholds);
   void create_march_thread(VID_t interval_id, VID_t block_id);
@@ -203,7 +199,8 @@ public:
   const TileThresholds<image_t> *load_tile(VID_t interval_id,
                                            mcp3d::MImage &mcp3d_tile);
 #endif
-  double process_interval(VID_t interval_id, image_t *tile, std::string stage,
+  double process_interval(VID_t interval_id, const image_t *tile,
+                          std::string stage,
                           const TileThresholds<image_t> *tile_thresholds);
   void update(std::string stage);
   void initialize();
@@ -212,10 +209,10 @@ public:
   inline VID_t get_block_id(VID_t iblock, VID_t jblock, VID_t kblock);
   void print_interval(VID_t interval_id, std::string stage);
   void print_grid(std::string stage);
-  void check_image(const image_t *img, VID_t size);
   void setup_radius();
   void setup_value();
-  void process_marker_dir(vector<int> off, vector<int> end);
+  void process_marker_dir(vector<int> global_image_offsets,
+                          vector<int> global_image_extents);
   ~Recut<image_t>();
 };
 
@@ -244,18 +241,20 @@ bool check_in_bounds(T i, T j, T k, T2 off, T2 end) {
     return false;
   if (k < off[0])
     return false;
-  if (i > end[2])
+  if (i > off[2] + end[2])
     return false;
-  if (j > end[1])
+  if (j > off[1] + end[1])
     return false;
-  if (k > end[0])
+  if (k > off[0] + end[0])
     return false;
   return true;
 }
 
 // adds all markers to this->root_vids
+//
 template <class image_t>
-void Recut<image_t>::process_marker_dir(vector<int> off, vector<int> end) {
+void Recut<image_t>::process_marker_dir(vector<int> global_image_offsets,
+                                        vector<int> global_image_extents) {
   // allow either dir or dir/ naming styles
   if (params->marker_file_path().back() != '/')
     params->set_marker_file_path(params->marker_file_path().append("/"));
@@ -270,19 +269,24 @@ void Recut<image_t>::process_marker_dir(vector<int> off, vector<int> end) {
     // set intervals with root present as active
     for (auto &root : inmarkers) {
       // init state and phi for root
-      VID_t i, j, k;
-      i = root.x + 1;
-      j = root.y + 1;
-      k = root.z + 1;
-      auto vid = get_img_vid(i, j, k);
+      VID_t i, j, k, x, y, z;
+      x = root.x + 1;
+      y = root.y + 1;
+      z = root.z + 1;
 
-      if (!check_in_bounds(i, j, k, off, end))
+      if (!check_in_bounds(x, y, z, global_image_offsets, global_image_extents))
         continue;
+      // adjust the vid according to the region of the image we are processing
+      i = x - global_image_offsets[2];
+      j = y - global_image_offsets[1];
+      k = z - global_image_offsets[0];
+      auto vid = get_img_vid(i, j, k);
       this->root_vids.push_back(vid);
 
 #ifdef LOG
-      cout << "Read marker x " << i << " y " << j << " z " << k << " vid "
-           << vid << '\n';
+      cout << "Read marker at x " << x << " y " << y << " z " << z
+           << " adjust to subscripts, i " << i << " j " << j << " k " << k
+           << " vid " << vid << '\n';
 #endif
     }
   }
@@ -376,10 +380,18 @@ template <class image_t> void Recut<image_t>::print_grid(std::string stage) {
 template <class image_t>
 void Recut<image_t>::print_interval(VID_t interval_id, std::string stage) {
   auto interval = grid.GetInterval(interval_id);
-  // assertm(interval->GetNVertices() == interval_length_x * interval_length_y *
-  // interval_length_z, "Mismatched interval size");
-  assertm(interval->IsInMemory(), "Can not print interval not in memory");
-  cout << "Print recut interval " << interval_id << " stage: " << stage << '\n';
+
+#ifdef LOG
+  if (interval->IsInMemory()) {
+    cout << "Print recut interval " << interval_id << " stage: " << stage
+         << '\n';
+  } else {
+    cout << "Recut interval " << interval_id << " stage: " << stage
+         << " never loaded returning without print\n";
+    return;
+  }
+#endif
+
   // these looping vars below are over the non-padded lengths of each interval
   VID_t i, j, k, xadjust, yadjust, zadjust;
   get_interval_subscript(interval_id, i, j, k);
@@ -417,13 +429,13 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage) {
           if (v->valid_value()) {
             cout << v->value << " ";
           } else {
-            cout << "NA ";
+            cout << "- ";
           }
         } else if (stage == "radius") {
           if (v->valid_radius()) {
             cout << +(v->radius) << " ";
           } else {
-            cout << "NA ";
+            cout << "- ";
           }
         } else if (stage == "surface") {
           // for now just print the first block of the
@@ -440,15 +452,6 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage) {
       cout << '\n';
     }
     cout << '\n';
-  }
-}
-
-template <class image_t>
-void Recut<image_t>::check_image(const image_t *img, VID_t size) {
-  cout << "recut image " << '\n';
-  for (VID_t i = 0; i < size; i++) {
-    cout << i << " " << +(img[i]) << '\n';
-    assert(img[i] <= 1);
   }
 }
 
@@ -630,13 +633,13 @@ inline VID_t Recut<image_t>::get_interval_id_vert_sub(const VID_t i,
 /*
  * Takes a global image vid
  * and converts it to linear index of current
- * img of interval currently processed
+ * tile of interval currently processed
  * returning the voxel value at that
  * location id -> sub_script i, j, k -> mod i, j, k against interval_length in
  * each dim -> convert modded subscripts to a new vid
  */
 template <class image_t>
-image_t Recut<image_t>::get_img_val(const image_t *img, VID_t vid) {
+image_t Recut<image_t>::get_img_val(const image_t *tile, VID_t vid) {
   VID_t i, j, k;
   i = j = k = 0;
   get_img_subscript(vid, i, j, k);
@@ -650,7 +653,7 @@ image_t Recut<image_t>::get_img_val(const image_t *img, VID_t vid) {
   // cout<< "\n\tia: "<<ia<<" ja: "<<ja <<" ka: "<< ka<< " interval vid: " <<
   // interval_vid << '\n';
 #endif
-  auto val = img[interval_vid];
+  auto val = tile[interval_vid];
   return val;
 }
 
@@ -736,12 +739,16 @@ void Recut<image_t>::accumulate_radius(
       // creates new lower updates
       found_higher_parent = dst;
       dst->radius = updated_radius;
+#ifdef FULL_PRINT
       cout << "\tAdjacent higher"
            << " radius " << +(dst->radius) << '\n';
+#endif
       this->surface_vec[interval_id][block_id].push_back(dst);
       check_ghost_update(interval_id, block_id, dst, false, "radius");
     } else if (dst->radius == current->radius) {
+#ifdef FULL_PRINT
       cout << "\tAdjacent same\n";
+#endif
       // aimage_y_len match adjacent same match will do
       same_radius_adjacent = dst;
     }
@@ -771,13 +778,13 @@ void Recut<image_t>::accumulate_radius(
  */
 template <class image_t>
 bool Recut<image_t>::accumulate_value(
-    const image_t *img, VID_t interval_id, VID_t dst_id, VID_t block_id,
+    const image_t *tile, VID_t interval_id, VID_t dst_id, VID_t block_id,
     struct VertexAttr *current, VID_t &revisits, int parent_code,
     const TileThresholds<image_t> *tile_thresholds, bool &found_background) {
 
   assertm(dst_id < this->image_size, "Outside bounds of current interval");
   auto dst = get_attr_vid(interval_id, block_id, dst_id, nullptr);
-  auto dst_vox = get_img_val(img, dst_id);
+  auto dst_vox = get_img_val(tile, dst_id);
 
 #ifdef FULL_PRINT
   cout << "\tcheck dst vid: " << dst_id;
@@ -800,7 +807,7 @@ bool Recut<image_t>::accumulate_value(
   // dst_id and current->vid are linear idx relative to full image domain
   float new_field = static_cast<float>(
       current->value +
-      (tile_thresholds->calc_weight(get_img_val(img, current->vid)) +
+      (tile_thresholds->calc_weight(get_img_val(tile, current->vid)) +
        tile_thresholds->calc_weight(dst_vox)) *
           0.5);
 
@@ -1083,7 +1090,7 @@ int Recut<image_t>::get_parent_code(VID_t dst_id, VID_t src_id) {
 // check and add current vertices in star stencil
 template <class image_t>
 void Recut<image_t>::update_neighbors(
-    const image_t *img, VID_t interval_id, VID_t block_id,
+    const image_t *tile, VID_t interval_id, VID_t block_id,
     struct VertexAttr *current, VID_t &revisits, std::string stage,
     const TileThresholds<image_t> *tile_thresholds,
     bool &found_adjacent_invalid, VertexAttr *found_higher_parent,
@@ -1156,7 +1163,7 @@ void Recut<image_t>::update_neighbors(
              << " vid " << current->vid << '\n';
 #endif
         if (stage == "value") {
-          accumulate_value(img, interval_id, dst_id, block_id, current,
+          accumulate_value(tile, interval_id, dst_id, block_id, current,
                            revisits, parent_code, tile_thresholds,
                            found_adjacent_invalid);
         } else if (stage == "radius") {
@@ -1393,7 +1400,7 @@ bool Recut<image_t>::check_blocks_finish(VID_t interval_id) {
 
 template <class image_t>
 void Recut<image_t>::march_narrow_band(
-    const image_t *img, VID_t interval_id, VID_t block_id, std::string stage,
+    const image_t *tile, VID_t interval_id, VID_t block_id, std::string stage,
     const TileThresholds<image_t> *tile_thresholds) {
 
 #ifdef LOG_FULL
@@ -1426,7 +1433,7 @@ void Recut<image_t>::march_narrow_band(
       found_adjacent_invalid = false;
       VertexAttr *found_higher_parent = nullptr;
       VertexAttr *same_radius_adjacent = nullptr;
-      update_neighbors(img, interval_id, block_id, current, revisits, stage,
+      update_neighbors(tile, interval_id, block_id, current, revisits, stage,
                        tile_thresholds, found_adjacent_invalid,
                        found_higher_parent, same_radius_adjacent);
 
@@ -1485,7 +1492,7 @@ void Recut<image_t>::march_narrow_band(
       // can be a background vertex which occurs due to pixel value below the
       // threshold
       found_adjacent_invalid = false;
-      update_neighbors(img, interval_id, block_id, current, revisits, stage,
+      update_neighbors(tile, interval_id, block_id, current, revisits, stage,
                        tile_thresholds, found_adjacent_invalid, nullptr,
                        nullptr);
       if (found_adjacent_invalid) {
@@ -1575,21 +1582,20 @@ void Recut<image_t>::get_interval_offsets(const VID_t interval_id,
   vector<VID_t> subs = {k, j, i};
   interval_offsets = {0, 0, 0};
   interval_extents = {0, 0, 0};
-  auto off = args->image_offsets();
   // increment the offset location to extract
-  interval_offsets[2] +=
-      off[2]; // args->image_offsets args->image_extents are in z y x order
-  interval_offsets[1] += off[1];
-  interval_offsets[0] += off[0];
+  // args->image_offsets args->image_extents are in z y x order
+  interval_offsets[2] += args->image_offsets[2];
+  interval_offsets[1] += args->image_offsets[1];
+  interval_offsets[0] += args->image_offsets[0];
   vector<int> szs = {(int)image_length_z, (int)image_length_y,
                      (int)image_length_x};
   for (int i = 0; i < 3; i++) {
     interval_offsets[i] += subs[i] * interval_lengths[i];
-    // constrain the extents to actual image
+    interval_extents[i] = interval_offsets[i] + interval_lengths[i];
+    // don't constrain the extents to actual image
+    // mcp3d pads with zero if requests go beyond memory
     // global command line extents have already been factored
     // into szs
-    interval_extents[i] =
-        min(szs[i] - interval_offsets[i], (int)interval_lengths[i]);
   }
 #ifdef LOG_FULL
   cout << "interval_id: " << interval_id;
@@ -1600,49 +1606,9 @@ void Recut<image_t>::get_interval_offsets(const VID_t interval_id,
 #endif
 }
 
-template <class image_t>
-void Recut<image_t>::get_max_min(const image_t *img,
-                                 VID_t interval_vertex_size) {
-
-  double elapsed_max_min = omp_get_wtime();
-
-  // GI parameter min_int, max_int, li
-  double local_max = 0; // maximum intensity, used in GI
-  double local_min = std::numeric_limits<double>::max(); // max value
-  //#pragma omp parallel for reduction(max:local_max)
-  for (auto i = 0; i < interval_vertex_size; i++) {
-    if (img[i] > local_max) {
-      local_max = img[i];
-    }
-  }
-  //#pragma omp parallel for reduction(min:local_min)
-  for (auto i = 0; i < interval_vertex_size; i++) {
-    if (img[i] < local_min) {
-      local_min = img[i];
-      // cout << "local_min" << +local_min << '\n';
-    }
-  }
-  if (local_min == local_max) {
-    cout << "Warning: max: " << local_max << "= min: " << local_min << '\n';
-  } else if (local_min > local_max) {
-    cout << "Error: max: " << local_max << "< min: " << local_min << '\n';
-    throw;
-  } else {
-    local_max -= local_min;
-  }
-  this->max_int = local_max;
-  this->min_int = local_min;
-
-  elapsed_max_min = omp_get_wtime() - elapsed_max_min;
-
-#ifdef LOG
-  printf("Find max min wtime: %.1f s\n", elapsed_max_min);
-#endif
-}
-
 // deprecated
 template <class image_t>
-int Recut<image_t>::thresh_pct(const image_t *img, VID_t interval_vertex_size,
+int Recut<image_t>::thresh_pct(const image_t *tile, VID_t interval_vertex_size,
                                const double foreground_percent) {
 #ifdef LOG
   cout << "Determine thresholding value" << '\n';
@@ -1660,7 +1626,7 @@ int Recut<image_t>::thresh_pct(const image_t *img, VID_t interval_vertex_size,
     bkg_count = 0;
 #pragma omp parallel for reduction(+ : bkg_count)
     for (VID_t i = 0; i < (VID_t)interval_vertex_size; i++) {
-      if (img[i] <= local_bkg_thresh) {
+      if (tile[i] <= local_bkg_thresh) {
         bkg_count += 1;
       }
     }
@@ -1691,7 +1657,7 @@ int Recut<image_t>::thresh_pct(const image_t *img, VID_t interval_vertex_size,
 
 template <class image_t>
 double Recut<image_t>::process_interval(
-    VID_t interval_id, image_t *tile, std::string stage,
+    VID_t interval_id, const image_t *tile, std::string stage,
     const TileThresholds<image_t> *tile_thresholds) {
 
   struct timespec presave_time, postmarch_time, iter_start,
@@ -1747,7 +1713,7 @@ double Recut<image_t>::process_interval(
           });
           added_task = true;
 #else
-          async(launch::async, &Recut<tile>::march_narrow_band, this, tile,
+          async(launch::async, &Recut<image_t>::march_narrow_band, this, tile,
                 interval_id, block_id, stage, tile_thresholds);
 #endif // TF
         }
@@ -1862,8 +1828,7 @@ Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
   struct timespec start, image_load;
   clock_gettime(CLOCK_REALTIME, &start);
 #endif
-  double max_int, min_int;
-  image_t bkg_thresh;
+  auto tile_thresholds = new TileThresholds<image_t>();
 
   vector<int> interval_offsets;
   vector<int> interval_extents;
@@ -1883,8 +1848,7 @@ Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
     // use unit strides only
     mcp3d::MImageBlock block(interval_offsets, interval_extents);
     mcp3d_tile.SelectView(block, args->resolution_level());
-    mcp3d_tile.ReadData(true);
-    // mcp3d_tile.ReadData(true, "quiet");
+    mcp3d_tile.ReadData(true, "quiet");
   } catch (...) {
     MCP3D_MESSAGE("error in mcp3d_tile io. neuron tracing not performed")
     throw;
@@ -1893,12 +1857,11 @@ Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
 #ifdef LOG
   clock_gettime(CLOCK_REALTIME, &image_load);
   cout << "Load image in " << diff_time(start, image_load) << " sec." << '\n';
-  // cout << "fg " << params->foreground_percent() << '\n';
 #endif
 
   interval_dims = mcp3d_tile.loaded_view().view_xyz_dims();
-  auto interval_vertex_size =
-      interval_dims[0] * (VID_t)interval_dims[1] * interval_dims[2];
+  VID_t interval_vertex_size = static_cast<VID_t>(interval_dims[0]) *
+                               interval_dims[1] * interval_dims[2];
 
   // assign thresholding value
   // foreground parameter takes priority
@@ -1906,9 +1869,9 @@ Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
   // than 0 than it was changed by a user so it takes precedence over the
   // defaults
   if (params->foreground_percent() >= 0) {
-    bkg_thresh = mcp3d::TopPercentile<image_t>(mcp3d_tile.Volume<image_t>(0),
-                                               interval_dims,
-                                               params->foreground_percent());
+    tile_thresholds->bkg_thresh = mcp3d::TopPercentile<image_t>(
+        mcp3d_tile.Volume<image_t>(0), interval_dims,
+        params->foreground_percent());
   } else { // if bkg set explicitly and foreground wasn't
     if (params->background_thresh() >= 0) {
       bkg_thresh = params->background_thresh();
@@ -1919,22 +1882,31 @@ Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
 
   // assign max and min ints for this tile
   if (this->args->recut_parameters().get_max_intensity() < 0) {
-    get_max_min(mcp3d_tile.Volume<image_t>(0), interval_vertex_size);
+    tile_thresholds->get_max_min(mcp3d_tile.Volume<image_t>(0),
+                                 interval_vertex_size);
   } else if (this->args->recut_parameters().get_min_intensity() < 0) {
     if (bkg_thresh >= 0) {
-      min_int = bkg_thresh;
+      tile_thresholds->min_int = bkg_thresh;
     } else {
-      get_max_min(mcp3d_tile.Volume<image_t>(0), interval_vertex_size);
+      tile_thresholds->get_max_min(mcp3d_tile.Volume<image_t>(0),
+                                   interval_vertex_size);
     }
   } else {
+    // either of these values are signed and default at -1, casting
+    // them to unsigned image_t would lead to hard to find errors
+    assertm(this->args->recut_parameters().get_max_intensity() >= 0, "invalid");
+    assertm(this->args->recut_parameters().get_min_intensity() >= 0, "invalid");
     // otherwise set global max min from recut_parameters
-    max_int = this->args->recut_parameters().get_max_intensity();
-    min_int = this->args->recut_parameters().get_min_intensity();
+    tile_thresholds->max_int =
+        this->args->recut_parameters().get_max_intensity();
+    tile_thresholds->min_int =
+        this->args->recut_parameters().get_min_intensity();
   }
 
 #ifdef LOG_FULL
-  cout << "max_int: " << +(max_int) << " min_int: " << +(min_int) << '\n';
-  cout << "bkg_thresh value = " << bkg_thresh << '\n';
+  cout << "max_int: " << +(tile_thresholds->max_int)
+       << " min_int: " << +(tile_thresholds->min_int) << '\n';
+  cout << "bkg_thresh value = " << tile_thresholds->bkg_thresh << '\n';
   cout << "interval dims x " << interval_dims[2] << " y " << interval_dims[1]
        << " z " << interval_dims[0] << '\n';
   cout << "interval offsets x " << interval_offsets[2] << " y "
@@ -1943,7 +1915,7 @@ Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
        << interval_extents[1] << " z " << interval_extents[0] << '\n';
 #endif
 
-  return new TileThresholds(max_int, min_int, bkg_thresh);
+  return tile_thresholds;
 } // end load_tile()
 
 #endif // only defined in USE_MCP3D is
@@ -2011,15 +1983,17 @@ template <class image_t> void Recut<image_t>::update(std::string stage) {
 #ifdef USE_MCP3D
       mcp3d::MImage
           mcp3d_tile; // prevent destruction before calling process_interval
-      if (!(this->params->generate_image)) {
-        // mcp3d_tile must be kept in scope during the processing
-        // of this interval otherwise dangling reference then seg fault
-        // on image access
-        tile_thresholds = load_tile(interval_id, mcp3d_tile);
-        // FIXME need a setup image for both
-        // This all needs to be designed in a way that keeps image around
-        cout << "before reassign to tile\n";
-        tile = mcp3d_tile.Volume<image_t>(0);
+      // tile is only needed for the value stage
+      if (stage == "value") {
+        if (!(this->params->generate_image)) {
+          // mcp3d_tile must be kept in scope during the processing
+          // of this interval otherwise dangling reference then seg fault
+          // on image access
+          tile_thresholds = load_tile(interval_id, mcp3d_tile);
+          // FIXME need a setup image for both
+          // This all needs to be designed in a way that keeps image around
+          tile = mcp3d_tile.Volume<image_t>(0);
+        }
       }
 #else
       if (!(this->params->generate_image)) {
@@ -2169,7 +2143,7 @@ Recut<image_t>::get_attr_vid(const VID_t interval_id, const VID_t block_id,
 
   // Find correct offset into block
 
-  // first convert from img id to non- padded block subs
+  // first convert from tile id to non- padded block subs
   get_img_subscript(img_vid, i, j, k);
   // in case interval_length isn't evenly divisible by block size
   // mod out aimage_y_len contributions from the interval
@@ -2278,7 +2252,7 @@ Recut<image_t>::get_attr_vid(const VID_t interval_id, const VID_t block_id,
 
   VertexAttr *match = first_block_attr + offset;
 #ifdef FULL_PRINT
-  // cout << "\t\tget attr vid for img vid: "<< img_vid<< " pad_img_block_i "
+  // cout << "\t\tget attr vid for tile vid: "<< img_vid<< " pad_img_block_i "
   // << pad_img_block_i << " pad_img_block_j " << pad_img_block_j << "
   // pad_img_block_k " << pad_img_block_k<<'\n';
   ////cout << "\t\ti " << i << " j " << j << " k " << k<<'\n';
@@ -2394,7 +2368,7 @@ template <class image_t> void Recut<image_t>::initialize() {
   // for generated image runs trust the args->image_extents
   // to reflect the total global image domain
   // see get_args() in utils.hpp
-  auto global_image_dims = args->image_extents();
+  auto global_image_dims = args->image_extents;
 #ifdef USE_MCP3D
   if (!this->params->generate_image) {
     // determine the image size
@@ -2411,35 +2385,37 @@ template <class image_t> void Recut<image_t>::initialize() {
   }
 #endif
 
-  // these 3 are in z y x order
-  vector<int> off;
+  // these are in z y x order
   vector<int> ext;
-  vector<int> end;
 
-  // account for image_offsets and args->image_extents()
-  off = args->image_offsets(); // default start is {0, 0, 0} for full image
-  // image_extents is set to grid_size for generate_image option, otherwise
-  // 0,0,0
-  ext = args->image_extents(); // default is {0, 0, 0} for full image
-  // protect faulty out of bounds input if extents goes beyond
-  // domain of full image, note: z, y, x order
-  auto endx = ext[2] ? min(off[2] + ext[2], global_image_dims[2])
-                     : global_image_dims[2];
-  auto endy = ext[1] ? min(off[1] + ext[1], global_image_dims[1])
-                     : global_image_dims[1];
-  auto endz = ext[0] ? min(off[0] + ext[0], global_image_dims[0])
-                     : global_image_dims[0];
-  end = {endz, endy, endx}; // sanitized end pixel in each dimension
-  // protect faulty offset values
-  assert(endx - off[2] > 0);
-  assert(endy - off[1] > 0);
-  assert(endz - off[0] > 0);
+  // account for image_offsets and args->image_extents
+  for (int i = 0; i < 3; i++) {
+    auto global_dim_length = global_image_dims[i];
+    // default image_offsets is {0, 0, 0}
+    // this enforces the minimum extent to be 1 in each dim
+    assertm(args->image_offsets[0] < global_dim_length,
+            "input offset can not exceed dimension of image");
+    // protect faulty out of bounds input if extents goes beyond
+    // domain of full image, note: z, y, x order
+    auto max_extent = global_dim_length - args->image_offsets[i];
+    if (args->image_extents[i]) {
+      args->image_extents[i] =
+          min(args->image_offsets[i] + args->image_extents[i], max_extent);
+    } else {
+      // image_extents is set to grid_size for generate_image option, otherwise
+      // 0,0,0 means use to the end of input image
+      args->image_extents[i] = max_extent;
+      // extents are now sanitized in each dimension
+      // and protected from faulty offset values
+    }
+  }
+
   // save to globals the actual size of the full image
   // accounting for the input offsets and extents
   // these will be used throughout the rest of the program
-  this->image_length_x = endx - off[2];
-  this->image_length_y = endy - off[1];
-  this->image_length_z = endz - off[0];
+  this->image_length_x = args->image_extents[2];
+  this->image_length_y = args->image_extents[1];
+  this->image_length_z = args->image_extents[0];
   this->image_length_xy = image_length_x * image_length_y;
   this->image_size = image_length_x * image_length_y * image_length_z;
 
@@ -2452,7 +2428,9 @@ template <class image_t> void Recut<image_t>::initialize() {
   interval_length_y = min((VID_t)params->interval_size(), image_length_y);
   interval_length_z = min((VID_t)params->interval_size(), image_length_z);
   interval_lengths = {interval_length_z, interval_length_y, interval_length_x};
+
   // determine the length of intervals in each dim
+  // rounding up (ceil)
   grid_interval_length_x =
       (image_length_x + interval_length_x - 1) / interval_length_x;
   grid_interval_length_y =
@@ -2474,11 +2452,11 @@ template <class image_t> void Recut<image_t>::initialize() {
   interval_block_len_z =
       (interval_length_z + block_length_z - 1) / block_length_z;
 
-  auto nxpad = interval_block_len_x * block_length_x;
+  auto image_x_len_pad = interval_block_len_x * block_length_x;
   auto image_y_len_pad = interval_block_len_y * block_length_y;
   auto image_z_len_pad = interval_block_len_z * block_length_z;
   auto image_xy_len_pad =
-      nxpad * image_y_len_pad; // saves recomputation occasionally
+      image_x_len_pad * image_y_len_pad; // saves recomputation occasionally
 
   const VID_t grid_interval_size =
       grid_interval_length_x * grid_interval_length_y * grid_interval_length_z;
@@ -2507,7 +2485,8 @@ template <class image_t> void Recut<image_t>::initialize() {
   cout << "nxblock: " << interval_block_len_x
        << " image_y_lenblock: " << interval_block_len_y
        << " image_z_lenblock: " << interval_block_len_z << '\n';
-  cout << "nxpad: " << nxpad << " image_y_len_pad: " << image_y_len_pad
+  cout << "image_x_len_pad: " << image_x_len_pad
+       << " image_y_len_pad: " << image_y_len_pad
        << " image_z_len_pad: " << image_z_len_pad << " image_xy_len_pad "
        << image_xy_len_pad << '\n';
   // cout<< "image_offsets_x: "<< image_offsets[2] <<" image_offsets_y: "<<
@@ -2527,13 +2506,14 @@ template <class image_t> void Recut<image_t>::initialize() {
          << " try increasing block size";
     assert(false);
   }
-  if (grid_vertex_pad_size > MAX_INTERVAL_VERTICES) {
-    cout << "Number of total vertices too high: " << grid_vertex_pad_size
-         << " current max at: " << MAX_INTERVAL_VERTICES
-         << " try increasing MAX_INTERVAL_BASE and rerunning interval base "
-            "generation in recut_test.hpp:CreateIntervalBase";
-    assert(false);
-  }
+
+  // if (grid_vertex_pad_size > MAX_INTERVAL_VERTICES) {
+  // cout << "Number of total vertices too high: " << grid_vertex_pad_size
+  //<< " current max at: " << MAX_INTERVAL_VERTICES
+  //<< " try increasing MAX_INTERVAL_BASE and rerunning interval base "
+  //"generation in recut_test.hpp:CreateIntervalBase";
+  // assert(false);
+  //}
 
   clock_gettime(CLOCK_REALTIME, &time0);
   grid = Grid(grid_vertex_pad_size, interval_block_size, grid_interval_size,
@@ -2586,7 +2566,7 @@ template <class image_t> void Recut<image_t>::initialize() {
 
   } else {
     // adds all markers to this->root_vids
-    process_marker_dir(off, end);
+    process_marker_dir(args->image_offsets, args->image_extents);
   }
 }
 

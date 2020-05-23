@@ -361,10 +361,12 @@ RecutCommandLineArgs get_args(int grid_size, int slt_pct, int tcase,
   params.set_marker_file_path(
       str_path + "/test_markers/" + std::to_string(grid_size) + "/tcase" +
       std::to_string(tcase) + "/slt_pct" + std::to_string(slt_pct) + "/");
-  // by setting the max intensities you do not need to recompute them
-  // in the update function, this is critical for benchmarking
-  params.set_max_intensity(1);
-  params.set_min_intensity(0);
+  if (generate_image) {
+    // by setting the max intensities you do not need to recompute them
+    // in the update function, this is critical for benchmarking
+    params.set_max_intensity(1);
+    params.set_min_intensity(0);
+  }
   // the total number of blocks allows more parallelism
   // ideally intervals >> thread count
   params.set_interval_size(grid_size);
@@ -478,123 +480,6 @@ uint16_t *read_tiff(std::string fn, int grid_size) {
   return img;
 }
 #endif
-
-/*
- * test function based off APP2 by hanchuan peng to test accuracy of
- * fastmarching based calculate radius method
- */
-template <class T>
-uint16_t get_radius_accurate(const T *inimg1d, int grid_size, VID_t current_vid,
-                             T thresh) {
-  std::vector<int> sz = {grid_size, grid_size, grid_size};
-  VID_t current_x, current_y, current_z;
-  get_img_subscript(current_vid, current_x, current_y, current_z, grid_size);
-
-  int max_r = grid_size / 2 - 1;
-  int r;
-  double tol_num, bak_num;
-  int mx = current_x + 0.5;
-  int my = current_y + 0.5;
-  int mz = current_z + 0.5;
-  // cout<<"mx = "<<mx<<" my = "<<my<<" mz = "<<mz<<'\n';
-  int64_t x[2], y[2], z[2];
-
-  tol_num = bak_num = 0.0;
-  int64_t sz01 = sz[0] * sz[1];
-  for (r = 1; r <= max_r; r++) {
-    double r1 = r - 0.5;
-    double r2 = r + 0.5;
-    double r1_r1 = r1 * r1;
-    double r2_r2 = r2 * r2;
-    double z_min = 0, z_max = r2;
-    for (int dz = z_min; dz < z_max; dz++) {
-      double dz_dz = dz * dz;
-      double y_min = 0;
-      double y_max = sqrt(r2_r2 - dz_dz);
-      for (int dy = y_min; dy < y_max; dy++) {
-        double dy_dy = dy * dy;
-        double x_min = r1_r1 - dz_dz - dy_dy;
-        x_min = x_min > 0 ? sqrt(x_min) + 1 : 0;
-        double x_max = sqrt(r2_r2 - dz_dz - dy_dy);
-        for (int dx = x_min; dx < x_max; dx++) {
-          x[0] = mx - dx, x[1] = mx + dx;
-          y[0] = my - dy, y[1] = my + dy;
-          z[0] = mz - dz, z[1] = mz + dz;
-          for (char b = 0; b < 8; b++) {
-            char ii = b & 0x01, jj = (b >> 1) & 0x01, kk = (b >> 2) & 0x01;
-            if (x[ii] < 0 || x[ii] >= sz[0] || y[jj] < 0 || y[jj] >= sz[1] ||
-                z[kk] < 0 || z[kk] >= sz[2])
-              return r;
-            else {
-              tol_num++;
-              long pos = z[kk] * sz01 + y[jj] * sz[0] + x[ii];
-              if (inimg1d[pos] <= thresh) {
-                bak_num++;
-              }
-              if ((bak_num / tol_num) > 0.0001)
-                return r;
-            }
-          }
-        }
-      }
-    }
-  }
-  return r;
-}
-
-/*
- * test function based off APP2 by hanchuan peng to test accuracy of
- * fastmarching based calculate radius method
- */
-template <class T>
-uint16_t get_radius_hanchuan_XY(const T *inimg1d, int grid_size,
-                                VID_t current_vid, T thresh) {
-  std::vector<int> sz = {grid_size, grid_size, grid_size};
-  VID_t x, y, z;
-  get_img_subscript(current_vid, x, y, z, grid_size);
-
-  long sz0 = sz[0];
-  long sz01 = sz[0] * sz[1];
-  double max_r = grid_size / 2 - 1;
-  if (max_r > sz[1] / 2)
-    max_r = sz[1] / 2;
-
-  double total_num, background_num;
-  double ir;
-  for (ir = 1; ir <= max_r; ir++) {
-    total_num = background_num = 0;
-
-    double dz, dy, dx;
-    double zlower = 0, zupper = 0;
-    for (dz = zlower; dz <= zupper; ++dz)
-      for (dy = -ir; dy <= +ir; ++dy)
-        for (dx = -ir; dx <= +ir; ++dx) {
-          total_num++;
-
-          double r = sqrt(dx * dx + dy * dy + dz * dz);
-          if (r > ir - 1 && r <= ir) {
-            int64_t i = x + dx;
-            if (i < 0 || i >= sz[0])
-              goto end1;
-            int64_t j = y + dy;
-            if (j < 0 || j >= sz[1])
-              goto end1;
-            int64_t k = z + dz;
-            if (k < 0 || k >= sz[2])
-              goto end1;
-
-            if (inimg1d[k * sz01 + j * sz0 + i] <= thresh) {
-              background_num++;
-
-              if ((background_num / total_num) > 0.001)
-                goto end1; // change 0.01 to 0.001 on 100104
-            }
-          }
-        }
-  }
-end1:
-  return ir;
-}
 
 // stamp the compile time config
 // so that past logs are explicit about
