@@ -5,7 +5,7 @@
 
 [project-init]
 command=rm -rf build && mkdir build && cd build && ~/downloads/cmake-3.17.0-Linux-x86_64/bin/cmake .. -DCMAKE_BUILD_TYPE=Debug -DUSE_HUGE_PAGE=True
-#command=rm -rf build && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug 
+#command=rm -rf build && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug
 #RelWithDebInfo
 cwd=<root>
 
@@ -14,7 +14,7 @@ command=cd build && make -j 56 && make install -j 56
 cwd=<root>
 
 [project-test]
-command=cd bin && ./recut_test 
+command=cd bin && ./recut_test
 cwd=<root>
 
 [project-bench]
@@ -22,9 +22,9 @@ command=cd bin && ./recut_bench
 cwd=<root>
 
 [project-perf]
-command=sudo cpupower frequency-set -g performance && cd bin && perf record -g recut_bench && sudo cpupower frequency-set -g powersave 
+command=sudo cpupower frequency-set -g performance && cd bin && perf record -g recut_bench && sudo cpupower frequency-set -g powersave
 #&& perf report -g 'graph,.9,caller'
-#command=sudo cpupower frequency-set -g performance && cd bin && perf stat -e L1-dcache-misses L1-dcache-loads LLC-load-misses LLC-loads faults instructions cycles recut_bench && sudo cpupower frequency-set -g powersave 
+#command=sudo cpupower frequency-set -g performance && cd bin && perf stat -e L1-dcache-misses L1-dcache-loads LLC-load-misses LLC-loads faults instructions cycles recut_bench && sudo cpupower frequency-set -g powersave
 cwd=<root>
 
 [project-run]

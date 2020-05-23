@@ -15,6 +15,9 @@ public:
        const VID_t grid_interval_size, T &program, bool mmap_)
       : grid_vertex_pad_size_(0) {
 
+    assertm(
+        grid_vertex_pad_size % grid_interval_size == 0,
+        "grid_vertex_pad_size must be evenly divisible by grid_interval_size");
     interval_size_ = grid_interval_size;
     interval_block_size_ = interval_block_size;
     grid_vertex_pad_size_ = grid_vertex_pad_size;

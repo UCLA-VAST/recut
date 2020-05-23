@@ -1,18 +1,23 @@
 #include "../src/recut.hpp"
+#include "app2_helpers.hpp"
 #include "gtest/gtest.h"
-//#include "../external_tools/vaa3d/neuron_tracing/all_path_pruning2/heap.h"
-//#include "fastmarching_tree.h"
 #include <bits/stdc++.h>
 #include <cstdlib> //rand
 #include <ctime>   // for srand
 #include <fcntl.h>
 #include <fstream>
 #include <iostream>
-#include <nlohmann/json.hpp>
+//#include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
 
-using json = nlohmann::json;
+// catch an assertion and auto drop into
+// intractive mode for gdb or rr
+#define GTEST_BREAK_ON_FAILURE 1
+// stop after first test failure
+#define GTEST_FAIL_FAST 1
+
+// using json = nlohmann::json;
 
 #ifdef USE_MCP3D
 #include "common/mcp3d_utility.hpp"    // PadNumStr
@@ -51,6 +56,7 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
   // cout << "check image " << endl;
   double error_sum = 0.0;
   VID_t total_valid = 0;
+  VertexAttr *v;
   for (int zi = 0; zi < recut.image_length_z; zi++) {
     for (int yi = 0; yi < recut.image_length_y; yi++) {
       for (int xi = 0; xi < recut.image_length_x; xi++) {
@@ -58,40 +64,45 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
         auto interval_id = recut.get_interval_id(vid);
         auto block_id = recut.get_block_id(vid);
         auto interval = recut.grid.GetInterval(interval_id);
-        assertm(interval->IsInMemory(), "Can not print interval not in memory");
-        VertexAttr *v = recut.get_attr_vid(interval_id, block_id, vid, nullptr);
+        v = nullptr;
+        // if the entire interval not in memory make every possible
+        // selected vertex with ground truth is also not valid
+        if (interval->IsInMemory()) {
+          v = recut.get_attr_vid(interval_id, block_id, vid, nullptr);
+        }
         // cout << i << endl << v.description() << " ";
         if (stage == "value") {
-          bool valid_value = v->value != std::numeric_limits<uint8_t>::max();
           if (recut.generated_image[vid]) {
+            ASSERT_NE(v, nullptr);
+            bool valid_value = v->value != std::numeric_limits<uint8_t>::max();
             ASSERT_TRUE(valid_value);
           }
-          if (v->valid_value()) {
-            ASSERT_EQ(recut.generated_image[vid], 1);
-          }
-          if (v->valid_value()) {
-            // error_sum += absdiff(ground_truth[vid], v->value);
-            // cout << v->value << " ";
+          if (v) {
+            if (v->valid_value()) {
+              ASSERT_EQ(recut.generated_image[vid], 1);
+              error_sum += absdiff(ground_truth[vid], v->value);
+              // cout << v->value << " ";
+            }
           }
         } else if (stage == "radius") {
           if (recut.generated_image[vid]) {
+            ASSERT_NE(v, nullptr);
             ASSERT_TRUE(v->valid_radius()) << " vid " << vid << " recut radius "
                                            << recut.generated_image[vid];
-          }
-          if (v->valid_radius()) {
-            ASSERT_EQ(recut.generated_image[vid], 1);
-          }
-          // if (v->valid_radius()) {
-          if (recut.generated_image[vid]) {
             error_sum += absdiff(ground_truth[vid], v->radius);
             ++total_valid;
-            // cout << +(v->radius) << " ";
+          }
+          if (v) {
+            if (v->valid_radius()) {
+              ASSERT_EQ(recut.generated_image[vid], 1);
+            }
           }
         } else if (stage == "surface") {
           // if truth shows a value of 1 it is a surface
           // vertex, therefore surface_vec should also
           // contain this value
           if (ground_truth[vid] == 1) {
+            ASSERT_NE(v, nullptr);
             auto found = false;
             for (auto iter : recut.surface_vec[interval_id][block_id]) {
               if (iter->vid == v->vid)
@@ -100,7 +111,8 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
             // if truth shows a value of 1 it is a surface
             // vertex, therefore surface_vec should also
             // contain this value
-            ASSERT_TRUE(found) << "vid " << vid << " v->vid " << v->vid << '\n';
+            ASSERT_TRUE(found) << "vid " << vid << " x" << xi << " y " << yi
+                               << " z " << zi << " v->vid " << v->vid << '\n';
           }
         }
       }
@@ -195,7 +207,7 @@ void load_save(bool mmap_) {
   ASSERT_FALSE(fs::exists(fn));
   ASSERT_TRUE(fs::exists(base));
 
-  interval_base_immutable(nvid);
+  ASSERT_NO_FATAL_FAILURE(interval_base_immutable(nvid));
 }
 
 //// assigns all of the intervals within the super interval
@@ -490,17 +502,17 @@ TEST(Install, CreateIntervalBase) {
     cout << fn << " already exists" << endl;
   }
   // check the first few VertexAttr look correct
-  interval_base_immutable(2);
+  ASSERT_NO_FATAL_FAILURE(interval_base_immutable(2));
 }
 
-TEST(Interval, LoadSaveMmap) {
+TEST(Interval, LoadSaveIntervalMmap) {
   bool mmap_ = true;
-  load_save(mmap_);
+  ASSERT_NO_FATAL_FAILURE(load_save(mmap_));
 }
 
-TEST(Interval, LoadSave) {
+TEST(Interval, LoadSaveInterval) {
   bool mmap_ = false;
-  load_save(mmap_);
+  ASSERT_NO_FATAL_FAILURE(load_save(mmap_));
 }
 
 TEST(Interval, GetAttrVid) {
@@ -508,9 +520,11 @@ TEST(Interval, GetAttrVid) {
   VID_t grid_size = 4;
   VID_t nvid = grid_size * grid_size * grid_size;
 
-  test_get_attr_vid(mmap_, grid_size, grid_size, grid_size);
+  ASSERT_NO_FATAL_FAILURE(
+      test_get_attr_vid(mmap_, grid_size, grid_size, grid_size));
   // make sure base interval is implemented in a read-only manner
-  interval_base_immutable(get_used_vertex_size(grid_size, grid_size));
+  ASSERT_NO_FATAL_FAILURE(
+      interval_base_immutable(get_used_vertex_size(grid_size, grid_size)));
 }
 
 TEST(Interval, GetAttrVidMmap) {
@@ -518,9 +532,11 @@ TEST(Interval, GetAttrVidMmap) {
   VID_t grid_size = 4;
   VID_t nvid = grid_size * grid_size * grid_size;
 
-  test_get_attr_vid(mmap_, grid_size, grid_size, grid_size);
+  ASSERT_NO_FATAL_FAILURE(
+      test_get_attr_vid(mmap_, grid_size, grid_size, grid_size));
   // make sure base interval is implemented in a read-only manner
-  interval_base_immutable(get_used_vertex_size(grid_size, grid_size));
+  ASSERT_NO_FATAL_FAILURE(
+      interval_base_immutable(get_used_vertex_size(grid_size, grid_size)));
 }
 
 TEST(Interval, GetAttrVidMultiBlock) {
@@ -528,16 +544,15 @@ TEST(Interval, GetAttrVidMultiBlock) {
   VID_t block_size = grid_size / 2;
   // this is the total vertices that will be used including ghost cells
   auto interval_vert_num = get_used_vertex_size(grid_size, block_size);
-  // check it can handle this amount
-  // interval_base_immutable(interval_vert_num) ;
   // this is the domain size not counting ghost cells
   VID_t nvid = grid_size * grid_size * grid_size;
 
   bool mmap_ = true;
   // single interval
-  test_get_attr_vid(mmap_, grid_size, grid_size, grid_size / 2);
+  ASSERT_NO_FATAL_FAILURE(
+      test_get_attr_vid(mmap_, grid_size, grid_size, grid_size / 2));
 
-  interval_base_immutable(interval_vert_num);
+  ASSERT_NO_FATAL_FAILURE(interval_base_immutable(interval_vert_num));
 }
 
 TEST(Interval, GetAttrVidMultiInterval) {
@@ -545,13 +560,13 @@ TEST(Interval, GetAttrVidMultiInterval) {
   auto interval_size = grid_size / 2;
   VID_t nvid = grid_size * grid_size * grid_size;
   auto interval_vert_num = get_used_vertex_size(grid_size, interval_size);
-  // interval_base_immutable(interval_vert_num) ;
 
   bool mmap_ = true;
   // single block per interval
-  test_get_attr_vid(mmap_, grid_size, interval_size, interval_size);
+  ASSERT_NO_FATAL_FAILURE(
+      test_get_attr_vid(mmap_, grid_size, interval_size, interval_size));
 
-  interval_base_immutable(interval_vert_num);
+  ASSERT_NO_FATAL_FAILURE(interval_base_immutable(interval_vert_num));
 }
 
 /*
@@ -679,14 +694,14 @@ TEST(Image, ReadWrite) {
   write_tiff(inimg1d, fn, grid_size);
   uint16_t *check = read_tiff(fn, grid_size);
   // print_image(check, grid_size * grid_size * grid_size);
-  check_image_equality(inimg1d, check, grid_size);
+  ASSERT_NO_FATAL_FAILURE(check_image_equality(inimg1d, check, grid_size));
 
   // This extra dim was only useful for a different grid size
   // due to the cached __image_.json saved by mcp3d that causes errs
   //// write then check again
   // write_tiff(check, fn, grid_size);
   // uint16_t* check2 = read_tiff(fn, grid_size);
-  // check_image_equality(inimg1d, check2, grid_size);
+  // ASSERT_NO_FATAL_FAILURE(check_image_equality(inimg1d, check2, grid_size));
 
   // run recut over the image, force it to run in read image
   // non-generated mode since MCP3D is guaranteed here
@@ -696,10 +711,11 @@ TEST(Image, ReadWrite) {
 
   // check again
   uint16_t *check3 = read_tiff(fn, grid_size);
-  check_image_equality(inimg1d, check3, grid_size);
+  ASSERT_NO_FATAL_FAILURE(check_image_equality(inimg1d, check3, grid_size));
 
   delete[] inimg1d;
 }
+
 #endif
 
 TEST(Helpers, DISABLED_DoublePackKey) {
@@ -811,7 +827,7 @@ TEST(Helpers, DISABLED_ConcurrentMap) {
   }
 }
 
-TEST(VertexAttr, ReadWrite) {
+TEST(VertexAttr, ReadWriteInterval) {
   auto nvid = 4;
   auto ptr = new VertexAttr[nvid];
   size_t size = sizeof(VertexAttr) * nvid;
@@ -901,21 +917,24 @@ TEST(VertexAttr, CopyOp) {
 }
 
 TEST(Radius, Full) {
-  // int max_size = 128;
-  // std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
-  // max_size / 2, max_size};
-  std::vector<int> grid_sizes = {4};
-  std::vector<int> interval_sizes = {4};
-  std::vector<int> block_sizes = {2};
+  bool print_all = false;
+  bool print_csv = true;
+  bool check_xy = true;
+
+  int max_size = 128;
+  std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
+                                 max_size / 2, max_size};
+  std::vector<int> interval_sizes = {max_size};
+  std::vector<int> block_sizes = {max_size};
   // tcase 5 is a sphere of radius grid_size / 4 centered
   // in the middle of an image
   std::vector<int> tcases = {5};
   int slt_pct = 100;
-  bool print_all = true;
-  bool check_xy = false;
   uint16_t bkg_thresh = 0;
   std::unique_ptr<uint16_t[]> radii_grid_xy;
-  cout << "name,iterations,error_rate(%)\n";
+  if (print_csv) {
+    cout << "name,iterations,error_rate(%)\n";
+  }
   for (auto &grid_size : grid_sizes) {
     VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
     auto radii_grid = std::make_unique<uint16_t[]>(tol_sz);
@@ -929,14 +948,23 @@ TEST(Radius, Full) {
 
           // adjust final runtime parameters
           auto params = args.recut_parameters();
+
           // the total number of blocks allows more parallelism
           // ideally intervals >> thread count
-          interval_size = interval_size > grid_size ? grid_size : interval_size;
-          block_size = block_size > interval_size ? interval_size : block_size;
-          cout << "interval size " << interval_size << " block_size "
-               << block_size << '\n';
-          params.set_interval_size(interval_size);
-          params.set_block_size(block_size);
+          auto final_interval_size =
+              interval_size > grid_size ? grid_size : interval_size;
+          auto final_block_size = block_size > final_interval_size
+                                      ? final_interval_size
+                                      : block_size;
+
+          std::ostringstream iteration_trace;
+          // use this to tag and reconstruct data from json file
+          iteration_trace << "grid_size " << grid_size << " interval_size "
+                          << final_interval_size << " block_size "
+                          << final_block_size;
+          SCOPED_TRACE(iteration_trace.str());
+          params.set_interval_size(final_interval_size);
+          params.set_block_size(final_block_size);
           args.set_recut_parameters(params);
 
           // run
@@ -984,8 +1012,8 @@ TEST(Radius, Full) {
 
           // make sure all surface vertices were identified correctly
           double xy_err, recut_err;
-          check_recut_error(recut, radii_grid.get(), grid_size, "surface",
-                            recut_err);
+          ASSERT_NO_FATAL_FAILURE(check_recut_error(
+              recut, radii_grid.get(), grid_size, "surface", recut_err));
 
           recut.setup_radius();
           // conducting update on radius consumes all recut.surface_vec values
@@ -1005,16 +1033,15 @@ TEST(Radius, Full) {
           }
 
           if (check_xy) {
-            check_image_error(recut.generated_image, radii_grid.get(),
-                              radii_grid_xy.get(), grid_size,
-                              recut.params->selected, xy_err);
+            ASSERT_NO_FATAL_FAILURE(check_image_error(
+                recut.generated_image, radii_grid.get(), radii_grid_xy.get(),
+                grid_size, recut.params->selected, xy_err));
           }
-          check_recut_error(recut, radii_grid.get(), grid_size, "radius",
-                            recut_err);
+          ASSERT_NO_FATAL_FAILURE(check_recut_error(
+              recut, radii_grid.get(), grid_size, "radius", recut_err));
           ASSERT_NEAR(recut_err, 0., .001);
 
-          if (print_all) {
-            std::cout << "\"accurate_radius/" << grid_size << "\",1,0\n";
+          if (print_csv) {
             if (check_xy) {
               std::cout << "\"xy_radius/" << grid_size << "\",1," << xy_err
                         << '\n';
@@ -1022,6 +1049,11 @@ TEST(Radius, Full) {
             std::cout << "\"fast_marching_radius/" << grid_size << "\",1,"
                       << recut_err << '\n';
           }
+          std::ostringstream xy_stream, recut_stream;
+          xy_stream << "XY Error " << iteration_trace.str();
+          recut_stream << "Recut Error " << iteration_trace.str();
+          RecordProperty(xy_stream.str(), xy_err);
+          RecordProperty(recut_stream.str(), recut_err);
         }
       }
     }
@@ -1030,8 +1062,8 @@ TEST(Radius, Full) {
 
 #ifdef APP2
 TEST(DISABLED_EndToEnd, Full) {
-  MCP3D_RUNTIME_ERROR(
-      "This API is currently deprecated use the main executable ./recut");
+  assertm(false,
+          "This API is currently deprecated use the main executable ./recut");
   int grid_size = 256;
   long sz0 = (long)grid_size;
   long sz1 = (long)grid_size;
@@ -1069,6 +1101,7 @@ TEST(DISABLED_EndToEnd, Full) {
   uint16_t bkg_thresh = 0;
   bool restart;
   bool is_break_accept = false;
+  std::vector<MyMarker> targets;
   double error;
   cout << "sizeof double " << sizeof(error) << endl;
   uint16_t *inimg1d = new uint16_t[tol_sz];
@@ -1099,8 +1132,8 @@ TEST(DISABLED_EndToEnd, Full) {
           cout << endl << "Start sequential original fm" << endl;
           std::vector<MyMarker *> outtree_seq;
           outtree_seq.reserve(selected);
-          fastmarching_tree(roots_seq[0], inimg1d, outtree_seq, sz0, sz1, sz2,
-                            1, bkg_thresh);
+          fastmarching_tree(roots_seq[0], targets, inimg1d, outtree_seq, sz0,
+                            sz1, sz2, 1, bkg_thresh);
           error =
               absdiff((VID_t)outtree_seq.size(), selected) / (double)selected;
           cout << "Error: " << error * 100 << "%" << endl;
@@ -1136,8 +1169,9 @@ TEST(DISABLED_EndToEnd, Full) {
   }         // end run
   delete[] inimg1d;
 }
+#endif // APP2
 
-TEST(RecutPipeline, DISABLED_4tcase4orig50) {
+TEST(RecutPipeline, 4tcase4orig50) {
   auto grid_size = 4;
   double slt_pct = 50;
   auto selected = grid_size * grid_size * grid_size * (slt_pct / 100);
@@ -1163,15 +1197,15 @@ TEST(RecutPipeline, DISABLED_4tcase4orig50) {
   root_seq->z = z;
   roots_seq.push_back(*root_seq);
   cout << endl << "Start sequential original fm" << endl;
-  std::vector<MyMarker *> outtree_seq;
-  outtree_seq.reserve(selected);
-  fastmarching_tree(roots_seq[0], inimg1d, outtree_seq, sz0, sz1, sz2, 1,
-                    bkg_thresh);
-  EXPECT_NEAR(args.output_tree_seq.size(), selected, expected * EXP_DEV_LOW);
+  std::vector<MyMarker *> output_tree;
+  std::vector<MyMarker> targets;
+  output_tree.reserve(selected);
+  fastmarching_tree(roots_seq[0], targets, inimg1d, output_tree, sz0, sz1, sz2,
+                    1, bkg_thresh);
+  EXPECT_NEAR(output_tree.size(), selected, expected * EXP_DEV_LOW);
   // error = absdiff((VID_t) args.output_tree_seq.size(), selected) / (double)
   // selected; cout << "Error: " << error * 100 << "%" << endl;
 }
-#endif // APP2
 
 TEST(RecutPipeline, DISABLED_PrintDefaultInfo) {
   auto v1 = new VertexAttr();
@@ -1219,7 +1253,8 @@ TEST(RecutPipeline, DISABLED_4tcase0MultiInterval) {
   // recut.mmap_ = true;
   recut();
 
-  interval_base_immutable(get_used_vertex_size(grid_size, grid_size / 2));
+  ASSERT_NO_FATAL_FAILURE(
+      interval_base_immutable(get_used_vertex_size(grid_size, grid_size / 2)));
   ASSERT_EQ(args.output_tree.size(), grid_size * grid_size * grid_size);
 }
 
@@ -1303,29 +1338,9 @@ TEST(RecutPipeline, DISABLED_256tcase4sltpct10) {
   EXPECT_NEAR(args.output_tree.size(), expected, expected * EXP_DEV_LOW);
 }
 
-// FIXME Fixture not used
-// class RecutPipelineFixture : public testing::TestWithParam<int> {
-// public:
-//~RecutPipelineFixture() override {delete &grid_size;}
-// void SetUp() override { grid_size = GetParam(); }
-//// define class member variables that can be accessed
-//// like fixture member vars
-//// GetParams()
-// protected:
-// int grid_size;
-//};
-
-// TEST_P(RecutPipelineFixture, check) {
-// cout << "PipelineFixture " << grid_size << endl;
-//}
-
-// INSTANTIATE_TEST_SUITE_P(RecutPipelineInstance,
-// RecutPipelineFixture, testing::Values(256, 512, 1025));
-
 TEST(RecutPipeline, DISABLED_512tcase0sltpct100) {
   VID_t grid_size = 512;
   auto block_size = grid_size / 4;
-  // interval_base_immutable(get_used_vertex_size(grid_size, block_size));
   double slt_pct = 100;
   int tcase = 0;
   auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
@@ -1361,7 +1376,6 @@ TEST(RecutPipeline, DISABLED_1024tcase4sltpct1) {
   EXPECT_NEAR(args.output_tree.size(), expected, expected * EXP_DEV_LOW);
 }
 
-#ifdef APP2
 TEST(RecutPipeline, DISABLED_SequentialMatch1024) {
   auto grid_size = 1024;
   double slt_pct = 10;
@@ -1390,19 +1404,21 @@ TEST(RecutPipeline, DISABLED_SequentialMatch1024) {
   std::vector<MyMarker *> outtree_seq;
   VID_t expected = (slt_pct / 100) * grid_size * grid_size * grid_size;
   outtree_seq.reserve(selected);
-  fastmarching_tree(roots_seq[0], inimg1d, outtree_seq, sz0, sz1, sz2, 1,
-                    bkg_thresh);
+  std::vector<MyMarker> targets;
+  fastmarching_tree(roots_seq[0], targets, inimg1d, outtree_seq, sz0, sz1, sz2,
+                    1, bkg_thresh);
   EXPECT_NEAR(outtree_seq.size(), selected, expected * EXP_DEV_LOW);
   // error = absdiff((VID_t) outtree_seq.size(), (VID_t) selected) / (double)
   // selected; cout << "Found: " << outtree_seq.size() << endl; // " Error: "
   // << error * 100 << "%" << endl;
   auto recut = Recut<uint16_t>(args);
   recut();
-  EXPECT_NEAR(outtree.size(), outtree_seq.size(), expected * EXP_DEV_LOW);
+  EXPECT_NEAR(args.output_tree.size(), outtree_seq.size(),
+              expected * EXP_DEV_LOW);
   delete[] inimg1d;
 }
 
-TEST(RecutPipeline, DISABLED_SequentialMatch256) {
+TEST(RecutPipeline, SequentialMatch256) {
   // set params for a 10%, 256 run
   auto grid_size = 256;
   double slt_pct = 10;
@@ -1432,13 +1448,13 @@ TEST(RecutPipeline, DISABLED_SequentialMatch256) {
   // cout << endl << "Start sequential original fm"<< endl;
   std::vector<MyMarker *> outtree_seq;
   outtree_seq.reserve(selected);
-  fastmarching_tree(roots_seq[0], inimg1d, outtree_seq, sz0, sz1, sz2, 1,
-                    bkg_thresh);
+  std::vector<MyMarker> targets;
+  fastmarching_tree(roots_seq[0], targets, inimg1d, outtree_seq, sz0, sz1, sz2,
+                    1, bkg_thresh);
   EXPECT_NEAR(outtree_seq.size(), selected, selected * EXP_DEV_LOW);
 
   delete[] inimg1d;
 }
-#endif
 
 TEST(RecutPipeline, DISABLED_StandardIntervalReadWrite256) {
   // set params for a 10%, 256 run
@@ -1454,35 +1470,41 @@ TEST(RecutPipeline, DISABLED_StandardIntervalReadWrite256) {
   EXPECT_NEAR(args.output_tree.size(), selected, selected * EXP_DEV_LOW);
 }
 
-TEST(RecutPipeline, DISABLED_test_real_data) {
-  VID_t grid_size = 256;
+TEST(RecutPipeline, test_real_data) {
+  int max_size = 2;
   double slt_pct = 1;
   int tcase = 4;
-  std::vector<VID_t> walk_sizes = {grid_size, grid_size / 2, grid_size / 4,
-                                   grid_size / 8, grid_size / 16};
-  for (auto walk_size : walk_sizes) {
-    cout << walk_size << endl;
-    grid_size = walk_size;
+  std::vector<int> grid_sizes = {max_size};
+  for (auto grid_size : grid_sizes) {
+    VID_t grid_vertex_size = grid_size * grid_size * grid_size;
+    VID_t selected = .01 * slt_pct * grid_vertex_size;
     auto args = get_args(grid_size, slt_pct, tcase, false);
-    auto selected = args.recut_parameters().selected;
+    args.set_image_extents({grid_size, grid_size, grid_size});
+    // first marker is at 58, 230, 111 : 7333434
+    args.set_image_offsets({110, 229, 57});
 
     // adjust final runtime parameters
     auto params = args.recut_parameters();
-    // args.set_image_root_dir("../../data/filled/");
-    // params.set_marker_file_path("../../data/marker_files");
-    args.set_image_root_dir("../../data/manual_modification/");
-    params.set_marker_file_path("../../data/manual_modification/marker_files/");
+    args.set_image_root_dir("../../data/filled/");
+    params.set_marker_file_path("../../data/marker_files");
+    // warning below appear to be corrupted
+    // args.set_image_root_dir("../../data/manual_modification/");
+    // params.set_marker_file_path("../../data/manual_modification/marker_files/");
     // the total number of blocks allows more parallelism
     // ideally intervals >> thread count
     params.set_interval_size(grid_size);
     params.set_block_size(grid_size);
+    // take all pixels within region and check that all were
+    // used
+    params.set_background_thresh(0);
+    // params.set_foreground_percent(.01 * slt_pct);
     args.set_recut_parameters(params);
 
     // run
     auto recut = Recut<uint16_t>(args);
     recut();
-    // ASSERT_NEAR(args.output_tree.size() , selected, selected *
-    // EXP_DEV_LOW);
+    // ASSERT_NEAR(args.output_tree.size(), selected, selected * EXP_DEV_LOW);
+    ASSERT_EQ(args.output_tree.size(), grid_vertex_size);
   }
 }
 

@@ -1,8 +1,8 @@
 #include "utils.hpp"
 
 template <class image_t> struct TileThresholds {
-  double max_int;
-  double min_int;
+  image_t max_int;
+  image_t min_int;
   image_t bkg_thresh;
   const std::vector<double> givals{
       22026.5, 20368,   18840.3, 17432.5, 16134.8, 14938.4, 13834.9, 12816.8,
@@ -38,13 +38,60 @@ template <class image_t> struct TileThresholds {
       1.03521, 1.0306,  1.02633, 1.02239, 1.01878, 1.0155,  1.01253, 1.00989,
       1.00756, 1.00555, 1.00385, 1.00246, 1.00139, 1.00062, 1.00015, 1};
 
-  TileThresholds<image_t>(double max_int, double min_int, image_t bkg_thresh)
+  TileThresholds<image_t>() : max_int(0), min_int(0), bkg_thresh(0) {}
+
+  TileThresholds<image_t>(image_t max_int, image_t min_int, image_t bkg_thresh)
       : max_int(max_int), min_int(min_int), bkg_thresh(bkg_thresh) {}
 
-  inline double calc_weight(image_t pixel) const {
-    auto idx = (int)((pixel - this->min_int) / this->max_int * 255);
+  double calc_weight(image_t pixel) const {
+    std::ostringstream err;
+    err << "pixel " << +pixel << " can not exceed max int " << this->max_int;
+    auto test = err.str();
+    assertm(pixel <= this->max_int, test);
+    // max and min set as double to align with look up table for value
+    // estimation
+    auto idx = (int)((pixel - static_cast<double>(this->min_int)) /
+                     static_cast<double>(this->max_int) * 255);
     assertm(idx < 256, "givals index can not exceed 255");
     assertm(idx >= 0, "givals index negative");
     return this->givals[idx];
+  }
+
+  void get_max_min(const image_t *img, VID_t interval_vertex_size) {
+
+    double elapsed_max_min = omp_get_wtime();
+
+    // GI parameter min_int, max_int
+    double local_max = 0; // maximum intensity, used in GI
+    double local_min = std::numeric_limits<double>::max(); // max value
+    //#pragma omp parallel for reduction(max:local_max)
+    for (auto i = 0; i < interval_vertex_size; i++) {
+      if (img[i] > local_max) {
+        local_max = img[i];
+      }
+    }
+    //#pragma omp parallel for reduction(min:local_min)
+    for (auto i = 0; i < interval_vertex_size; i++) {
+      if (img[i] < local_min) {
+        local_min = img[i];
+        // cout << "local_min" << +local_min << '\n';
+      }
+    }
+    if (local_min == local_max) {
+      cout << "Warning: max: " << local_max << "= min: " << local_min << '\n';
+    } else if (local_min > local_max) {
+      cout << "Error: max: " << local_max << "< min: " << local_min << '\n';
+      throw;
+    } else {
+      local_max -= local_min;
+    }
+    this->max_int = local_max;
+    this->min_int = local_min;
+
+    elapsed_max_min = omp_get_wtime() - elapsed_max_min;
+
+#ifdef LOG
+    printf("Find max min wtime: %.1f s\n", elapsed_max_min);
+#endif
   }
 };
