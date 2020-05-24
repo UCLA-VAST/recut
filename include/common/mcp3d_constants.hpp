@@ -5,18 +5,14 @@
 #ifndef MCP3D_MCP3D_CONSTANTS_HPP
 #define MCP3D_MCP3D_CONSTANTS_HPP
 
+#include <filesystem>
 #include <string>
 #include <unordered_map>
-#include <boost/filesystem.hpp>
 
-namespace mcp3d
-{
-enum SWCCol
-{
-    id, node_type, x, y, z, radius, parent
-};
+namespace mcp3d {
+enum SWCCol { id, node_type, x, y, z, radius, parent };
 
 static const int N_THREADS = 8;
 static const int ALIGN_SIZE = 64;
-}
-#endif //MCP3D_MCP3D_CONSTANTS_HPP
+} // namespace mcp3d
+#endif // MCP3D_MCP3D_CONSTANTS_HPP

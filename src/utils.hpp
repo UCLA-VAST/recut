@@ -468,7 +468,7 @@ uint16_t *read_tiff(std::string fn, int grid_size) {
     // use unit strides only
     mcp3d::MImageBlock block(interval_offsets, interval_extents);
     image.SelectView(block, 0);
-    image.ReadData();
+    image.ReadData(true, "quiet");
   } catch (...) {
     MCP3D_MESSAGE("error in image io. neuron tracing not performed")
     throw;
