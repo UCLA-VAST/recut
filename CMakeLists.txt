@@ -58,11 +58,6 @@ add_executable(recut_bench bench/recut_bench.cpp ${HEADER} ${MARKERS} ${PARAMS} 
 
 include_directories(include)
 
-# Turf dependencies Add Junction (and Turf) build targets to the CMake project.
-# This defines JUNCTION_ALL_INCLUDE_DIRS and JUNCTION_ALL_LIBRARIES.
-add_subdirectory("extern/junction" junction)
-include_directories(${JUNCTION_ALL_INCLUDE_DIRS})
-
 target_link_libraries(recut_test PRIVATE gtest)
 target_link_libraries(recut_bench PRIVATE benchmark)
 
@@ -70,7 +65,6 @@ target_link_libraries(recut_bench PRIVATE benchmark)
 set(ALL_TARGETS recut_test recut_bench)
 foreach(I ${ALL_TARGETS})
   message(STATUS "${I}")
-  target_link_libraries(${I} PRIVATE ${JUNCTION_ALL_LIBRARIES})
   target_link_libraries(${I} PRIVATE OpenMP::OpenMP_CXX)
   target_compile_features(${I} PRIVATE cxx_std_17)
   #target_compile_definitions(${I} PUBLIC USE_HUGE_PAGE=${USE_HUGE_PAGE})

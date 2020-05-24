@@ -350,6 +350,7 @@ bool fastmarching_tree(MyMarker root, vector<MyMarker> &target, T *inimg1d,
       cout << "\r" << ((int)process2) / 1000.0 << "%";
       cout.flush();
       process1 = process2;
+      if (!(target.empty())) {
       bool is_break = true;
       for (int t = 0; t < target_inds.size(); t++) {
         long tind = target_inds[t];
@@ -358,8 +359,10 @@ bool fastmarching_tree(MyMarker root, vector<MyMarker> &target, T *inimg1d,
           break;
         }
       }
-      if (is_break)
+      if (is_break) {
         break;
+      }
+      }
     }
 
     HeapElemX *min_elem = heap.delete_min();
