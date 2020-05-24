@@ -60,11 +60,4 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 // Define which optimized data structures to utilize
 //#define CONCURRENT_MAP
 //#ifdef CONCURRENT_MAP
-#include <junction/ConcurrentMap_Leapfrog.h>
-typedef junction::ConcurrentMap_Leapfrog<uint64_t,
-                                         std::vector<struct VertexAttr> *>
-    ConcurrentMap64;
-typedef junction::ConcurrentMap_Leapfrog<uint32_t,
-                                         std::vector<struct VertexAttr> *>
-    ConcurrentMap32;
 //#endif
