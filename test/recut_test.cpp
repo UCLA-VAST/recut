@@ -918,12 +918,13 @@ TEST(VertexAttr, CopyOp) {
 
 TEST(Radius, Full) {
   bool print_all = false;
-  bool print_csv = true;
-  bool check_xy = true;
+  bool print_csv = false;
+  bool check_xy = false;
 
-  int max_size = 128;
-  std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
-                                 max_size / 2, max_size};
+  int max_size = 8;
+  // std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
+  // max_size / 2, max_size};
+  std::vector<int> grid_sizes = {max_size};
   std::vector<int> interval_sizes = {max_size};
   std::vector<int> block_sizes = {max_size};
   // tcase 5 is a sphere of radius grid_size / 4 centered
