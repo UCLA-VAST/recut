@@ -43,6 +43,16 @@ VID_t get_central_diag_vid(int grid_size) {
   return root_vid; // place at center diag
 }
 
+MyMarker *get_central_root(int grid_size) {
+  VID_t x, y, z;
+  x = y = z = get_central_sub(grid_size); // place at center
+  auto root = new MyMarker();
+  root->x = x;
+  root->y = y;
+  root->z = z;
+  return root;
+}
+
 /* interval_size parameter is actually irrelevant due to
  * copy on write, the chunk requested during reading
  * or mmapping is
@@ -91,6 +101,10 @@ void get_img_subscript(VID_t id, VID_t &i, VID_t &j, VID_t &k,
   k = (id / (grid_size * grid_size)) % grid_size;
 }
 
+// Note this test is on a single pixel width path through
+// the domain, thus it's an extremely hard test to pass
+// not even original fastmarching can
+// recover all of the original pixels
 void mesh_grid(VID_t id, uint16_t *inimg1d, VID_t selected, int grid_size) {
   VID_t i, j, k, ic, jc, kc;
   i = j = k = ic = kc = jc = 0;
@@ -367,21 +381,22 @@ RecutCommandLineArgs get_args(int grid_size, int slt_pct, int tcase,
     params.set_max_intensity(1);
     params.set_min_intensity(0);
   }
+
   // the total number of blocks allows more parallelism
   // ideally intervals >> thread count
   params.set_interval_size(grid_size);
   params.set_block_size(grid_size);
   VID_t img_vox_num = grid_size * grid_size * grid_size;
+  params.tcase = tcase;
+  params.slt_pct = slt_pct;
+  params.selected = img_vox_num * (slt_pct / (float)100);
+  params.root_vid = get_central_vid(grid_size);
+  params.set_user_thread_count(omp_get_max_threads());
+  std::vector<int> extents = {grid_size, grid_size, grid_size};
+  args.set_image_extents(extents);
 
   if (generate_image) {
     params.generate_image = true;
-    params.tcase = tcase;
-    params.slt_pct = slt_pct;
-    params.selected = img_vox_num * (slt_pct / (float)100);
-    params.root_vid = get_central_vid(grid_size);
-    params.set_user_thread_count(omp_get_max_threads());
-    std::vector<int> extents = {grid_size, grid_size, grid_size};
-    args.set_image_extents(extents);
   } else {
     args.set_image_root_dir(
         str_path + "/test_images/" + std::to_string(grid_size) + "/tcase" +
