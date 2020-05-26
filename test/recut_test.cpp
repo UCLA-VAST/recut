@@ -9,6 +9,7 @@
 #include <iostream>
 //#include <nlohmann/json.hpp>
 #include <string>
+#include <tuple>
 #include <vector>
 
 // catch an assertion and auto drop into
@@ -33,21 +34,10 @@
 #define GEN_IMAGE true
 #endif
 
-// This is for functions or tests that include test macros only
+// This source file is for functions or tests that include test macros only
 // note defining a function that contains test function MACROS
-// that returns a value will give strange: void value not ignored as it ought to
-// be errors
-
-// VID_t compare_tree(const T seq, const T2 parallel, long
-// sz0, sz1, sz2) {
-//// get min of both sizes
-// VID_t tol_sz = seq.size() > parallel.size() ? parallel.size() : seq.size();
-// for (int i=0; i < tol_sz; i++) {
-// auto s = seq[i];
-// auto p = parallel[i];
-// VID_t sid = (VID_t) s->z * sz0 * sz1 + s->y * sz0 + s->x;
-//}
-//}
+// that returns a value will give strange: "void value not ignored as it ought
+// to be" errors
 
 template <class T, typename DataType>
 void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
@@ -760,6 +750,7 @@ TEST(Helpers, DISABLED_TriplePackKey) {
   }
 }
 
+#ifdef CONCURRENT_MAP
 TEST(Helpers, DISABLED_ConcurrentMap) {
   // auto surface_map = std::make_unique<junction::ConcurrentMap_Leapfrog<
   // uint32_t, std::vector<VertexAttr *> *>>();
@@ -826,6 +817,7 @@ TEST(Helpers, DISABLED_ConcurrentMap) {
     }
   }
 }
+#endif
 
 TEST(VertexAttr, ReadWriteInterval) {
   auto nvid = 4;
@@ -914,6 +906,28 @@ TEST(VertexAttr, CopyOp) {
   ASSERT_NE(v1->handle, v2->handle); // handles should never be copied
   ASSERT_EQ(v1->edge_state.field_, v2->edge_state.field_);
   ASSERT_NE(v1, v2); // make sure they not just the same obj
+}
+
+TEST(RecutPipeline, DISABLED_PrintDefaultInfo) {
+  auto v1 = new VertexAttr();
+  auto ps = sysconf(_SC_PAGESIZE);
+  auto vs = sizeof(VertexAttr);
+  cout << "sizeof vidt " << sizeof(VID_t) << " bytes" << std::scientific
+       << endl;
+  cout << "sizeof float " << sizeof(float) << " bytes" << endl;
+  cout << "sizeof bitfield " << sizeof(bitfield) << " bytes" << endl;
+  cout << "sizeof vertex " << vs << " bytes" << endl;
+  cout << "sizeof 1024^3 interval " << sizeof(VertexAttr) << " GB" << endl;
+  cout << "page size " << ps << " B" << endl;
+  cout << "VertexAttr vertices per page " << ps / vs << endl;
+  cout << "cube root of vertices per page " << (int)cbrt(ps / vs) << endl;
+  cout << "AvailMem " << GetAvailMem() / (1024 * 1024 * 1024) << " GB" << endl;
+  cout << "MAX_INTERVAL_VERTICES " << MAX_INTERVAL_VERTICES << std::scientific
+       << endl;
+  cout << "Vertices needed for a 1024^3 interval block size 4 : "
+       << get_used_vertex_size(1024, 4) << std::scientific << endl;
+  cout << "Vertices needed for a 2048^3 interval block size 4 : "
+       << get_used_vertex_size(2048, 4) << std::scientific << endl;
 }
 
 TEST(Radius, Full) {
@@ -1061,174 +1075,63 @@ TEST(Radius, Full) {
   }
 }
 
-#ifdef APP2
-TEST(DISABLED_EndToEnd, Full) {
-  assertm(false,
-          "This API is currently deprecated use the main executable ./recut");
-  int grid_size = 256;
-  long sz0 = (long)grid_size;
-  long sz1 = (long)grid_size;
-  long sz2 = (long)grid_size;
-
-  int N = 1;
-  bool original = true;
-  int line_per_dim = 2; // for tcase 4
-  std::vector<int> image_offsets = {0, 0, 0};
-  VID_t x, y, z;
-  x = y = z = get_central_sub(grid_size); // place at center
-  // for sequential runs
-  std::vector<MyMarker> roots_seq;
-  auto root_seq = new MyMarker();
-  root_seq->x = x;
-  root_seq->y = y;
-  root_seq->z = z;
-  roots_seq.push_back(*root_seq);
-
-  std::vector<int> block_sizes = {128, grid_size};
-  std::vector<double> restart_factors = {0};
-  std::vector<int> testcases = {4};
-  std::vector<double> percents = {1, 10};
-
-  VID_t tol_sz = sz0 * sz1 * sz2;
-
-  // size_t nthreads = thread::hardware_concurrency(); // max
-  size_t nthreads = 32; // to model 16 cores of Yang lab threadripper
-  omp_set_num_threads(nthreads);
-  std::vector<double> errors;
-  std::cout << "nthreads: " << nthreads << endl;
-#ifdef ASYNC
-  std::cout << "ASYNC" << endl;
-#endif
-  uint16_t bkg_thresh = 0;
-  bool restart;
-  bool is_break_accept = false;
-  std::vector<MyMarker> targets;
-  double error;
-  cout << "sizeof double " << sizeof(error) << endl;
-  uint16_t *inimg1d = new uint16_t[tol_sz];
-  for (int run = 0; run < N; run++) {
-    VertexAttr *root = new VertexAttr();
-    root->vid = (VID_t)z * sz0 * sz1 + y * sz0 + x;
-    std::vector<VertexAttr> roots;
-    roots.push_back(*root);
-    for (int tcase : testcases) {
-      cout << endl << endl << "Testcase: " << tcase << endl;
-
-      for (double slt_pct : percents) {
-        VID_t selected = tol_sz * (slt_pct / 100); // for tcase 4
-        cout << endl
-             << "Select: " << selected << " (" << slt_pct << "%)" << endl;
-        if (slt_pct == 100) {
-          tcase = 1;
-        }
-        get_grid(tcase, inimg1d, grid_size); // sets all to 0 for tcase 4
-        if (tcase == 4) {
-          mesh_grid(root->vid, inimg1d, selected, grid_size);
-        }
-        if (tcase == 5) {
-          selected = lattice_grid(root->vid, inimg1d, line_per_dim, grid_size);
-        }
-
-        if (original && (tcase == 4)) {
-          cout << endl << "Start sequential original fm" << endl;
-          std::vector<MyMarker *> outtree_seq;
-          outtree_seq.reserve(selected);
-          fastmarching_tree(roots_seq[0], targets, inimg1d, outtree_seq, sz0,
-                            sz1, sz2, 1, bkg_thresh);
-          error =
-              absdiff((VID_t)outtree_seq.size(), selected) / (double)selected;
-          cout << "Error: " << error * 100 << "%" << endl;
-          cout << "Finish sequential original fm" << endl << endl;
-        }
-
-        for (int block_size : block_sizes) {
-          cout << endl << endl << "Block size: " << block_size << endl;
-          for (double restart_factor : restart_factors) {
-            cout << endl << "Restart factor: " << restart_factor << endl;
-            restart = restart_factor > 0 ? true : false;
-            // std::vector<VertexAttr> outtree; // sanitize outtree
-            std::vector<MyMarker *> outtree; // sanitize outtree
-            outtree.reserve(selected);
-            fastmarching_tree_parallel(roots, inimg1d, outtree, image_offsets,
-                                       sz0, sz1, sz2, block_size, bkg_thresh,
-                                       restart, restart_factor, is_break_accept,
-                                       nthreads);
-            if (tcase == 4) {
-              // assert(outtree.size() == selected);
-            } else if (tcase == 5) {
-              // assert(outtree.size() == selected);
-            } else if (tcase < 4) {
-              assert(outtree.size() == sz0 * sz1 * sz2);
-            }
-            error = absdiff((VID_t)outtree.size(), selected) / (double)selected;
-            errors.push_back(error);
-            cout << "Error: " << error * 100 << "%" << endl;
-          } // end restart factors
-        }   // bs
-      }     // pcts
-    }       // tcases
-  }         // end run
-  delete[] inimg1d;
-}
-#endif // APP2
-
-TEST(RecutPipeline, 4tcase4orig50) {
-  auto grid_size = 4;
+TEST(RecutPipeline, 4tcase4sequential50) {
+  int grid_size = 4;
   double slt_pct = 50;
-  auto selected = grid_size * grid_size * grid_size * (slt_pct / 100);
-  VID_t expected = (slt_pct / 100) * grid_size * grid_size * grid_size;
   int tcase = 4;
   uint16_t bkg_thresh = 0;
-  long sz0 = (long)grid_size;
-  long sz1 = (long)grid_size;
-  long sz2 = (long)grid_size;
   auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-  VID_t x, y, z;
-  x = y = z = get_central_sub(grid_size); // place at center
+  auto params = args.recut_parameters();
+  auto root = get_central_root(grid_size);
 
   // read data
   uint16_t *inimg1d = read_tiff(args.image_root_dir(), grid_size);
-  // print_image(inimg1d, grid_size * grid_size * grid_size);
+  // set the roots value to zero
+  VID_t ind = get_central_vid(grid_size);
+  inimg1d[ind] = 0;
 
-  // for sequential runs
-  std::vector<MyMarker> roots_seq;
-  auto root_seq = new MyMarker();
-  root_seq->x = x;
-  root_seq->y = y;
-  root_seq->z = z;
-  roots_seq.push_back(*root_seq);
-  cout << endl << "Start sequential original fm" << endl;
   std::vector<MyMarker *> output_tree;
   std::vector<MyMarker> targets;
-  output_tree.reserve(selected);
-  fastmarching_tree(roots_seq[0], targets, inimg1d, output_tree, sz0, sz1, sz2,
-                    1, bkg_thresh);
-  EXPECT_NEAR(output_tree.size(), selected, expected * EXP_DEV_LOW);
-  // error = absdiff((VID_t) args.output_tree_seq.size(), selected) / (double)
-  // selected; cout << "Error: " << error * 100 << "%" << endl;
+  fastmarching_tree(*root, targets, inimg1d, output_tree, grid_size, grid_size,
+                    grid_size, 1, bkg_thresh);
+
+  ASSERT_EQ(output_tree.size(), params.selected);
+
+  auto recut = Recut<uint16_t>(args);
+  recut();
+  EXPECT_NEAR(args.output_tree.size(), output_tree.size(),
+              params.selected * EXP_DEV_LOW);
+  ASSERT_EQ(output_tree.size(), args.output_tree.size());
 }
 
-TEST(RecutPipeline, DISABLED_PrintDefaultInfo) {
-  auto v1 = new VertexAttr();
-  auto ps = sysconf(_SC_PAGESIZE);
-  auto vs = sizeof(VertexAttr);
-  cout << "sizeof vidt " << sizeof(VID_t) << " bytes" << std::scientific
-       << endl;
-  cout << "sizeof float " << sizeof(float) << " bytes" << endl;
-  cout << "sizeof bitfield " << sizeof(bitfield) << " bytes" << endl;
-  cout << "sizeof vertex " << vs << " bytes" << endl;
-  cout << "sizeof 1024^3 interval " << sizeof(VertexAttr) << " GB" << endl;
-  cout << "page size " << ps << " B" << endl;
-  cout << "VertexAttr vertices per page " << ps / vs << endl;
-  cout << "cube root of vertices per page " << (int)cbrt(ps / vs) << endl;
-  cout << "AvailMem " << GetAvailMem() / (1024 * 1024 * 1024) << " GB" << endl;
-  cout << "MAX_INTERVAL_VERTICES " << MAX_INTERVAL_VERTICES << std::scientific
-       << endl;
-  cout << "Vertices needed for a 1024^3 interval block size 4 : "
-       << get_used_vertex_size(1024, 4) << std::scientific << endl;
-  cout << "Vertices needed for a 2048^3 interval block size 4 : "
-       << get_used_vertex_size(2048, 4) << std::scientific << endl;
+class RecutPipelineParameterTests
+    : public ::testing::TestWithParam<
+          std::tuple<int, int, int, int, double, bool>> {};
+// parameters ordered as grid_size, interval_size, block_size, tcase, slt_pct,
+// mmap
+
+TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesMatch) {
+  auto grid_size = std::get<0>(GetParam());
+  auto interval_size = std::get<1>(GetParam());
+  auto block_size = std::get<2>(GetParam());
+  auto tcase = std::get<3>(GetParam());
+  double slt_pct = std::get<4>(GetParam());
+  bool mmap = std::get<5>(GetParam());
+
+  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
+  auto params = args.recut_parameters();
+  params.set_interval_size(interval_size);
+  params.set_block_size(block_size);
+  args.set_recut_parameters(params);
+
+  auto recut = Recut<uint16_t>(args);
+  recut();
+  ASSERT_EQ(args.output_tree.size(), params.selected);
 }
+
+INSTANTIATE_TEST_CASE_P(RecutPipelineTests, RecutPipelineParameterTests,
+                        ::testing::Values(std::make_tuple(4, 4, 4, 0, 100.,
+                                                          true)));
 
 TEST(RecutPipeline, 4tcase0) {
   auto grid_size = 4;
@@ -1377,86 +1280,6 @@ TEST(RecutPipeline, DISABLED_1024tcase4sltpct1) {
   EXPECT_NEAR(args.output_tree.size(), expected, expected * EXP_DEV_LOW);
 }
 
-TEST(RecutPipeline, DISABLED_SequentialMatch1024) {
-  auto grid_size = 1024;
-  double slt_pct = 10;
-  auto selected = grid_size * grid_size * grid_size * (slt_pct / 100);
-  int tcase = 4;
-  uint16_t bkg_thresh = 0;
-  long sz0 = (long)grid_size;
-  long sz1 = (long)grid_size;
-  long sz2 = (long)grid_size;
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-  VID_t x, y, z;
-  x = y = z = get_central_sub(grid_size); // place at center
-
-  // read data
-  uint16_t *inimg1d = read_tiff(args.image_root_dir(), grid_size);
-  // print_image(inimg1d, grid_size * grid_size * grid_size);
-
-  // for sequential runs
-  std::vector<MyMarker> roots_seq;
-  auto root_seq = new MyMarker();
-  root_seq->x = x;
-  root_seq->y = y;
-  root_seq->z = z;
-  roots_seq.push_back(*root_seq);
-  // cout << endl << "Start sequential original fm"<< endl;
-  std::vector<MyMarker *> outtree_seq;
-  VID_t expected = (slt_pct / 100) * grid_size * grid_size * grid_size;
-  outtree_seq.reserve(selected);
-  std::vector<MyMarker> targets;
-  fastmarching_tree(roots_seq[0], targets, inimg1d, outtree_seq, sz0, sz1, sz2,
-                    1, bkg_thresh);
-  EXPECT_NEAR(outtree_seq.size(), selected, expected * EXP_DEV_LOW);
-  // error = absdiff((VID_t) outtree_seq.size(), (VID_t) selected) / (double)
-  // selected; cout << "Found: " << outtree_seq.size() << endl; // " Error: "
-  // << error * 100 << "%" << endl;
-  auto recut = Recut<uint16_t>(args);
-  recut();
-  EXPECT_NEAR(args.output_tree.size(), outtree_seq.size(),
-              expected * EXP_DEV_LOW);
-  delete[] inimg1d;
-}
-
-TEST(RecutPipeline, SequentialMatch256) {
-  // set params for a 10%, 256 run
-  auto grid_size = 256;
-  double slt_pct = 10;
-  int tcase = 4;
-  auto selected = grid_size * grid_size * grid_size * (slt_pct / 100);
-  RecutCommandLineArgs args;
-  args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-
-  // seq params
-  uint16_t bkg_thresh = 0;
-  long sz0 = (long)grid_size;
-  long sz1 = (long)grid_size;
-  long sz2 = (long)grid_size;
-  VID_t x, y, z;
-  x = y = z = get_central_sub(grid_size); // place at center
-
-  // read data
-  uint16_t *inimg1d = read_tiff(args.image_root_dir(), grid_size);
-
-  // for sequential runs
-  std::vector<MyMarker> roots_seq;
-  auto root_seq = new MyMarker();
-  root_seq->x = x;
-  root_seq->y = y;
-  root_seq->z = z;
-  roots_seq.push_back(*root_seq);
-  // cout << endl << "Start sequential original fm"<< endl;
-  std::vector<MyMarker *> outtree_seq;
-  outtree_seq.reserve(selected);
-  std::vector<MyMarker> targets;
-  fastmarching_tree(roots_seq[0], targets, inimg1d, outtree_seq, sz0, sz1, sz2,
-                    1, bkg_thresh);
-  EXPECT_NEAR(outtree_seq.size(), selected, selected * EXP_DEV_LOW);
-
-  delete[] inimg1d;
-}
-
 TEST(RecutPipeline, DISABLED_StandardIntervalReadWrite256) {
   // set params for a 10%, 256 run
   auto grid_size = 256;
@@ -1471,7 +1294,7 @@ TEST(RecutPipeline, DISABLED_StandardIntervalReadWrite256) {
   EXPECT_NEAR(args.output_tree.size(), selected, selected * EXP_DEV_LOW);
 }
 
-TEST(RecutPipeline, test_real_data) {
+TEST(RecutPipeline, DISABLED_test_real_data) {
   int max_size = 2;
   double slt_pct = 1;
   int tcase = 4;
@@ -1504,7 +1327,10 @@ TEST(RecutPipeline, test_real_data) {
     // run
     auto recut = Recut<uint16_t>(args);
     recut();
-    // ASSERT_NEAR(args.output_tree.size(), selected, selected * EXP_DEV_LOW);
+
+    // compare with sequential fastmarching_tree
+
+    ASSERT_NEAR(args.output_tree.size(), selected, selected * EXP_DEV_LOW);
     ASSERT_EQ(args.output_tree.size(), grid_vertex_size);
   }
 }

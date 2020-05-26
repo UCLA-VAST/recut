@@ -73,7 +73,7 @@ foreach(I ${ALL_TARGETS})
   install(TARGETS ${I} DESTINATION ${PROJECT_SOURCE_DIR}/bin)
   target_include_directories(${I} PRIVATE ${PROJECT_SOURCE_DIR}/include)
   target_link_libraries(${I} PRIVATE
-    ${PROJECT_SOURCE_DIR}/lib/libboost_filesystem.so.1.65.1
+    #${PROJECT_SOURCE_DIR}/lib/libboost_filesystem.so.1.65.1
     ${PROJECT_SOURCE_DIR}/lib/libboost_serialization.so.1.65.1
     ${PROJECT_SOURCE_DIR}/lib/libboost_system.so.1.65.1
     ${PROJECT_SOURCE_DIR}/lib/libhdf5.so.100.1.0

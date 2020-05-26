@@ -248,9 +248,9 @@ private:
  * 4. the cnn_type is default 3
  * *****************************************************************************/
 template <class T>
-bool fastmarching_tree(MyMarker root, vector<MyMarker> &target, T *inimg1d,
-                       vector<MyMarker *> &outtree, long sz0, long sz1,
-                       long sz2, int cnn_type, double bkg_thresh) {
+bool fastmarching_tree(MyMarker root, vector<MyMarker> &target,
+                       const T *inimg1d, vector<MyMarker *> &outtree, long sz0,
+                       long sz1, long sz2, int cnn_type, double bkg_thresh) {
   enum { ALIVE = -1, TRIAL = 0, FAR = 1 };
 
   long tol_sz = sz0 * sz1 * sz2;
@@ -302,9 +302,14 @@ bool fastmarching_tree(MyMarker root, vector<MyMarker> &target, T *inimg1d,
     if (inimg1d[i] < min_int)
       min_int = inimg1d[i];
   }
-  max_int -= min_int;
-  double li = 10;
 
+  assertm(max_int != 0, "max_int can't be zero");
+  assertm(min_int != INF, "min_int can't be zero");
+  assertm(min_int != INF, "min_int can't be zero");
+  assertm(max_int != min_int, "min_int can't be equal to max_int");
+  max_int -= min_int;
+
+  double li = 10;
   // initialization
   // char * state = new char[tol_sz];
   // for(long i = 0; i < tol_sz; i++) state[i] = FAR;
@@ -351,17 +356,17 @@ bool fastmarching_tree(MyMarker root, vector<MyMarker> &target, T *inimg1d,
       cout.flush();
       process1 = process2;
       if (!(target.empty())) {
-      bool is_break = true;
-      for (int t = 0; t < target_inds.size(); t++) {
-        long tind = target_inds[t];
-        if (parent[tind] == tind && tind != root_ind) {
-          is_break = false;
+        bool is_break = true;
+        for (int t = 0; t < target_inds.size(); t++) {
+          long tind = target_inds[t];
+          if (parent[tind] == tind && tind != root_ind) {
+            is_break = false;
+            break;
+          }
+        }
+        if (is_break) {
           break;
         }
-      }
-      if (is_break) {
-        break;
-      }
       }
     }
 
@@ -402,7 +407,7 @@ bool fastmarching_tree(MyMarker root, vector<MyMarker> &target, T *inimg1d,
                                    : ((offset == 3) ? 1.732051 : 0.0));
           long index = d * sz01 + h * sz0 + w;
           // discard background pixels
-          if (inimg1d[index] > bkg_thresh) {
+          if (inimg1d[index] <= bkg_thresh) {
             continue;
           }
 
