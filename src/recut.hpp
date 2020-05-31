@@ -64,20 +64,17 @@ public:
 
   Grid grid;
   image_t *generated_image = nullptr;
-  vector<VID_t> root_vids;
   bool mmap_;
   size_t iteration;
   float bound_band;
   float stride;
   double restart_factor;
   bool restart_bool;
-  image_t bkg_thresh;
   atomic<VID_t> global_revisits;
   VID_t vertex_issue; // default heuristic per thread for roughly best
                       // performance
   RecutCommandLineArgs *args;
   RecutParameters *params;
-  vector<VID_t> interval_lengths;
 
 #ifdef CONCURRENT_MAP
   // interval specific global data structures
@@ -203,16 +200,16 @@ public:
                           std::string stage,
                           const TileThresholds<image_t> *tile_thresholds);
   void update(std::string stage);
-  void initialize();
+  std::vector<VID_t> initialize();
   template <typename vertex_t> void finalize(vector<vertex_t> &outtree);
   VID_t parentToVID(struct VertexAttr *attr);
   inline VID_t get_block_id(VID_t iblock, VID_t jblock, VID_t kblock);
   void print_interval(VID_t interval_id, std::string stage);
   void print_grid(std::string stage);
   void setup_radius();
-  void setup_value();
-  void process_marker_dir(vector<int> global_image_offsets,
-                          vector<int> global_image_extents);
+  void setup_value(const std::vector<VID_t> root_vids);
+  std::vector<VID_t> process_marker_dir(vector<int> global_image_offsets,
+                                        vector<int> global_image_extents);
   ~Recut<image_t>();
 };
 
@@ -250,16 +247,18 @@ bool check_in_bounds(T i, T j, T k, T2 off, T2 end) {
   return true;
 }
 
-// adds all markers to this->root_vids
+// adds all markers to root_vids
 //
 template <class image_t>
-void Recut<image_t>::process_marker_dir(vector<int> global_image_offsets,
-                                        vector<int> global_image_extents) {
+std::vector<VID_t>
+Recut<image_t>::process_marker_dir(vector<int> global_image_offsets,
+                                   vector<int> global_image_extents) {
   // allow either dir or dir/ naming styles
   if (params->marker_file_path().back() != '/')
     params->set_marker_file_path(params->marker_file_path().append("/"));
 
   vector<MyMarker> inmarkers;
+  vector<VID_t> root_vids;
   for (const auto &marker_file :
        fs::directory_iterator(params->marker_file_path())) {
     const auto marker_name = marker_file.path().filename().string();
@@ -281,7 +280,7 @@ void Recut<image_t>::process_marker_dir(vector<int> global_image_offsets,
       j = y - global_image_offsets[1];
       k = z - global_image_offsets[0];
       auto vid = get_img_vid(i, j, k);
-      this->root_vids.push_back(vid);
+      root_vids.push_back(vid);
 
 #ifdef LOG
       cout << "Read marker at x " << x << " y " << y << " z " << z
@@ -290,12 +289,12 @@ void Recut<image_t>::process_marker_dir(vector<int> global_image_offsets,
 #endif
     }
   }
+  return root_vids;
 }
 
 // activates
 // the intervals of the leaf and reads
 // them to the respective heaps
-// FIXME combine this with setup_value below
 template <class image_t> void Recut<image_t>::setup_radius() {
   // FIXME what affect does this have for radius?
   bool is_root = true; // changes behavior of check_ghost_update
@@ -336,12 +335,13 @@ template <class image_t> void Recut<image_t>::setup_radius() {
 }
 
 // activates
-// the intervals of the root and readds
+// the intervals of the root and reads
 // them to the respective heaps
-template <class image_t> void Recut<image_t>::setup_value() {
+template <class image_t>
+void Recut<image_t>::setup_value(const std::vector<VID_t> root_vids) {
   bool is_root = true; // changes behavior of check_ghost_update
-  assertm(!(this->root_vids.empty()), "Must have at least one root");
-  for (VID_t vid : this->root_vids) {
+  assertm(!(root_vids.empty()), "Must have at least one root");
+  for (const auto &vid : root_vids) {
     auto interval_id = get_interval_id(vid);
     auto block_id = get_block_id(vid);
     Interval *interval = grid.GetInterval(interval_id);
@@ -443,10 +443,12 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage) {
           auto surface = this->surface_vec[interval_id][block_id];
           assertm(surface.size() != 0, "surface size is zero");
           if (std::count(surface.begin(), surface.end(), v)) {
-            cout << "S ";
+            cout << "L "; // L for leaf and because disambiguates selected S
           } else {
             cout << "- ";
           }
+        } else if (stage == "label") {
+          cout << v->label() << ' ';
         }
       }
       cout << '\n';
@@ -959,9 +961,9 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
   ii = i % block_length_x;
   jj = j % block_length_y;
   kk = k % block_length_z;
-  iii = i % interval_lengths[2];
-  jjj = j % interval_lengths[1];
-  kkk = k % interval_lengths[0];
+  iii = i % interval_length_x;
+  jjj = j % interval_length_y;
+  kkk = k % interval_length_z;
 
   VID_t tot_blocks = grid.GetNBlocks();
 
@@ -1484,6 +1486,7 @@ void Recut<image_t>::march_narrow_band(
         // ghost region
       } else {
         current = dummy_min; // set as root and copy members
+        cout << "set root at " << *current << '\n';
         assert(current->root());
         assertm(current->value == 0, "root value not set properly");
       }
@@ -1579,9 +1582,9 @@ void Recut<image_t>::get_interval_offsets(const VID_t interval_id,
                                           vector<int> &interval_extents) {
   VID_t i, j, k;
   get_interval_subscript(interval_id, i, j, k);
-  vector<VID_t> subs = {k, j, i};
+  vector<int> subs = {static_cast<int>( k ), static_cast<int>( j ), static_cast<int>( i )};
   interval_offsets = {0, 0, 0};
-  interval_extents = {0, 0, 0};
+  interval_extents = {static_cast<int>( interval_length_z ), static_cast<int>( interval_length_y ), static_cast<int>( interval_length_x )};
   // increment the offset location to extract
   // args->image_offsets args->image_extents are in z y x order
   interval_offsets[2] += args->image_offsets[2];
@@ -1589,13 +1592,13 @@ void Recut<image_t>::get_interval_offsets(const VID_t interval_id,
   interval_offsets[0] += args->image_offsets[0];
   vector<int> szs = {(int)image_length_z, (int)image_length_y,
                      (int)image_length_x};
+  std::vector<int> interval_lengths = {static_cast<int>( interval_length_z ), static_cast<int>( interval_length_y ), static_cast<int>( interval_length_x )};
+  // don't constrain the extents to actual image
+  // mcp3d pads with zero if requests go beyond memory
+  // global command line extents have already been factored
+  // into szs
   for (int i = 0; i < 3; i++) {
     interval_offsets[i] += subs[i] * interval_lengths[i];
-    interval_extents[i] = interval_offsets[i] + interval_lengths[i];
-    // don't constrain the extents to actual image
-    // mcp3d pads with zero if requests go beyond memory
-    // global command line extents have already been factored
-    // into szs
   }
 #ifdef LOG_FULL
   cout << "interval_id: " << interval_id;
@@ -1808,6 +1811,7 @@ double Recut<image_t>::process_interval(
 }
 
 #ifdef USE_MCP3D
+
 /*
  * The interval size and shape define the requested "view" of the image
  * an image view is referred to as a tile
@@ -1853,6 +1857,9 @@ Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
     MCP3D_MESSAGE("error in mcp3d_tile io. neuron tracing not performed")
     throw;
   }
+#ifdef FULL_PRINT
+  print_image_3D(mcp3d_tile.Volume<image_t>(0), interval_extents);
+#endif
 
 #ifdef LOG
   clock_gettime(CLOCK_REALTIME, &image_load);
@@ -1872,30 +1879,38 @@ Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
     tile_thresholds->bkg_thresh = mcp3d::TopPercentile<image_t>(
         mcp3d_tile.Volume<image_t>(0), interval_dims,
         params->foreground_percent());
+#ifdef LOG_FULL
+    cout << "Requested foreground percent: " << params->foreground_percent()
+         << " yielded background threshold: " << tile_thresholds->bkg_thresh;
+#endif
   } else { // if bkg set explicitly and foreground wasn't
     if (params->background_thresh() >= 0) {
-      bkg_thresh = params->background_thresh();
-    } else {
-      bkg_thresh = 0;
+      tile_thresholds->bkg_thresh = params->background_thresh();
     }
+    // tile_thresholds->bkg_thresh default inits to 0
   }
 
   // assign max and min ints for this tile
   if (this->args->recut_parameters().get_max_intensity() < 0) {
+    // max and min members will be set
     tile_thresholds->get_max_min(mcp3d_tile.Volume<image_t>(0),
                                  interval_vertex_size);
   } else if (this->args->recut_parameters().get_min_intensity() < 0) {
-    if (bkg_thresh >= 0) {
-      tile_thresholds->min_int = bkg_thresh;
+    // if max intensity was set but not a min, just use the bkg_thresh value
+    if (tile_thresholds->bkg_thresh >= 0) {
+      tile_thresholds->min_int = tile_thresholds->bkg_thresh;
     } else {
+      // max and min members will be set
       tile_thresholds->get_max_min(mcp3d_tile.Volume<image_t>(0),
                                    interval_vertex_size);
     }
-  } else {
-    // either of these values are signed and default at -1, casting
+  } else { // both values were set
+    // either of these values are signed and default inited -1, casting
     // them to unsigned image_t would lead to hard to find errors
-    assertm(this->args->recut_parameters().get_max_intensity() >= 0, "invalid");
-    assertm(this->args->recut_parameters().get_min_intensity() >= 0, "invalid");
+    assertm(this->args->recut_parameters().get_max_intensity() >= 0,
+            "invalid user max");
+    assertm(this->args->recut_parameters().get_min_intensity() >= 0,
+            "invalid user min");
     // otherwise set global max min from recut_parameters
     tile_thresholds->max_int =
         this->args->recut_parameters().get_max_intensity();
@@ -2355,7 +2370,7 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
 #endif
 }
 
-template <class image_t> void Recut<image_t>::initialize() {
+template <class image_t> std::vector<VID_t> Recut<image_t>::initialize() {
 
 #ifdef USE_OMP
   omp_set_num_threads(params->user_thread_count());
@@ -2389,18 +2404,17 @@ template <class image_t> void Recut<image_t>::initialize() {
   vector<int> ext;
 
   // account for image_offsets and args->image_extents
+  // extents are the length of the domain for each dim
   for (int i = 0; i < 3; i++) {
-    auto global_dim_length = global_image_dims[i];
     // default image_offsets is {0, 0, 0}
     // this enforces the minimum extent to be 1 in each dim
-    assertm(args->image_offsets[0] < global_dim_length,
+    assertm(args->image_offsets[i] < global_image_dims[i],
             "input offset can not exceed dimension of image");
     // protect faulty out of bounds input if extents goes beyond
     // domain of full image, note: z, y, x order
-    auto max_extent = global_dim_length - args->image_offsets[i];
+    auto max_extent = global_image_dims[i] - args->image_offsets[i];
     if (args->image_extents[i]) {
-      args->image_extents[i] =
-          min(args->image_offsets[i] + args->image_extents[i], max_extent);
+      args->image_extents[i] = min(args->image_extents[i], max_extent);
     } else {
       // image_extents is set to grid_size for generate_image option, otherwise
       // 0,0,0 means use to the end of input image
@@ -2427,7 +2441,6 @@ template <class image_t> void Recut<image_t>::initialize() {
   interval_length_x = min((VID_t)params->interval_size(), image_length_x);
   interval_length_y = min((VID_t)params->interval_size(), image_length_y);
   interval_length_z = min((VID_t)params->interval_size(), image_length_z);
-  interval_lengths = {interval_length_z, interval_length_y, interval_length_x};
 
   // determine the length of intervals in each dim
   // rounding up (ceil)
@@ -2538,11 +2551,7 @@ template <class image_t> void Recut<image_t>::initialize() {
     const TileThresholds<image_t> tile_thresholds{1, 0, 0};
     // This is where we set image to our desired values
     this->generated_image = new image_t[this->image_size];
-    // add the single root vid to the global state
-    this->root_vids = {this->params->root_vid};
 
-    assertm(root_vids.size() == 1,
-            "Can only support 1 marker (root) at this time");
     assertm(this->params->tcase > -1, "Mismatched tcase for generate image");
     assertm(this->params->slt_pct > -1,
             "Mismatched slt_pct for generate image");
@@ -2558,15 +2567,18 @@ template <class image_t> void Recut<image_t>::initialize() {
     auto selected = get_grid(this->params->tcase, this->generated_image,
                              this->image_length_x);
     if (this->params->tcase == 4)
-      mesh_grid(this->root_vids[0], this->generated_image,
+      mesh_grid(this->params->root_vid, this->generated_image,
                 this->params->selected, this->image_length_x);
     else {
       this->params->selected = selected;
     }
 
+    // add the single root vid to the root_vids
+    return {this->params->root_vid};
+
   } else {
-    // adds all markers to this->root_vids
-    process_marker_dir(args->image_offsets, args->image_extents);
+    // adds all valid markers to root_vids vector and returns
+    return process_marker_dir(args->image_offsets, args->image_extents);
   }
 }
 
@@ -2638,16 +2650,19 @@ void Recut<image_t>::finalize(vector<vertex_t> &outtree) {
       }
 
       struct VertexAttr *start = interval->GetData();
-      // cout << "nvertices " << interval->GetNVertices() << '\n';
       for (VID_t offset = 0; offset < interval->GetNVertices(); offset++) {
         auto attr = start + offset;
         // only KNOWN_ROOT and KNOWN_NEW pass through this
         // KNOWN_ROOT preserved 0000 0000 and created
         // if not selected 0 and 0, skip
 #ifdef FULL_PRINT
-        // cout << "checking attr " << attr->vid << '\n';
+         cout << "checking attr " << *attr << " at offset " << offset << '\n';
 #endif
-        if (attr->unselected())
+        if (attr->vid == 21) { cout << "found vid 21\n";}
+        if (attr->root()) {
+          cout << "FOUND root " << attr << '\n';
+        }
+        if (attr->unselected() && !(attr->root()))
           continue; // skips unvisited 11XX XXXX and band 01XX XXXX
         assert(attr->valid_vid());
         // don't create redundant copies of same vid
@@ -2735,11 +2750,10 @@ void Recut<image_t>::finalize(vector<vertex_t> &outtree) {
 }
 
 template <class image_t>
-// void Recut<image_t>::run_pipeline(std::vector<string> stages={"all"}) {
 void Recut<image_t>::run_pipeline() {
-  this->initialize();
+  auto root_vids = this->initialize();
 
-  this->setup_value();
+  this->setup_value(root_vids);
   this->update("value");
 
   this->setup_radius();

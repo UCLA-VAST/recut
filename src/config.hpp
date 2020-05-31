@@ -28,10 +28,10 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 
 // Define your logging level in order of increasing additive levels of
 // specificity
-//#define LOG // overview logging details of the recut run, this suffices
+#define LOG // overview logging details of the recut run, this suffices
 // for
 // basic timing info, granularity at interval level
-//#define LOG_FULL   // roughly block by block processing granularity
+//#define LOG_FULL // roughly block by block processing granularity
 //#define FULL_PRINT // vertex by vertex behavior
 //#define HLOG_FULL // log the behavior of the block heap methods
 
@@ -61,3 +61,11 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 //#define CONCURRENT_MAP
 //#ifdef CONCURRENT_MAP
 //#endif
+
+// this creates tests that match the benchmarks
+// to check their validity, warning this invokes
+// a long form of all tests meaning execution will
+// take a long time to complete
+// during normal development this should be off
+// and all tests should run in under 2s
+//#define TEST_ALL_BENCHMARKS
