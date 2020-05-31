@@ -53,6 +53,28 @@ MyMarker *get_central_root(int grid_size) {
   return root;
 }
 
+void get_img_subscript(VID_t id, VID_t &i, VID_t &j, VID_t &k,
+                       VID_t grid_size) {
+  i = id % grid_size;
+  j = (id / grid_size) % grid_size;
+  k = (id / (grid_size * grid_size)) % grid_size;
+}
+
+std::vector<MyMarker *> vids_to_markers(std::vector<VID_t> vids,
+                                        VID_t grid_size) {
+  std::vector<MyMarker *> markers;
+  for (const auto &vid : vids) {
+    VID_t x, y, z;
+    get_img_subscript(vid, x, y, z, grid_size);
+    auto root = new MyMarker();
+    root->x = x;
+    root->y = y;
+    root->z = z;
+    markers.push_back(root);
+  }
+  return markers;
+}
+
 /* interval_size parameter is actually irrelevant due to
  * copy on write, the chunk requested during reading
  * or mmapping is
@@ -67,17 +89,18 @@ VID_t get_used_vertex_size(VID_t grid_size, VID_t block_size) {
   return interval_vert_num;
 }
 
-template <typename T> void print_image_3D(T *inimg1d, VID_t grid_size) {
-  for (int zi = 0; zi < grid_size; zi++) {
+// interval_extents are in z, y, x order
+template <typename T> void print_image_3D(T *inimg1d, std::vector<int> interval_extents) {
+  for (int zi = 0; zi < interval_extents[0]; zi++) {
     cout << "y | Z=" << zi << '\n';
-    for (int xi = 0; xi < 2 * grid_size + 4; xi++) {
+    for (int xi = 0; xi < 2 * interval_extents[2] + 4; xi++) {
       cout << "-";
     }
     cout << '\n';
-    for (int yi = 0; yi < grid_size; yi++) {
+    for (int yi = 0; yi < interval_extents[1]; yi++) {
       cout << yi << " | ";
-      for (int xi = 0; xi < grid_size; xi++) {
-        VID_t index = ((VID_t)xi) + yi * grid_size + zi * grid_size * grid_size;
+      for (int xi = 0; xi < interval_extents[2]; xi++) {
+        VID_t index = ((VID_t)xi) + yi * interval_extents[2] + zi * interval_extents[1] * interval_extents[2];
         // cout << i << " " ;
         cout << +inimg1d[index] << " ";
       }
@@ -87,18 +110,11 @@ template <typename T> void print_image_3D(T *inimg1d, VID_t grid_size) {
   }
 }
 
-void print_image(uint16_t *inimg1d, VID_t size) {
+template <typename T> void print_image(T *inimg1d, VID_t size) {
   cout << "print image " << '\n';
   for (VID_t i = 0; i < size; i++) {
     cout << i << " " << +inimg1d[i] << '\n';
   }
-}
-
-void get_img_subscript(VID_t id, VID_t &i, VID_t &j, VID_t &k,
-                       VID_t grid_size) {
-  i = id % grid_size;
-  j = (id / grid_size) % grid_size;
-  k = (id / (grid_size * grid_size)) % grid_size;
 }
 
 // Note this test is on a single pixel width path through
@@ -231,8 +247,7 @@ VID_t get_grid(int tcase, uint16_t *inimg1d, int grid_size) {
           double r = sqrt(x * x + y * y);
           double R = sqrt(x * x + y * y + z * z);
           inimg1d[index] = 1;
-        std:
-          vector<double> Rvecs = {.15, .25, .35, .45};
+          std::vector<double> Rvecs = {.15, .25, .35, .45};
           for (int ri = 0; ri < Rvecs.size(); ri++) {
             double Rvec = Rvecs[ri];
             bool condition0, condition1;
@@ -375,12 +390,10 @@ RecutCommandLineArgs get_args(int grid_size, int slt_pct, int tcase,
   params.set_marker_file_path(
       str_path + "/test_markers/" + std::to_string(grid_size) + "/tcase" +
       std::to_string(tcase) + "/slt_pct" + std::to_string(slt_pct) + "/");
-  if (generate_image) {
-    // by setting the max intensities you do not need to recompute them
-    // in the update function, this is critical for benchmarking
-    params.set_max_intensity(1);
-    params.set_min_intensity(0);
-  }
+  // by setting the max intensities you do not need to recompute them
+  // in the update function, this is critical for benchmarking
+  params.set_max_intensity(2);
+  params.set_min_intensity(0);
 
   // the total number of blocks allows more parallelism
   // ideally intervals >> thread count
@@ -457,7 +470,8 @@ void write_tiff(uint16_t *inimg1d, std::string base, int grid_size) {
   cout << "      Wrote test images at: " << base << '\n';
 }
 
-uint16_t *read_tiff(std::string fn, int grid_size) {
+mcp3d::MImage read_tiff(std::string fn, std::vector<int> interval_offsets,
+                        std::vector<int> interval_extents) {
   cout << "Read: " << fn << '\n';
 
   // auto full_img = cv::imread(fn, cv::IMREAD_ANYDEPTH | cv::IMREAD_GRAYSCALE);
@@ -474,8 +488,6 @@ uint16_t *read_tiff(std::string fn, int grid_size) {
   // cout << test1.depth() << " " << test2.depth() << '\n';
   // cout << test2.at<unsigned short>(0,0) << '\n';
 
-  vector<int> interval_offsets = {0, 0, 0}; // zyx
-  vector<int> interval_extents = {grid_size, grid_size, grid_size};
   // read data
   mcp3d::MImage image;
   image.ReadImageInfo(fn);
@@ -488,11 +500,7 @@ uint16_t *read_tiff(std::string fn, int grid_size) {
     MCP3D_MESSAGE("error in image io. neuron tracing not performed")
     throw;
   }
-  VID_t inimg1d_size = grid_size * grid_size * grid_size;
-  uint16_t *img = new uint16_t[inimg1d_size];
-  memcpy((void *)img, image.Volume<uint16_t>(0),
-         inimg1d_size * sizeof(uint16_t));
-  return img;
+  return image;
 }
 #endif
 

@@ -31,18 +31,23 @@ struct bitfield {
 
   void reset() { field_ = 0; }
 
-  bool test(int idx) { return static_cast<bool>(field_ & (1 << idx)); }
+  bool test(int idx) const { return static_cast<bool>(field_ & (1 << idx)); }
 
   void set(int idx) { field_ |= 1 << idx; }
 
   void unset(int idx) { field_ &= ~(1 << idx); }
 
-  bool none() { return field_ == 0; }
+  bool none() const { return field_ == 0; }
 
   bitfield &operator=(const bitfield &a) {
     this->field_ = a.field_;
     return *this;
   }
+
+  //friend std::ostream& (std::ostream& os, bitfield const& bf) {
+    //char[8]
+    //os
+  //}
 
   bool operator==(const bitfield &a) const { return a.field_ == this->field_; }
 
@@ -50,16 +55,6 @@ struct bitfield {
   bitfield() : field_(192) {}
   bitfield(uint8_t field) : field_(field) {}
 };
-
-////struct compare_VertexAttr; //predefine to avoid circular issues
-// struct VertexAttr; //predefine to avoid circular issues
-
-//// min_heap
-// struct compare_VertexAttr
-//{
-// inline bool operator() (const struct VertexAttr* n1, const struct VertexAttr*
-// n2) const;
-//};
 
 typedef VID_t handle_t; // FIXME switch to from VID_t
 
@@ -96,7 +91,7 @@ struct VertexAttr {
   VertexAttr(struct bitfield edge_state, float value, VID_t vid, uint8_t radius)
       : edge_state(edge_state), value(value), vid(vid), radius(radius) {}
 
-  bool root() {
+  bool root() const {
     return (!edge_state.test(7) && !edge_state.test(6)); // 00XX XXXX ROOT
   }
 
@@ -131,7 +126,7 @@ struct VertexAttr {
    */
   bool valid_vid() { return (vid != numeric_limits<VID_t>::max()); }
 
-  bool selected() {
+  bool selected() const {
     return (edge_state.test(7) && !edge_state.test(6)); // 10XX XXXX KNOWN NEW
   }
 
@@ -148,6 +143,19 @@ struct VertexAttr {
   }
 
   void copy_edge_state(const VertexAttr &a) { edge_state = a.edge_state; }
+
+  char label() const {
+    if (this->root()) {return 'R';}
+    if (this->selected()) {return 'S';}
+    if (this->unvisited()) {return '-';}
+    if (this->band()) {return 'B';}
+    return '?';
+  }
+
+  friend std::ostream& operator<<(std::ostream& os, const VertexAttr& v) {
+    os << "{vid: " << v.vid << ", value: " << v.value << ", radius: " << +(v.radius) << ", label: " << v.label() << '}';
+    return os;
+  }
 
   VertexAttr &operator=(const VertexAttr &a) {
     edge_state.field_ = a.edge_state.field_;
@@ -173,7 +181,7 @@ struct VertexAttr {
     edge_state.unset(6);
   }
 
-  bool unvisited() { // 11XX XXXX default unvisited state
+  bool unvisited() const { // 11XX XXXX default unvisited state
     return edge_state.test(6) && edge_state.test(7);
   }
 
@@ -197,6 +205,10 @@ struct VertexAttr {
     edge_state.unset(7);
     edge_state.set(6);
     vid = set_vid;
+  }
+
+  bool band() const { // 01XX XXXX 
+    return edge_state.test(6) && !(edge_state.test(7));
   }
 
   /**

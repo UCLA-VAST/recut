@@ -248,9 +248,10 @@ private:
  * 4. the cnn_type is default 3
  * *****************************************************************************/
 template <class T>
-bool fastmarching_tree(MyMarker root, vector<MyMarker> &target,
+bool fastmarching_tree(std::vector<MyMarker *> roots, vector<MyMarker> &target,
                        const T *inimg1d, vector<MyMarker *> &outtree, long sz0,
-                       long sz1, long sz2, int cnn_type, double bkg_thresh) {
+                       long sz1, long sz2, int cnn_type, double bkg_thresh,
+                       double max_int = 0., double min_int = INF) {
   enum { ALIVE = -1, TRIAL = 0, FAR = 1 };
 
   long tol_sz = sz0 * sz1 * sz2;
@@ -294,51 +295,53 @@ bool fastmarching_tree(MyMarker root, vector<MyMarker> &target,
   }
 
   // GI parameter min_int, max_int, li
-  double max_int = 0; // maximum intensity, used in GI
-  double min_int = INF;
-  for (long i = 0; i < tol_sz; i++) {
-    if (inimg1d[i] > max_int)
-      max_int = inimg1d[i];
-    if (inimg1d[i] < min_int)
-      min_int = inimg1d[i];
+  // if they are both at default then recalculate
+  // be careful about whether this is invoked since it causes
+  // considerable benchmark overhead
+  if (max_int == 0. && min_int == INF) {
+    for (long i = 0; i < tol_sz; i++) {
+      if (inimg1d[i] > max_int)
+        max_int = inimg1d[i];
+      if (inimg1d[i] < min_int)
+        min_int = inimg1d[i];
+    }
   }
 
   assertm(max_int != 0, "max_int can't be zero");
   assertm(min_int != INF, "min_int can't be zero");
-  assertm(min_int != INF, "min_int can't be zero");
-  assertm(max_int != min_int, "min_int can't be equal to max_int");
-  max_int -= min_int;
+  // assertm(max_int != min_int, "min_int can't be equal to max_int");
+  // max_int -= min_int;
 
   double li = 10;
   // initialization
   // char * state = new char[tol_sz];
   // for(long i = 0; i < tol_sz; i++) state[i] = FAR;
 
-  // init state and phi for root
-  int rootx = root.x + 0.5;
-  int rooty = root.y + 0.5;
-  int rootz = root.z + 0.5;
-
-  long root_ind = rootz * sz01 + rooty * sz0 + rootx;
-  state[root_ind] = ALIVE;
-  phi[root_ind] = 0.0;
-
   vector<long> target_inds;
   for (long t = 0; t < target.size(); t++) {
-    int i = target[t].x + 0.5;
-    int j = target[t].y + 0.5;
-    int k = target[t].z + 0.5;
+    int i = target[t].x;
+    int j = target[t].y;
+    int k = target[t].z;
     long ind = k * sz01 + j * sz0 + i;
     target_inds.push_back(ind);
-    // if(ind == root_ind) {cerr<<"please remove root marker from target
-    // markers"<<endl; exit(0);}
   }
 
   BasicHeap<HeapElemX> heap;
   map<long, HeapElemX *> elems;
 
   // init heap
-  {
+  std::vector<VID_t> root_vids;
+  for (const auto &root : roots) {
+    // init state and phi for root
+    int rootx = root->x;
+    int rooty = root->y;
+    int rootz = root->z;
+
+    long root_ind = rootz * sz01 + rooty * sz0 + rootx;
+    root_vids.push_back(root_ind);
+    state[root_ind] = ALIVE;
+    phi[root_ind] = 0.0;
+
     long index = root_ind;
     HeapElemX *elem = new HeapElemX(index, phi[index]);
     elem->prev_ind = index;
@@ -352,14 +355,15 @@ bool fastmarching_tree(MyMarker root, vector<MyMarker> &target,
   while (!heap.empty()) {
     double process2 = (time_counter++) * 100000.0 / tol_sz;
     if (process2 - process1 >= 1) {
-      cout << "\r" << ((int)process2) / 1000.0 << "%";
-      cout.flush();
+      //cout << "\r" << ((int)process2) / 1000.0 << "%";
+      //cout.flush();
       process1 = process2;
       if (!(target.empty())) {
         bool is_break = true;
         for (int t = 0; t < target_inds.size(); t++) {
           long tind = target_inds[t];
-          if (parent[tind] == tind && tind != root_ind) {
+          if (parent[tind] == tind &&
+              (std::count(root_vids.begin(), root_vids.end(), tind) == 0)) {
             is_break = false;
             break;
           }

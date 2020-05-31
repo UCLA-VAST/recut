@@ -237,8 +237,8 @@ void test_get_attr_vid(bool mmap, int grid_size, int interval_size,
   Recut recut = Recut<uint16_t>(args);
   recut.mmap_ = mmap;
 
-  recut.initialize();
-  recut.setup_value();
+  auto root_vids = recut.initialize();
+  recut.setup_value(root_vids);
 
   ASSERT_EQ(recut.image_length_x, grid_size);
   ASSERT_EQ(recut.image_length_y, grid_size);
@@ -675,6 +675,8 @@ TEST(Image, ReadWrite) {
   VID_t tol_sz = sz0 * sz1 * sz2;
   std::string fn(get_curr());
   fn = fn + "/test_images/ReadWriteTest/";
+  vector<int> interval_offsets = {0, 0, 0}; // zyx
+  vector<int> interval_extents = {grid_size, grid_size, grid_size};
 
   VID_t selected = tol_sz * (slt_pct / 100); // for tcase 4
   // cout << endl << "Select: " << selected << " (" << slt_pct << "%)" << endl;
@@ -682,16 +684,10 @@ TEST(Image, ReadWrite) {
   get_grid(tcase, inimg1d, grid_size); // sets all to 0 for tcase 4
   mesh_grid(get_central_vid(grid_size), inimg1d, selected, grid_size);
   write_tiff(inimg1d, fn, grid_size);
-  uint16_t *check = read_tiff(fn, grid_size);
+  auto check = read_tiff(fn, interval_offsets, interval_extents);
   // print_image(check, grid_size * grid_size * grid_size);
-  ASSERT_NO_FATAL_FAILURE(check_image_equality(inimg1d, check, grid_size));
-
-  // This extra dim was only useful for a different grid size
-  // due to the cached __image_.json saved by mcp3d that causes errs
-  //// write then check again
-  // write_tiff(check, fn, grid_size);
-  // uint16_t* check2 = read_tiff(fn, grid_size);
-  // ASSERT_NO_FATAL_FAILURE(check_image_equality(inimg1d, check2, grid_size));
+  ASSERT_NO_FATAL_FAILURE(
+      check_image_equality(inimg1d, check.Volume<uint16_t>(0), grid_size));
 
   // run recut over the image, force it to run in read image
   // non-generated mode since MCP3D is guaranteed here
@@ -700,8 +696,9 @@ TEST(Image, ReadWrite) {
   recut();
 
   // check again
-  uint16_t *check3 = read_tiff(fn, grid_size);
-  ASSERT_NO_FATAL_FAILURE(check_image_equality(inimg1d, check3, grid_size));
+  auto check3 = read_tiff(fn, interval_offsets, interval_extents);
+  ASSERT_NO_FATAL_FAILURE(
+      check_image_equality(inimg1d, check3.Volume<uint16_t>(0), grid_size));
 
   delete[] inimg1d;
 }
@@ -984,15 +981,15 @@ TEST(Radius, Full) {
 
           // run
           auto recut = Recut<uint16_t>(args);
-          recut.initialize();
+          auto root_vids = recut.initialize();
           auto selected = args.recut_parameters().selected;
 
           if (print_all) {
             std::cout << "recut image grid" << endl;
-            print_image_3D(recut.generated_image, grid_size);
+            print_image_3D(recut.generated_image,{grid_size, grid_size, grid_size});
           }
 
-          recut.setup_value();
+          recut.setup_value(root_vids);
           recut.update("value");
           if (print_all) {
             recut.print_grid("value");
@@ -1038,10 +1035,10 @@ TEST(Radius, Full) {
           // Debug by eye
           if (print_all) {
             cout << "accuracy_radius\n";
-            print_image_3D(radii_grid.get(), grid_size);
+            print_image_3D(radii_grid.get(), {grid_size, grid_size, grid_size});
             if (check_xy) {
               std::cout << "XY radii grid\n";
-              print_image_3D(radii_grid_xy.get(), grid_size);
+              print_image_3D(radii_grid_xy.get(), {grid_size, grid_size, grid_size});
             }
             std::cout << "Recut radii\n";
             recut.print_grid("radius");
@@ -1075,330 +1072,133 @@ TEST(Radius, Full) {
   }
 }
 
-TEST(RecutPipeline, 4tcase4sequential50) {
-  int grid_size = 4;
-  double slt_pct = 50;
-  int tcase = 4;
-  uint16_t bkg_thresh = 0;
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-  auto params = args.recut_parameters();
-  auto root = get_central_root(grid_size);
-
-  // read data
-  uint16_t *inimg1d = read_tiff(args.image_root_dir(), grid_size);
-  // set the roots value to zero
-  VID_t ind = get_central_vid(grid_size);
-  inimg1d[ind] = 0;
-
-  std::vector<MyMarker *> output_tree;
-  std::vector<MyMarker> targets;
-  fastmarching_tree(*root, targets, inimg1d, output_tree, grid_size, grid_size,
-                    grid_size, 1, bkg_thresh);
-
-  ASSERT_EQ(output_tree.size(), params.selected);
-
-  auto recut = Recut<uint16_t>(args);
-  recut();
-  EXPECT_NEAR(args.output_tree.size(), output_tree.size(),
-              params.selected * EXP_DEV_LOW);
-  ASSERT_EQ(output_tree.size(), args.output_tree.size());
-}
-
 class RecutPipelineParameterTests
     : public ::testing::TestWithParam<
-          std::tuple<int, int, int, int, double, bool>> {};
-// parameters ordered as grid_size, interval_size, block_size, tcase, slt_pct,
-// mmap
+          std::tuple<int, int, int, int, double, bool, bool, bool>> {};
 
-TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesMatch) {
+TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
+  // documents the meaning of each tuple member
   auto grid_size = std::get<0>(GetParam());
   auto interval_size = std::get<1>(GetParam());
   auto block_size = std::get<2>(GetParam());
   auto tcase = std::get<3>(GetParam());
   double slt_pct = std::get<4>(GetParam());
-  bool mmap = std::get<5>(GetParam());
+  bool check_against_selected = std::get<5>(GetParam());
+  bool check_against_sequential = std::get<6>(GetParam());
+  bool use_real_data = std::get<7>(GetParam());
 
+  // shared params
+  bool determine_thresholds =
+      false; // set this to true for checking what to hardcoding vals to
+  double max_int = 2.;
+  double min_int = 0.;
   auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
   auto params = args.recut_parameters();
   params.set_interval_size(interval_size);
   params.set_block_size(block_size);
-  args.set_recut_parameters(params);
+  vector<int> interval_offsets = {0, 0, 0}; // zyx
+  vector<int> interval_extents = {grid_size, grid_size, grid_size};
+  uint16_t bkg_thresh = 0;
+  bool print_image = false;
 
-  auto recut = Recut<uint16_t>(args);
-  recut();
-  ASSERT_EQ(args.output_tree.size(), params.selected);
-}
-
-INSTANTIATE_TEST_CASE_P(RecutPipelineTests, RecutPipelineParameterTests,
-                        ::testing::Values(std::make_tuple(4, 4, 4, 0, 100.,
-                                                          true)));
-
-TEST(RecutPipeline, 4tcase0) {
-  auto grid_size = 4;
-  double slt_pct = 100; // NA
-  int tcase = 0;
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-  auto recut = Recut<uint16_t>(args);
-  recut();
-  ASSERT_EQ(args.output_tree.size(), grid_size * grid_size * grid_size);
-}
-
-TEST(RecutPipeline, DISABLED_4tcase0MultiInterval) {
-  auto grid_size = 4;
-  double slt_pct = 100; // NA
-  int tcase = 0;
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-
-  auto params = args.recut_parameters();
-  params.set_interval_size(2);
-  args.set_recut_parameters(params);
-
-  auto recut = Recut<uint16_t>(args);
-  // recut.mmap_ = true;
-  recut();
-
-  ASSERT_NO_FATAL_FAILURE(
-      interval_base_immutable(get_used_vertex_size(grid_size, grid_size / 2)));
-  ASSERT_EQ(args.output_tree.size(), grid_size * grid_size * grid_size);
-}
-
-TEST(RecutPipeline, 4tcase1) {
-  auto grid_size = 4;
-  double slt_pct = 100; // NA
-  int tcase = 1;
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-  auto recut = Recut<uint16_t>(args);
-  recut();
-  ASSERT_EQ(args.output_tree.size(), grid_size * grid_size * grid_size);
-}
-
-TEST(RecutPipeline, 4tcase2) {
-  auto grid_size = 4;
-  double slt_pct = 100; // NA
-  int tcase = 2;
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-  auto recut = Recut<uint16_t>(args);
-  recut();
-  ASSERT_EQ(args.output_tree.size(), grid_size * grid_size * grid_size);
-}
-
-TEST(RecutPipeline, 4tcase3) {
-  auto grid_size = 4;
-  double slt_pct = 100; // NA
-  int tcase = 3;
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-  auto recut = Recut<uint16_t>(args);
-  recut();
-  ASSERT_EQ(args.output_tree.size(), grid_size * grid_size * grid_size);
-}
-
-TEST(RecutPipeline, 4tcase4) {
-  auto grid_size = 4;
-  double slt_pct = 50;
-  int tcase = 4;
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-  auto recut = Recut<uint16_t>(args);
-  recut();
-  VID_t expected = (slt_pct / 100) * grid_size * grid_size * grid_size;
-  EXPECT_NEAR(args.output_tree.size(),
-              (slt_pct / 100) * grid_size * grid_size * grid_size,
-              expected * EXP_DEV_LOW);
-}
-
-TEST(RecutPipeline, DISABLED_ScratchPad) {
-  auto grid_size = 512;
-  double slt_pct = 10;
-  int tcase = 4;
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-  std::vector<int> interval_sizes = {grid_size / 2, grid_size / 4};
-  VID_t expected = (slt_pct / 100) * grid_size * grid_size * grid_size;
-  for (auto &interval_size : interval_sizes) {
-
-    // FIXME this API for setting block or interval needs to be simpler
-    auto params = args.recut_parameters();
-    params.set_interval_size(interval_size);
-    params.set_block_size(interval_size);
-    // by setting the max intensities you do not need to recompute them
-    params.set_max_intensity(1);
-    params.set_min_intensity(0);
-    args.set_recut_parameters(params);
-
-    auto recut = Recut<uint16_t>(args);
-    recut();
-    ASSERT_NEAR(args.output_tree.size(), expected, expected * EXP_DEV_LOW)
-        << "Expected " << expected << " found " << args.output_tree.size()
-        << endl;
-  }
-}
-
-TEST(RecutPipeline, DISABLED_256tcase4sltpct10) {
-  auto grid_size = 256;
-  double slt_pct = 10;
-  int tcase = 4;
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-  auto recut = Recut<uint16_t>(args);
-  recut();
-  VID_t expected = (slt_pct / 100) * grid_size * grid_size * grid_size;
-  EXPECT_NEAR(args.output_tree.size(), expected, expected * EXP_DEV_LOW);
-}
-
-TEST(RecutPipeline, DISABLED_512tcase0sltpct100) {
-  VID_t grid_size = 512;
-  auto block_size = grid_size / 4;
-  double slt_pct = 100;
-  int tcase = 0;
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-  auto params = args.recut_parameters();
-
-  // set block size to large enough to prevent array overflow for now
-  params.set_block_size(128);
-  args.set_recut_parameters(params);
-
-  auto recut = Recut<uint16_t>(args);
-  recut.mmap_ = true;
-  recut();
-  VID_t expected = (slt_pct / 100) * grid_size * grid_size * grid_size;
-  EXPECT_NEAR(args.output_tree.size(), expected, expected * EXP_DEV_LOW);
-  interval_base_immutable(get_used_vertex_size(grid_size, block_size));
-}
-
-TEST(RecutPipeline, DISABLED_1024tcase4sltpct1) {
-  auto grid_size = 1024;
-  double slt_pct = 1;
-  int tcase = 4;
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-  auto params = args.recut_parameters();
-
-  // set block size to large enough to prevent array overflow for now
-  params.set_block_size(128);
-  args.set_recut_parameters(params);
-
-  auto recut = Recut<uint16_t>(args);
-  recut.mmap_ = true;
-  recut();
-  VID_t expected = (slt_pct / 100) * grid_size * grid_size * grid_size;
-  EXPECT_NEAR(args.output_tree.size(), expected, expected * EXP_DEV_LOW);
-}
-
-TEST(RecutPipeline, DISABLED_StandardIntervalReadWrite256) {
-  // set params for a 10%, 256 run
-  auto grid_size = 256;
-  double slt_pct = 10;
-  int tcase = 4;
-  auto selected = grid_size * grid_size * grid_size * (slt_pct / 100);
-
-  // Read
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-  auto recut = Recut<uint16_t>(args);
-  recut();
-  EXPECT_NEAR(args.output_tree.size(), selected, selected * EXP_DEV_LOW);
-}
-
-TEST(RecutPipeline, DISABLED_test_real_data) {
-  int max_size = 2;
-  double slt_pct = 1;
-  int tcase = 4;
-  std::vector<int> grid_sizes = {max_size};
-  for (auto grid_size : grid_sizes) {
-    VID_t grid_vertex_size = grid_size * grid_size * grid_size;
-    VID_t selected = .01 * slt_pct * grid_vertex_size;
-    auto args = get_args(grid_size, slt_pct, tcase, false);
-    args.set_image_extents({grid_size, grid_size, grid_size});
+  if (use_real_data) {
     // first marker is at 58, 230, 111 : 7333434
-    args.set_image_offsets({110, 229, 57});
-
-    // adjust final runtime parameters
-    auto params = args.recut_parameters();
+    interval_offsets = {110, 229, 57}; // zyx
+    args.set_image_offsets(interval_offsets);
+    args.set_image_extents(interval_extents);
     args.set_image_root_dir("../../data/filled/");
     params.set_marker_file_path("../../data/marker_files");
-    // warning below appear to be corrupted
-    // args.set_image_root_dir("../../data/manual_modification/");
-    // params.set_marker_file_path("../../data/manual_modification/marker_files/");
-    // the total number of blocks allows more parallelism
-    // ideally intervals >> thread count
-    params.set_interval_size(grid_size);
-    params.set_block_size(grid_size);
-    // take all pixels within region and check that all were
-    // used
-    params.set_background_thresh(0);
-    // params.set_foreground_percent(.01 * slt_pct);
-    args.set_recut_parameters(params);
-
-    // run
-    auto recut = Recut<uint16_t>(args);
-    recut();
-
-    // compare with sequential fastmarching_tree
-
-    ASSERT_NEAR(args.output_tree.size(), selected, selected * EXP_DEV_LOW);
-    ASSERT_EQ(args.output_tree.size(), grid_vertex_size);
+    // find proper max and min intensity via recut's method
+    if (determine_thresholds) {
+      // setting foreground_percent automatically
+      // calculates desired background_thresh during
+      // processing
+      params.set_foreground_percent(.01 * slt_pct); // convert it to percent
+    } else {
+      // a background_thresh of 0 would simply take all pixels within the domain
+      // and check that all were used
+      // a foreground_percent of 50% yields a bkg_thresh of ~160
+      if (!check_against_selected) {
+        bkg_thresh = 500;
+      }
+      params.set_background_thresh(bkg_thresh);
+    }
+    // pre-determined and hardcoded for the file above
+    // to save time recomputing
+    max_int = 65535.;
+    min_int = 0.;
+    params.set_max_intensity(max_int);
+    params.set_min_intensity(min_int);
   }
-}
 
-TEST(RecutPipeline, DISABLED_test_critical_loop) {
-  VID_t grid_size = 256;
-  double slt_pct = 1;
-  int tcase = 4;
-  std::vector<VID_t> walk_sizes = {grid_size, grid_size / 2, grid_size / 4,
-                                   grid_size / 8, grid_size / 16};
-  for (auto walk_size : walk_sizes) {
-    cout << walk_size << endl;
-    grid_size = walk_size;
-    auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-    auto selected = args.recut_parameters().selected;
-
-    // adjust final runtime parameters
-    auto params = args.recut_parameters();
-    // the total number of blocks allows more parallelism
-    // ideally intervals >> thread count
-    params.set_interval_size(grid_size);
-    params.set_block_size(grid_size);
-    args.set_recut_parameters(params);
-
-    // run
-    auto recut = Recut<uint16_t>(args);
-    recut();
-    ASSERT_NEAR(args.output_tree.size(), selected, selected * EXP_DEV_LOW);
-  }
-}
-
-TEST(RecutPipeline, DISABLED_Mmap256) {
-  // set params for a 10%, 256 run
-  auto grid_size = 256;
-  double slt_pct = 10;
-  int tcase = 4;
-  auto selected = grid_size * grid_size * grid_size * (slt_pct / 100);
-
-  // mmap section
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-  auto recut_mmap = Recut<uint16_t>(args);
-  recut_mmap.mmap_ = true;
-  recut_mmap();
-  EXPECT_NEAR(args.output_tree.size(), selected, selected * EXP_DEV_LOW);
-}
-
-TEST(RecutPipeline, DISABLED_MmapMultiInterval256) {
-  // set params for a 10%, 256 run
-  auto grid_size = 256;
-  double slt_pct = 10;
-  int tcase = 4;
-  auto selected = grid_size * grid_size * grid_size * (slt_pct / 100);
-
-  // mmap section, multi-interval
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-
-  auto params = args.recut_parameters();
-  params.set_interval_size(128);
+  // save all changes
   args.set_recut_parameters(params);
 
-  auto recut_mmap_multi = Recut<uint16_t>(args);
+  auto recut = Recut<uint16_t>(args);
+  recut(); // this runs and fills args.output_tree
 
-  // set mmap
-  recut_mmap_multi.mmap_ = true;
+  // pregenerated data has a known number of selected
+  // pixels
+  if (check_against_selected) {
+    ASSERT_EQ(args.output_tree.size(), params.selected);
+  }
 
-  recut_mmap_multi();
-  EXPECT_NEAR(args.output_tree.size(), selected, selected * EXP_DEV_LOW);
+  // this runs the original sequential fastmarching algorithm
+  // when using the real data, you don't know what the actual
+  // selected number should be unless you compare it to another
+  // reconstruction method or manual ground truth
+  if (check_against_sequential) {
+    // convert roots into markers (vector)
+    std::vector<MyMarker *> root_markers;
+    if (use_real_data) {
+      std::vector<VID_t> root_vids;
+      root_vids = recut.initialize();
+      root_markers = vids_to_markers(root_vids, grid_size);
+    } else {
+      root_markers = {get_central_root(grid_size)};
+    }
+    // read data
+    auto image =
+        read_tiff(args.image_root_dir(), interval_offsets, interval_extents);
+
+    if (print_image) {
+      print_image_3D(image.Volume<uint16_t>(0), {grid_size, grid_size, grid_size});
+    }
+
+    std::vector<MyMarker *> sequential_output_tree;
+    std::vector<MyMarker> targets;
+    fastmarching_tree(root_markers, targets, image.Volume<uint16_t>(0),
+                      sequential_output_tree, grid_size, grid_size, grid_size,
+                      1, bkg_thresh, max_int, min_int);
+
+    ASSERT_EQ(sequential_output_tree.size(), args.output_tree.size());
+  }
 }
+
+// ... check_against_selected, check_against_sequential, use_real_data
+INSTANTIATE_TEST_CASE_P(
+    RecutPipelineTests, RecutPipelineParameterTests,
+    ::testing::Values(
+        std::make_tuple(4, 4, 4, 0, 100., true, false, false), // 0
+        std::make_tuple(4, 4, 4, 1, 100., true, false, false), // 1
+        std::make_tuple(4, 4, 4, 2, 100., true, false, false), // 2
+        std::make_tuple(4, 4, 4, 3, 100., true, false, false), // 3
+        std::make_tuple(4, 4, 4, 4, 50., true, false, false),  // 4
+        std::make_tuple(4, 4, 4, 4, 50., true, true, false),   // 5
+        std::make_tuple(4, 4, 4, 4, 50., false, true, true),   // 6
+        // make sure if bkg_thresh is 0, all vertices are selected for real
+        std::make_tuple(4, 4, 4, 4, 100., true, true, true), // 7
+        // make sure fastmarching_tree and recut produce exact match for real
+        std::make_tuple(8, 8, 8, 4, 100., false, true, true) // 8
+#ifdef TEST_ALL_BENCHMARKS
+        ,
+        std::make_tuple(256, 256, 256, 4, 1, true, false, false),
+        std::make_tuple(128, 128, 128, 4, 1, true, false, false),
+        std::make_tuple(64, 64, 64, 4, 1, true, false, false),
+        std::make_tuple(32, 32, 32, 4, 1, true, false, false),
+        std::make_tuple(16, 16, 16, 4, 1, true, false, false)
+#endif
+            ));
 
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);

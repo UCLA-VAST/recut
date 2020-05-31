@@ -45,7 +45,7 @@ static void bench_critical_loop(benchmark::State &state) {
   // while loop below
   // When we do `perf recut_bench` this
   // initialize portion will still be included
-  recut.initialize();
+  auto root_vids = recut.initialize();
 
   // This is the performance loop where gbench
   // will execute until timing stats converge
@@ -53,7 +53,7 @@ static void bench_critical_loop(benchmark::State &state) {
     // reactivates
     // the intervals of the root and readds
     // them to the respective heaps
-    recut.setup_value();
+    recut.setup_value(root_vids);
     // from our gen img of initialize update
     // does fastmarching, updated vertices
     // are mmap'd
@@ -100,12 +100,12 @@ static void recut_radius(benchmark::State &state) {
 
     // run
     auto recut = Recut<uint16_t>(args);
-    recut.initialize();
+    auto root_vids = recut.initialize();
 
     while (state.KeepRunning()) {
       // warning: pause and resume high overhead
       state.PauseTiming();
-      recut.setup_value();
+      recut.setup_value(root_vids);
       recut.update("value");
       recut.setup_radius();
       state.ResumeTiming();
