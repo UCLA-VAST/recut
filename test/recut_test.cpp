@@ -986,7 +986,8 @@ TEST(Radius, Full) {
 
           if (print_all) {
             std::cout << "recut image grid" << endl;
-            print_image_3D(recut.generated_image,{grid_size, grid_size, grid_size});
+            print_image_3D(recut.generated_image,
+                           {grid_size, grid_size, grid_size});
           }
 
           recut.setup_value(root_vids);
@@ -1038,7 +1039,8 @@ TEST(Radius, Full) {
             print_image_3D(radii_grid.get(), {grid_size, grid_size, grid_size});
             if (check_xy) {
               std::cout << "XY radii grid\n";
-              print_image_3D(radii_grid_xy.get(), {grid_size, grid_size, grid_size});
+              print_image_3D(radii_grid_xy.get(),
+                             {grid_size, grid_size, grid_size});
             }
             std::cout << "Recut radii\n";
             recut.print_grid("radius");
@@ -1085,23 +1087,22 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   double slt_pct = std::get<4>(GetParam());
   bool check_against_selected = std::get<5>(GetParam());
   bool check_against_sequential = std::get<6>(GetParam());
-  bool use_real_data = std::get<7>(GetParam());
 
   // shared params
   bool determine_thresholds =
       true; // set this to true for checking what to hardcoding vals to
-  double max_int = 2.;
-  double min_int = 0.;
   auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
   auto params = args.recut_parameters();
   params.set_interval_size(interval_size);
   params.set_block_size(block_size);
   vector<int> interval_offsets = {0, 0, 0}; // zyx
   vector<int> interval_extents = {grid_size, grid_size, grid_size};
-  uint16_t bkg_thresh = 0;
   bool print_image = false;
 
-  if (use_real_data) {
+  // selected percent is only use for tcases 4 and 6
+  // otherwise it is ignored for other tcases so that it 
+  // nothing is recalculated
+  if (tcase == 6) {
     // first marker is at 58, 230, 111 : 7333434
     interval_offsets = {110, 229, 57}; // zyx
     args.set_image_offsets(interval_offsets);
@@ -1122,12 +1123,12 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
         bkg_thresh = 500;
       }
       params.set_background_thresh(bkg_thresh);
-    // pre-determined and hardcoded for the file above
-    // to save time recomputing
-    max_int = 65535.;
-    min_int = 0.;
-    params.set_max_intensity(max_int);
-    params.set_min_intensity(min_int);
+      // pre-determined and hardcoded for the file above
+      // to save time recomputing
+      max_int = 65535.;
+      min_int = 0.;
+      params.set_max_intensity(max_int);
+      params.set_min_intensity(min_int);
     }
   }
 
@@ -1138,10 +1139,30 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   std::vector<VID_t> root_vids;
   root_vids = recut.initialize();
   recut.setup_value(root_vids);
-  double recut_update_value_elapsed = recut.update("value"); 
+
+  if (tcase == 6) {
+  // get tile_thresholds so they can be logged and optionally for sequential
+  mcp3d::MImage
+      mcp3d_tile; // prevent destruction before calling process_interval
+  auto interval_id = 0;
+  recut.load_tile(interval_id, mcp3d_tile);
+  tile_thresholds = recut.get_tile_thresholds(mcp3d_tile);
+  } else {
+        // note these default thresholds apply to any generated image
+        // thus they will only be replaced if we're reading a real image
+          tile_thresholds = new TileThresholds<image_t>(2, 0, 0);
+  }
+  RecordProperty("bkg_thresh", tile_thresholds->bkg_thresh);
+  RecordProperty("max_int", tile_thresholds->max_int);
+  RecordProperty("min_int", tile_thresholds->min_int);
+
+  // update with fixed tile_thresholds for the entire update
+  double recut_update_value_elapsed = recut.update("value", tile_thresholds);
+
   recut.finalize(args.output_tree); // this fills args.output_tree
-  cout << "recut update no IO elapsed (s)" << recut_update_value_elapsed<< '\n';
-  RecordProperty("recut update no IO elapsed (s)",recut_update_value_elapsed);
+  cout << "recut update no IO elapsed (s)" << recut_update_value_elapsed
+       << '\n';
+  RecordProperty("recut update no IO elapsed (s)", recut_update_value_elapsed);
 
   // pregenerated data has a known number of selected
   // pixels
@@ -1154,9 +1175,10 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   // selected number should be unless you compare it to another
   // reconstruction method or manual ground truth
   if (check_against_sequential) {
+
     // convert roots into markers (vector)
     std::vector<MyMarker *> root_markers;
-    if (use_real_data) {
+    if (tcase == 6) {
       root_markers = vids_to_markers(root_vids, grid_size);
     } else {
       root_markers = {get_central_root(grid_size)};
@@ -1166,7 +1188,8 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
         read_tiff(args.image_root_dir(), interval_offsets, interval_extents);
 
     if (print_image) {
-      print_image_3D(image.Volume<uint16_t>(0), {grid_size, grid_size, grid_size});
+      print_image_3D(image.Volume<uint16_t>(0),
+                     {grid_size, grid_size, grid_size});
     }
 
     std::vector<MyMarker *> sequential_output_tree;
@@ -1174,62 +1197,69 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     auto timer = new high_resolution_timer();
     fastmarching_tree(root_markers, targets, image.Volume<uint16_t>(0),
                       sequential_output_tree, grid_size, grid_size, grid_size,
-                      1, bkg_thresh, max_int, min_int);
+                      1, tile_thresholds->bkg_thresh, tile_thresholds->max_int,
+                      tile_thresholds->min_int);
 
     cout << "sequential fastmarching elapsed (s)" << timer->elapsed() << '\n';
     // warning record property will auto cast to an int
     RecordProperty("sequential fastmarching elapsed (s)", timer->elapsed());
 
     //// would have to keep interval in memory for this to work
-    //if ( sequential_output_tree.size() != args.output_tree.size()) {
-      //cout << "recut's label did not match sequential:\n";
-      //recut.print_grid("label");
+    // if ( sequential_output_tree.size() != args.output_tree.size()) {
+    // cout << "recut's label did not match sequential:\n";
+    // recut.print_grid("label");
     //}
 
-    double actual_slt_pct =  (100. * args.output_tree.size()) / (grid_size * grid_size * grid_size) ;
+    double actual_slt_pct =
+        (100. * args.output_tree.size()) / (grid_size * grid_size * grid_size);
     RecordProperty("actual_slt_pct", actual_slt_pct);
-    cout << "Selected " << (100. * args.output_tree.size()) / (grid_size * grid_size * grid_size) << "% of pixels\n";
+    cout << "Selected "
+         << (100. * args.output_tree.size()) /
+                (grid_size * grid_size * grid_size)
+         << "% of pixels\n";
 
     ASSERT_EQ(sequential_output_tree.size(), args.output_tree.size());
   }
 }
 
-// ... check_against_selected, check_against_sequential, use_real_data
+// ... check_against_selected, check_against_sequential
 INSTANTIATE_TEST_CASE_P(
     RecutPipelineTests, RecutPipelineParameterTests,
     ::testing::Values(
-        std::make_tuple(4, 4, 4, 0, 100., true, false, false), // 0
-        std::make_tuple(4, 4, 4, 1, 100., true, false, false), // 1
-        std::make_tuple(4, 4, 4, 2, 100., true, false, false), // 2
-        std::make_tuple(4, 4, 4, 3, 100., true, false, false), // 3
-        std::make_tuple(4, 4, 4, 4, 50., true, false, false),  // 4
-        std::make_tuple(4, 4, 4, 4, 50., true, true, false),   // 5
-        std::make_tuple(4, 4, 4, 4, 50., false, true, true),   // 6
+        std::make_tuple(4, 4, 4, 0, 100., true, false), // 0
+        std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
+        std::make_tuple(4, 4, 4, 2, 100., true, false), // 2
+        std::make_tuple(4, 4, 4, 3, 100., true, false), // 3
+        // multi-interval small
+        std::make_tuple(4, 2, 2, 4, 50., true, false), // 4
+        std::make_tuple(4, 4, 4, 4, 50., true, true),  // 5
+        std::make_tuple(4, 4, 4, 4, 50., false, true), // 6
         // make sure if bkg_thresh is 0, all vertices are selected for real
-        std::make_tuple(4, 4, 4, 4, 100., true, true, true), // 7
+        std::make_tuple(4, 4, 4, 6, 100., true, true), // 7
         // make sure fastmarching_tree and recut produce exact match for real
-        std::make_tuple(8, 8, 8, 4, 100., false, true, true), // 8
+        std::make_tuple(8, 8, 8, 6, 100., false, true), // 8
         // real data multi-block
-        std::make_tuple(8, 8, 4, 4, 100., false, true, true), // 9
+        std::make_tuple(8, 8, 4, 6, 100., false, true), // 9
         // real data multi-interval
-        std::make_tuple(8, 4, 8, 4, 100., false, true, true) // 10
-#ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for benchmarks
+        std::make_tuple(8, 4, 8, 6, 100., false, true) // 10
+#ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for
+                           // benchmarks
         ,
-        //std::make_tuple(256, 256, 32, 4, 1, false, true, true), // 11
-        //std::make_tuple(256, 256, 128, 4, 1, false, true, true), // 12
-        //std::make_tuple(256, 256, 256, 4, 1, false, true, true), // 13
-        //std::make_tuple(512, 512, 32, 4, 1, false, true, true), // 14
-        //std::make_tuple(512, 512, 128, 4, 1, false, true, true), // 15
-        //std::make_tuple(512, 512, 512, 4, 1, false, true, true), // 16
-        //std::make_tuple(1024, 1024, 128, 4, 1, false, true, true), // 17
-        //std::make_tuple(1024, 1024, 1024, 4, 1, false, true, true) // 18
+        // std::make_tuple(256, 256, 32, 4, 1, false, true), // 11
+        // std::make_tuple(256, 256, 128, 4, 1, false, true), // 12
+        // std::make_tuple(256, 256, 256, 4, 1, false, true), // 13
+        // std::make_tuple(512, 512, 32, 4, 1, false, true), // 14
+        // std::make_tuple(512, 512, 128, 4, 1, false, true), // 15
+        // std::make_tuple(512, 512, 512, 4, 1, false, true), // 16
+        // std::make_tuple(1024, 1024, 128, 4, 1, false, true), // 17
+        // std::make_tuple(1024, 1024, 1024, 4, 1, false, true) // 18
         // determine thresholds
-        std::make_tuple(1024, 1024, 1024, 4, 1, false, true, true), // 18
-        std::make_tuple(1024, 1024, 1024, 4, 5, false, true, true), // 18
-        std::make_tuple(1024, 1024, 1024, 4, 10, false, true, true), // 18
-        std::make_tuple(1024, 1024, 1024, 4, 15, false, true, true) // 18
+        std::make_tuple(1024, 1024, 1024, 6, 1, false, true),  // 18
+        std::make_tuple(1024, 1024, 1024, 6, 5, false, true),  // 18
+        std::make_tuple(1024, 1024, 1024, 6, 10, false, true), // 18
+        std::make_tuple(1024, 1024, 1024, 6, 15, false, true)  // 18
 #endif
-            ));
+        ));
 
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
