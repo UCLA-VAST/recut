@@ -7,6 +7,7 @@
 #include <ctime>     // for srand
 #include <filesystem>
 #include <math.h>
+#include <chrono>
 namespace fs = std::filesystem;
 
 #ifdef USE_MCP3D
@@ -20,6 +21,29 @@ namespace fs = std::filesystem;
 
 #define PI 3.14159265
 #define assertm(exp, msg) assert(((void)msg, exp))
+
+// taken from Bryce Adelstein Lelbach's Benchmarking C++ Code talk:
+struct high_resolution_timer {
+  high_resolution_timer() : start_time_(take_time_stamp()) {}
+
+  void restart()
+  { start_time_ = take_time_stamp(); }
+
+  double elapsed() const // return elapsed time in seconds
+  { return double(take_time_stamp() - start_time_) * 1e-9; }
+
+  std::uint64_t elapsed_nanoseconds() const
+  {return take_time_stamp() - start_time_; }
+
+  protected:
+  static std::uint64_t take_time_stamp()
+  {
+    return std::uint64_t ( std::chrono::high_resolution_clock::now().time_since_epoch().count());
+  }
+
+  private:
+  std::uint64_t start_time_;
+};
 
 std::string get_curr() {
   fs::path full_path(fs::current_path());

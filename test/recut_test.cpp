@@ -1089,7 +1089,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
   // shared params
   bool determine_thresholds =
-      false; // set this to true for checking what to hardcoding vals to
+      true; // set this to true for checking what to hardcoding vals to
   double max_int = 2.;
   double min_int = 0.;
   auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
@@ -1122,20 +1122,26 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
         bkg_thresh = 500;
       }
       params.set_background_thresh(bkg_thresh);
-    }
     // pre-determined and hardcoded for the file above
     // to save time recomputing
     max_int = 65535.;
     min_int = 0.;
     params.set_max_intensity(max_int);
     params.set_min_intensity(min_int);
+    }
   }
 
   // save all changes
   args.set_recut_parameters(params);
 
   auto recut = Recut<uint16_t>(args);
-  recut(); // this runs and fills args.output_tree
+  std::vector<VID_t> root_vids;
+  root_vids = recut.initialize();
+  recut.setup_value(root_vids);
+  double recut_update_value_elapsed = recut.update("value"); 
+  recut.finalize(args.output_tree); // this fills args.output_tree
+  cout << "recut update no IO elapsed (s)" << recut_update_value_elapsed<< '\n';
+  RecordProperty("recut update no IO elapsed (s)",recut_update_value_elapsed);
 
   // pregenerated data has a known number of selected
   // pixels
@@ -1151,8 +1157,6 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     // convert roots into markers (vector)
     std::vector<MyMarker *> root_markers;
     if (use_real_data) {
-      std::vector<VID_t> root_vids;
-      root_vids = recut.initialize();
       root_markers = vids_to_markers(root_vids, grid_size);
     } else {
       root_markers = {get_central_root(grid_size)};
@@ -1167,9 +1171,24 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
     std::vector<MyMarker *> sequential_output_tree;
     std::vector<MyMarker> targets;
+    auto timer = new high_resolution_timer();
     fastmarching_tree(root_markers, targets, image.Volume<uint16_t>(0),
                       sequential_output_tree, grid_size, grid_size, grid_size,
                       1, bkg_thresh, max_int, min_int);
+
+    cout << "sequential fastmarching elapsed (s)" << timer->elapsed() << '\n';
+    // warning record property will auto cast to an int
+    RecordProperty("sequential fastmarching elapsed (s)", timer->elapsed());
+
+    //// would have to keep interval in memory for this to work
+    //if ( sequential_output_tree.size() != args.output_tree.size()) {
+      //cout << "recut's label did not match sequential:\n";
+      //recut.print_grid("label");
+    //}
+
+    double actual_slt_pct =  (100. * args.output_tree.size()) / (grid_size * grid_size * grid_size) ;
+    RecordProperty("actual_slt_pct", actual_slt_pct);
+    cout << "Selected " << (100. * args.output_tree.size()) / (grid_size * grid_size * grid_size) << "% of pixels\n";
 
     ASSERT_EQ(sequential_output_tree.size(), args.output_tree.size());
   }
@@ -1189,14 +1208,26 @@ INSTANTIATE_TEST_CASE_P(
         // make sure if bkg_thresh is 0, all vertices are selected for real
         std::make_tuple(4, 4, 4, 4, 100., true, true, true), // 7
         // make sure fastmarching_tree and recut produce exact match for real
-        std::make_tuple(8, 8, 8, 4, 100., false, true, true) // 8
-#ifdef TEST_ALL_BENCHMARKS
+        std::make_tuple(8, 8, 8, 4, 100., false, true, true), // 8
+        // real data multi-block
+        std::make_tuple(8, 8, 4, 4, 100., false, true, true), // 9
+        // real data multi-interval
+        std::make_tuple(8, 4, 8, 4, 100., false, true, true) // 10
+#ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for benchmarks
         ,
-        std::make_tuple(256, 256, 256, 4, 1, true, false, false),
-        std::make_tuple(128, 128, 128, 4, 1, true, false, false),
-        std::make_tuple(64, 64, 64, 4, 1, true, false, false),
-        std::make_tuple(32, 32, 32, 4, 1, true, false, false),
-        std::make_tuple(16, 16, 16, 4, 1, true, false, false)
+        //std::make_tuple(256, 256, 32, 4, 1, false, true, true), // 11
+        //std::make_tuple(256, 256, 128, 4, 1, false, true, true), // 12
+        //std::make_tuple(256, 256, 256, 4, 1, false, true, true), // 13
+        //std::make_tuple(512, 512, 32, 4, 1, false, true, true), // 14
+        //std::make_tuple(512, 512, 128, 4, 1, false, true, true), // 15
+        //std::make_tuple(512, 512, 512, 4, 1, false, true, true), // 16
+        //std::make_tuple(1024, 1024, 128, 4, 1, false, true, true), // 17
+        //std::make_tuple(1024, 1024, 1024, 4, 1, false, true, true) // 18
+        // determine thresholds
+        std::make_tuple(1024, 1024, 1024, 4, 1, false, true, true), // 18
+        std::make_tuple(1024, 1024, 1024, 4, 5, false, true, true), // 18
+        std::make_tuple(1024, 1024, 1024, 4, 10, false, true, true), // 18
+        std::make_tuple(1024, 1024, 1024, 4, 15, false, true, true) // 18
 #endif
             ));
 

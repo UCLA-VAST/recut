@@ -75,6 +75,7 @@ public:
                       // performance
   RecutCommandLineArgs *args;
   RecutParameters *params;
+  std::vector<double> update_elapsed;
 
 #ifdef CONCURRENT_MAP
   // interval specific global data structures
@@ -199,7 +200,7 @@ public:
   double process_interval(VID_t interval_id, const image_t *tile,
                           std::string stage,
                           const TileThresholds<image_t> *tile_thresholds);
-  void update(std::string stage);
+  double update(std::string stage);
   std::vector<VID_t> initialize();
   template <typename vertex_t> void finalize(vector<vertex_t> &outtree);
   VID_t parentToVID(struct VertexAttr *attr);
@@ -1879,7 +1880,7 @@ Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
     tile_thresholds->bkg_thresh = mcp3d::TopPercentile<image_t>(
         mcp3d_tile.Volume<image_t>(0), interval_dims,
         params->foreground_percent());
-#ifdef LOG_FULL
+#ifdef LOG
     cout << "Requested foreground percent: " << params->foreground_percent()
          << " yielded background threshold: " << tile_thresholds->bkg_thresh;
 #endif
@@ -1918,9 +1919,11 @@ Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
         this->args->recut_parameters().get_min_intensity();
   }
 
-#ifdef LOG_FULL
+#ifdef LOG
   cout << "max_int: " << +(tile_thresholds->max_int)
        << " min_int: " << +(tile_thresholds->min_int) << '\n';
+#endif
+#ifdef LOG_FULL
   cout << "bkg_thresh value = " << tile_thresholds->bkg_thresh << '\n';
   cout << "interval dims x " << interval_dims[2] << " y " << interval_dims[1]
        << " z " << interval_dims[0] << '\n';
@@ -1935,7 +1938,9 @@ Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
 
 #endif // only defined in USE_MCP3D is
 
-template <class image_t> void Recut<image_t>::update(std::string stage) {
+// returns the execution time for updating the entire
+// stage excluding I/O
+template <class image_t> double Recut<image_t>::update(std::string stage) {
   // init all timers
   struct timespec update_start_time, update_finish_time;
   double global_no_io_time;
@@ -2043,7 +2048,9 @@ template <class image_t> void Recut<image_t>::update(std::string stage) {
 #endif
   cout << " revisits: " << global_revisits << " vertices" << '\n';
 #endif
-}
+
+return global_no_io_time;
+} // end update()
 
 /* get the vid with respect to the entire image passed to the
  * recut program. Note this spans multiple tiles and blocks
@@ -2753,13 +2760,17 @@ template <class image_t>
 void Recut<image_t>::run_pipeline() {
   auto root_vids = this->initialize();
 
+  this->update_elapsed = {}; // reset each run
+
   this->setup_value(root_vids);
-  this->update("value");
+  this->update_elapsed.push_back(this->update("value"));
 
   this->setup_radius();
-  this->update("radius");
+  this->update_elapsed.push_back(this->update("radius"));
 
   // this->setup_prune();
-  // this->update("prune");
+  //this->update_elapsed.push_back(this->update("prune"));
+
+  // aggregate results
   this->finalize(this->args->output_tree);
 }

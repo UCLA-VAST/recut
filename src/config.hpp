@@ -68,4 +68,4 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 // take a long time to complete
 // during normal development this should be off
 // and all tests should run in under 2s
-//#define TEST_ALL_BENCHMARKS
+#define TEST_ALL_BENCHMARKS
