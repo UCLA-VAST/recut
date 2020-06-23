@@ -35,7 +35,7 @@ public:
     min_intensity_ = -1;
     user_thread_count_ = 1;
     // no getters or setters
-    generate_image = false;
+    force_regenerate_image = false;
     tcase = -1; // -1 indicates it's not a test case
     slt_pct = -1;
     selected = 0;
@@ -119,7 +119,7 @@ public:
     min_intensity_ = min_intensity;
   }
   // no getters or setters
-  bool generate_image;
+  bool force_regenerate_image;
   int tcase, slt_pct;
   uint64_t selected, root_vid;
 

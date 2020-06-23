@@ -20,15 +20,14 @@ static void bench_critical_loop(benchmark::State &state) {
   auto grid_size = state.range(0);
   double slt_pct = 1;
   int tcase = 4;
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
+  // the total number of intervals allows more parallelism
+  // ideally intervals >> thread count
+  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+      GEN_IMAGE);
   VID_t selected = args.recut_parameters().selected;
 
   // adjust final runtime parameters
   auto params = args.recut_parameters();
-  // the total number of intervals allows more parallelism
-  // ideally intervals >> thread count
-  params.set_interval_size(grid_size);
-  params.set_block_size(grid_size);
   // by setting the max intensities you do not need to recompute them
   // in the update function, this is critical for benchmarking
   params.set_max_intensity(1);
@@ -88,15 +87,10 @@ static void recut_radius(benchmark::State &state) {
   auto grid_size = state.range(0);
 
   for (auto &tcase : tcases) {
-    auto args = get_args(grid_size, slt_pct, tcase, true);
-
-    // adjust final runtime parameters
-    auto params = args.recut_parameters();
     // the total number of blocks allows more parallelism
     // ideally intervals >> thread count
-    params.set_interval_size(grid_size);
-    params.set_block_size(grid_size);
-    args.set_recut_parameters(params);
+    auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+        true);
 
     // run
     auto recut = Recut<uint16_t>(args);
@@ -129,15 +123,7 @@ static void accurate_radius(benchmark::State &state) {
   VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
   uint16_t *radii_grid = new uint16_t[tol_sz];
   for (auto &tcase : tcases) {
-    auto args = get_args(grid_size, slt_pct, tcase, true);
-
-    // adjust final runtime parameters
-    auto params = args.recut_parameters();
-    // the total number of blocks allows more parallelism
-    // ideally intervals >> thread count
-    params.set_interval_size(grid_size);
-    params.set_block_size(grid_size);
-    args.set_recut_parameters(params);
+    auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, true);
 
     // run
     auto recut = Recut<uint16_t>(args);
@@ -171,15 +157,7 @@ static void xy_radius(benchmark::State &state) {
   VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
   uint16_t *radii_grid_xy = new uint16_t[tol_sz];
   for (auto &tcase : tcases) {
-    auto args = get_args(grid_size, slt_pct, tcase, true);
-
-    // adjust final runtime parameters
-    auto params = args.recut_parameters();
-    // the total number of blocks allows more parallelism
-    // ideally intervals >> thread count
-    params.set_interval_size(grid_size);
-    params.set_block_size(grid_size);
-    args.set_recut_parameters(params);
+    auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, true);
 
     // run
     auto recut = Recut<uint16_t>(args);
