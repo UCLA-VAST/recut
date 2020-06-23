@@ -14,12 +14,13 @@ command=cd build && make -j 56 && make install -j 56
 cwd=<root>
 
 [project-test]
-command=cd bin && ./recut_test --gtest_output=json:../data/test_detail.json
+command=cd bin && ./recut_test --gtest_output=json:../data/test_detail.json --gtest_filter=*.*
 cwd=<root>
 
 # rebuild and run test
 [project-change]
-command=cd build && make -j 56 && make install -j 56 && cd ../bin && ./recut_test --gtest_output=json:../data/test_detail.json
+command=cd build && make -j 56 && make install -j 56 && cd ../bin && ./recut_test --gtest_output=json:../data/test_detail.json --gtest_filter=TileThresholds.*
+
 cwd=<root>
 
 [project-bench]
