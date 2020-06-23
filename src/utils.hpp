@@ -3,11 +3,11 @@
 #include "markers.h"
 #include "recut_parameters.hpp"
 #include <algorithm> //min
-#include <cstdlib>   //rand srand
-#include <ctime>     // for srand
+#include <chrono>
+#include <cstdlib> //rand srand
+#include <ctime>   // for srand
 #include <filesystem>
 #include <math.h>
-#include <chrono>
 namespace fs = std::filesystem;
 
 #ifdef USE_MCP3D
@@ -26,19 +26,21 @@ namespace fs = std::filesystem;
 struct high_resolution_timer {
   high_resolution_timer() : start_time_(take_time_stamp()) {}
 
-  void restart()
-  { start_time_ = take_time_stamp(); }
+  void restart() { start_time_ = take_time_stamp(); }
 
   double elapsed() const // return elapsed time in seconds
-  { return double(take_time_stamp() - start_time_) * 1e-9; }
+  {
+    return double(take_time_stamp() - start_time_) * 1e-9;
+  }
 
-  std::uint64_t elapsed_nanoseconds() const
-  {return take_time_stamp() - start_time_; }
+  std::uint64_t elapsed_nanoseconds() const {
+    return take_time_stamp() - start_time_;
+  }
 
   protected:
-  static std::uint64_t take_time_stamp()
-  {
-    return std::uint64_t ( std::chrono::high_resolution_clock::now().time_since_epoch().count());
+  static std::uint64_t take_time_stamp() {
+    return std::uint64_t(
+        std::chrono::high_resolution_clock::now().time_since_epoch().count());
   }
 
   private:
@@ -78,14 +80,14 @@ MyMarker *get_central_root(int grid_size) {
 }
 
 void get_img_subscript(VID_t id, VID_t &i, VID_t &j, VID_t &k,
-                       VID_t grid_size) {
+    VID_t grid_size) {
   i = id % grid_size;
   j = (id / grid_size) % grid_size;
   k = (id / (grid_size * grid_size)) % grid_size;
 }
 
 std::vector<MyMarker *> vids_to_markers(std::vector<VID_t> vids,
-                                        VID_t grid_size) {
+    VID_t grid_size) {
   std::vector<MyMarker *> markers;
   for (const auto &vid : vids) {
     VID_t x, y, z;
@@ -114,7 +116,8 @@ VID_t get_used_vertex_size(VID_t grid_size, VID_t block_size) {
 }
 
 // interval_extents are in z, y, x order
-template <typename T> void print_image_3D(T *inimg1d, std::vector<int> interval_extents) {
+template <typename T>
+void print_image_3D(T *inimg1d, std::vector<int> interval_extents) {
   for (int zi = 0; zi < interval_extents[0]; zi++) {
     cout << "y | Z=" << zi << '\n';
     for (int xi = 0; xi < 2 * interval_extents[2] + 4; xi++) {
@@ -124,7 +127,8 @@ template <typename T> void print_image_3D(T *inimg1d, std::vector<int> interval_
     for (int yi = 0; yi < interval_extents[1]; yi++) {
       cout << yi << " | ";
       for (int xi = 0; xi < interval_extents[2]; xi++) {
-        VID_t index = ((VID_t)xi) + yi * interval_extents[2] + zi * interval_extents[1] * interval_extents[2];
+        VID_t index = ((VID_t)xi) + yi * interval_extents[2] +
+          zi * interval_extents[1] * interval_extents[2];
         // cout << i << " " ;
         cout << +inimg1d[index] << " ";
       }
@@ -145,7 +149,7 @@ template <typename T> void print_image(T *inimg1d, VID_t size) {
 // the domain, thus it's an extremely hard test to pass
 // not even original fastmarching can
 // recover all of the original pixels
-void mesh_grid(VID_t id, uint16_t *inimg1d, VID_t selected, int grid_size) {
+void trace_mesh_image(VID_t id, uint16_t *inimg1d, const VID_t selected, int grid_size) {
   VID_t i, j, k, ic, jc, kc;
   i = j = k = ic = kc = jc = 0;
   // set root to 1
@@ -229,15 +233,20 @@ void mesh_grid(VID_t id, uint16_t *inimg1d, VID_t selected, int grid_size) {
  * and creates a central sphere of specified
  * radius directly in the center of the grid
  */
-VID_t get_grid(int tcase, uint16_t *inimg1d, int grid_size) {
-  VID_t selected = 0;
+VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
+    const VID_t selected, VID_t root_vid) {
+
+  // need to count total selected for tcase 3 and 5
+  VID_t count_selected_pixels = 0;
 
   // for tcase 5 sphere grid
   auto radius = grid_size / 4;
   radius = radius > 1 ? radius : 1; // clamp to 1
+  double tcase1_factor = PI;
+  double tcase2_factor = 2*PI;
 
   assertm(grid_size / 2 >= radius,
-          "Can't specify a radius larger than grid_size / 2");
+      "Can't specify a radius larger than grid_size / 2");
   auto root_x = static_cast<int>(get_central_sub(grid_size));
   auto root_y = static_cast<int>(get_central_sub(grid_size));
   auto root_z = static_cast<int>(get_central_sub(grid_size));
@@ -255,18 +264,18 @@ VID_t get_grid(int tcase, uint16_t *inimg1d, int grid_size) {
     for (int yi = 0; yi < grid_size; yi++) {
       for (int zi = 0; zi < grid_size; zi++) {
         VID_t index = ((VID_t)xi) + yi * grid_size + zi * grid_size * grid_size;
-        x = xi * dh - .5;
-        y = yi * dh - .5;
-        z = zi * dh - .5;
+        x = xi * dh;
+        y = yi * dh;
+        z = zi * dh;
         if (tcase == 0) {
           inimg1d[index] = 1;
         } else if (tcase == 1) {
-          inimg1d[index] = (uint16_t)1 + .5 * sin(20 * PI * x) *
-                                             sin(20 * PI * y) *
-                                             sin(20 * PI * z);
+          inimg1d[index] = (uint16_t)1 + .5 * sin(tcase1_factor * x) *
+            sin(tcase1_factor * y) *
+            sin(tcase1_factor * z);
         } else if (tcase == 2) {
-          inimg1d[index] = (uint16_t)1 - .99 * sin(2 * PI * x) *
-                                             sin(2 * PI * y) * sin(2 * PI * z);
+          inimg1d[index] = (uint16_t)1 - .99 * sin(tcase2_factor * x) *
+            sin(tcase2_factor * y) * sin(tcase2_factor * z);
         } else if (tcase == 3) {
           double r = sqrt(x * x + y * y);
           double R = sqrt(x * x + y * y + z * z);
@@ -303,11 +312,11 @@ VID_t get_grid(int tcase, uint16_t *inimg1d, int grid_size) {
             if (!condition0 != !condition1) { // xor / set difference
               inimg1d[index] = 0;
             } else {
-              selected++;
+              count_selected_pixels++;
             }
           }
         } else if (tcase == 4) { // 4 start with zero grid, and select in
-                                 // function mesh_grid
+          // function trace_mesh_image
           inimg1d[index] = 0;
         } else if (tcase == 5) {
           inimg1d[index] = 0;
@@ -315,20 +324,31 @@ VID_t get_grid(int tcase, uint16_t *inimg1d, int grid_size) {
             if ((yi >= ymin) && (yi <= ymax)) {
               if ((zi >= zmin) && (zi <= zmax)) {
                 inimg1d[index] = 1;
-                selected++;
+                count_selected_pixels++;
               }
             }
           }
         } else {
-          assertm(false, "tcase specified not recognized");
+          assertm(false, "tcase specified not recognized for generate "
+              "synthetic image (0-5)");
         }
       }
     }
   }
+
+  // return number of pixels selected
   if (tcase < 3) {
-    selected = grid_size * grid_size * grid_size;
+    return grid_size * grid_size * grid_size;
+  } else if ((tcase == 3) || (tcase == 5)) {
+    // need to count total selected for tcase 3 and 5
+    return count_selected_pixels;
+  } else if (tcase == 4) {
+    trace_mesh_image(root_vid, inimg1d, selected, grid_size);
+    return selected;
+  } else if (tcase > 5) {
+    assertm(false, "tcase not recognized for creating image tcase 6 is for reading real images");
   }
-  return selected;
+  return selected; // never reached
 }
 
 /**
@@ -342,7 +362,7 @@ VID_t get_grid(int tcase, uint16_t *inimg1d, int grid_size) {
  * @param line_per_dim the number of lines per
  */
 VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
-                   int grid_size) {
+    int grid_size) {
   int interval = grid_size / line_per_dim; // roughly equiv
   std::vector<VID_t> x(line_per_dim + 1);
   std::vector<VID_t> y(line_per_dim + 1);
@@ -400,8 +420,9 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
   return selected;
 }
 
-RecutCommandLineArgs get_args(int grid_size, int slt_pct, int tcase,
-                              bool generate_image = false) {
+RecutCommandLineArgs get_args(int grid_size, int interval_size,
+    int block_size, int slt_pct, int tcase,
+    bool force_regenerate_image = false) {
 
   bool print = false;
 #ifdef LOG
@@ -414,15 +435,40 @@ RecutCommandLineArgs get_args(int grid_size, int slt_pct, int tcase,
   params.set_marker_file_path(
       str_path + "/test_markers/" + std::to_string(grid_size) + "/tcase" +
       std::to_string(tcase) + "/slt_pct" + std::to_string(slt_pct) + "/");
-  // by setting the max intensities you do not need to recompute them
-  // in the update function, this is critical for benchmarking
-  params.set_max_intensity(2);
-  params.set_min_intensity(0);
+
+  // tcase 6 means use real data, in which case we need to either
+  // set max and min explicitly (to save time) or recompute what the
+  // actual values are
+  if (tcase == 6) {
+    // selected percent is only use for tcase 6 and 4
+    // otherwise it is ignored for other tcases so that
+    // nothing is recalculated
+    // note: a background_thresh of 0 would simply take all pixels within the
+    // domain and check that all were used
+
+    // first marker is at 58, 230, 111 : 7333434
+    // zyx
+    args.set_image_offsets({110, 229, 57});
+    args.set_image_extents({grid_size, grid_size, grid_size});
+    args.set_image_root_dir("../../data/filled/");
+    params.set_marker_file_path("../../data/marker_files");
+    // pre-determined and hardcoded thresholds for the file above
+    // to save time recomputing is disabled
+  } else {
+    // by setting the max intensities you do not need to recompute them
+    // in the update function, this is critical for benchmarking
+    params.set_max_intensity(2);
+    params.set_min_intensity(0);
+    params.force_regenerate_image = force_regenerate_image;
+    args.set_image_root_dir(
+        str_path + "/test_images/" + std::to_string(grid_size) + "/tcase" +
+        std::to_string(tcase) + "/slt_pct" + std::to_string(slt_pct) + "/");
+  }
 
   // the total number of blocks allows more parallelism
   // ideally intervals >> thread count
-  params.set_interval_size(grid_size);
-  params.set_block_size(grid_size);
+  params.set_interval_size(interval_size);
+  params.set_block_size(block_size);
   VID_t img_vox_num = grid_size * grid_size * grid_size;
   params.tcase = tcase;
   params.slt_pct = slt_pct;
@@ -431,14 +477,6 @@ RecutCommandLineArgs get_args(int grid_size, int slt_pct, int tcase,
   params.set_user_thread_count(omp_get_max_threads());
   std::vector<int> extents = {grid_size, grid_size, grid_size};
   args.set_image_extents(extents);
-
-  if (generate_image) {
-    params.generate_image = true;
-  } else {
-    args.set_image_root_dir(
-        str_path + "/test_images/" + std::to_string(grid_size) + "/tcase" +
-        std::to_string(tcase) + "/slt_pct" + std::to_string(slt_pct) + "/");
-  }
 
   // For now, params are only saved if this
   // function is called, in the future
@@ -494,8 +532,8 @@ void write_tiff(uint16_t *inimg1d, std::string base, int grid_size) {
   cout << "      Wrote test images at: " << base << '\n';
 }
 
-mcp3d::MImage read_tiff(std::string fn, std::vector<int> interval_offsets,
-                        std::vector<int> interval_extents) {
+mcp3d::MImage read_tiff(std::string fn, std::vector<int> image_offsets,
+    std::vector<int> image_extents) {
   cout << "Read: " << fn << '\n';
 
   // auto full_img = cv::imread(fn, cv::IMREAD_ANYDEPTH | cv::IMREAD_GRAYSCALE);
@@ -506,23 +544,19 @@ mcp3d::MImage read_tiff(std::string fn, std::vector<int> interval_offsets,
   // Mat test1(1000, 1000, CV_16U, Scalar(400));
   // imwrite("test.tiff", test1);
   // auto testfn = fn + "img_0000.tif";
-  // cout << "Read: " << testfn << '\n';
   // cv::Mat test2 = cv::imread(testfn, cv::IMREAD_ANYDEPTH);
-  // cout << test2 << '\n';
-  // cout << test1.depth() << " " << test2.depth() << '\n';
-  // cout << test2.at<unsigned short>(0,0) << '\n';
 
   // read data
   mcp3d::MImage image;
   image.ReadImageInfo(fn);
   try {
     // use unit strides only
-    mcp3d::MImageBlock block(interval_offsets, interval_extents);
+    mcp3d::MImageBlock block(image_offsets, image_extents);
     image.SelectView(block, 0);
     image.ReadData(true, "quiet");
   } catch (...) {
     MCP3D_MESSAGE("error in image io. neuron tracing not performed")
-    throw;
+      throw;
   }
   return image;
 }
@@ -601,7 +635,7 @@ inline double diff_time(struct timespec time1, struct timespec time2) {
 }
 
 /* returns available memory to system in bytes
- */
+*/
 inline size_t GetAvailMem() {
 #if defined(_SC_AVPHYS_PAGES)
   map<string, size_t> mem_info;

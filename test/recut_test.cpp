@@ -41,7 +41,7 @@
 
 template <class T, typename DataType>
 void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
-                       std::string stage, double &error_rate) {
+    std::string stage, double &error_rate) {
   auto tol_sz = static_cast<VID_t>(grid_size) * grid_size * grid_size;
   // cout << "check image " << endl;
   double error_sum = 0.0;
@@ -78,7 +78,7 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
           if (recut.generated_image[vid]) {
             ASSERT_NE(v, nullptr);
             ASSERT_TRUE(v->valid_radius()) << " vid " << vid << " recut radius "
-                                           << recut.generated_image[vid];
+              << recut.generated_image[vid];
             error_sum += absdiff(ground_truth[vid], v->radius);
             ++total_valid;
           }
@@ -102,7 +102,7 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
             // vertex, therefore surface_vec should also
             // contain this value
             ASSERT_TRUE(found) << "vid " << vid << " x" << xi << " y " << yi
-                               << " z " << zi << " v->vid " << v->vid << '\n';
+              << " z " << zi << " v->vid " << v->vid << '\n';
           }
         }
       }
@@ -115,7 +115,7 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
 }
 
 void check_image_error(uint16_t *inimg1d, uint16_t *baseline, uint16_t *check,
-                       int grid_size, VID_t selected, double &error_rate) {
+    int grid_size, VID_t selected, double &error_rate) {
   auto tol_sz = grid_size * grid_size * grid_size;
   VID_t total_valid = 0;
   // cout << "check image " << endl;
@@ -149,7 +149,7 @@ void interval_base_immutable(VID_t nvid) {
   interval->LoadFromDisk();
   for (int i = 0; i < nvid; i++) {
     ASSERT_TRUE(interval->GetData()[i].unvisited())
-        << " i= " << i << " vid " << interval->GetData()[i].vid << endl;
+      << " i= " << i << " vid " << interval->GetData()[i].vid << endl;
     ASSERT_FALSE(interval->GetData()[i].valid_vid());
     ASSERT_FALSE(interval->GetData()[i].valid_value());
   }
@@ -220,15 +220,12 @@ void load_save(bool mmap_) {
 //}
 
 void test_get_attr_vid(bool mmap, int grid_size, int interval_size,
-                       int block_size) {
+    int block_size) {
   auto nvid = grid_size * grid_size * grid_size;
   double slt_pct = 100;
   int tcase = 0;
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-  auto params = args.recut_parameters();
-  params.set_block_size(block_size);
-  params.set_interval_size(interval_size);
-  args.set_recut_parameters(params);
+  auto args =
+    get_args(grid_size, interval_size, block_size, slt_pct, tcase, GEN_IMAGE);
 
   auto root_vid = get_central_vid(grid_size);
   // x + 1, y + 1, z + 1 to the other central
@@ -261,7 +258,7 @@ void test_get_attr_vid(bool mmap, int grid_size, int interval_size,
       // the interval is a linear index into the 3D row-wise arrangement of
       // interval, converting to subscript makes adjustments easier
       recut.get_interval_subscript(current_interval_id, iinterval, jinterval,
-                                   kinterval);
+          kinterval);
       if (vid == root_vid) {
         test_intervals.push_back(
             recut.get_interval_id(iinterval + 1, jinterval, kinterval));
@@ -302,20 +299,20 @@ void test_get_attr_vid(bool mmap, int grid_size, int interval_size,
         // TEST 1
         // Assert upstream changes (by pointer)
         auto attr =
-            recut.get_attr_vid(interval_id, block_id, vid, &output_offset);
+          recut.get_attr_vid(interval_id, block_id, vid, &output_offset);
         attr->vid = vid;
         attr->value = 3;
         auto attr2 =
-            recut.get_attr_vid(interval_id, block_id, vid, &output_offset);
+          recut.get_attr_vid(interval_id, block_id, vid, &output_offset);
         ASSERT_EQ(attr, attr2); // upstream changes?
 
         // TEST 2
         // assert get_attr_vid can handle dummy structs added in to heaps
         // and update real embedded values in interval accordingly
         VertexAttr *dummy_attr =
-            new VertexAttr(); // march is protect from dummy values like this
+          new VertexAttr(); // march is protect from dummy values like this
         dummy_attr->mark_root(0); // 0000 0000, selected no parent, all zeros
-                                  // indicates KNOWN_FIX root
+        // indicates KNOWN_FIX root
         dummy_attr->value = 1.0;
         dummy_attr->vid = vid;
         auto embedded_attr = recut.get_attr_vid(
@@ -361,9 +358,9 @@ TEST(Heap, PushUpdate) {
         ASSERT_EQ(vert->radius, radius);
       } else if (stage == "value") {
         value =
-            static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / mval));
+          static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / mval));
         updated_value =
-            static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / mval));
+          static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / mval));
         vert->value = value;
         vv.push_back(value);
       }
@@ -426,15 +423,15 @@ TEST(Heap, PushUpdate) {
  */
 TEST(Install, CreateIntervalBase) {
   bool rerun = false; // change to true if MAX_INTERVAL_VERTICES or the vertex
-                      // struct has been changed in vertex_attr.h
+  // struct has been changed in vertex_attr.h
   auto fn = INTERVAL_BASE;
   VID_t nvid = MAX_INTERVAL_VERTICES;
   bool mmap_flag = false;
   if (!fs::exists(fn) || rerun) {
     VID_t size = sizeof(VertexAttr) * nvid;
     cout << "Start creating " << fn << " cached total size: ~"
-         << (size / (2 << 19)) << " MB"
-         << " for max vertices: " << nvid << endl; // set the default values
+      << (size / (2 << 19)) << " MB"
+      << " for max vertices: " << nvid << endl; // set the default values
 
     // make sure it's an overwrite
     if (fs::exists(fn)) {
@@ -448,8 +445,8 @@ TEST(Install, CreateIntervalBase) {
     if (mmap_flag) {
       assertm((fd = open(fn, O_CREAT)) != -1, "open not successful");
       assert((ptr = (struct VertexAttr *)mmap(nullptr, size, PROT_WRITE,
-                                              MAP_SHARED | MAP_ANONYMOUS, fd,
-                                              0)) != MAP_FAILED);
+              MAP_SHARED | MAP_ANONYMOUS, fd,
+              0)) != MAP_FAILED);
 
       for (VID_t i = 0; i < nvid; i++) {
         auto v = ptr[i];
@@ -633,15 +630,13 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
           selected = 1;
         uint16_t *inimg1d = new uint16_t[tol_sz];
         // sets all to 0 for tcase 4
-        get_grid(tcase, inimg1d, grid_size);
-        if (tcase == 4)
-          mesh_grid(root->vid, inimg1d, selected, grid_size);
-        if (tcase == 5) {
-          selected = lattice_grid(root->vid, inimg1d, line_per_dim, grid_size);
-        }
+        create_image(tcase, inimg1d, grid_size, selected, root_vid);
+        // if (tcase == 5) { // deprecated
+        // selected = lattice_grid(root->vid, inimg1d, line_per_dim, grid_size);
+        //}
         float actual_slt_pct = (selected / (float)tol_sz) * 100;
         cout << "    Actual num selected including root auto selection: "
-             << selected << endl;
+          << selected << endl;
         cout << "    actual slt_pct: " << actual_slt_pct << "%" << endl;
         cout << "    for attempted slt_pct: " << slt_pct << "%" << endl;
 
@@ -675,28 +670,27 @@ TEST(Image, ReadWrite) {
   VID_t tol_sz = sz0 * sz1 * sz2;
   std::string fn(get_curr());
   fn = fn + "/test_images/ReadWriteTest/";
-  vector<int> interval_offsets = {0, 0, 0}; // zyx
-  vector<int> interval_extents = {grid_size, grid_size, grid_size};
+  vector<int> image_offsets = {0, 0, 0}; // zyx
+  vector<int> image_extents = {grid_size, grid_size, grid_size};
 
   VID_t selected = tol_sz * (slt_pct / 100); // for tcase 4
   // cout << endl << "Select: " << selected << " (" << slt_pct << "%)" << endl;
   uint16_t *inimg1d = new uint16_t[tol_sz];
-  get_grid(tcase, inimg1d, grid_size); // sets all to 0 for tcase 4
-  mesh_grid(get_central_vid(grid_size), inimg1d, selected, grid_size);
+  create_image(tcase, inimg1d, grid_size, selected, get_central_vid(grid_size));
   write_tiff(inimg1d, fn, grid_size);
-  auto check = read_tiff(fn, interval_offsets, interval_extents);
+  auto check = read_tiff(fn, image_offsets, image_extents);
   // print_image(check, grid_size * grid_size * grid_size);
   ASSERT_NO_FATAL_FAILURE(
       check_image_equality(inimg1d, check.Volume<uint16_t>(0), grid_size));
 
   // run recut over the image, force it to run in read image
   // non-generated mode since MCP3D is guaranteed here
-  auto args = get_args(grid_size, slt_pct, tcase, false);
+  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, false);
   auto recut = Recut<uint16_t>(args);
   recut();
 
   // check again
-  auto check3 = read_tiff(fn, interval_offsets, interval_extents);
+  auto check3 = read_tiff(fn, image_offsets, image_extents);
   ASSERT_NO_FATAL_FAILURE(
       check_image_equality(inimg1d, check3.Volume<uint16_t>(0), grid_size));
 
@@ -755,18 +749,18 @@ TEST(Helpers, DISABLED_ConcurrentMap) {
   // no call to the destructor
 
   auto surface_map = std::make_unique<
-      junction::ConcurrentMap_Leapfrog<uint32_t, VertexAttr *>>();
+    junction::ConcurrentMap_Leapfrog<uint32_t, VertexAttr *>>();
 
   std::vector<int> dim_range(2, 0);
   std::transform(dim_range.begin(), dim_range.end(), ++dim_range.begin(),
-                 std::bind2nd(plus<int>(), 1));
+      std::bind2nd(plus<int>(), 1));
 
   for (VID_t interval_num : dim_range) {
     for (VID_t block_num : dim_range) {
 
       uint32_t key = double_pack_key(interval_num, block_num);
       cout << "interval_num " << interval_num << " block_num " << block_num
-           << "key " << key << '\n';
+        << "key " << key << '\n';
       //{
       auto mutator = surface_map->insertOrFind(key);
       auto v = mutator.getValue();
@@ -803,7 +797,7 @@ TEST(Helpers, DISABLED_ConcurrentMap) {
     for (VID_t block_num : dim_range) {
       uint32_t key = double_pack_key(interval_num, block_num);
       cout << "interval_num " << interval_num << " block_num " << block_num
-           << "key " << key << '\n';
+        << "key " << key << '\n';
       auto mutator = surface_map->insertOrFind(key);
       auto v = mutator.getValue();
       // std::vector<VertexAttr *> *vec = mutator.getValue();
@@ -841,7 +835,7 @@ TEST(VertexAttr, ReadWriteInterval) {
 
   VertexAttr *iptr = (VertexAttr *)malloc(size);
   std::ifstream ifile(fn,
-                      ios::in | ios::binary | ios::ate); // write-mode, end
+      ios::in | ios::binary | ios::ate); // write-mode, end
   // open input
   ASSERT_TRUE(ifile.is_open());
   ASSERT_TRUE(ifile.good());
@@ -868,6 +862,50 @@ TEST(VertexAttr, Defaults) {
   ASSERT_TRUE(v1->unvisited());
   // FIXME reuse this test once, root marked as known new found
   // ASSERT_TRUE(v1->connections(1, 1).empty());
+}
+
+TEST(TileThresholds, AllTcases) {
+  auto grid_size = 4;
+  auto slt_pct = 50;
+  auto grid_vertex_size = grid_size * grid_size * grid_size;
+  auto print_image = true;
+  std::vector<int> tcases = {1, 2, 3, 4, 5, 6};
+  for (const auto &tcase : tcases) {
+    auto args =
+      get_args(grid_size, grid_size, grid_size, slt_pct, tcase, false);
+    auto selected = args.recut_parameters().selected;
+    auto recut = Recut<uint16_t>(args);
+    auto inimg1d = std::make_unique<uint16_t[]>(grid_vertex_size);
+    auto tile_thresholds = new TileThresholds<uint16_t>();
+    uint16_t bkg_thresh;
+
+    if (tcase == 6) {
+      auto image = read_tiff(args.image_root_dir(), args.image_offsets,
+          args.image_extents);
+      if (print_image) {
+        print_image_3D(image.Volume<uint16_t>(0),
+            {grid_size, grid_size, grid_size});
+      }
+      bkg_thresh = recut.get_bkg_threshold(image.Volume<uint16_t>(0),
+          grid_vertex_size, slt_pct);
+      tile_thresholds->get_max_min(image.Volume<uint16_t>(0), grid_vertex_size);
+
+    } else {
+      create_image(tcase, inimg1d.get(), grid_size, selected,
+          get_central_vid(grid_size));
+      print_image_3D(inimg1d.get(), {grid_size, grid_size, grid_size});
+      bkg_thresh =
+        recut.get_bkg_threshold(inimg1d.get(), grid_vertex_size, slt_pct);
+      tile_thresholds->get_max_min(inimg1d.get(), grid_vertex_size);
+    }
+
+    cout << "tcase " << tcase << " bkg_thresh " << bkg_thresh << "\nmax "
+      << tile_thresholds->max_int << " min " << tile_thresholds->min_int
+      << '\n';
+    // ASSERT_EQ(bkg_thresh, 0);
+    // ASSERT_EQ(tile_thresholds->min_int, 0);
+    // ASSERT_EQ(tile_thresholds->max_int, 1);
+  }
 }
 
 TEST(VertexAttr, MarkStatus) {
@@ -910,7 +948,7 @@ TEST(RecutPipeline, DISABLED_PrintDefaultInfo) {
   auto ps = sysconf(_SC_PAGESIZE);
   auto vs = sizeof(VertexAttr);
   cout << "sizeof vidt " << sizeof(VID_t) << " bytes" << std::scientific
-       << endl;
+    << endl;
   cout << "sizeof float " << sizeof(float) << " bytes" << endl;
   cout << "sizeof bitfield " << sizeof(bitfield) << " bytes" << endl;
   cout << "sizeof vertex " << vs << " bytes" << endl;
@@ -920,17 +958,17 @@ TEST(RecutPipeline, DISABLED_PrintDefaultInfo) {
   cout << "cube root of vertices per page " << (int)cbrt(ps / vs) << endl;
   cout << "AvailMem " << GetAvailMem() / (1024 * 1024 * 1024) << " GB" << endl;
   cout << "MAX_INTERVAL_VERTICES " << MAX_INTERVAL_VERTICES << std::scientific
-       << endl;
+    << endl;
   cout << "Vertices needed for a 1024^3 interval block size 4 : "
-       << get_used_vertex_size(1024, 4) << std::scientific << endl;
+    << get_used_vertex_size(1024, 4) << std::scientific << endl;
   cout << "Vertices needed for a 2048^3 interval block size 4 : "
-       << get_used_vertex_size(2048, 4) << std::scientific << endl;
+    << get_used_vertex_size(2048, 4) << std::scientific << endl;
 }
 
 TEST(Radius, Full) {
-  bool print_all = false;
-  bool print_csv = false;
+  bool print_all = true;
   bool check_xy = false;
+  bool print_csv = false;
 
   int max_size = 8;
   // std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
@@ -956,28 +994,23 @@ TEST(Radius, Full) {
     for (auto &interval_size : interval_sizes) {
       for (auto &block_size : block_sizes) {
         for (auto &tcase : tcases) {
-          auto args = get_args(grid_size, slt_pct, tcase, true);
-
-          // adjust final runtime parameters
-          auto params = args.recut_parameters();
+          auto args = get_args(grid_size, interval_size, block_size, slt_pct,
+              tcase, true);
 
           // the total number of blocks allows more parallelism
           // ideally intervals >> thread count
           auto final_interval_size =
-              interval_size > grid_size ? grid_size : interval_size;
+            interval_size > grid_size ? grid_size : interval_size;
           auto final_block_size = block_size > final_interval_size
-                                      ? final_interval_size
-                                      : block_size;
+            ? final_interval_size
+            : block_size;
 
           std::ostringstream iteration_trace;
           // use this to tag and reconstruct data from json file
           iteration_trace << "grid_size " << grid_size << " interval_size "
-                          << final_interval_size << " block_size "
-                          << final_block_size;
+            << final_interval_size << " block_size "
+            << final_block_size;
           SCOPED_TRACE(iteration_trace.str());
-          params.set_interval_size(final_interval_size);
-          params.set_block_size(final_block_size);
-          args.set_recut_parameters(params);
 
           // run
           auto recut = Recut<uint16_t>(args);
@@ -987,7 +1020,7 @@ TEST(Radius, Full) {
           if (print_all) {
             std::cout << "recut image grid" << endl;
             print_image_3D(recut.generated_image,
-                           {grid_size, grid_size, grid_size});
+                {grid_size, grid_size, grid_size});
           }
 
           recut.setup_value(root_vids);
@@ -1012,7 +1045,7 @@ TEST(Radius, Full) {
             if (recut.generated_image[i]) {
               // calculate radius with baseline accurate method
               radii_grid[i] = get_radius_accurate(recut.generated_image,
-                                                  grid_size, i, bkg_thresh);
+                  grid_size, i, bkg_thresh);
               if (check_xy) {
                 // build original production version
                 radii_grid_xy[i] = get_radius_hanchuan_XY(
@@ -1026,7 +1059,7 @@ TEST(Radius, Full) {
           // make sure all surface vertices were identified correctly
           double xy_err, recut_err;
           ASSERT_NO_FATAL_FAILURE(check_recut_error(
-              recut, radii_grid.get(), grid_size, "surface", recut_err));
+                recut, radii_grid.get(), grid_size, "surface", recut_err));
 
           recut.setup_radius();
           // conducting update on radius consumes all recut.surface_vec values
@@ -1040,7 +1073,7 @@ TEST(Radius, Full) {
             if (check_xy) {
               std::cout << "XY radii grid\n";
               print_image_3D(radii_grid_xy.get(),
-                             {grid_size, grid_size, grid_size});
+                  {grid_size, grid_size, grid_size});
             }
             std::cout << "Recut radii\n";
             recut.print_grid("radius");
@@ -1048,20 +1081,20 @@ TEST(Radius, Full) {
 
           if (check_xy) {
             ASSERT_NO_FATAL_FAILURE(check_image_error(
-                recut.generated_image, radii_grid.get(), radii_grid_xy.get(),
-                grid_size, recut.params->selected, xy_err));
+                  recut.generated_image, radii_grid.get(), radii_grid_xy.get(),
+                  grid_size, recut.params->selected, xy_err));
           }
           ASSERT_NO_FATAL_FAILURE(check_recut_error(
-              recut, radii_grid.get(), grid_size, "radius", recut_err));
+                recut, radii_grid.get(), grid_size, "radius", recut_err));
           ASSERT_NEAR(recut_err, 0., .001);
 
           if (print_csv) {
             if (check_xy) {
               std::cout << "\"xy_radius/" << grid_size << "\",1," << xy_err
-                        << '\n';
+                << '\n';
             }
             std::cout << "\"fast_marching_radius/" << grid_size << "\",1,"
-                      << recut_err << '\n';
+              << recut_err << '\n';
           }
           std::ostringstream xy_stream, recut_stream;
           xy_stream << "XY Error " << iteration_trace.str();
@@ -1075,8 +1108,8 @@ TEST(Radius, Full) {
 }
 
 class RecutPipelineParameterTests
-    : public ::testing::TestWithParam<
-          std::tuple<int, int, int, int, double, bool, bool, bool>> {};
+: public ::testing::TestWithParam<
+  std::tuple<int, int, int, int, double, bool, bool>> {};
 
 TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   // documents the meaning of each tuple member
@@ -1087,70 +1120,38 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   double slt_pct = std::get<4>(GetParam());
   bool check_against_selected = std::get<5>(GetParam());
   bool check_against_sequential = std::get<6>(GetParam());
+  bool force_regenerate_image = tcase == 6 ? false : true;
 
   // shared params
-  bool determine_thresholds =
-      true; // set this to true for checking what to hardcoding vals to
-  auto args = get_args(grid_size, slt_pct, tcase, GEN_IMAGE);
-  auto params = args.recut_parameters();
-  params.set_interval_size(interval_size);
-  params.set_block_size(block_size);
-  vector<int> interval_offsets = {0, 0, 0}; // zyx
-  vector<int> interval_extents = {grid_size, grid_size, grid_size};
+  auto args = get_args(
+      grid_size, interval_size, block_size, slt_pct, tcase,
+      force_regenerate_image); // generate image so that you can read it below
+  args.recut_parameters();
+  // uint16_t is image_t here
+  TileThresholds<uint16_t> *tile_thresholds;
   bool print_image = false;
-
-  // selected percent is only use for tcases 4 and 6
-  // otherwise it is ignored for other tcases so that it 
-  // nothing is recalculated
-  if (tcase == 6) {
-    // first marker is at 58, 230, 111 : 7333434
-    interval_offsets = {110, 229, 57}; // zyx
-    args.set_image_offsets(interval_offsets);
-    args.set_image_extents(interval_extents);
-    args.set_image_root_dir("../../data/filled/");
-    params.set_marker_file_path("../../data/marker_files");
-    // find proper max and min intensity via recut's method
-    if (determine_thresholds) {
-      // setting foreground_percent automatically
-      // calculates desired background_thresh during
-      // processing
-      params.set_foreground_percent(.01 * slt_pct); // convert it to percent
-    } else {
-      // a background_thresh of 0 would simply take all pixels within the domain
-      // and check that all were used
-      // a foreground_percent of 50% yields a bkg_thresh of ~160
-      if (!check_against_selected) {
-        bkg_thresh = 500;
-      }
-      params.set_background_thresh(bkg_thresh);
-      // pre-determined and hardcoded for the file above
-      // to save time recomputing
-      max_int = 65535.;
-      min_int = 0.;
-      params.set_max_intensity(max_int);
-      params.set_min_intensity(min_int);
-    }
-  }
-
-  // save all changes
-  args.set_recut_parameters(params);
 
   auto recut = Recut<uint16_t>(args);
   std::vector<VID_t> root_vids;
   root_vids = recut.initialize();
   recut.setup_value(root_vids);
 
+  // establish the tile thresholds for the entire test run (recut and
+  // sequential)
   if (tcase == 6) {
-  // get tile_thresholds so they can be logged and optionally for sequential
-  mcp3d::MImage
+    // get tile_thresholds so they can be logged and optionally for sequential
+    mcp3d::MImage
       mcp3d_tile; // prevent destruction before calling process_interval
-  auto interval_id = 0;
-  recut.load_tile(interval_id, mcp3d_tile);
-  tile_thresholds = recut.get_tile_thresholds(mcp3d_tile);
+    auto interval_id = 0;
+    recut.load_tile(interval_id, mcp3d_tile);
+    // setting foreground_percent forces
+    // calculation of desired background_thresh during
+    // get_tile_thresholds
+    tile_thresholds = recut.get_tile_thresholds(mcp3d_tile);
   } else {
-        // note these default thresholds apply to any generated image
-        // thus they will only be replaced if we're reading a real image
-          tile_thresholds = new TileThresholds<image_t>(2, 0, 0);
+    // note these default thresholds apply to any generated image
+    // thus they will only be replaced if we're reading a real image
+    tile_thresholds = new TileThresholds<uint16_t>(2, 0, 0);
   }
   RecordProperty("bkg_thresh", tile_thresholds->bkg_thresh);
   RecordProperty("max_int", tile_thresholds->max_int);
@@ -1161,13 +1162,13 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
   recut.finalize(args.output_tree); // this fills args.output_tree
   cout << "recut update no IO elapsed (s)" << recut_update_value_elapsed
-       << '\n';
+    << '\n';
   RecordProperty("recut update no IO elapsed (s)", recut_update_value_elapsed);
 
   // pregenerated data has a known number of selected
   // pixels
   if (check_against_selected) {
-    ASSERT_EQ(args.output_tree.size(), params.selected);
+    ASSERT_EQ(args.output_tree.size(), recut.params->selected);
   }
 
   // this runs the original sequential fastmarching algorithm
@@ -1175,7 +1176,6 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   // selected number should be unless you compare it to another
   // reconstruction method or manual ground truth
   if (check_against_sequential) {
-
     // convert roots into markers (vector)
     std::vector<MyMarker *> root_markers;
     if (tcase == 6) {
@@ -1183,22 +1183,22 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     } else {
       root_markers = {get_central_root(grid_size)};
     }
-    // read data
-    auto image =
-        read_tiff(args.image_root_dir(), interval_offsets, interval_extents);
+
+    auto image = read_tiff(args.image_root_dir(), args.image_offsets,
+        args.image_extents);
 
     if (print_image) {
       print_image_3D(image.Volume<uint16_t>(0),
-                     {grid_size, grid_size, grid_size});
+          {grid_size, grid_size, grid_size});
     }
 
     std::vector<MyMarker *> sequential_output_tree;
     std::vector<MyMarker> targets;
     auto timer = new high_resolution_timer();
     fastmarching_tree(root_markers, targets, image.Volume<uint16_t>(0),
-                      sequential_output_tree, grid_size, grid_size, grid_size,
-                      1, tile_thresholds->bkg_thresh, tile_thresholds->max_int,
-                      tile_thresholds->min_int);
+        sequential_output_tree, grid_size, grid_size, grid_size,
+        1, tile_thresholds->bkg_thresh, tile_thresholds->max_int,
+        tile_thresholds->min_int);
 
     cout << "sequential fastmarching elapsed (s)" << timer->elapsed() << '\n';
     // warning record property will auto cast to an int
@@ -1211,12 +1211,12 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     //}
 
     double actual_slt_pct =
-        (100. * args.output_tree.size()) / (grid_size * grid_size * grid_size);
+      (100. * args.output_tree.size()) / (grid_size * grid_size * grid_size);
     RecordProperty("actual_slt_pct", actual_slt_pct);
     cout << "Selected "
-         << (100. * args.output_tree.size()) /
-                (grid_size * grid_size * grid_size)
-         << "% of pixels\n";
+      << (100. * args.output_tree.size()) /
+      (grid_size * grid_size * grid_size)
+      << "% of pixels\n";
 
     ASSERT_EQ(sequential_output_tree.size(), args.output_tree.size());
   }
@@ -1226,42 +1226,42 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 INSTANTIATE_TEST_CASE_P(
     RecutPipelineTests, RecutPipelineParameterTests,
     ::testing::Values(
-        std::make_tuple(4, 4, 4, 0, 100., true, false), // 0
-        std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
-        std::make_tuple(4, 4, 4, 2, 100., true, false), // 2
-        std::make_tuple(4, 4, 4, 3, 100., true, false), // 3
-        // multi-interval small
-        std::make_tuple(4, 2, 2, 4, 50., true, false), // 4
-        std::make_tuple(4, 4, 4, 4, 50., true, true),  // 5
-        std::make_tuple(4, 4, 4, 4, 50., false, true), // 6
-        // make sure if bkg_thresh is 0, all vertices are selected for real
-        std::make_tuple(4, 4, 4, 6, 100., true, true), // 7
-        // make sure fastmarching_tree and recut produce exact match for real
-        std::make_tuple(8, 8, 8, 6, 100., false, true), // 8
-        // real data multi-block
-        std::make_tuple(8, 8, 4, 6, 100., false, true), // 9
-        // real data multi-interval
-        std::make_tuple(8, 4, 8, 6, 100., false, true) // 10
+      std::make_tuple(4, 4, 4, 0, 100., true, false), // 0
+      std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
+      std::make_tuple(4, 4, 4, 2, 100., true, false), // 2
+      std::make_tuple(4, 4, 4, 3, 100., true, false), // 3
+      // multi-interval small
+      std::make_tuple(4, 2, 2, 4, 50., true, false), // 4
+      std::make_tuple(4, 4, 4, 4, 50., true, true),  // 5
+      std::make_tuple(4, 4, 4, 4, 50., false, true), // 6
+      // make sure if bkg_thresh is 0, all vertices are selected for real
+      std::make_tuple(4, 4, 4, 6, 100., true, true), // 7
+      // make sure fastmarching_tree and recut produce exact match for real
+      std::make_tuple(8, 8, 8, 6, 100., false, true), // 8
+      // real data multi-block
+      std::make_tuple(8, 8, 4, 6, 100., false, true), // 9
+      // real data multi-interval
+      std::make_tuple(8, 4, 8, 6, 100., false, true) // 10
 #ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for
-                           // benchmarks
-        ,
-        // std::make_tuple(256, 256, 32, 4, 1, false, true), // 11
-        // std::make_tuple(256, 256, 128, 4, 1, false, true), // 12
-        // std::make_tuple(256, 256, 256, 4, 1, false, true), // 13
-        // std::make_tuple(512, 512, 32, 4, 1, false, true), // 14
-        // std::make_tuple(512, 512, 128, 4, 1, false, true), // 15
-        // std::make_tuple(512, 512, 512, 4, 1, false, true), // 16
-        // std::make_tuple(1024, 1024, 128, 4, 1, false, true), // 17
-        // std::make_tuple(1024, 1024, 1024, 4, 1, false, true) // 18
-        // determine thresholds
-        std::make_tuple(1024, 1024, 1024, 6, 1, false, true),  // 18
-        std::make_tuple(1024, 1024, 1024, 6, 5, false, true),  // 18
-        std::make_tuple(1024, 1024, 1024, 6, 10, false, true), // 18
-        std::make_tuple(1024, 1024, 1024, 6, 15, false, true)  // 18
+      // benchmarks
+      ,
+      // std::make_tuple(256, 256, 32, 4, 1, false, true), // 11
+      // std::make_tuple(256, 256, 128, 4, 1, false, true), // 12
+      // std::make_tuple(256, 256, 256, 4, 1, false, true), // 13
+      // std::make_tuple(512, 512, 32, 4, 1, false, true), // 14
+      // std::make_tuple(512, 512, 128, 4, 1, false, true), // 15
+      // std::make_tuple(512, 512, 512, 4, 1, false, true), // 16
+      // std::make_tuple(1024, 1024, 128, 4, 1, false, true), // 17
+      // std::make_tuple(1024, 1024, 1024, 4, 1, false, true) // 18
+      // determine thresholds
+      std::make_tuple(1024, 1024, 1024, 6, 1, false, true),  // 18
+      std::make_tuple(1024, 1024, 1024, 6, 5, false, true),  // 18
+      std::make_tuple(1024, 1024, 1024, 6, 10, false, true), // 18
+      std::make_tuple(1024, 1024, 1024, 6, 15, false, true)  // 18
 #endif
-        ));
+  ));
 
-int main(int argc, char **argv) {
-  testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
-}
+  int main(int argc, char **argv) {
+    testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+  }
