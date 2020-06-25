@@ -1627,15 +1627,15 @@ template <class image_t> void Recut<image_t>::setup_radius() {
         int Recut<image_t>::get_bkg_threshold(const image_t *tile, VID_t interval_vertex_size,
             const double foreground_percent) {
 #ifdef LOG
-          cout << "Determine thresholding value" << '\n';
+          cout << "Determine thresholding value on fg %: " << foreground_percent << '\n';
 #endif
           assertm(foreground_percent >= 0., "foreground_percent must be 0 or positive");
-          assertm(foreground_percent <= 100., "foreground_percent must be 100 or less");
+          assertm(foreground_percent <= 1., "foreground_percent must be 1.0 or less");
           image_t above; // store next bkg_thresh value above desired bkg pct
           image_t below = 0;
           double above_diff_pct = 0.0; // pct bkg at next above value
-          double below_diff_pct = 100.0; // last below percentage
-          double desired_bkg_pct = 100. - foreground_percent;
+          double below_diff_pct = 1.; // last below percentage
+          double desired_bkg_pct = 1. - foreground_percent;
           // test different background threshold values until finding
           // percentage above desired_bkg_pct or when all pixels set to background
           VID_t bkg_count;
@@ -1653,9 +1653,10 @@ template <class image_t> void Recut<image_t>::setup_radius() {
             }
 
             // Check if above desired percent background
-            double test_pct = (100 * bkg_count) / (double)interval_vertex_size;
-            cout << "local_bkg_thresh=" << local_bkg_thresh << " (" << test_pct
-              << "%) background" << '\n';
+            double test_pct = bkg_count / static_cast<double>(interval_vertex_size);
+            auto foreground_count = interval_vertex_size - bkg_count;
+            cout << "bkg_thresh=" << local_bkg_thresh << " (" << test_pct
+              << "%) background, total foreground count: " << foreground_count << '\n';
             double test_diff = abs(test_pct - desired_bkg_pct);
 
             // check whether we overshot, if above
@@ -2714,12 +2715,6 @@ template <class image_t> void Recut<image_t>::setup_radius() {
 #ifdef FULL_PRINT
                 //cout << "checking attr " << *attr << " at offset " << offset << '\n';
 #endif
-                if (attr->vid == 21) {
-                  cout << "found vid 21\n";
-                }
-                if (attr->root()) {
-                  cout << "FOUND root " << attr << '\n';
-                }
                 if (attr->unselected() && !(attr->root()))
                   continue; // skips unvisited 11XX XXXX and band 01XX XXXX
                 assert(attr->valid_vid());
