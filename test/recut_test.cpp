@@ -1120,7 +1120,10 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   double slt_pct = std::get<4>(GetParam());
   bool check_against_selected = std::get<5>(GetParam());
   bool check_against_sequential = std::get<6>(GetParam());
-  bool force_regenerate_image = tcase == 6 ? false : true;
+  // regenerating image is random and done at run time
+  // if you were to set to true tcase 4 would have a mismatch
+  // with the loaded image
+  bool force_regenerate_image = false;
 
   // shared params
   auto args = get_args(
@@ -1136,18 +1139,18 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   root_vids = recut.initialize();
   recut.setup_value(root_vids);
 
+  auto image = read_tiff(args.image_root_dir(), args.image_offsets,
+      args.image_extents);
+
+  if (print_image) {
+    print_image_3D(image.Volume<uint16_t>(0),
+        {grid_size, grid_size, grid_size});
+  }
+
   // establish the tile thresholds for the entire test run (recut and
   // sequential)
   if (tcase == 6) {
-    // get tile_thresholds so they can be logged and optionally for sequential
-    mcp3d::MImage
-      mcp3d_tile; // prevent destruction before calling process_interval
-    auto interval_id = 0;
-    recut.load_tile(interval_id, mcp3d_tile);
-    // setting foreground_percent forces
-    // calculation of desired background_thresh during
-    // get_tile_thresholds
-    tile_thresholds = recut.get_tile_thresholds(mcp3d_tile);
+    tile_thresholds = recut.get_tile_thresholds(image);
   } else {
     // note these default thresholds apply to any generated image
     // thus they will only be replaced if we're reading a real image
@@ -1184,14 +1187,6 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
       root_markers = {get_central_root(grid_size)};
     }
 
-    auto image = read_tiff(args.image_root_dir(), args.image_offsets,
-        args.image_extents);
-
-    if (print_image) {
-      print_image_3D(image.Volume<uint16_t>(0),
-          {grid_size, grid_size, grid_size});
-    }
-
     std::vector<MyMarker *> sequential_output_tree;
     std::vector<MyMarker> targets;
     auto timer = new high_resolution_timer();
@@ -1226,38 +1221,38 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 INSTANTIATE_TEST_CASE_P(
     RecutPipelineTests, RecutPipelineParameterTests,
     ::testing::Values(
-      std::make_tuple(4, 4, 4, 0, 100., true, false), // 0
-      std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
-      std::make_tuple(4, 4, 4, 2, 100., true, false), // 2
-      std::make_tuple(4, 4, 4, 3, 100., true, false), // 3
+      std::make_tuple(4, 4, 4, 0, 100., true, false) // 0
+      , std::make_tuple(4, 4, 4, 1, 100., true, false) // 1
+      , std::make_tuple(4, 4, 4, 2, 100., true, false) // 2
+      , std::make_tuple(4, 4, 4, 3, 100., true, false) // 3
+      , std::make_tuple(4, 4, 4, 4, 50., true, true) // 4
       // multi-interval small
-      std::make_tuple(4, 2, 2, 4, 50., true, false), // 4
-      std::make_tuple(4, 4, 4, 4, 50., true, true),  // 5
-      std::make_tuple(4, 4, 4, 4, 50., false, true), // 6
+      , std::make_tuple(4, 2, 2, 4, 50., true, true) // 5
+      // multi-block small
+      , std::make_tuple(4, 4, 2, 4, 50., true, true)  // 6
       // make sure if bkg_thresh is 0, all vertices are selected for real
-      std::make_tuple(4, 4, 4, 6, 100., true, true), // 7
+      , std::make_tuple(4, 4, 4, 6, 100., true, true) // 7
       // make sure fastmarching_tree and recut produce exact match for real
-      std::make_tuple(8, 8, 8, 6, 100., false, true), // 8
+      , std::make_tuple(8, 8, 8, 6, 100., false, true) // 8
       // real data multi-block
-      std::make_tuple(8, 8, 4, 6, 100., false, true), // 9
+      , std::make_tuple(8, 8, 4, 6, 100., false, true) // 9
       // real data multi-interval
-      std::make_tuple(8, 4, 8, 6, 100., false, true) // 10
+      , std::make_tuple(8, 4, 4, 6, 100., false, true) // 10
 #ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for
       // benchmarks
-      ,
-      // std::make_tuple(256, 256, 32, 4, 1, false, true), // 11
-      // std::make_tuple(256, 256, 128, 4, 1, false, true), // 12
-      // std::make_tuple(256, 256, 256, 4, 1, false, true), // 13
-      // std::make_tuple(512, 512, 32, 4, 1, false, true), // 14
-      // std::make_tuple(512, 512, 128, 4, 1, false, true), // 15
-      // std::make_tuple(512, 512, 512, 4, 1, false, true), // 16
-      // std::make_tuple(1024, 1024, 128, 4, 1, false, true), // 17
-      // std::make_tuple(1024, 1024, 1024, 4, 1, false, true) // 18
-      // determine thresholds
-      std::make_tuple(1024, 1024, 1024, 6, 1, false, true),  // 18
-      std::make_tuple(1024, 1024, 1024, 6, 5, false, true),  // 18
-      std::make_tuple(1024, 1024, 1024, 6, 10, false, true), // 18
-      std::make_tuple(1024, 1024, 1024, 6, 15, false, true)  // 18
+      , std::make_tuple(256, 32, 32, 6, 1, false, true) // 11
+  // , std::make_tuple(256, 256, 128, 4, 1, false, true) // 12
+  // , std::make_tuple(256, 256, 256, 4, 1, false, true) // 13
+  // , std::make_tuple(512, 512, 32, 4, 1, false, true) // 14
+  // , std::make_tuple(512, 512, 128, 4, 1, false, true) // 15
+  // , std::make_tuple(512, 512, 512, 4, 1, false, true) // 16
+  // , std::make_tuple(1024, 1024, 128, 4, 1, false, true) // 17
+  // , std::make_tuple(1024, 1024, 1024, 4, 1, false, true) // 18
+  // determine thresholds
+  //, std::make_tuple(1024, 1024, 1024, 6, 1, false, true)  // 18
+  //, std::make_tuple(1024, 1024, 1024, 6, 5, false, true)  // 18
+  //, std::make_tuple(1024, 1024, 1024, 6, 10, false, true) // 18
+  //, std::make_tuple(1024, 1024, 1024, 6, 15, false, true)  // 18
 #endif
   ));
 
