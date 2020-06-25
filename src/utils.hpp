@@ -425,9 +425,6 @@ RecutCommandLineArgs get_args(int grid_size, int interval_size,
     bool force_regenerate_image = false) {
 
   bool print = false;
-#ifdef LOG
-  print = true;
-#endif
 
   RecutCommandLineArgs args;
   auto params = args.recut_parameters();

@@ -792,7 +792,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
 #ifdef FULL_PRINT
       cout << "\tcheck dst vid: " << dst_id;
       cout << " pixel " << dst_vox;
-      cout << " bkg_thresh " << +tile_thresholds->bkg_thresh << '\n';
+      cout << " bkg_thresh " << +(tile_thresholds->bkg_thresh) << '\n';
 #endif
 
       // skip backgrounds
@@ -1956,9 +1956,9 @@ template <class image_t> void Recut<image_t>::setup_radius() {
 #ifdef LOG
           cout << "max_int: " << +(tile_thresholds->max_int)
             << " min_int: " << +(tile_thresholds->min_int) << '\n';
+          cout << "bkg_thresh value = " << +(tile_thresholds->bkg_thresh) << '\n';
 #endif
 #ifdef LOG_FULL
-          cout << "bkg_thresh value = " << tile_thresholds->bkg_thresh << '\n';
           cout << "interval dims x " << interval_dims[2] << " y " << interval_dims[1]
             << " z " << interval_dims[0] << '\n';
 #endif
@@ -1970,6 +1970,9 @@ template <class image_t> void Recut<image_t>::setup_radius() {
 
       // returns the execution time for updating the entire
       // stage excluding I/O
+      // note that tile_thresholds has a default value
+      // of nullptr, see the declaration of update in the
+      // class body
       template <class image_t>
         double Recut<image_t>::update(std::string stage,
             TileThresholds<image_t> *tile_thresholds) {
@@ -2023,16 +2026,23 @@ template <class image_t> void Recut<image_t>::setup_radius() {
 #endif
 
               image_t *tile;
+              // tile_thresholds defaults to nullptr
+              // local_tile_thresholds will be set explicitly
+              // if user did not pass in valid tile_thresholds value
+              TileThresholds<image_t>* local_tile_thresholds = tile_thresholds;
+
               // pre-generated images are for testing, or when an outside
-              // project wants to input images instead
+              // library wants to pass input images instead
               if (this->params->force_regenerate_image) {
                 assertm(this->generated_image,
                     "Image not generated or set by intialize");
                 tile = this->generated_image;
-                if (!tile_thresholds) {
+                // allows users to input a tile thresholds object when
+                // calling to update
+                if (!local_tile_thresholds) {
                   // note these default thresholds apply to any generated image
                   // thus they will only be replaced if we're reading a real image
-                  tile_thresholds = new TileThresholds<image_t>(2, 0, 0);
+                  local_tile_thresholds = new TileThresholds<image_t>(2, 0, 0);
                 }
               }
 
@@ -2046,8 +2056,8 @@ template <class image_t> void Recut<image_t>::setup_radius() {
                   // of this interval otherwise dangling reference then seg fault
                   // on image access
                   load_tile(interval_id, mcp3d_tile);
-                  if (!tile_thresholds) {
-                    tile_thresholds = get_tile_thresholds(mcp3d_tile);
+                  if (!local_tile_thresholds) {
+                    local_tile_thresholds = get_tile_thresholds(mcp3d_tile);
                   }
                   tile = mcp3d_tile.Volume<image_t>(0);
                 }
@@ -2060,7 +2070,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
 #endif
 
               global_no_io_time +=
-                process_interval(interval_id, tile, stage, tile_thresholds);
+                process_interval(interval_id, tile, stage, local_tile_thresholds);
             } // if the interval is active
 
             // rotate interval number until all finished
