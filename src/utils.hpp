@@ -449,6 +449,8 @@ RecutCommandLineArgs get_args(int grid_size, int interval_size,
     args.set_image_extents({grid_size, grid_size, grid_size});
     args.set_image_root_dir("../../data/filled/");
     params.set_marker_file_path("../../data/marker_files");
+    // foreground_percent is always double between .0 and 1.
+    params.set_foreground_percent(static_cast<double>(slt_pct) / 100.);
     // pre-determined and hardcoded thresholds for the file above
     // to save time recomputing is disabled
   } else {
@@ -529,8 +531,8 @@ void write_tiff(uint16_t *inimg1d, std::string base, int grid_size) {
   cout << "      Wrote test images at: " << base << '\n';
 }
 
-mcp3d::MImage read_tiff(std::string fn, std::vector<int> image_offsets,
-    std::vector<int> image_extents) {
+void read_tiff(std::string fn, std::vector<int> image_offsets,
+    std::vector<int> image_extents, mcp3d::MImage& image) {
   cout << "Read: " << fn << '\n';
 
   // auto full_img = cv::imread(fn, cv::IMREAD_ANYDEPTH | cv::IMREAD_GRAYSCALE);
@@ -544,7 +546,6 @@ mcp3d::MImage read_tiff(std::string fn, std::vector<int> image_offsets,
   // cv::Mat test2 = cv::imread(testfn, cv::IMREAD_ANYDEPTH);
 
   // read data
-  mcp3d::MImage image;
   image.ReadImageInfo(fn);
   try {
     // use unit strides only
@@ -555,7 +556,6 @@ mcp3d::MImage read_tiff(std::string fn, std::vector<int> image_offsets,
     MCP3D_MESSAGE("error in image io. neuron tracing not performed")
       throw;
   }
-  return image;
 }
 #endif
 

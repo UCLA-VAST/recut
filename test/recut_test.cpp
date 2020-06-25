@@ -678,7 +678,8 @@ TEST(Image, ReadWrite) {
   uint16_t *inimg1d = new uint16_t[tol_sz];
   create_image(tcase, inimg1d, grid_size, selected, get_central_vid(grid_size));
   write_tiff(inimg1d, fn, grid_size);
-  auto check = read_tiff(fn, image_offsets, image_extents);
+  mcp3d::MImage check, check3;
+  read_tiff(fn, image_offsets, image_extents, check);
   // print_image(check, grid_size * grid_size * grid_size);
   ASSERT_NO_FATAL_FAILURE(
       check_image_equality(inimg1d, check.Volume<uint16_t>(0), grid_size));
@@ -690,7 +691,7 @@ TEST(Image, ReadWrite) {
   recut();
 
   // check again
-  auto check3 = read_tiff(fn, image_offsets, image_extents);
+  read_tiff(fn, image_offsets, image_extents, check3);
   ASSERT_NO_FATAL_FAILURE(
       check_image_equality(inimg1d, check3.Volume<uint16_t>(0), grid_size));
 
@@ -878,16 +879,17 @@ TEST(TileThresholds, AllTcases) {
     auto inimg1d = std::make_unique<uint16_t[]>(grid_vertex_size);
     auto tile_thresholds = new TileThresholds<uint16_t>();
     uint16_t bkg_thresh;
+    mcp3d::MImage image;
 
     if (tcase == 6) {
-      auto image = read_tiff(args.image_root_dir(), args.image_offsets,
-          args.image_extents);
+      read_tiff(args.image_root_dir(), args.image_offsets, args.image_extents,
+          image);
       if (print_image) {
         print_image_3D(image.Volume<uint16_t>(0),
             {grid_size, grid_size, grid_size});
       }
       bkg_thresh = recut.get_bkg_threshold(image.Volume<uint16_t>(0),
-          grid_vertex_size, slt_pct);
+          grid_vertex_size, slt_pct / 100.);
       tile_thresholds->get_max_min(image.Volume<uint16_t>(0), grid_vertex_size);
 
     } else {
@@ -895,7 +897,7 @@ TEST(TileThresholds, AllTcases) {
           get_central_vid(grid_size));
       print_image_3D(inimg1d.get(), {grid_size, grid_size, grid_size});
       bkg_thresh =
-        recut.get_bkg_threshold(inimg1d.get(), grid_vertex_size, slt_pct);
+        recut.get_bkg_threshold(inimg1d.get(), grid_vertex_size, slt_pct / 100.);
       tile_thresholds->get_max_min(inimg1d.get(), grid_vertex_size);
     }
 
@@ -1139,18 +1141,24 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   root_vids = recut.initialize();
   recut.setup_value(root_vids);
 
-  auto image = read_tiff(args.image_root_dir(), args.image_offsets,
-      args.image_extents);
+  mcp3d::MImage image;
+  if (check_against_sequential) {
+    read_tiff(args.image_root_dir(), args.image_offsets,
+        args.image_extents, image);
 
-  if (print_image) {
-    print_image_3D(image.Volume<uint16_t>(0),
-        {grid_size, grid_size, grid_size});
+    if (print_image) {
+      print_image_3D(image.Volume<uint16_t>(0),
+          {grid_size, grid_size, grid_size});
+    }
   }
 
   // establish the tile thresholds for the entire test run (recut and
   // sequential)
   if (tcase == 6) {
-    tile_thresholds = recut.get_tile_thresholds(image);
+    //tile_thresholds = recut.get_tile_thresholds(image);
+    // bkg_thresh table: 421 ~.01 foreground
+    // if any pixels are found above or below these values it will fail
+    tile_thresholds = new TileThresholds<uint16_t>(10000, 0, 421);
   } else {
     // note these default thresholds apply to any generated image
     // thus they will only be replaced if we're reading a real image
@@ -1240,7 +1248,7 @@ INSTANTIATE_TEST_CASE_P(
       , std::make_tuple(8, 4, 4, 6, 100., false, true) // 10
 #ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for
       // benchmarks
-      , std::make_tuple(256, 32, 32, 6, 1, false, true) // 11
+      , std::make_tuple(2048, 128, 128, 6, 1, false, false)
   // , std::make_tuple(256, 256, 128, 4, 1, false, true) // 12
   // , std::make_tuple(256, 256, 256, 4, 1, false, true) // 13
   // , std::make_tuple(512, 512, 32, 4, 1, false, true) // 14
