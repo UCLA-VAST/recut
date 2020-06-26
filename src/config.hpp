@@ -46,7 +46,9 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 //#define USE_HUGE_PAGE
 #define USE_MCP3D
 
-//#define USE_OMP
+// Note you can't have both OMP_BLOCK and OMP_INTERVAL defined
+#define USE_OMP_INTERVAL
+//#define USE_OMP_BLOCK
 
 // Parallel strategies other than OMP defined here
 //#define ASYNC // run without TF macro to use the std::async instead of TF
