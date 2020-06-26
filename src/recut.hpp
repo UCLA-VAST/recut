@@ -143,7 +143,7 @@ template <class image_t> class Recut {
     void place_vertex(VID_t nb_interval_id, VID_t block_id, VID_t nb,
         struct VertexAttr *dst, bool is_root, std::string stage);
     bool check_blocks_finish(VID_t interval_id);
-    bool check_intervals_finish();
+    bool are_intervals_finished();
     inline VID_t get_img_vid(VID_t i, VID_t j, VID_t k);
     inline VID_t get_interval_id_vert_sub(const VID_t i, const VID_t j,
         const VID_t k);
@@ -196,7 +196,7 @@ template <class image_t> class Recut {
     void load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile);
     TileThresholds<image_t> *get_tile_thresholds(mcp3d::MImage &mcp3d_tile);
 #endif
-    double process_interval(VID_t interval_id, const image_t *tile,
+    std::atomic<double> process_interval(VID_t interval_id, const image_t *tile,
         std::string stage,
         const TileThresholds<image_t> *tile_thresholds);
     double update(std::string stage,
@@ -1349,7 +1349,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
        * If aimage_y_len interval is active return false, a interval is active if
        * aimage_y_len of its blocks are still active
        */
-      template <class image_t> bool Recut<image_t>::check_intervals_finish() {
+      template <class image_t> bool Recut<image_t>::are_intervals_finished() {
         VID_t tot_active = 0;
 #ifdef LOG_FULL
         cout << "Intervals active: ";
@@ -1678,7 +1678,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
         }
 
       template <class image_t>
-        double Recut<image_t>::process_interval(
+        std::atomic<double> Recut<image_t>::process_interval(
             VID_t interval_id, const image_t *tile, std::string stage,
             const TileThresholds<image_t> *tile_thresholds) {
 
@@ -1687,6 +1687,12 @@ template <class image_t> void Recut<image_t>::setup_radius() {
           VID_t interval_block_size = grid.GetNBlocks();
           double no_io_time;
           no_io_time = 0.0;
+
+          // only load the intervals that are not already mapped or have been read
+          // already calling load when already present will throw
+          if (!(grid.GetInterval(interval_id)->IsInMemory())) {
+            grid.GetInterval(interval_id)->LoadFromDisk();
+          }
 
           // iterations over blocks
           // if there is a single block per interval than this while
@@ -1758,7 +1764,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
 
 #else // OMP strategy
 
-#ifdef USE_OMP
+#ifdef USE_OMP_BLOCK
 #pragma omp parallel for
 #endif
             for (VID_t block_id = 0; block_id < interval_block_size; ++block_id) {
@@ -1783,7 +1789,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
             //}
             //#else
 
-#ifdef USE_OMP
+#ifdef USE_OMP_BLOCK
 #pragma omp parallel for
 #endif
             for (VID_t block_id = 0; block_id < interval_block_size; ++block_id) {
@@ -1979,7 +1985,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
             TileThresholds<image_t> *tile_thresholds) {
           // init all timers
           struct timespec update_start_time, update_finish_time;
-          double global_no_io_time;
+          atomic<double> global_no_io_time;
           global_no_io_time = 0.0;
 
           VID_t grid_interval_size = grid.GetNIntervals();
@@ -1989,95 +1995,71 @@ template <class image_t> void Recut<image_t>::setup_radius() {
 #endif
           clock_gettime(CLOCK_REALTIME, &update_start_time);
 
-          bound_band = 0; // for restart
-          // VID_t final_inner_iter = 0;
-          VID_t outer_iteration_idx = 0;
-          VID_t interval_id = 0;
-
-          // begin processing all intervals
-          // note this is a while since, intervals can be
-          // reactivated, loop will continue until all intervals
-          // are finished, see check_intervals_finish()
           // Main march for loop
-          while (true) {
+          // continue iterating until all intervals are finished
+          // intervals can be (re)activated by neighboring intervals
+          bound_band = 0; // for restart
+          int outer_iteration_idx;
+          for (outer_iteration_idx=0; !are_intervals_finished(); outer_iteration_idx++) {
 
-            // Manage iterations at interval level
-            if (check_intervals_finish()) {
-              break;
-            }
-
-            // only start intervals that have active processing to do
-            if (grid.GetInterval(interval_id)->IsActive()) {
-
-#ifdef LOG
-              struct timespec interval_start, interval_load;
-              clock_gettime(CLOCK_REALTIME, &interval_start);
+            // loop through all possible intervals
+#ifdef USE_OMP_INTERVAL
+#pragma omp parallel for
 #endif
+            for (int interval_id=0; interval_id < grid.GetNIntervals(); interval_id++) {
+              // only start intervals that have active processing to do
+              if (grid.GetInterval(interval_id)->IsActive()) {
 
-              // only load the intervals that are not already mapped or have been read
-              // already calling load when already present will throw
-              if (!(grid.GetInterval(interval_id)->IsInMemory())) {
-                grid.GetInterval(interval_id)->LoadFromDisk();
-              }
+                image_t *tile;
+                // tile_thresholds defaults to nullptr
+                // local_tile_thresholds will be set explicitly
+                // if user did not pass in valid tile_thresholds value
+                TileThresholds<image_t>* local_tile_thresholds = tile_thresholds;
 
-#ifdef LOG
-              clock_gettime(CLOCK_REALTIME, &interval_load);
-              cout << "Load interval " << interval_id << " in "
-                << diff_time(interval_start, interval_load) << " sec." << '\n';
-#endif
-
-              image_t *tile;
-              // tile_thresholds defaults to nullptr
-              // local_tile_thresholds will be set explicitly
-              // if user did not pass in valid tile_thresholds value
-              TileThresholds<image_t>* local_tile_thresholds = tile_thresholds;
-
-              // pre-generated images are for testing, or when an outside
-              // library wants to pass input images instead
-              if (this->params->force_regenerate_image) {
-                assertm(this->generated_image,
-                    "Image not generated or set by intialize");
-                tile = this->generated_image;
-                // allows users to input a tile thresholds object when
-                // calling to update
-                if (!local_tile_thresholds) {
-                  // note these default thresholds apply to any generated image
-                  // thus they will only be replaced if we're reading a real image
-                  local_tile_thresholds = new TileThresholds<image_t>(2, 0, 0);
+                // pre-generated images are for testing, or when an outside
+                // library wants to pass input images instead
+                if (this->params->force_regenerate_image) {
+                  assertm(this->generated_image,
+                      "Image not generated or set by intialize");
+                  tile = this->generated_image;
+                  // allows users to input a tile thresholds object when
+                  // calling to update
+                  if (!local_tile_thresholds) {
+                    // note these default thresholds apply to any generated image
+                    // thus they will only be replaced if we're reading a real image
+                    local_tile_thresholds = new TileThresholds<image_t>(2, 0, 0);
+                  }
                 }
-              }
 
 #ifdef USE_MCP3D
-              mcp3d::MImage
-                mcp3d_tile; // prevent destruction before calling process_interval
-              // tile is only needed for the value stage
-              if (stage == "value") {
-                if (!(this->params->force_regenerate_image)) {
-                  // mcp3d_tile must be kept in scope during the processing
-                  // of this interval otherwise dangling reference then seg fault
-                  // on image access
-                  load_tile(interval_id, mcp3d_tile);
-                  if (!local_tile_thresholds) {
-                    local_tile_thresholds = get_tile_thresholds(mcp3d_tile);
+                mcp3d::MImage
+                  mcp3d_tile; // prevent destruction before calling process_interval
+                // tile is only needed for the value stage
+                if (stage == "value") {
+                  if (!(this->params->force_regenerate_image)) {
+                    // mcp3d_tile must be kept in scope during the processing
+                    // of this interval otherwise dangling reference then seg fault
+                    // on image access
+                    load_tile(interval_id, mcp3d_tile);
+                    if (!local_tile_thresholds) {
+                      local_tile_thresholds = get_tile_thresholds(mcp3d_tile);
+                    }
+                    tile = mcp3d_tile.Volume<image_t>(0);
                   }
-                  tile = mcp3d_tile.Volume<image_t>(0);
                 }
-              }
 #else
-              if (!(this->params->force_regenerate_image)) {
-                assertm(false, "If USE_MCP3D macro is not set, "
-                    "this->params->force_regenerate_image must be set to True");
-              }
+                if (!(this->params->force_regenerate_image)) {
+                  assertm(false, "If USE_MCP3D macro is not set, "
+                      "this->params->force_regenerate_image must be set to True");
+                }
 #endif
 
-              global_no_io_time +=
-                process_interval(interval_id, tile, stage, local_tile_thresholds);
-            } // if the interval is active
+                global_no_io_time = global_no_io_time +
+                  process_interval(interval_id, tile, stage, local_tile_thresholds);
+              } // if the interval is active
 
-            // rotate interval number until all finished
-            interval_id = (interval_id + 1) % grid_interval_size;
-            outer_iteration_idx++;
-          } // end while for all active intervals
+            } // end one interval traversal
+          } // finished all intervals
           clock_gettime(CLOCK_REALTIME, &update_finish_time);
 
 #ifdef LOG

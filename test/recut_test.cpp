@@ -1248,7 +1248,7 @@ INSTANTIATE_TEST_CASE_P(
       , std::make_tuple(8, 4, 4, 6, 100., false, true) // 10
 #ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for
       // benchmarks
-      , std::make_tuple(2048, 128, 128, 6, 1, false, false)
+      , std::make_tuple(256, 128, 128, 6, 1, false, true)
   // , std::make_tuple(256, 256, 128, 4, 1, false, true) // 12
   // , std::make_tuple(256, 256, 256, 4, 1, false, true) // 13
   // , std::make_tuple(512, 512, 32, 4, 1, false, true) // 14
