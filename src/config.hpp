@@ -47,7 +47,7 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 #define USE_MCP3D
 
 // Note you can't have both OMP_BLOCK and OMP_INTERVAL defined
-#define USE_OMP_INTERVAL
+//#define USE_OMP_INTERVAL
 //#define USE_OMP_BLOCK
 
 // Parallel strategies other than OMP defined here
@@ -71,4 +71,7 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 // take a long time to complete
 // during normal development this should be off
 // and all tests should run in under 2s
-#define TEST_ALL_BENCHMARKS
+//#define TEST_ALL_BENCHMARKS
+
+//#define NO_INTERVAL_RV
+//#define SCHEDULE_INTERVAL_RV
