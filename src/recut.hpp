@@ -26,6 +26,17 @@
 #include <omp.h>
 #endif
 
+struct InstrumentedUpdateStatistics {
+  int iterations;
+  double total_time;
+  double computation_time;
+  double io_time;
+
+  InstrumentedUpdateStatistics(int iterations, double total_time, double computation_time, double io_time)
+    : iterations(iterations), total_time(total_time), computation_time(computation_time), io_time(io_time) {}
+
+};
+
 class Grid;
 template <class image_t> class Recut {
   public:
@@ -199,7 +210,7 @@ template <class image_t> class Recut {
     std::atomic<double> process_interval(VID_t interval_id, const image_t *tile,
         std::string stage,
         const TileThresholds<image_t> *tile_thresholds);
-    double update(std::string stage,
+    std::unique_ptr<InstrumentedUpdateStatistics> update(std::string stage,
         TileThresholds<image_t> *tile_thresholds = nullptr);
     std::vector<VID_t> initialize();
     template <typename vertex_t> void finalize(vector<vertex_t> &outtree);
@@ -1487,7 +1498,6 @@ template <class image_t> void Recut<image_t>::setup_radius() {
                 // ghost region
               } else {
                 current = dummy_min; // set as root and copy members
-                cout << "set root at " << *current << '\n';
                 assert(current->root());
                 assertm(current->value == 0, "root value not set properly");
               }
@@ -1822,7 +1832,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
           clock_gettime(CLOCK_REALTIME, &postsave_time);
 
           no_io_time = diff_time(start_iter_loop_time, presave_time);
-          // global_no_io_time += no_io_time;
+          // computation_time += no_io_time;
 #ifdef LOG_FULL
           cout << "Interval: " << interval_id << " (no I/O) within " << no_io_time
             << " sec." << '\n';
@@ -1981,14 +1991,21 @@ template <class image_t> void Recut<image_t>::setup_radius() {
       // of nullptr, see the declaration of update in the
       // class body
       template <class image_t>
-        double Recut<image_t>::update(std::string stage,
+        std::unique_ptr<InstrumentedUpdateStatistics> Recut<image_t>::update(std::string stage,
             TileThresholds<image_t> *tile_thresholds) {
           // init all timers
           struct timespec update_start_time, update_finish_time;
-          atomic<double> global_no_io_time;
-          global_no_io_time = 0.0;
-
+          atomic<double> computation_time;
+          computation_time = 0.0;
           VID_t grid_interval_size = grid.GetNIntervals();
+#ifdef NO_INTERVAL_RV
+          auto visited_intervals = std::make_unique<bool[]>(grid_interval_size);
+#endif
+#ifdef SCHEDULE_INTERVAL_RV
+          auto visited_intervals = std::make_unique<bool[]>(grid_interval_size);
+          auto locked_intervals = std::make_unique<bool[]>(grid_interval_size);
+          auto schedule_intervals = std::make_unique<int[]>(grid_interval_size);
+#endif
 
 #ifdef LOG
           cout << "Start updating stage " << stage << '\n';
@@ -2009,6 +2026,50 @@ template <class image_t> void Recut<image_t>::setup_radius() {
             for (int interval_id=0; interval_id < grid.GetNIntervals(); interval_id++) {
               // only start intervals that have active processing to do
               if (grid.GetInterval(interval_id)->IsActive()) {
+
+#ifdef NO_INTERVAL_RV
+                // forbid all re-opening tile/interval to check performance
+                if (visited_intervals[interval_id]) {
+                  grid.GetInterval(interval_id)->SetActive(false);
+                  continue;
+                } else {
+                  visited_intervals[interval_id] = true;
+                }
+#endif
+
+#ifdef SCHEDULE_INTERVAL_RV
+                // number of iterations to wait before a visited
+                // interval can do a final set of processing
+                auto scheduling_iteration_delay = 2;
+                if (locked_intervals[interval_id]) {
+                  grid.GetInterval(interval_id)->SetActive(false);
+                  continue;
+                }
+                // only visited_intervals need to be explicitly
+                // scheduled
+                if (visited_intervals[interval_id] && schedule_intervals[interval_id] != outer_iteration_idx) {
+                  // keep it active so that it is processed when it
+                  // is scheduled
+                  continue;
+                }
+
+                // otherwise process this interval
+                // TODO still need to schedule_intervals initialize
+                if (visited_intervals[interval_id]) {
+                  // this interval_id will not be processed again
+                  // so ignore it's scheduling
+                  locked_intervals[interval_id] = true;
+                } else {
+                  visited_intervals[interval_id] = true;
+                  // in 2 iterations, all of the intervals that it
+                  // activated will have been processed
+                  // this is an approximation of scheduling once
+                  // all neighbors have been processed
+                  // in reality it's not clear when all neighbors
+                  // of this interval_id will have been processed
+                  schedule_intervals[interval_id] = outer_iteration_idx + scheduling_iteration_delay;
+                }
+#endif
 
                 image_t *tile;
                 // tile_thresholds defaults to nullptr
@@ -2054,22 +2115,13 @@ template <class image_t> void Recut<image_t>::setup_radius() {
                 }
 #endif
 
-                global_no_io_time = global_no_io_time +
+                computation_time = computation_time +
                   process_interval(interval_id, tile, stage, local_tile_thresholds);
               } // if the interval is active
 
             } // end one interval traversal
           } // finished all intervals
           clock_gettime(CLOCK_REALTIME, &update_finish_time);
-
-#ifdef LOG
-          cout << "Finished total updating within "
-            << diff_time(update_start_time, update_finish_time) << " sec." << '\n';
-          cout << "Finished marching (no I/O) within " << global_no_io_time << " sec."
-            << '\n';
-          cout << "Total interval iterations: " << outer_iteration_idx << '\n';
-          //", block iterations: "<< final_inner_iter + 1<< '\n';
-#endif
 
 #ifdef RV
           cout << "Total ";
@@ -2079,7 +2131,17 @@ template <class image_t> void Recut<image_t>::setup_radius() {
           cout << " revisits: " << global_revisits << " vertices" << '\n';
 #endif
 
-          return global_no_io_time;
+#ifdef LOG
+          auto total_update_time = diff_time(update_start_time, update_finish_time);
+          auto io_time = total_update_time - computation_time;
+          cout << "Finished total updating within " << total_update_time << " sec \n";
+          cout << "Finished computation (no I/O) within " << computation_time << " sec \n";
+          cout << "Finished I/O within " << io_time << " sec \n";
+          cout << "Total interval iterations: " << outer_iteration_idx << '\n';
+          //", block iterations: "<< final_inner_iter + 1<< '\n';
+#endif
+
+          return std::make_unique<InstrumentedUpdateStatistics>(outer_iteration_idx, total_update_time, computation_time, io_time);
         } // end update()
 
       /* get the vid with respect to the entire image passed to the
@@ -2626,7 +2688,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
         void Recut<image_t>::finalize(vector<vertex_t> &outtree) {
 
           struct timespec time0, time1;
-#ifdef LOG
+#ifdef FULL_PRINT
           cout << "Generating results." << '\n';
 #endif
           clock_gettime(CLOCK_REALTIME, &time0);
@@ -2672,7 +2734,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
                 grid.GetInterval(interval_id)->Release();
             }
           } else if (is_same<vertex_t, MyMarker *>::value) {
-#ifdef LOG
+#ifdef FULL_PRINT
             cout << "Using MyMarker* type outtree" << '\n';
 #endif
             // FIXME terrible performance
@@ -2729,7 +2791,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
               // keep everything mmapped until all processing/reading is done
               if ( ! (this->mmap_))
                 grid.GetInterval(interval_id)->Release();
-#ifdef LOG_FULL
+#ifdef FULL_PRINT
               cout << "Total marker size : " << outtree.size() << " after interval "
                 << interval_id << '\n';
 #endif
@@ -2778,7 +2840,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
 #endif
 
           clock_gettime(CLOCK_REALTIME, &time1);
-#ifdef LOG
+#ifdef FULL_PRINT
           cout << "Finished generating results within " << diff_time(time0, time1)
             << " sec." << '\n';
 #endif
