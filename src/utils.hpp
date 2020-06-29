@@ -553,8 +553,7 @@ void read_tiff(std::string fn, std::vector<int> image_offsets,
     image.SelectView(block, 0);
     image.ReadData(true, "quiet");
   } catch (...) {
-    MCP3D_MESSAGE("error in image io. neuron tracing not performed")
-      throw;
+    assertm(false, "error in image io. neuron tracing not performed");
   }
 }
 #endif

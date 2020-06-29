@@ -567,9 +567,12 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
   // Note this will delete anything in the
   // same directory before writing
   // tcase 5 is deprecated
-  std::vector<int> grid_sizes = {2, 4, 8, 16, 32, 64, 128, 256, 512};
-  std::vector<int> testcases = {4, 3, 2, 1, 0};
-  std::vector<double> selected_percents = {1, 10, 50, 100};
+  //std::vector<int> grid_sizes = {2, 4, 8, 16, 32, 64, 128, 256, 512};
+  //std::vector<int> testcases = {4, 3, 2, 1, 0};
+  //std::vector<double> selected_percents = {1, 10, 50, 100};
+  std::vector<int> grid_sizes = {512, 1024};
+  std::vector<int> testcases = {0};
+  std::vector<double> selected_percents = {100};
 
   for (auto &grid_size : grid_sizes) {
     cout << "Create grids of " << grid_size << endl;
@@ -1114,12 +1117,43 @@ class RecutPipelineParameterTests
   std::tuple<int, int, int, int, double, bool, bool>> {};
 
 TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
+  // record_property_pp_macros
+#ifdef NO_INTERVAL_RV
+  RecordProperty("NO_INTERVAL_RV", 1);
+#endif
+#ifdef SCHEDULE_INTERVAL_RV
+  RecordProperty("SCHEDULE_INTERVAL_RV", 1);
+#endif
+#ifdef USE_OMP_BLOCK
+  RecordProperty("USE_OMP_BLOCK", 1);
+#endif
+#ifdef USE_OMP_INTERVAL
+  RecordProperty("USE_OMP_INTERVAL", 1);
+#endif
+#ifdef MMAP
+  RecordProperty("MMAP", 1);
+#endif
+#ifdef NO_RV
+  RecordProperty("NO_RV", 1);
+#endif
+#ifdef CONCURRENT_MAP
+  RecordProperty("CONCURRENT_MAP", 1);
+#endif
+#ifdef FULL_PRINT
+  RecordProperty("FULL_PRINT", 1);
+#endif
+
   // documents the meaning of each tuple member
   auto grid_size = std::get<0>(GetParam());
+  RecordProperty("grid_size", grid_size);
   auto interval_size = std::get<1>(GetParam());
+  RecordProperty("interval_size", interval_size);
   auto block_size = std::get<2>(GetParam());
+  RecordProperty("block_size", block_size);
   auto tcase = std::get<3>(GetParam());
+  RecordProperty("tcase", tcase);
   double slt_pct = std::get<4>(GetParam());
+  RecordProperty("slt_pct", slt_pct);
   bool check_against_selected = std::get<5>(GetParam());
   bool check_against_sequential = std::get<6>(GetParam());
   // regenerating image is random and done at run time
@@ -1158,7 +1192,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     //tile_thresholds = recut.get_tile_thresholds(image);
     // bkg_thresh table: 421 ~.01 foreground
     // if any pixels are found above or below these values it will fail
-    tile_thresholds = new TileThresholds<uint16_t>(10000, 0, 421);
+    tile_thresholds = new TileThresholds<uint16_t>(30000, 0, 421);
   } else {
     // note these default thresholds apply to any generated image
     // thus they will only be replaced if we're reading a real image
@@ -1169,12 +1203,24 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   RecordProperty("min_int", tile_thresholds->min_int);
 
   // update with fixed tile_thresholds for the entire update
-  double recut_update_value_elapsed = recut.update("value", tile_thresholds);
+  auto update_stats = recut.update("value", tile_thresholds);
 
   recut.finalize(args.output_tree); // this fills args.output_tree
-  cout << "recut update no IO elapsed (s)" << recut_update_value_elapsed
-    << '\n';
-  RecordProperty("recut update no IO elapsed (s)", recut_update_value_elapsed);
+  //cout << "recut update no IO elapsed (s)" << recut_update_value_elapsed << '\n';
+  double actual_slt_pct =
+    (100. * args.output_tree.size()) / (grid_size * grid_size * grid_size);
+  cout << "Selected " << actual_slt_pct << "% of pixels\n";
+  RecordProperty("actual_slt_pct", actual_slt_pct);
+  RecordProperty("total selected vertices", args.output_tree.size());
+  RecordProperty("selected vertices / total time", args.output_tree.size() / update_stats->total_time);
+  RecordProperty("selected vertices / computation time", args.output_tree.size() / update_stats->computation_time);
+  RecordProperty("selected vertices / io time", args.output_tree.size() / update_stats->io_time);
+  RecordProperty("iterations", update_stats->iterations);
+  RecordProperty("recut update no IO computation_time (s)", update_stats->computation_time);
+  RecordProperty("recut update io_time (s)", update_stats->io_time);
+  RecordProperty("recut update total_time (s)", update_stats->total_time);
+  RecordProperty("recut update computation_time / io_time ratio", update_stats->computation_time / update_stats->io_time);
+  RecordProperty("grid / interval ratio", grid_size / interval_size);
 
   // pregenerated data has a known number of selected
   // pixels
@@ -1213,14 +1259,10 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     // recut.print_grid("label");
     //}
 
-    double actual_slt_pct =
-      (100. * args.output_tree.size()) / (grid_size * grid_size * grid_size);
-    RecordProperty("actual_slt_pct", actual_slt_pct);
-    cout << "Selected "
-      << (100. * args.output_tree.size()) /
-      (grid_size * grid_size * grid_size)
-      << "% of pixels\n";
-
+    RecordProperty("sequential fastmarching tree size", sequential_output_tree.size());
+    auto diff = absdiff(sequential_output_tree.size(), args.output_tree.size());
+    RecordProperty("total vertex difference vs sequential value", diff);
+    RecordProperty("vertex difference fraction", diff / sequential_output_tree.size());
     ASSERT_EQ(sequential_output_tree.size(), args.output_tree.size());
   }
 }
@@ -1247,8 +1289,31 @@ INSTANTIATE_TEST_CASE_P(
       // real data multi-interval
       , std::make_tuple(8, 4, 4, 6, 100., false, true) // 10
 #ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for
-      // benchmarks
+      , std::make_tuple(128, 64, 64, 6, 1, false, true)
       , std::make_tuple(256, 128, 128, 6, 1, false, true)
+  , std::make_tuple(512, 256, 256, 6, 1, false, true)
+  , std::make_tuple(1024, 512, 512, 6, 1, false, true)
+  , std::make_tuple(2048, 1024, 1024, 6, 1, false, false) // out of memory for fastmarching_tree
+  , std::make_tuple(4096, 2048, 2048, 6, 1, false, false)
+, std::make_tuple(8192, 4096, 4096, 6, 1, false, false)
+
+  , std::make_tuple(128, 32, 32, 6, 1, false, true)
+  , std::make_tuple(256, 64, 64, 6, 1, false, true)
+  , std::make_tuple(512, 128, 128, 6, 1, false, true)
+  , std::make_tuple(1024, 256, 256, 6, 1, false, true)
+  , std::make_tuple(2048, 512, 512, 6, 1, false, false)
+  , std::make_tuple(4096, 1024, 1024, 6, 1, false, false)
+, std::make_tuple(8192, 2048, 2048, 6, 1, false, false)
+
+  , std::make_tuple(128, 16, 16, 6, 1, false, true)
+  , std::make_tuple(256, 32, 32, 6, 1, false, true)
+  , std::make_tuple(512, 64, 64, 6, 1, false, true)
+  , std::make_tuple(1024, 128, 128, 6, 1, false, true)
+  , std::make_tuple(2048, 256, 256, 6, 1, false, false)
+  , std::make_tuple(4096, 512, 512, 6, 1, false, false)
+, std::make_tuple(8192, 1024, 1024, 6, 1, false, false)
+  //, std::make_tuple(2048, 128, 128, 6, 1, false, true) // 11, estimate 32 mins
+  //, std::make_tuple(8048, 128, 128, 6, 1, false, true) // 11, estimate 8 hours
   // , std::make_tuple(256, 256, 128, 4, 1, false, true) // 12
   // , std::make_tuple(256, 256, 256, 4, 1, false, true) // 13
   // , std::make_tuple(512, 512, 32, 4, 1, false, true) // 14
