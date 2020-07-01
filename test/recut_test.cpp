@@ -1210,17 +1210,17 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   double actual_slt_pct =
     (100. * args.output_tree.size()) / (grid_size * grid_size * grid_size);
   cout << "Selected " << actual_slt_pct << "% of pixels\n";
-  RecordProperty("actual_slt_pct", actual_slt_pct);
-  RecordProperty("total selected vertices", args.output_tree.size());
-  RecordProperty("selected vertices / total time", args.output_tree.size() / update_stats->total_time);
-  RecordProperty("selected vertices / computation time", args.output_tree.size() / update_stats->computation_time);
-  RecordProperty("selected vertices / io time", args.output_tree.size() / update_stats->io_time);
-  RecordProperty("iterations", update_stats->iterations);
-  RecordProperty("recut update no IO computation_time (s)", update_stats->computation_time);
+  RecordProperty("Foreground (%)", actual_slt_pct);
+  RecordProperty("Foreground", args.output_tree.size());
+  RecordProperty("Selected vertices / total time", args.output_tree.size() / update_stats->total_time);
+  RecordProperty("Selected vertices / computation time", args.output_tree.size() / update_stats->computation_time);
+  RecordProperty("Selected vertices / io time", args.output_tree.size() / update_stats->io_time);
+  RecordProperty("Iterations", update_stats->iterations);
+  RecordProperty("Computation time (s)", update_stats->computation_time);
   RecordProperty("recut update io_time (s)", update_stats->io_time);
   RecordProperty("recut update total_time (s)", update_stats->total_time);
   RecordProperty("recut update computation_time / io_time ratio", update_stats->computation_time / update_stats->io_time);
-  RecordProperty("grid / interval ratio", grid_size / interval_size);
+  RecordProperty("Grid / interval ratio", grid_size / interval_size);
 
   // pregenerated data has a known number of selected
   // pixels
@@ -1251,7 +1251,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
     cout << "sequential fastmarching elapsed (s)" << timer->elapsed() << '\n';
     // warning record property will auto cast to an int
-    RecordProperty("sequential fastmarching elapsed (s)", timer->elapsed());
+    RecordProperty("Sequential elapsed (s)", timer->elapsed());
 
     //// would have to keep interval in memory for this to work
     // if ( sequential_output_tree.size() != args.output_tree.size()) {
@@ -1259,10 +1259,10 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     // recut.print_grid("label");
     //}
 
-    RecordProperty("sequential fastmarching tree size", sequential_output_tree.size());
+    RecordProperty("Sequential tree size", sequential_output_tree.size());
     auto diff = absdiff(sequential_output_tree.size(), args.output_tree.size());
-    RecordProperty("total vertex difference vs sequential value", diff);
-    RecordProperty("vertex difference fraction", diff / sequential_output_tree.size());
+    RecordProperty("Error", diff);
+    RecordProperty("Error rate (%)", diff / sequential_output_tree.size());
     ASSERT_EQ(sequential_output_tree.size(), args.output_tree.size());
   }
 }
@@ -1289,29 +1289,29 @@ INSTANTIATE_TEST_CASE_P(
       // real data multi-interval
       , std::make_tuple(8, 4, 4, 6, 100., false, true) // 10
 #ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for
-      , std::make_tuple(128, 64, 64, 6, 1, false, true)
-      , std::make_tuple(256, 128, 128, 6, 1, false, true)
-  , std::make_tuple(512, 256, 256, 6, 1, false, true)
-  , std::make_tuple(1024, 512, 512, 6, 1, false, true)
+      , std::make_tuple(128, 64, 64, 6, 1, false, true) // 11
+      , std::make_tuple(256, 128, 128, 6, 1, false, true) // 12
+  , std::make_tuple(512, 256, 256, 6, 1, false, true) // 13
+  , std::make_tuple(1024, 512, 512, 6, 1, false, true) // 14
   , std::make_tuple(2048, 1024, 1024, 6, 1, false, false) // out of memory for fastmarching_tree
-  , std::make_tuple(4096, 2048, 2048, 6, 1, false, false)
-, std::make_tuple(8192, 4096, 4096, 6, 1, false, false)
+  , std::make_tuple(4096, 2048, 2048, 6, 1, false, false) // 16
+, std::make_tuple(8192, 4096, 4096, 6, 1, false, false) // 17
 
-  , std::make_tuple(128, 32, 32, 6, 1, false, true)
+  , std::make_tuple(128, 32, 32, 6, 1, false, true) // 18
   , std::make_tuple(256, 64, 64, 6, 1, false, true)
   , std::make_tuple(512, 128, 128, 6, 1, false, true)
   , std::make_tuple(1024, 256, 256, 6, 1, false, true)
   , std::make_tuple(2048, 512, 512, 6, 1, false, false)
   , std::make_tuple(4096, 1024, 1024, 6, 1, false, false)
-, std::make_tuple(8192, 2048, 2048, 6, 1, false, false)
+, std::make_tuple(8192, 2048, 2048, 6, 1, false, false) // 24
 
-  , std::make_tuple(128, 16, 16, 6, 1, false, true)
+  , std::make_tuple(128, 16, 16, 6, 1, false, true) // 25
   , std::make_tuple(256, 32, 32, 6, 1, false, true)
   , std::make_tuple(512, 64, 64, 6, 1, false, true)
   , std::make_tuple(1024, 128, 128, 6, 1, false, true)
   , std::make_tuple(2048, 256, 256, 6, 1, false, false)
   , std::make_tuple(4096, 512, 512, 6, 1, false, false)
-, std::make_tuple(8192, 1024, 1024, 6, 1, false, false)
+, std::make_tuple(8192, 1024, 1024, 6, 1, false, false) // 31 // 31
   //, std::make_tuple(2048, 128, 128, 6, 1, false, true) // 11, estimate 32 mins
   //, std::make_tuple(8048, 128, 128, 6, 1, false, true) // 11, estimate 8 hours
   // , std::make_tuple(256, 256, 128, 4, 1, false, true) // 12
