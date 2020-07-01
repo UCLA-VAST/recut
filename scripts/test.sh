@@ -11,13 +11,20 @@ do
   echo "#define $flag" >> $config_fn
 
   # buildPhase
-  cd ../build && make -j 56 && make install -j 56
+  #cd ../build && make -j 56 && make install -j 56
 
   # runPhase
-  for $test_num in {11..32}
+  # 2 hour timout
+  to_seconds=7200
+  cd ../bin
+  for test_num in {11..32}
   do
     name=recut-test-$flag-$test_num
-    cd ../bin && ./recut_test --gtest_output=json:../data/$name.json --gtest_filter=*.ChecksIfFinalVerticesCorrect/$test_num | tee ../data/$name.log
+    # if it already exists
+    if [ ! -f ../data/$name.json ]; then
+      echo "File ../data/${name}.json not found"
+      # timeout $to_seconds ./recut_test --gtest_output=json:../data/$name.json --gtest_filter=*.ChecksIfFinalVerticesCorrect/$test_num | tee ../data/$name.log
+    fi
   done
 
   # clean up, removing last appended line from above
