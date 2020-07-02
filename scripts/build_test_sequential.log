@@ -1,0 +1,11 @@
+ALL
+[  6%] Built target gtest
+[ 51%] Built target gtest_main
+[ 69%] Built target benchmark
+[ 75%] Built target benchmark_main
+Scanning dependencies of target recut_test
+Scanning dependencies of target recut_bench
+[ 81%] Building CXX object CMakeFiles/recut_bench.dir/bench/recut_bench.cpp.o
+[ 81%] Building CXX object CMakeFiles/recut_test.dir/test/recut_test.cpp.o
+[ 84%] Linking CXX executable recut_bench
+[ 90%] Built target recut_bench

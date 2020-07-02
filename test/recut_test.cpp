@@ -567,9 +567,12 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
   // Note this will delete anything in the
   // same directory before writing
   // tcase 5 is deprecated
-  std::vector<int> grid_sizes = {2, 4, 8, 16, 32, 64, 128, 256, 512};
-  std::vector<int> testcases = {4, 3, 2, 1, 0};
-  std::vector<double> selected_percents = {1, 10, 50, 100};
+  //std::vector<int> grid_sizes = {2, 4, 8, 16, 32, 64, 128, 256, 512};
+  //std::vector<int> testcases = {4, 3, 2, 1, 0};
+  //std::vector<double> selected_percents = {1, 10, 50, 100};
+  std::vector<int> grid_sizes = {512, 1024};
+  std::vector<int> testcases = {0};
+  std::vector<double> selected_percents = {100};
 
   for (auto &grid_size : grid_sizes) {
     cout << "Create grids of " << grid_size << endl;
@@ -678,7 +681,8 @@ TEST(Image, ReadWrite) {
   uint16_t *inimg1d = new uint16_t[tol_sz];
   create_image(tcase, inimg1d, grid_size, selected, get_central_vid(grid_size));
   write_tiff(inimg1d, fn, grid_size);
-  auto check = read_tiff(fn, image_offsets, image_extents);
+  mcp3d::MImage check, check3;
+  read_tiff(fn, image_offsets, image_extents, check);
   // print_image(check, grid_size * grid_size * grid_size);
   ASSERT_NO_FATAL_FAILURE(
       check_image_equality(inimg1d, check.Volume<uint16_t>(0), grid_size));
@@ -690,7 +694,7 @@ TEST(Image, ReadWrite) {
   recut();
 
   // check again
-  auto check3 = read_tiff(fn, image_offsets, image_extents);
+  read_tiff(fn, image_offsets, image_extents, check3);
   ASSERT_NO_FATAL_FAILURE(
       check_image_equality(inimg1d, check3.Volume<uint16_t>(0), grid_size));
 
@@ -878,16 +882,17 @@ TEST(TileThresholds, AllTcases) {
     auto inimg1d = std::make_unique<uint16_t[]>(grid_vertex_size);
     auto tile_thresholds = new TileThresholds<uint16_t>();
     uint16_t bkg_thresh;
+    mcp3d::MImage image;
 
     if (tcase == 6) {
-      auto image = read_tiff(args.image_root_dir(), args.image_offsets,
-          args.image_extents);
+      read_tiff(args.image_root_dir(), args.image_offsets, args.image_extents,
+          image);
       if (print_image) {
         print_image_3D(image.Volume<uint16_t>(0),
             {grid_size, grid_size, grid_size});
       }
       bkg_thresh = recut.get_bkg_threshold(image.Volume<uint16_t>(0),
-          grid_vertex_size, slt_pct);
+          grid_vertex_size, slt_pct / 100.);
       tile_thresholds->get_max_min(image.Volume<uint16_t>(0), grid_vertex_size);
 
     } else {
@@ -895,7 +900,7 @@ TEST(TileThresholds, AllTcases) {
           get_central_vid(grid_size));
       print_image_3D(inimg1d.get(), {grid_size, grid_size, grid_size});
       bkg_thresh =
-        recut.get_bkg_threshold(inimg1d.get(), grid_vertex_size, slt_pct);
+        recut.get_bkg_threshold(inimg1d.get(), grid_vertex_size, slt_pct / 100.);
       tile_thresholds->get_max_min(inimg1d.get(), grid_vertex_size);
     }
 
@@ -1112,15 +1117,49 @@ class RecutPipelineParameterTests
   std::tuple<int, int, int, int, double, bool, bool>> {};
 
 TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
+  // record_property_pp_macros
+#ifdef NO_INTERVAL_RV
+  RecordProperty("NO_INTERVAL_RV", 1);
+#endif
+#ifdef SCHEDULE_INTERVAL_RV
+  RecordProperty("SCHEDULE_INTERVAL_RV", 1);
+#endif
+#ifdef USE_OMP_BLOCK
+  RecordProperty("USE_OMP_BLOCK", 1);
+#endif
+#ifdef USE_OMP_INTERVAL
+  RecordProperty("USE_OMP_INTERVAL", 1);
+#endif
+#ifdef MMAP
+  RecordProperty("MMAP", 1);
+#endif
+#ifdef NO_RV
+  RecordProperty("NO_RV", 1);
+#endif
+#ifdef CONCURRENT_MAP
+  RecordProperty("CONCURRENT_MAP", 1);
+#endif
+#ifdef FULL_PRINT
+  RecordProperty("FULL_PRINT", 1);
+#endif
+
   // documents the meaning of each tuple member
   auto grid_size = std::get<0>(GetParam());
+  RecordProperty("grid_size", grid_size);
   auto interval_size = std::get<1>(GetParam());
+  RecordProperty("interval_size", interval_size);
   auto block_size = std::get<2>(GetParam());
+  RecordProperty("block_size", block_size);
   auto tcase = std::get<3>(GetParam());
+  RecordProperty("tcase", tcase);
   double slt_pct = std::get<4>(GetParam());
+  RecordProperty("slt_pct", slt_pct);
   bool check_against_selected = std::get<5>(GetParam());
   bool check_against_sequential = std::get<6>(GetParam());
-  bool force_regenerate_image = tcase == 6 ? false : true;
+  // regenerating image is random and done at run time
+  // if you were to set to true tcase 4 would have a mismatch
+  // with the loaded image
+  bool force_regenerate_image = false;
 
   // shared params
   auto args = get_args(
@@ -1136,18 +1175,24 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   root_vids = recut.initialize();
   recut.setup_value(root_vids);
 
+  mcp3d::MImage image;
+  if (check_against_sequential) {
+    read_tiff(args.image_root_dir(), args.image_offsets,
+        args.image_extents, image);
+
+    if (print_image) {
+      print_image_3D(image.Volume<uint16_t>(0),
+          {grid_size, grid_size, grid_size});
+    }
+  }
+
   // establish the tile thresholds for the entire test run (recut and
   // sequential)
   if (tcase == 6) {
-    // get tile_thresholds so they can be logged and optionally for sequential
-    mcp3d::MImage
-      mcp3d_tile; // prevent destruction before calling process_interval
-    auto interval_id = 0;
-    recut.load_tile(interval_id, mcp3d_tile);
-    // setting foreground_percent forces
-    // calculation of desired background_thresh during
-    // get_tile_thresholds
-    tile_thresholds = recut.get_tile_thresholds(mcp3d_tile);
+    //tile_thresholds = recut.get_tile_thresholds(image);
+    // bkg_thresh table: 421 ~.01 foreground
+    // if any pixels are found above or below these values it will fail
+    tile_thresholds = new TileThresholds<uint16_t>(30000, 0, 421);
   } else {
     // note these default thresholds apply to any generated image
     // thus they will only be replaced if we're reading a real image
@@ -1158,12 +1203,24 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   RecordProperty("min_int", tile_thresholds->min_int);
 
   // update with fixed tile_thresholds for the entire update
-  double recut_update_value_elapsed = recut.update("value", tile_thresholds);
+  auto update_stats = recut.update("value", tile_thresholds);
 
   recut.finalize(args.output_tree); // this fills args.output_tree
-  cout << "recut update no IO elapsed (s)" << recut_update_value_elapsed
-    << '\n';
-  RecordProperty("recut update no IO elapsed (s)", recut_update_value_elapsed);
+  //cout << "recut update no IO elapsed (s)" << recut_update_value_elapsed << '\n';
+  double actual_slt_pct =
+    (100. * args.output_tree.size()) / (grid_size * grid_size * grid_size);
+  cout << "Selected " << actual_slt_pct << "% of pixels\n";
+  RecordProperty("Foreground (%)", actual_slt_pct);
+  RecordProperty("Foreground", args.output_tree.size());
+  RecordProperty("Selected vertices / total time", args.output_tree.size() / update_stats->total_time);
+  RecordProperty("Selected vertices / computation time", args.output_tree.size() / update_stats->computation_time);
+  RecordProperty("Selected vertices / io time", args.output_tree.size() / update_stats->io_time);
+  RecordProperty("Iterations", update_stats->iterations);
+  RecordProperty("Computation time (s)", update_stats->computation_time);
+  RecordProperty("recut update io_time (s)", update_stats->io_time);
+  RecordProperty("recut update total_time (s)", update_stats->total_time);
+  RecordProperty("recut update computation_time / io_time ratio", update_stats->computation_time / update_stats->io_time);
+  RecordProperty("Grid / interval ratio", grid_size / interval_size);
 
   // pregenerated data has a known number of selected
   // pixels
@@ -1184,14 +1241,6 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
       root_markers = {get_central_root(grid_size)};
     }
 
-    auto image = read_tiff(args.image_root_dir(), args.image_offsets,
-        args.image_extents);
-
-    if (print_image) {
-      print_image_3D(image.Volume<uint16_t>(0),
-          {grid_size, grid_size, grid_size});
-    }
-
     std::vector<MyMarker *> sequential_output_tree;
     std::vector<MyMarker> targets;
     auto timer = new high_resolution_timer();
@@ -1202,7 +1251,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
     cout << "sequential fastmarching elapsed (s)" << timer->elapsed() << '\n';
     // warning record property will auto cast to an int
-    RecordProperty("sequential fastmarching elapsed (s)", timer->elapsed());
+    RecordProperty("Sequential elapsed (s)", timer->elapsed());
 
     //// would have to keep interval in memory for this to work
     // if ( sequential_output_tree.size() != args.output_tree.size()) {
@@ -1210,14 +1259,10 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     // recut.print_grid("label");
     //}
 
-    double actual_slt_pct =
-      (100. * args.output_tree.size()) / (grid_size * grid_size * grid_size);
-    RecordProperty("actual_slt_pct", actual_slt_pct);
-    cout << "Selected "
-      << (100. * args.output_tree.size()) /
-      (grid_size * grid_size * grid_size)
-      << "% of pixels\n";
-
+    RecordProperty("Sequential tree size", sequential_output_tree.size());
+    auto diff = absdiff(sequential_output_tree.size(), args.output_tree.size());
+    RecordProperty("Error", diff);
+    RecordProperty("Error rate (%)", diff / sequential_output_tree.size());
     ASSERT_EQ(sequential_output_tree.size(), args.output_tree.size());
   }
 }
@@ -1226,38 +1271,61 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 INSTANTIATE_TEST_CASE_P(
     RecutPipelineTests, RecutPipelineParameterTests,
     ::testing::Values(
-      std::make_tuple(4, 4, 4, 0, 100., true, false), // 0
-      std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
-      std::make_tuple(4, 4, 4, 2, 100., true, false), // 2
-      std::make_tuple(4, 4, 4, 3, 100., true, false), // 3
+      std::make_tuple(4, 4, 4, 0, 100., true, false) // 0
+      , std::make_tuple(4, 4, 4, 1, 100., true, false) // 1
+      , std::make_tuple(4, 4, 4, 2, 100., true, false) // 2
+      , std::make_tuple(4, 4, 4, 3, 100., true, false) // 3
+      , std::make_tuple(4, 4, 4, 4, 50., true, true) // 4
       // multi-interval small
-      std::make_tuple(4, 2, 2, 4, 50., true, false), // 4
-      std::make_tuple(4, 4, 4, 4, 50., true, true),  // 5
-      std::make_tuple(4, 4, 4, 4, 50., false, true), // 6
+      , std::make_tuple(4, 2, 2, 4, 50., true, true) // 5
+      // multi-block small
+      , std::make_tuple(4, 4, 2, 4, 50., true, true)  // 6
       // make sure if bkg_thresh is 0, all vertices are selected for real
-      std::make_tuple(4, 4, 4, 6, 100., true, true), // 7
+      , std::make_tuple(4, 4, 4, 6, 100., true, true) // 7
       // make sure fastmarching_tree and recut produce exact match for real
-      std::make_tuple(8, 8, 8, 6, 100., false, true), // 8
+      , std::make_tuple(8, 8, 8, 6, 100., false, true) // 8
       // real data multi-block
-      std::make_tuple(8, 8, 4, 6, 100., false, true), // 9
+      , std::make_tuple(8, 8, 4, 6, 100., false, true) // 9
       // real data multi-interval
-      std::make_tuple(8, 4, 8, 6, 100., false, true) // 10
+      , std::make_tuple(8, 4, 4, 6, 100., false, true) // 10
 #ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for
-      // benchmarks
-      ,
-      // std::make_tuple(256, 256, 32, 4, 1, false, true), // 11
-      // std::make_tuple(256, 256, 128, 4, 1, false, true), // 12
-      // std::make_tuple(256, 256, 256, 4, 1, false, true), // 13
-      // std::make_tuple(512, 512, 32, 4, 1, false, true), // 14
-      // std::make_tuple(512, 512, 128, 4, 1, false, true), // 15
-      // std::make_tuple(512, 512, 512, 4, 1, false, true), // 16
-      // std::make_tuple(1024, 1024, 128, 4, 1, false, true), // 17
-      // std::make_tuple(1024, 1024, 1024, 4, 1, false, true) // 18
-      // determine thresholds
-      std::make_tuple(1024, 1024, 1024, 6, 1, false, true),  // 18
-      std::make_tuple(1024, 1024, 1024, 6, 5, false, true),  // 18
-      std::make_tuple(1024, 1024, 1024, 6, 10, false, true), // 18
-      std::make_tuple(1024, 1024, 1024, 6, 15, false, true)  // 18
+      , std::make_tuple(128, 64, 64, 6, 1, false, true) // 11
+      , std::make_tuple(256, 128, 128, 6, 1, false, true) // 12
+  , std::make_tuple(512, 256, 256, 6, 1, false, true) // 13
+  , std::make_tuple(1024, 512, 512, 6, 1, false, true) // 14
+  , std::make_tuple(2048, 1024, 1024, 6, 1, false, false) // out of memory for fastmarching_tree
+  , std::make_tuple(4096, 2048, 2048, 6, 1, false, false) // 16
+, std::make_tuple(8192, 4096, 4096, 6, 1, false, false) // 17
+
+  , std::make_tuple(128, 32, 32, 6, 1, false, true) // 18
+  , std::make_tuple(256, 64, 64, 6, 1, false, true)
+  , std::make_tuple(512, 128, 128, 6, 1, false, true)
+  , std::make_tuple(1024, 256, 256, 6, 1, false, true)
+  , std::make_tuple(2048, 512, 512, 6, 1, false, false)
+  , std::make_tuple(4096, 1024, 1024, 6, 1, false, false)
+, std::make_tuple(8192, 2048, 2048, 6, 1, false, false) // 24
+
+  , std::make_tuple(128, 16, 16, 6, 1, false, true) // 25
+  , std::make_tuple(256, 32, 32, 6, 1, false, true)
+  , std::make_tuple(512, 64, 64, 6, 1, false, true)
+  , std::make_tuple(1024, 128, 128, 6, 1, false, true)
+  , std::make_tuple(2048, 256, 256, 6, 1, false, false)
+  , std::make_tuple(4096, 512, 512, 6, 1, false, false)
+, std::make_tuple(8192, 1024, 1024, 6, 1, false, false) // 31 // 31
+  //, std::make_tuple(2048, 128, 128, 6, 1, false, true) // 11, estimate 32 mins
+  //, std::make_tuple(8048, 128, 128, 6, 1, false, true) // 11, estimate 8 hours
+  // , std::make_tuple(256, 256, 128, 4, 1, false, true) // 12
+  // , std::make_tuple(256, 256, 256, 4, 1, false, true) // 13
+  // , std::make_tuple(512, 512, 32, 4, 1, false, true) // 14
+  // , std::make_tuple(512, 512, 128, 4, 1, false, true) // 15
+  // , std::make_tuple(512, 512, 512, 4, 1, false, true) // 16
+  // , std::make_tuple(1024, 1024, 128, 4, 1, false, true) // 17
+  // , std::make_tuple(1024, 1024, 1024, 4, 1, false, true) // 18
+  // determine thresholds
+  //, std::make_tuple(1024, 1024, 1024, 6, 1, false, true)  // 18
+  //, std::make_tuple(1024, 1024, 1024, 6, 5, false, true)  // 18
+  //, std::make_tuple(1024, 1024, 1024, 6, 10, false, true) // 18
+  //, std::make_tuple(1024, 1024, 1024, 6, 15, false, true)  // 18
 #endif
   ));
 
