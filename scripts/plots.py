@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[9]:
+# In[7]:
 
 
 import pandas as pd
@@ -27,6 +27,7 @@ rc('text', usetex=True)
 extract_values = lambda dictions, extract_key: [int(diction[extract_key]) for diction in dictions]
 extract_values_range = lambda dictions, extract_key, start=0, stop=-1: [int(diction[extract_key]) for diction in dictions[start:stop]]
 filter_key_value = lambda dicts, key, value: list(filter(lambda d: d[key] == str(value), dicts))
+remove_if = lambda dicts, key, value: list(filter(lambda d: d.get(key) != str(value), dicts))
 
 
 # # Radius Stage Plots
@@ -161,10 +162,12 @@ else:
 
 # ## Fastmarching Performance
 
-# In[11]:
+# In[10]:
 
 
 flags=['ALL', 'NO_INTERVAL_RV', 'SCHEDULE_INTERVAL_RV']
+lineprops = ['k-x', 'r-o', 'g-d']
+
 for flag in flags:
     # Gather all json files
     test_dicts = []
@@ -176,16 +179,17 @@ for flag in flags:
             print('Warning: fn:{} not found'.format(name))
         test_dicts.append(df['testsuites'][0]['testsuite'][0])
     len(test_dicts)
-    
+
     # Extract into lists
     ratios = (2, 4, 8)
     ratio_dicts = [filter_key_value(test_dicts, 'grid / interval ratio', ratio) for ratio in ratios]
     r_grid_sizes = [extract_values(d, 'grid_size') for d in ratio_dicts ]
     r_ratios = [extract_values(d, 'grid / interval ratio') for d in ratio_dicts ]
     r_iters = [extract_values(d, 'iterations') for d in ratio_dicts ]
-    r_frac_difference = [map(truediv, extract_values(d, 'total vertex difference vs sequential value'), extract_values(d, 'sequential fastmarching tree size')) for d in ratio_dicts ]
+    comparison_test_dicts = remove_if(test_dicts, 'total vertex difference vs sequential value', None)
+    r_frac_difference = [map(truediv, extract_values(d, 'total vertex difference vs sequential value'), extract_values(d, 'sequential fastmarching tree size')) for d in comparison_test_dicts ]
     assert(len(r_grid_sizes[0]) == len(r_iters[0]))
-    
+
     # throughput info
     r_selected_per_total_times = [extract_values(d, 'selected vertices / total time') for d in ratio_dicts]
 
@@ -231,24 +235,25 @@ for flag in flags:
         plt.show()
     else:
         plt.close()
-         
-    for ratio, lineprop, grid_size, frac_difference in zip(ratios, lineprops, r_grid_sizes, r_frac_difference):
-        plt.plot(grid_size, frac_difference, lineprop, label=str(ratio) + ' intervals/grid')
-    plt.xlabel(r'Grid side length (pixels)')
-    plt.xticks(grid_size, rotation=75)
-    plt.ylabel(r'Error rate (\%)')
-    plt.legend()
-    title = r'Intervals per grid vs. error rate {}'.format(flag.replace('_', '-'))
-    plt.title(title)
-    fig_output_path = '%s%s.png' % (data_dir, title.replace(' ', '_'))
-    if save_fig:
-        plt.savefig(fig_output_path, dpi=300)
-        print(fig_output_path)
-    if show_fig:
-        plt.show()
-    else:
-        plt.close()
-                                                     
+
+    if False:
+        for ratio, lineprop, grid_size, frac_difference in zip(ratios, lineprops, r_grid_sizes, r_frac_difference):
+            plt.plot(grid_size, frac_difference, lineprop, label=str(ratio) + ' intervals/grid')
+        plt.xlabel(r'Grid side length (pixels)')
+        plt.xticks(grid_size, rotation=75)
+        plt.ylabel(r'Error rate (\%)')
+        plt.legend()
+        title = r'Intervals per grid vs. error rate {}'.format(flag.replace('_', '-'))
+        plt.title(title)
+        fig_output_path = '%s%s.png' % (data_dir, title.replace(' ', '_'))
+        if save_fig:
+            plt.savefig(fig_output_path, dpi=300)
+            print(fig_output_path)
+        if show_fig:
+            plt.show()
+        else:
+            plt.close()
+
 
 
 # In[13]:
@@ -263,7 +268,7 @@ for flag in flags:
 extract_values(test_dicts, 'total vertex difference vs sequential value')
 
 
-# In[23]:
+# In[5]:
 
 
 [d.get('total vertex difference vs sequential value') for d in test_dicts]
@@ -275,10 +280,10 @@ extract_values(test_dicts, 'total vertex difference vs sequential value')
 diff = filter(lambda x: x.get('total vertex difference vs sequential value'), test_dicts)
 
 
-# In[29]:
+# In[9]:
 
 
-test_dicts[4]
+comparison_test_dicts = remove_if(test_dicts, 'total vertex difference vs sequential value', None)
 
 
 # In[ ]:
