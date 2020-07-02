@@ -22,13 +22,13 @@ perf_args = ['L1-dcache-misses', 'L1-dcache-loads', 'LLC-load-misses',
 # perf_args = ['faults']
 # 'cache-misses', 'cache-references',
 # args_idx indicates the column your extracting from the line
-# in perf generally the first (0) column prints the stat 
+# in perf generally the first (0) column prints the stat
 perf_args_idx = [0 for i in perf_args] # get first arg
 
 # Google Benchmark parameters
 benchmark_looping_time = 1
 # bench = True
-# bench_args = 
+# bench_args =
 # # args_idx indicates the column your extracting from the line
 # bench_args_idx = [0 for i in perf_args] # get first arg
 
@@ -55,7 +55,7 @@ for i in range(1,total_grid_lens):
 print(grid_lens)
 # image_dims = [7680, 8448, 383]
 # image dims represent the total area to cover in a run,
-# note an image can be split in to subdomains for processing 
+# note an image can be split in to subdomains for processing
 # those subdomains are currently named intervals. intervals
 # are unique in that they represent the level of memory that is
 # memory mapped at one time. intervals can be further divided
@@ -105,7 +105,7 @@ par_generating_times = []
 par_init_times = []
 update_times = []
 revisits = []
-perf_stats = np.zeros((len(perf_args), len(grid_lens), 
+perf_stats = np.zeros((len(perf_args), len(grid_lens),
     len(compile_options)))
 
 # if len(grid_lens) > 1:
@@ -202,8 +202,8 @@ for gi, grid_len in enumerate(grid_lens):
                     print('Currently running compile option: %s' % compile_option_run)
                     marker_file_path = glob.glob(marker_dir + '/marker*')[0]
                     x, y, z = [int(i) for i in open(marker_file_path,
-                            'r').read().split('\n')[1].split(',')]
-                    # z, y, x, mass = [int(i) for i in marker_file_path.split('_')[-4:]] 
+                        'r').read().split('\n')[1].split(',')]
+                    # z, y, x, mass = [int(i) for i in marker_file_path.split('_')[-4:]]
                     marker_file = marker_file_path.split('/')[-1]
                     za = adjust(z, grid_len)
                     ya = adjust(y, grid_len)
@@ -224,7 +224,7 @@ for gi, grid_len in enumerate(grid_lens):
                             # '-inmarker', marker_dir + '/', '-io', str(za), str(ya), str(xa),
                             # '-ie', str(ze), str(ye), str(xe),
                             # '-lt', '50', '-pr', pr, '-bs', str(bs),
-                            # '-ct', '1', '-rl', res_lvl, '-outswc', 
+                            # '-ct', '1', '-rl', res_lvl, '-outswc',
                             # swc_output_file, '-bg-thresh',
                             # bkg_thresh, '-max', max_int]
                     # params = ['../bin/vaa3d_app2', img_dir, ch,
@@ -240,7 +240,7 @@ for gi, grid_len in enumerate(grid_lens):
                         # params.append('-rs')
                         # params.append(str(rs))
 
-                    # perf wrap same parameters in cli call 
+                    # perf wrap same parameters in cli call
                     if perf:
                         perf_params = ['perf', 'stat', '-e']
                         perf_params.append(','.join(perf_args))
@@ -460,9 +460,9 @@ if perf:
         colors)):
         plt.plot(grid_lens, perf_stats[perf_idx,:,ci], '%s-x' % color,
                 label=compile_option)
-    plt.xlabel('Grid size')
+        plt.xlabel('Grid size')
     plt.ylabel(perf_args[perf_idx])
-    title = 'Grid size vs. ' + perf_args[perf_idx] 
+    title = 'Grid size vs. ' + perf_args[perf_idx]
     plt.title(title)
     plt.xscale("log")
     plt.yscale("log")

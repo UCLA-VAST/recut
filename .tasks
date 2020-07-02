@@ -14,17 +14,17 @@ command=cd build && make -j 56 && make install -j 56
 cwd=<root>
 
 [project-test]
-command=cd bin && ./recut_test --gtest_output=json:../data/test_detail.json --gtest_filter=*.*
+command=cd bin && ./recut_test --gtest_output=json:../data/test_detail.json --gtest_filter=*.ChecksIfFinalVerticesCorrect* | tee ../data/test_detail.log
 cwd=<root>
 
 # rebuild and run test
 [project-change]
-command=cd build && make -j 56 && make install -j 56 && cd ../bin && ./recut_test --gtest_output=json:../data/test_detail.json --gtest_filter=TileThresholds.*
+command=cd build && make -j 56 && make install -j 56 && cd ../bin && ./recut_test --gtest_output=json:../data/test_detail.json --gtest_filter=*.*
 
 cwd=<root>
 
 [project-bench]
-command=cd bin && ./recut_bench
+command=cd bin && ./recut_bench --benchmark_filter=load_tile
 cwd=<root>
 
 [project-perf]
@@ -41,10 +41,13 @@ cwd=<root>
 command=ctags -R --exclude={lib,bin,build,extern,docs,include}
 cwd=<root>
 
+[project-dev]
+cmd=cd bin && ./recut_bench --benchmark_out=../data/dev.txt --benchmark_out_format=console --benchmark_filter=load*
+cwd=<root>
+
 # this is for output=quickfix only
 # if it is omitted, vim's current errorformat will be used.
 errorformat=%f:%m:%l
 
 # save all files in buffer before executing any command
 save=2
-

@@ -32,12 +32,13 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 // for
 // basic timing info, granularity at interval level
 #define LOG_FULL // roughly block by block processing granularity
-#define FULL_PRINT // vertex by vertex behavior
+// #define FULL_PRINT // vertex by vertex behavior
 //#define HLOG_FULL // log the behavior of the block heap methods
 
 // Define how revisits/reupdates to previous seen vertices is handled
 //#define RV // count the number of revisits or attempted revisits of vertices
-// and log to stdout #define NO_RV // reject any vertices from having new
+// and log to stdout
+//#define NO_RV // reject any vertices from having new
 // updated values after they have already been visited
 
 // determines read speeds of vertex info from INTERVAL_BASE
@@ -45,7 +46,9 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 //#define USE_HUGE_PAGE
 #define USE_MCP3D
 
-//#define USE_OMP
+// Note you can't have both OMP_BLOCK and OMP_INTERVAL defined
+//#define USE_OMP_INTERVAL
+//#define USE_OMP_BLOCK
 
 // Parallel strategies other than OMP defined here
 //#define ASYNC // run without TF macro to use the std::async instead of TF
@@ -68,4 +71,8 @@ const VID_t MAX_INTERVAL_VERTICES = 3700000000;
 // take a long time to complete
 // during normal development this should be off
 // and all tests should run in under 2s
-//#define TEST_ALL_BENCHMARKS
+#define TEST_ALL_BENCHMARKS
+
+//#define NO_INTERVAL_RV
+//#define SCHEDULE_INTERVAL_RV
+#define ALL
