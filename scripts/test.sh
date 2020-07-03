@@ -14,8 +14,8 @@ do
   #cd ../build && make -j 56 && make install -j 56
 
   # runPhase
-  # 2 hour timout
-  to_seconds=7200
+  # 6 hour timout
+  to_seconds=21600
   cd ../bin
   for test_num in {11..32}
   do
@@ -23,7 +23,7 @@ do
     # if it already exists
     if [ ! -f ../data/$name.json ]; then
       echo "File ../data/${name}.json not found"
-      # timeout $to_seconds ./recut_test --gtest_output=json:../data/$name.json --gtest_filter=*.ChecksIfFinalVerticesCorrect/$test_num | tee ../data/$name.log
+      timeout $to_seconds ./recut_test --gtest_output=json:../data/$name.json --gtest_filter=*.ChecksIfFinalVerticesCorrect/$test_num | tee ../data/$name.log
     fi
   done
 
