@@ -9,12 +9,14 @@ import json
 from operator import truediv
 from matplotlib import rc
 from statistics import mean
+from os import getcwd
 
-project_dir = '/curr/kdmarrett/accelerate/'
+# project_dir = '/curr/kdmarrett/accelerate/'
+project_dir = getcwd() + '/../'
 bin_dir = project_dir + 'bin/'
 data_dir = project_dir + 'data/'
-save_fig = True
-show_fig = True
+save_fig = False
+show_fig = False
 run_radius = False
 plot_radius = False
 run_test = True
@@ -30,17 +32,32 @@ extract_values_range = lambda dictions, extract_key, start=0, stop=-1: [int(dict
 filter_key_value = lambda dicts, key, value: list(filter(lambda d: d[key] == str(value), dicts))
 remove_if = lambda dicts, key, value: list(filter(lambda d: d.get(key) != value, dicts))
 
+def test_ratios(ratios, r_ratios):
+    for ratio, check_ratios in zip(ratios, r_ratios):
+        for check_ratio in check_ratios:
+            assert (ratio == check_ratio),"ratio did not match"
+
+def rplot(xiter, xlabel, yiter, ylabel, title, lineprops, ylabel, legenditer,
+        legend_metric='', data_dir=getcwd(), show_fig=False, save_fig=False,
+        dpi=300):
+    for x, y, lineprop, legend in zip(xiter, yiter, lineprops, legenditer):
+        plt.plot(x, y, lineprop, label=str(legend) + legend_metric)
+    plt.xlabel(xlabel)
+    plt.xticks(x, rotation=75)
+    plt.ylabel(ylabel)
+    plt.legend()
+    plt.title(title)
+    fig_output_path = '%s%s.png' % (data_dir, title.replace(' ', '_'))
+    if save_fig:
+        plt.savefig(fig_output_path, dpi=dpi)
+        print(fig_output_path)
+    if show_fig:
+        plt.show()
+    else:
+        plt.close()
 
 # # Radius Stage Plots
-
-# In[14]:
-
-
 radius_json = data_dir + 'test_radius.json'
-
-
-# In[15]:
-
 
 # run the radius script from scratch
 if run_radius:
@@ -51,10 +68,6 @@ if run_radius:
         subprocess.run(test_cmd.split(), stdout=out)
 else: #just load it
     df = pd.read_json(radius_json)
-
-
-# In[17]:
-
 
 if plot_radius:
     test= df['testsuites'][0]['testsuite'][0]
@@ -72,7 +85,6 @@ if plot_radius:
     assert(grid_sizes == sorted(grid_sizes_xy))
     radius_sizes = [i/4 for i in grid_sizes]
 
-
     plt.plot(radius_sizes, recut_errors, 'k-x', label=r'Recut')
     plt.plot(radius_sizes, xy_errors, 'r-o', label=r'APP2')
     plt.xlabel(r'Radius size (pixels)')
@@ -86,9 +98,7 @@ if plot_radius:
         plt.savefig(fig_output_path)
         print(fig_output_path)
 
-
     bench_json = data_dir + 'bench_radius.json'
-
 
     data = json.load(open(bench_json))
     df = data['benchmarks']
@@ -160,11 +170,9 @@ if run_test:
         ratios = (2, 4, 8)
         ratio_dicts = [filter_key_value(test_dicts, 'grid / interval ratio', ratio) for ratio in ratios]
         r_grid_sizes = [extract_values(d, 'grid_size') for d in ratio_dicts ]
-        r_ratios = [extract_values(d, 'grid / interval ratio') for d in ratio_dicts ]
-        r_iters = [extract_values(d, 'iterations') for d in ratio_dicts ]
-        r_total_time = [extract_values(d, 'recut update total_time (s)') for d in ratio_dicts ]
-        print(r_total_time)
-        print(*map(mean, zip(*r_total_time)))
+        r_ratios = [extract_values(d, 'Grid / interval ratio') for d in ratio_dicts ]
+        r_iters = [extract_values(d, 'Iterations') for d in ratio_dicts ]
+        r_total_time = [extract_values(d, 'Value update elapsed (s)') for d in ratio_dicts ]
         # comparison_test_dicts = [list(remove_if(d, 'total vertex difference vs sequential value', None)) for d in ratio_dicts]
         # for d in comparison_test_dicts:
             # vdiff = [int(d.get('total vertex difference vs sequential value')) for d in comparison_test_dicts]
@@ -175,13 +183,12 @@ if run_test:
         assert(len(r_grid_sizes[0]) == len(r_iters[0]))
 
         # throughput info
-        r_selected_per_total_times = [extract_values(d, 'selected vertices / total time') for d in ratio_dicts]
+        r_selected_per_total_times = [extract_values(d, 'Selected vertices/s') for d in ratio_dicts]
+
+        test_ratios(ratios, r_ratios)
 
         if plot_test:
-            #fig, ax = plt.subplots()
             for ratio, lineprop, grid_size, iteration, check_ratios in zip(ratios, lineprops, r_grid_sizes, r_iters, r_ratios):
-                for check_ratio in check_ratios:
-                    assert (ratio == check_ratio),"ratio did not match"
                 plt.plot(grid_size, iteration, lineprop, label=str(ratio) + ' intervals/grid')
             plt.xlabel(r'Grid side length (pixels)')
             plt.xticks(grid_size, rotation=75)
@@ -237,8 +244,6 @@ if run_test:
                     plt.show()
                 else:
                     plt.close()
-
-
 
 # [ extract_values(d, 'total vertex difference vs sequential value') for d in test_dicts[0]]
 # extract_values(test_dicts, 'total vertex difference vs sequential value')
