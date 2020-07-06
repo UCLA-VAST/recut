@@ -21,6 +21,7 @@ run_radius = False
 plot_radius = False
 run_test = True
 plot_test = False
+dpi=300
 
 #rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
 ## for Palatino and other serif fonts use:
@@ -37,16 +38,20 @@ def test_ratios(ratios, r_ratios):
         for check_ratio in check_ratios:
             assert (ratio == check_ratio),"ratio did not match"
 
-def rplot(xiter, xlabel, yiter, ylabel, title, lineprops, ylabel, legenditer,
+def rplot(xiter, xlabel, yiter, ylabel, title, lineprops, legenditer=[],
         legend_metric='', data_dir=getcwd(), show_fig=False, save_fig=False,
         dpi=300):
+    assert(len(xiter) == len(yiter))
+    assert(len(yiter) == len(lineprops))
+    assert(len(lineprops) == len(legenditer))
     for x, y, lineprop, legend in zip(xiter, yiter, lineprops, legenditer):
         plt.plot(x, y, lineprop, label=str(legend) + legend_metric)
     plt.xlabel(xlabel)
     plt.xticks(x, rotation=75)
     plt.ylabel(ylabel)
-    plt.legend()
-    plt.title(title)
+    if len(xiter) > 1:
+        plt.legend()
+    plt.title(title.replace('_', '-'))
     fig_output_path = '%s%s.png' % (data_dir, title.replace(' ', '_'))
     if save_fig:
         plt.savefig(fig_output_path, dpi=dpi)
@@ -158,7 +163,7 @@ if run_test:
         # Gather all json files
         test_dicts = []
         for i in range(11, 32):
-            name='{}recut-test-{}-{}.json'.format(data_dir, flag, i)
+            name='{}recut-test-{}-{}-2.json'.format(data_dir, flag, i)
             try:
                 df = pd.read_json(name)
             except:
@@ -166,11 +171,14 @@ if run_test:
             test_dicts.append(df['testsuites'][0]['testsuite'][0])
         len(test_dicts)
 
-        # Extract into lists
+        # rearrange into lists by ratio
         ratios = (2, 4, 8)
         ratio_dicts = [filter_key_value(test_dicts, 'grid / interval ratio', ratio) for ratio in ratios]
+
+        # use this list of list structure to extract desired values by key
         r_grid_sizes = [extract_values(d, 'grid_size') for d in ratio_dicts ]
         r_ratios = [extract_values(d, 'Grid / interval ratio') for d in ratio_dicts ]
+        test_ratios(ratios, r_ratios)
         r_iters = [extract_values(d, 'Iterations') for d in ratio_dicts ]
         r_total_time = [extract_values(d, 'Value update elapsed (s)') for d in ratio_dicts ]
         # comparison_test_dicts = [list(remove_if(d, 'total vertex difference vs sequential value', None)) for d in ratio_dicts]
@@ -185,65 +193,26 @@ if run_test:
         # throughput info
         r_selected_per_total_times = [extract_values(d, 'Selected vertices/s') for d in ratio_dicts]
 
-        test_ratios(ratios, r_ratios)
-
         if plot_test:
-            for ratio, lineprop, grid_size, iteration, check_ratios in zip(ratios, lineprops, r_grid_sizes, r_iters, r_ratios):
-                plt.plot(grid_size, iteration, lineprop, label=str(ratio) + ' intervals/grid')
-            plt.xlabel(r'Grid side length (pixels)')
-            plt.xticks(grid_size, rotation=75)
-            plt.ylabel(r'Iterations')
-            # plt.ylabel(r'Elapsed time (%s)' % time_unit)
-            plt.legend()
-            title = r'Intervals per grid vs. iterations {}'.format(flag.replace('_', '-'))
-            plt.title(title)
-            fig_output_path = '%s%s.png' % (data_dir, title.replace(' ', '_'))
-            save_fig=False
-            if save_fig:
-                plt.savefig(fig_output_path, dpi=300)
-                print(fig_output_path)
-            if show_fig:
-                plt.show()
-            else:
-                plt.close()
+            rplot(r_grid_sizes, r'Grid side length (pixels)', r_iters,
+                    r'Iterations', r'Intervals per grid vs. iterations {}'.format(flag),
+                    lineprops, 
+                    legenditer=r_ratios, legend_metric=' intervals/grid',
+                    show_fig=show_fig, save_fig=save_fig, dpi=dpi)
 
-            for ratio, lineprop, grid_size, selected_per_total_time, check_ratios in zip(ratios, lineprops, r_grid_sizes, r_selected_per_total_times, r_ratios):
-                for check_ratio in check_ratios:
-                    assert (ratio == check_ratio),"ratio did not match"
-                plt.plot(grid_size, selected_per_total_time, lineprop, label=str(ratio) + ' intervals/grid')
-            plt.xlabel(r'Grid side length (pixels)')
-            plt.xticks(grid_size, rotation=75)
-            plt.ylabel(r'Selected vertices/s')
-            # plt.ylabel(r'Elapsed time (%s)' % time_unit)
-            plt.legend()
-            title = r'Intervals per grid vs. computational throughput {}'.format(flag.replace('_', '-'))
-            plt.title(title)
-            fig_output_path = '%s%s.png' % (data_dir, title.replace(' ', '_'))
-            if save_fig:
-                plt.savefig(fig_output_path, dpi=300)
-                print(fig_output_path)
-            if show_fig:
-                plt.show()
-            else:
-                plt.close()
+            rplot(r_grid_sizes, r'Grid side length (pixels)',
+                    r_selected_per_total_times, r'Selected vertices/s',
+                    r'Intervals per grid vs. computational throughput {}'.format(flag), 
+                    lineprops, legenditer=r_ratios,
+                    legend_metric=' intervals/grid', show_fig=show_fig,
+                    save_fig=save_fig, dpi=dpi)
 
-            if False:
-                for ratio, lineprop, grid_size, frac_difference in zip(ratios, lineprops, r_grid_sizes, r_frac_difference):
-                    plt.plot(grid_size, frac_difference, lineprop, label=str(ratio) + ' intervals/grid')
-                plt.xlabel(r'Grid side length (pixels)')
-                plt.xticks(grid_size, rotation=75)
-                plt.ylabel(r'Error rate (\%)')
-                plt.legend()
-                title = r'Intervals per grid vs. error rate {}'.format(flag.replace('_', '-'))
-                plt.title(title)
-                fig_output_path = '%s%s.png' % (data_dir, title.replace(' ', '_'))
-                if save_fig:
-                    plt.savefig(fig_output_path, dpi=300)
-                    print(fig_output_path)
-                if show_fig:
-                    plt.show()
-                else:
-                    plt.close()
+            rplot(r_grid_sizes, r'Grid side length (pixels)',
+                    r_frac_difference, r'Error rate (\%)',
+                    r'Intervals per grid vs. error rate {}'.format(flag),
+                    lineprops, legenditer=r_ratios,
+                    legend_metric=' intervals/grid', show_fig=show_fig,
+                    save_fig=save_fig, dpi=dpi)
 
 # [ extract_values(d, 'total vertex difference vs sequential value') for d in test_dicts[0]]
 # extract_values(test_dicts, 'total vertex difference vs sequential value')
