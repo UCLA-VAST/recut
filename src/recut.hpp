@@ -31,9 +31,10 @@ struct InstrumentedUpdateStatistics {
   double total_time;
   double computation_time;
   double io_time;
+  const std::unique_ptr<uint16_t[]> interval_open_count;
 
-  InstrumentedUpdateStatistics(int iterations, double total_time, double computation_time, double io_time)
-    : iterations(iterations), total_time(total_time), computation_time(computation_time), io_time(io_time) {}
+  InstrumentedUpdateStatistics(int iterations, double total_time, double computation_time, double io_time, const std::unique_ptr<uint16_t[]> interval_open_count)
+    : iterations(iterations), total_time(total_time), computation_time(computation_time), io_time(io_time), interval_open_count(interval_open_count) {}
 
 };
 
@@ -1998,13 +1999,14 @@ template <class image_t> void Recut<image_t>::setup_radius() {
           atomic<double> computation_time;
           computation_time = 0.0;
           VID_t grid_interval_size = grid.GetNIntervals();
+          auto interval_open_count = std::make_unique<uint16_t[]>(grid_interval_size, 0);
 #ifdef NO_INTERVAL_RV
-          auto visited_intervals = std::make_unique<bool[]>(grid_interval_size);
+          auto visited_intervals = std::make_unique<bool[]>(grid_interval_size, false);
 #endif
 #ifdef SCHEDULE_INTERVAL_RV
-          auto visited_intervals = std::make_unique<bool[]>(grid_interval_size);
-          auto locked_intervals = std::make_unique<bool[]>(grid_interval_size);
-          auto schedule_intervals = std::make_unique<int[]>(grid_interval_size);
+          auto visited_intervals = std::make_unique<bool[]>(grid_interval_size, false);
+          auto locked_intervals = std::make_unique<bool[]>(grid_interval_size, false);
+          auto schedule_intervals = std::make_unique<int[]>(grid_interval_size, 0);
 #endif
 
 #ifdef LOG
@@ -2070,6 +2072,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
                   schedule_intervals[interval_id] = outer_iteration_idx + scheduling_iteration_delay;
                 }
 #endif
+                interval_open_count[interval_id] += 1;
 
                 image_t *tile;
                 // tile_thresholds defaults to nullptr
@@ -2141,7 +2144,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
           //", block iterations: "<< final_inner_iter + 1<< '\n';
 #endif
 
-          return std::make_unique<InstrumentedUpdateStatistics>(outer_iteration_idx, total_update_time, computation_time, io_time);
+          return std::make_unique<InstrumentedUpdateStatistics>(outer_iteration_idx, total_update_time, computation_time, io_time, interval_open_count);
         } // end update()
 
       /* get the vid with respect to the entire image passed to the

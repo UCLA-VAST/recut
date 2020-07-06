@@ -1204,6 +1204,10 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
   // update with fixed tile_thresholds for the entire update
   auto update_stats = recut.update("value", tile_thresholds);
+  auto interval_open_count = update_stats->interval_open_count;
+  std::reduce( std::execution::par, interval_open_count.cbegin(), interval_open_count.cend(), 0 ) / (double) interval_open_count.size();
+  //TODO get mean
+  //RecordProperty("Mean tile reads", mean);
 
   recut.finalize(args.output_tree); // this fills args.output_tree
   //cout << "recut update no IO elapsed (s)" << recut_update_value_elapsed << '\n';
@@ -1211,15 +1215,15 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     (100. * args.output_tree.size()) / (grid_size * grid_size * grid_size);
   cout << "Selected " << actual_slt_pct << "% of pixels\n";
   RecordProperty("Foreground (%)", actual_slt_pct);
-  RecordProperty("Foreground", args.output_tree.size());
-  RecordProperty("Selected vertices / total time", args.output_tree.size() / update_stats->total_time);
-  RecordProperty("Selected vertices / computation time", args.output_tree.size() / update_stats->computation_time);
-  RecordProperty("Selected vertices / io time", args.output_tree.size() / update_stats->io_time);
+  RecordProperty("Foreground count (pixels)", args.output_tree.size());
+  RecordProperty("Selected vertices/s", args.output_tree.size() / update_stats->total_time);
+  RecordProperty("Selected vertices / computation (s)", args.output_tree.size() / update_stats->computation_time);
+  RecordProperty("Selected vertices / IO (s)", args.output_tree.size() / update_stats->io_time);
   RecordProperty("Iterations", update_stats->iterations);
-  RecordProperty("Computation time (s)", update_stats->computation_time);
-  RecordProperty("recut update io_time (s)", update_stats->io_time);
-  RecordProperty("recut update total_time (s)", update_stats->total_time);
-  RecordProperty("recut update computation_time / io_time ratio", update_stats->computation_time / update_stats->io_time);
+  RecordProperty("Value update computation (s)", update_stats->computation_time);
+  RecordProperty("Value update IO (s)", update_stats->io_time);
+  RecordProperty("Value update elapsed (s)", update_stats->total_time);
+  RecordProperty("Value update computation / IO ratio", update_stats->computation_time / update_stats->io_time);
   RecordProperty("Grid / interval ratio", grid_size / interval_size);
 
   // pregenerated data has a known number of selected
@@ -1252,6 +1256,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     cout << "sequential fastmarching elapsed (s)" << timer->elapsed() << '\n';
     // warning record property will auto cast to an int
     RecordProperty("Sequential elapsed (s)", timer->elapsed());
+    RecordProperty("Recut speedup factor %", 100 * (update_stats->total_time / timer->elapsed()) ) ;
 
     //// would have to keep interval in memory for this to work
     // if ( sequential_output_tree.size() != args.output_tree.size()) {
@@ -1262,7 +1267,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     RecordProperty("Sequential tree size", sequential_output_tree.size());
     auto diff = absdiff(sequential_output_tree.size(), args.output_tree.size());
     RecordProperty("Error", diff);
-    RecordProperty("Error rate (%)", diff / sequential_output_tree.size());
+    RecordProperty("Error rate (%)", 100 * (diff / sequential_output_tree.size()));
     ASSERT_EQ(sequential_output_tree.size(), args.output_tree.size());
   }
 }

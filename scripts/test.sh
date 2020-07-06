@@ -19,7 +19,7 @@ do
   cd ../bin
   for test_num in {11..32}
   do
-    name=recut-test-$flag-$test_num
+    name=recut-test-$flag-$test_num-2
     # if it already exists
     if [ ! -f ../data/$name.json ]; then
       echo "File ../data/${name}.json not found"
