@@ -48,7 +48,7 @@ static void bench_critical_loop(benchmark::State &state) {
 
   // This is the performance loop where gbench
   // will execute until timing stats converge
-  while (state.KeepRunning()) {
+  for (auto _ : state) {
     // reactivates
     // the intervals of the root and readds
     // them to the respective heaps
@@ -96,7 +96,7 @@ static void bench_critical_loop(benchmark::State &state) {
       auto recut = Recut<uint16_t>(args);
       auto root_vids = recut.initialize();
 
-      while (state.KeepRunning()) {
+      for (auto _ : state) {
         // warning: pause and resume high overhead
         state.PauseTiming();
         recut.setup_value(root_vids);
@@ -130,7 +130,7 @@ static void bench_critical_loop(benchmark::State &state) {
       recut.initialize();
       VID_t interval_num = 0;
 
-      while (state.KeepRunning()) {
+      for (auto _ : state) {
         // calculate radius with baseline accurate method
         for (VID_t i = 0; i < tol_sz; i++) {
           if (recut.generated_image[i]) {
@@ -164,7 +164,7 @@ static void bench_critical_loop(benchmark::State &state) {
       recut.initialize();
       VID_t interval_num = 0;
 
-      while (state.KeepRunning()) {
+      for (auto _ : state) {
         // build original production version
         for (VID_t i = 0; i < tol_sz; i++) {
           if (recut.generated_image[i]) {
@@ -191,7 +191,7 @@ static void bench_critical_loop(benchmark::State &state) {
     auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, false);
     VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
 
-    while (state.KeepRunning()) {
+    for (auto _ : state) {
       mcp3d::MImage image;
       cout << args.image_root_dir() << '\n';
       // the vectors are in z, y, x order
@@ -204,7 +204,7 @@ static void bench_critical_loop(benchmark::State &state) {
   }
   BENCHMARK(load_exact_tile)
   ->RangeMultiplier(2)
-  ->Range(8, 1024)
+  ->Range(16, 1024)
 ->ReportAggregatesOnly(true)
   ->Unit(benchmark::kMillisecond);
 
@@ -217,7 +217,7 @@ static void bench_critical_loop(benchmark::State &state) {
     auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, false);
     VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
 
-    while (state.KeepRunning()) {
+    for (auto _ : state) {
       mcp3d::MImage image;
       cout << args.image_root_dir() << '\n';
       // the vectors are in z, y, x order
@@ -230,7 +230,7 @@ static void bench_critical_loop(benchmark::State &state) {
   }
   BENCHMARK(load_tile_from_large_image)
   ->RangeMultiplier(2)
-  ->Range(8, 1024)
+  ->Range(16, 1024)
 ->ReportAggregatesOnly(true)
   ->Unit(benchmark::kMillisecond);
 

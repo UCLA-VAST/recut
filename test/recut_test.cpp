@@ -882,8 +882,9 @@ TEST(TileThresholds, AllTcases) {
     auto inimg1d = std::make_unique<uint16_t[]>(grid_vertex_size);
     auto tile_thresholds = new TileThresholds<uint16_t>();
     uint16_t bkg_thresh;
-    mcp3d::MImage image;
 
+#ifdef USE_MCP3D
+    mcp3d::MImage image;
     if (tcase == 6) {
       read_tiff(args.image_root_dir(), args.image_offsets, args.image_extents,
           image);
@@ -895,21 +896,24 @@ TEST(TileThresholds, AllTcases) {
           grid_vertex_size, slt_pct / 100.);
       tile_thresholds->get_max_min(image.Volume<uint16_t>(0), grid_vertex_size);
 
-    } else {
+      cout << "tcase " << tcase << " bkg_thresh " << bkg_thresh << "\nmax "
+        << tile_thresholds->max_int << " min " << tile_thresholds->min_int
+        << '\n';
+    } 
+#endif
+
+    if (tcase <=5) {
       create_image(tcase, inimg1d.get(), grid_size, selected,
           get_central_vid(grid_size));
       print_image_3D(inimg1d.get(), {grid_size, grid_size, grid_size});
       bkg_thresh =
         recut.get_bkg_threshold(inimg1d.get(), grid_vertex_size, slt_pct / 100.);
       tile_thresholds->get_max_min(inimg1d.get(), grid_vertex_size);
-    }
 
-    cout << "tcase " << tcase << " bkg_thresh " << bkg_thresh << "\nmax "
-      << tile_thresholds->max_int << " min " << tile_thresholds->min_int
-      << '\n';
-    // ASSERT_EQ(bkg_thresh, 0);
-    // ASSERT_EQ(tile_thresholds->min_int, 0);
-    // ASSERT_EQ(tile_thresholds->max_int, 1);
+      cout << "tcase " << tcase << " bkg_thresh " << bkg_thresh << "\nmax "
+        << tile_thresholds->max_int << " min " << tile_thresholds->min_int
+        << '\n';
+    }
   }
 }
 
@@ -1140,7 +1144,14 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   RecordProperty("CONCURRENT_MAP", 1);
 #endif
 #ifdef FULL_PRINT
+  // this significantly slows performance so it should be stamped to any performance stats
   RecordProperty("FULL_PRINT", 1);
+#endif
+#ifdef USE_HUGE_PAGE
+  RecordProperty("USE_HUGE_PAGE", 1);
+#endif
+#ifdef USE_MCP3D
+  RecordProperty("USE_MCP3D", 1);
 #endif
 
   // documents the meaning of each tuple member
@@ -1175,6 +1186,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   root_vids = recut.initialize();
   recut.setup_value(root_vids);
 
+#ifdef USE_MCP3D
   mcp3d::MImage image;
   if (check_against_sequential) {
     read_tiff(args.image_root_dir(), args.image_offsets,
@@ -1185,6 +1197,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
           {grid_size, grid_size, grid_size});
     }
   }
+#endif
 
   // establish the tile thresholds for the entire test run (recut and
   // sequential)
@@ -1205,9 +1218,16 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   // update with fixed tile_thresholds for the entire update
   auto update_stats = recut.update("value", tile_thresholds);
   auto interval_open_count = update_stats->interval_open_count;
-  std::reduce( std::execution::par, interval_open_count.cbegin(), interval_open_count.cend(), 0 ) / (double) interval_open_count.size();
-  //TODO get mean
-  //RecordProperty("Mean tile reads", mean);
+  // print vector
+  std::ostringstream cat;
+  std::copy(interval_open_count.begin(), interval_open_count.end(), std::ostream_iterator<int>(cat, ", "));
+  std::cout << "interval reopens: " << cat.str() << '\n';
+
+  auto sum_opens = std::accumulate(interval_open_count.begin(), interval_open_count.end(), 0);
+  RecordProperty("Total tile reads", sum_opens);
+  RecordProperty("Total intervals", interval_open_count.size());
+  auto mean = sum_opens / (double)interval_open_count.size();
+  RecordProperty("Mean tile reads", mean);
 
   recut.finalize(args.output_tree); // this fills args.output_tree
   //cout << "recut update no IO elapsed (s)" << recut_update_value_elapsed << '\n';
@@ -1232,6 +1252,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     ASSERT_EQ(args.output_tree.size(), recut.params->selected);
   }
 
+#ifdef USE_MCP3D
   // this runs the original sequential fastmarching algorithm
   // when using the real data, you don't know what the actual
   // selected number should be unless you compare it to another
@@ -1270,71 +1291,77 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     RecordProperty("Error rate (%)", 100 * (diff / sequential_output_tree.size()));
     ASSERT_EQ(sequential_output_tree.size(), args.output_tree.size());
   }
+#endif
 }
 
 // ... check_against_selected, check_against_sequential
 INSTANTIATE_TEST_CASE_P(
     RecutPipelineTests, RecutPipelineParameterTests,
     ::testing::Values(
-      std::make_tuple(4, 4, 4, 0, 100., true, false) // 0
-      , std::make_tuple(4, 4, 4, 1, 100., true, false) // 1
-      , std::make_tuple(4, 4, 4, 2, 100., true, false) // 2
-      , std::make_tuple(4, 4, 4, 3, 100., true, false) // 3
-      , std::make_tuple(4, 4, 4, 4, 50., true, true) // 4
+      std::make_tuple(4, 4, 4, 0, 100., true, false), // 0
+      std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
+      std::make_tuple(4, 4, 4, 2, 100., true, false), // 2
+      std::make_tuple(4, 4, 4, 3, 100., true, false) // 3
+#ifdef USE_MCP3D
+      ,
+      // check_against_sequential (final boolean below) currently uses MCP3D's reading of
+      // image to ensure that both sequential and recut use the same
+      // iamge, to include these test while testing against sequential
+      // change the implementation so that the generated image from recut is saved and pass
+      // it to fastmarching_tree
+      std::make_tuple(4, 4, 4, 4, 50., true, true), // 4
       // multi-interval small
-      , std::make_tuple(4, 2, 2, 4, 50., true, true) // 5
+      std::make_tuple(4, 2, 2, 4, 50., true, true), // 5
       // multi-block small
-      , std::make_tuple(4, 4, 2, 4, 50., true, true)  // 6
+      std::make_tuple(4, 4, 2, 4, 50., true, true),  // 6
       // make sure if bkg_thresh is 0, all vertices are selected for real
-      , std::make_tuple(4, 4, 4, 6, 100., true, true) // 7
+      std::make_tuple(4, 4, 4, 6, 100., true, true), // 7
       // make sure fastmarching_tree and recut produce exact match for real
-      , std::make_tuple(8, 8, 8, 6, 100., false, true) // 8
+      std::make_tuple(8, 8, 8, 6, 100., false, true), // 8
       // real data multi-block
-      , std::make_tuple(8, 8, 4, 6, 100., false, true) // 9
+      std::make_tuple(8, 8, 4, 6, 100., false, true), // 9
       // real data multi-interval
-      , std::make_tuple(8, 4, 4, 6, 100., false, true) // 10
+      std::make_tuple(8, 4, 4, 6, 100., false, true) // 10
 #ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for
-      , std::make_tuple(128, 64, 64, 6, 1, false, true) // 11
-      , std::make_tuple(256, 128, 128, 6, 1, false, true) // 12
-  , std::make_tuple(512, 256, 256, 6, 1, false, true) // 13
-  , std::make_tuple(1024, 512, 512, 6, 1, false, true) // 14
-  , std::make_tuple(2048, 1024, 1024, 6, 1, false, false) // out of memory for fastmarching_tree
-  , std::make_tuple(4096, 2048, 2048, 6, 1, false, false) // 16
-, std::make_tuple(8192, 4096, 4096, 6, 1, false, false) // 17
+      ,
+      // interval grid ratio tests
+      std::make_tuple(128, 64, 64, 6, 1, false, true), // 11
+      std::make_tuple(256, 128, 128, 6, 1, false, true), // 12
+      std::make_tuple(512, 256, 256, 6, 1, false, true), // 13
+      std::make_tuple(1024, 512, 512, 6, 1, false, true), // 14
+      std::make_tuple(2048, 1024, 1024, 6, 1, false, false), // out of memory for fastmarching_tree
+      std::make_tuple(4096, 2048, 2048, 6, 1, false, false), // 16
+      std::make_tuple(8192, 4096, 4096, 6, 1, false, false), // 17
 
-  , std::make_tuple(128, 32, 32, 6, 1, false, true) // 18
-  , std::make_tuple(256, 64, 64, 6, 1, false, true)
-  , std::make_tuple(512, 128, 128, 6, 1, false, true)
-  , std::make_tuple(1024, 256, 256, 6, 1, false, true)
-  , std::make_tuple(2048, 512, 512, 6, 1, false, false)
-  , std::make_tuple(4096, 1024, 1024, 6, 1, false, false)
-, std::make_tuple(8192, 2048, 2048, 6, 1, false, false) // 24
+      std::make_tuple(128, 32, 32, 6, 1, false, true), // 18
+      std::make_tuple(256, 64, 64, 6, 1, false, true),
+      std::make_tuple(512, 128, 128, 6, 1, false, true),
+      std::make_tuple(1024, 256, 256, 6, 1, false, true),
+      std::make_tuple(2048, 512, 512, 6, 1, false, false),
+      std::make_tuple(4096, 1024, 1024, 6, 1, false, false),
+      std::make_tuple(8192, 2048, 2048, 6, 1, false, false), // 24
 
-  , std::make_tuple(128, 16, 16, 6, 1, false, true) // 25
-  , std::make_tuple(256, 32, 32, 6, 1, false, true)
-  , std::make_tuple(512, 64, 64, 6, 1, false, true)
-  , std::make_tuple(1024, 128, 128, 6, 1, false, true)
-  , std::make_tuple(2048, 256, 256, 6, 1, false, false)
-  , std::make_tuple(4096, 512, 512, 6, 1, false, false)
-, std::make_tuple(8192, 1024, 1024, 6, 1, false, false) // 31 // 31
-  //, std::make_tuple(2048, 128, 128, 6, 1, false, true) // 11, estimate 32 mins
-  //, std::make_tuple(8048, 128, 128, 6, 1, false, true) // 11, estimate 8 hours
-  // , std::make_tuple(256, 256, 128, 4, 1, false, true) // 12
-  // , std::make_tuple(256, 256, 256, 4, 1, false, true) // 13
-  // , std::make_tuple(512, 512, 32, 4, 1, false, true) // 14
-  // , std::make_tuple(512, 512, 128, 4, 1, false, true) // 15
-  // , std::make_tuple(512, 512, 512, 4, 1, false, true) // 16
-  // , std::make_tuple(1024, 1024, 128, 4, 1, false, true) // 17
-  // , std::make_tuple(1024, 1024, 1024, 4, 1, false, true) // 18
-  // determine thresholds
-  //, std::make_tuple(1024, 1024, 1024, 6, 1, false, true)  // 18
-  //, std::make_tuple(1024, 1024, 1024, 6, 5, false, true)  // 18
-  //, std::make_tuple(1024, 1024, 1024, 6, 10, false, true) // 18
-  //, std::make_tuple(1024, 1024, 1024, 6, 15, false, true)  // 18
+      std::make_tuple(128, 16, 16, 6, 1, false, true), // 25
+      std::make_tuple(256, 32, 32, 6, 1, false, true),
+      std::make_tuple(512, 64, 64, 6, 1, false, true),
+      std::make_tuple(1024, 128, 128, 6, 1, false, true),
+      std::make_tuple(2048, 256, 256, 6, 1, false, false),
+      std::make_tuple(4096, 512, 512, 6, 1, false, false),
+      std::make_tuple(8192, 1024, 1024, 6, 1, false, false), // 31 // 31
+
+      // record for benchmarks
+      std::make_tuple(16, 16, 16, 6, 1, false, true),
+      std::make_tuple(32, 32, 32, 6, 1, false, true),
+      std::make_tuple(64, 64, 64, 6, 1, false, true),
+      std::make_tuple(128, 128, 128, 6, 1, false, true),
+      std::make_tuple(256, 256, 256, 6, 1, false, true),
+      std::make_tuple(512, 512, 512, 6, 1, false, true),
+      std::make_tuple(1024, 1024, 1024, 6, 1, false, true)
 #endif
-  ));
+#endif
+      ));
 
-  int main(int argc, char **argv) {
-    testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-  }
+      int main(int argc, char **argv) {
+        testing::InitGoogleTest(&argc, argv);
+        return RUN_ALL_TESTS();
+      }
