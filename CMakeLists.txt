@@ -19,16 +19,37 @@ add_subdirectory(extern/benchmark)
 # works for cmake 3.9+
 find_package(OpenMP REQUIRED)
 
-// this creates tests that match the benchmarks
-// to check their validity, warning this invokes
-// a long form of all tests meaning execution will
-// take a long time to complete
-// during normal development this should be off
-// and all tests should run in under 2s
+# CMake Preprocessor Defines:
+
+#  this creates tests that match the benchmarks
+#  to check their validity, warning this invokes
+#  a long form of all tests meaning execution will
+#  take a long time to complete
+#  during normal development this should be off
+#  and all tests should run in under 2s
 option(TEST_ALL_BENCHMARKS 
   "Conduct full run of tests which can be used for results or benchmarks"
   OFF)
 
+#  Scheduling
+option( NO_INTERVAL_RV OFF)
+option( SCHEDULE_INTERVAL_RV OFF)
+option( USE_HUGE_PAGE OFF)
+# Note you can't have both OMP_BLOCK and OMP_INTERVAL defined
+option( USE_OMP_INTERVAL OFF)
+option( USE_OMP_BLOCK OFF)
+option( CONCURRENT_MAP "Define usage of the optimized map data structure" OFF)
+# Define how revisits/reupdates to previous seen vertices is handled
+option( RV "Count the number of revisits or attempted revisits of vertices" OFF)
+option(NO_RV "Reject any vertices from having new updated values after they have already been visited" OFF)
+# Define your logging level in order of increasing additive levels of specificity
+# TODO this should by a command line option with -v, -vv, -vvv
+option(LOG "Overview logging details of the recut run, this suffices for basic timing info, granularity at interval level" ON)
+option(LOG_FULL "roughly block by block processing granularity" ON)
+option(FULL_PRINT "Print vertex by vertex behavior. Warning: will significantly slow performance" OFF)
+
+option( MMAP "Determines read speed of vertex info from INTERVAL_BASE" ON)
+option( USE_MCP3D "Use and link external library MCP3D into recut for image reading of TIF and HDF5 (.ims) file types" OFF)
 
 set(MARKERS ${PROJECT_SOURCE_DIR}/src/markers.cpp)
 set(PARAMS ${PROJECT_SOURCE_DIR}/src/recut_parameters.cpp)
@@ -76,12 +97,51 @@ target_link_libraries(recut_bench PRIVATE benchmark)
 set(ALL_TARGETS recut_test recut_bench)
 foreach(I ${ALL_TARGETS})
   message(STATUS "${I}")
-  if (TEST_ALL_BENCHMARKS)
-    target_compile_definitions(${I} PRIVATE TEST_ALL_BENCHMARKS)
+
+  # Cmake accepts user preprocessor #define's on invocation 
+  # these are passed on to the preprocessor below
+  if (LOG)
+    target_compile_definitions(${I} PRIVATE LOG)
   endif()
+  if (LOG_FULL)
+    target_compile_definitions(${I} PRIVATE LOG_FULL)
+  endif()
+  if (FULL_PRINT)
+    target_compile_definitions(${I} PRIVATE FULL_PRINT)
+  endif()
+  if (RV)
+    target_compile_definitions(${I} PRIVATE RV)
+  endif()
+  if (NO_RV)
+    target_compile_definitions(${I} PRIVATE NO_RV)
+  endif()
+  if (USE_OMP_BLOCK)
+    target_compile_definitions(${I} PRIVATE USE_OMP_BLOCK)
+  endif()
+  if (USE_OMP_INTERVAL)
+    target_compile_definitions(${I} PRIVATE USE_OMP_INTERVAL)
+  endif()
+  if (CONCURRENT_MAP)
+    target_compile_definitions(${I} PRIVATE CONCURRENT_MAP)
+  endif()
+  if (MMAP)
+    target_compile_definitions(${I} PRIVATE MMAP)
+  endif()
+  if (USE_MCP3D)
+    target_compile_definitions(${I} PRIVATE USE_MCP3D)
+  endif()
+  if (NO_INTERVAL_RV)
+    target_compile_definitions(${I} PRIVATE NO_INTERVAL_RV)
+  endif()
+  if (SCHEDULE_INTERVAL_RV)
+    target_compile_definitions(${I} PRIVATE SCHEDULE_INTERVAL_RV)
+  endif()
+  if (USE_HUGE_PAGE)
+    target_compile_definitions(${I} PRIVATE USE_HUGE_PAGE)
+  endif()
+
   target_link_libraries(${I} PRIVATE OpenMP::OpenMP_CXX)
   target_compile_features(${I} PRIVATE cxx_std_17)
-  #target_compile_definitions(${I} PUBLIC USE_HUGE_PAGE=${USE_HUGE_PAGE})
   # these are the actual flags passed during compilation
   target_compile_options(${I} PRIVATE -fno-omit-frame-pointer -g)
   install(TARGETS ${I} DESTINATION ${PROJECT_SOURCE_DIR}/bin)
@@ -101,5 +161,10 @@ foreach(I ${ALL_TARGETS})
     )
   set_target_properties(${I} PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
 endforeach()
+
+# test specific
+if (TEST_ALL_BENCHMARKS)
+  target_compile_definitions(recut_test PRIVATE TEST_ALL_BENCHMARKS)
+endif()
 
 add_test(NAME recut_test COMMAND ${PROJECT_SOURCE_DIR}/bin/recut_test)

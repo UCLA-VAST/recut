@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include "markers.h"
 #include "recut_parameters.hpp"
 #include <algorithm> //min

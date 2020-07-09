@@ -31,9 +31,9 @@ struct InstrumentedUpdateStatistics {
   double total_time;
   double computation_time;
   double io_time;
-  const std::unique_ptr<uint16_t[]> interval_open_count;
+  std::vector<uint16_t> interval_open_count;
 
-  InstrumentedUpdateStatistics(int iterations, double total_time, double computation_time, double io_time, const std::unique_ptr<uint16_t[]> interval_open_count)
+  InstrumentedUpdateStatistics(int iterations, double total_time, double computation_time, double io_time, std::vector<uint16_t> interval_open_count)
     : iterations(iterations), total_time(total_time), computation_time(computation_time), io_time(io_time), interval_open_count(interval_open_count) {}
 
 };
@@ -1999,7 +1999,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
           atomic<double> computation_time;
           computation_time = 0.0;
           VID_t grid_interval_size = grid.GetNIntervals();
-          auto interval_open_count = std::make_unique<uint16_t[]>(grid_interval_size, 0);
+          auto interval_open_count = std::vector<uint16_t>(grid_interval_size, 0);
 #ifdef NO_INTERVAL_RV
           auto visited_intervals = std::make_unique<bool[]>(grid_interval_size, false);
 #endif

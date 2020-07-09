@@ -18,6 +18,9 @@ rec {
       cp -r include/attoparsecpp $out/include/
       '';
 
+    nativeBuildInputs = with pkgs; [
+    ];
+
     buildInputs = with pkgs; [
 # (callPackage ./googlebench.nix { stdenv = stdenv; })
     ];

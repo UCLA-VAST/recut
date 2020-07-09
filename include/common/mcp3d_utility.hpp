@@ -101,13 +101,13 @@ DirsInDir(const std::string &directory_, bool full_path = true,
 
 bool IsFile(const std::string &file_path);
 
-bool IsFile(const filesystem::path &file_path);
+bool IsFile(const std::filesystem::path &file_path);
 
 bool IsDir(const std::string &dir_path);
 
 bool IsEmptyDir(const std::string &dir_path);
 
-filesystem::path ResolveSymlink(const std::string &path_);
+std::filesystem::path ResolveSymlink(const std::string &path_);
 
 void AllFilesExist(const std::vector<std::string> &file_paths);
 

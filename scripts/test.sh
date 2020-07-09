@@ -4,7 +4,8 @@
 # all of these commands can be run in background as asynchronous
 # jobs leveraging asynctasks.vim and asyncrun.vim
 
-for flag in ALL NO_INTERVAL_RV SCHEDULE_INTERVAL_RV
+#for flag in ALL NO_INTERVAL_RV SCHEDULE_INTERVAL_RV
+for flag in ALL 
 do
   echo $flag
   config_fn=../src/config.hpp
@@ -17,10 +18,12 @@ do
   # 6 hour timout
   to_seconds=21600
   cd ../bin
-  for test_num in {11..32}
+
+  #for test_num in {11..32}
+  for test_num in {11..11}
   do
     name=recut-test-$flag-$test_num-2
-    # if it already exists
+    # if it doesn't already exists
     if [ ! -f ../data/$name.json ]; then
       echo "File ../data/${name}.json not found"
       timeout $to_seconds ./recut_test --gtest_output=json:../data/$name.json --gtest_filter=*.ChecksIfFinalVerticesCorrect/$test_num | tee ../data/$name.log
