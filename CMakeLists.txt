@@ -19,6 +19,17 @@ add_subdirectory(extern/benchmark)
 # works for cmake 3.9+
 find_package(OpenMP REQUIRED)
 
+// this creates tests that match the benchmarks
+// to check their validity, warning this invokes
+// a long form of all tests meaning execution will
+// take a long time to complete
+// during normal development this should be off
+// and all tests should run in under 2s
+option(TEST_ALL_BENCHMARKS 
+  "Conduct full run of tests which can be used for results or benchmarks"
+  OFF)
+
+
 set(MARKERS ${PROJECT_SOURCE_DIR}/src/markers.cpp)
 set(PARAMS ${PROJECT_SOURCE_DIR}/src/recut_parameters.cpp)
 set(APP2 ${PROJECT_SOURCE_DIR}/test/app2_helpers.hpp)
@@ -65,6 +76,9 @@ target_link_libraries(recut_bench PRIVATE benchmark)
 set(ALL_TARGETS recut_test recut_bench)
 foreach(I ${ALL_TARGETS})
   message(STATUS "${I}")
+  if (TEST_ALL_BENCHMARKS)
+    target_compile_definitions(${I} PRIVATE TEST_ALL_BENCHMARKS)
+  endif()
   target_link_libraries(${I} PRIVATE OpenMP::OpenMP_CXX)
   target_compile_features(${I} PRIVATE cxx_std_17)
   #target_compile_definitions(${I} PUBLIC USE_HUGE_PAGE=${USE_HUGE_PAGE})
