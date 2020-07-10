@@ -178,7 +178,7 @@ class Interval {
       in_mem_ = false;
       // open output
       // output is now specific to the interval
-      fn_ = get_curr() + "/interval" + std::to_string(interval_id_) + ".bin";
+      fn_ = get_data_dir() + "/interval" + std::to_string(interval_id_) + ".bin";
 #ifdef FULL_PRINT
       cout << "SaveToDisk() fn: " << fn_ << '\n';
 #endif
