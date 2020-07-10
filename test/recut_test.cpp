@@ -157,7 +157,7 @@ void interval_base_immutable(VID_t nvid) {
 
 void load_save(bool mmap_) {
   auto nvid = 64;
-  auto fn = get_curr() + "/interval0.bin";
+  auto fn = get_data_dir() + "/interval0.bin";
   auto base = INTERVAL_BASE;
   fs::remove(fn); // for safety, but done automatically via ~Interval
   ASSERT_FALSE(fs::exists(fn));
@@ -605,7 +605,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         if ((tcase == 4) && (grid_size < 8) && (slt_pct < 10))
           continue;
 
-        std::string base(get_curr());
+        std::string base(get_data_dir());
         auto fn = base + "/test_images/";
         fn = fn + std::to_string(grid_size);
         fn = fn + "/tcase";
@@ -671,7 +671,7 @@ TEST(Image, ReadWrite) {
   long sz1 = (long)grid_size;
   long sz2 = (long)grid_size;
   VID_t tol_sz = sz0 * sz1 * sz2;
-  std::string fn(get_curr());
+  std::string fn(get_data_dir());
   fn = fn + "/test_images/ReadWriteTest/";
   vector<int> image_offsets = {0, 0, 0}; // zyx
   vector<int> image_extents = {grid_size, grid_size, grid_size};
@@ -819,7 +819,7 @@ TEST(VertexAttr, ReadWriteInterval) {
   auto ptr = new VertexAttr[nvid];
   size_t size = sizeof(VertexAttr) * nvid;
   // path logic
-  auto base = get_curr() + "/test_data/";
+  auto base = get_data_dir() + "/test_data/";
   auto fn = base + "interval0.bin";
   // fs::remove_all(fn); // make sure it's an overwrite
   fs::create_directories(base);

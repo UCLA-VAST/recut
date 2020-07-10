@@ -53,6 +53,15 @@ std::string get_curr() {
   return fs::canonical(full_path).string();
 }
 
+std::string get_parent_dir() {
+  fs::path full_path(fs::current_path());
+  return fs::canonical(full_path.parent_path()).string();
+}
+
+std::string get_data_dir() {
+  return get_parent_dir() + "/data";
+}
+
 VID_t get_central_sub(int grid_size) {
   return grid_size / 2 - 1; // place at center
 }
@@ -429,7 +438,7 @@ RecutCommandLineArgs get_args(int grid_size, int interval_size,
 
   RecutCommandLineArgs args;
   auto params = args.recut_parameters();
-  auto str_path = get_curr();
+  auto str_path = get_data_dir();
   params.set_marker_file_path(
       str_path + "/test_markers/" + std::to_string(grid_size) + "/tcase" +
       std::to_string(tcase) + "/slt_pct" + std::to_string(slt_pct) + "/");
