@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import os
 import argparse
 import matplotlib.pyplot as plt
 import subprocess
@@ -176,74 +177,120 @@ def value(args):
                     args,
                     **local_kwargs)
 
+def recmake(args, flags):
+    flagstr = ''
+    for flag in flags:
+        flagstr += f'-D{flag}=ON '
+
+    cmd = f'cd {args.project}; rm -rf build; mkdir build; cd build; ~/downloads/cmake-3.17.0-Linux-x86_64/bin/cmake .. -DCMAKE_BUILD_TYPE=Debug {flagstr}'
+    print(cmd)
+    subprocess.run(cmd, shell=True)
+
+def remake(args):
+    cmd = f'cd {args.project}; cd build; make -j 56; make install -j 56'
+    print(cmd)
+    subprocess.run(cmd, shell=True)
+
+def recompile(args, flags):
+    ''' recompile with desired MACRO / PREPROC dfines'''
+    recmake(args, flags)
+    remake(args)
+
+def run_with_log(fn, cmd):
+    log = f'{fn}.log'
+    subprocess.run(['touch', log])
+    with open(log) as out:
+        print(f'{cmd} > {log}')
+        subprocess.run(cmd.split(), stdout=out)
+
 def read(args):
-    benchmark_fn = args.output + 'load_bench'
-    test_fn = args.output + 'test_detail'
-    fns = (benchmark_fn, test_fn)
+    benchmark_fn = args.output + 'read_bench'
+    test_fn = args.output + 'read_test'
+    desired_test_runs= range(32,39)
+    flags = ['NO_SCHEDULE']
+
+    desired_tests = []
+    for flag in flags:
+        # needs to be recompiled with TEST ALL BENCHMARKS preprocessor set to true
+        # recompile(args, ('TEST_ALL_BENCHMARKS', flag))
+        for test_num in desired_test_runs:
+            test_fn_specific = f'{test_fn}-{flag}-{test_num}'
+            test_cmd = f'{args.binary}./recut_test --gtest_output=json:{test_fn_specific}.json --gtest_filter=*.ChecksIfFinalVerticesCorrect/{test_num}'
+            desired_tests.append((test_fn_specific, test_cmd))
 
     if args.rerun:
-        # TODO needs to be recompiled with TEST ALL BENCHMARKS preprocessor set to true
-        cmd = (f'bin/./recut_test --gtest_output=json:{test_fn}.json --gtest_filter=*.ChecksIfFinalVerticesCorrect*',
-              f'bin/./recut_bench --benchmark_filter=load* --benchmark_out_format=json --benchmark_out={benchmark_fn}.json')
 
-        for fn, cmd in zip(fns, cmds):
-            log = f'{fn}.log'
-            subprocess.run(['touch', log])
-            with open(log) as out:
-                subprocess.run(cmd.split(), stdout=out)
+        benchmark_cmd = f'{args.binary}./recut_bench --benchmark_filter=load* --benchmark_out_format=json --benchmark_out={benchmark_fn}.json'
+
+        run_with_log(benchmark_fn, benchmark_cmd)
+
+        for test_args in desired_tests:
+            run_with_log(test_args)
+
 
     if args.save or args.show:
 
         # get benchmark component
         benchmark_data = json.load(open(f'{benchmark_fn}.json'))['benchmarks']
 
-        # extract desired benchmark data info
-        tests = ["load_exact_tile", "load_tile_from_large_image"]
+        # define desired fields
+        fields = ["load_exact_tile", "load_tile_from_large_image"]
         pretty_name = ["Exact tile", "Tile in large image"]
-        bench_dicts = [filter_key_value(benchmark_data, 'name', test) for test in tests]
+
+        # extract desired benchmark data info
+        bench_dicts = [filter_key_value(benchmark_data, 'name', field) for field in fields]
         grid_sizes = [extract_postfix(d, 'name') for d in bench_dicts ]
+
+        #throughput
         bytes_per_second = [extract_values(d, 'bytes_per_second') for d in bench_dicts ]
+        # convert to more convenient metric
         MB_per_second = [list(map(lambda x: x / 1000000, b)) for b in bytes_per_second]
+
+        # latencies converted
         cpu_time_second = [list(map(lambda x: x / 1000, extract_values(d, 'cpu_time'))) for d in bench_dicts ]
         real_time_second = [list(map(lambda x: x / 1000, extract_values(d, 'real_time'))) for d in bench_dicts ]
 
         xargs = (grid_sizes, r'Grid side length (pixels)')
 
-        # rplot(*xargs,
-                # MB_per_second, r'MB/s',
-                # r'Image read throughput',
-                # args,
-                # legends=pretty_name)
+        rplot(*xargs,
+                MB_per_second, r'MB/s',
+                r'Image read throughput',
+                args,
+                legends=pretty_name)
 
-        # rplot(*xargs,
-                # cpu_time_second, r'Time (s)',
-                # r'Image read latency (CPU time)',
-                # args,
-                # legends=pretty_name)
+        rplot(*xargs,
+                cpu_time_second, r'Time (s)',
+                r'Image read latency (CPU time)',
+                args,
+                legends=pretty_name)
 
-        # rplot(*xargs,
-                # real_time_second, r'Time (s)',
-                # r'Image read latency (real time)',
-                # args,
-                # legends=pretty_name)
+        rplot(*xargs,
+                real_time_second, r'Time (s)',
+                r'Image read latency (real time)',
+                args,
+                legends=pretty_name)
 
         # load test component
-        desired_test_runs= [slice(11,18)]
-        test_json = json.load(open(f'{test_fn}.json'))
-        test_dicts = [test_json['testsuites'][0]['testsuite'][r] for r in desired_test_runs]
+        test_jsons = [json.load(open(f'{args[0]}.json')) for args in desired_tests]
+        test_dicts = [test_json['testsuites'][0]['testsuite'][0] for test_json in test_jsons]
+        filtered_test_dicts = filter_key_value(test_dicts, 'Grid / interval ratio', 1) 
+        assert(len(test_dicts) == len(filtered_test_dicts))
 
         # extract desired test data info
-        ylabel = 'Value update computation (s)'
-        grid_sizes = [extract_values(d, 'grid_size') for d in test_dicts]
-        comp_time = [extract_values(d, ylabel) for d in test_dicts]
-        import pdb; pdb.set_trace()
+        ylabel = r'Value update computation (s)'
+        title = r'Value update computation vs image read'
+        test_grid_sizes = extract_values(filtered_test_dicts, 'grid_size')
+        comp_time = extract_values(filtered_test_dicts, ylabel)
 
-        # [ extract_values(d, 'total vertex difference vs sequential value') for d in test_dicts[0]]
-# extract_values(test_dicts, 'total vertex difference vs sequential value')
-# [d.get('total vertex difference vs sequential value') for d in test_dicts]
-# diff = filter(lambda x: x.get('total vertex difference vs sequential value'), test_dicts)
-# comparison_test_dicts = remove_if(test_dicts, 'total vertex difference vs sequential value', None)
+        xargs = ((test_grid_sizes, *grid_sizes), r'Grid side length (pixels)')
+        yiter = [comp_time, *real_time_second]
 
+        rplot(*xargs,
+                yiter, r'Wall time (s)',
+                title,
+                args,
+                legends=('Sequential computation', 'Exact tile read', 'Tile in large image read')
+                )
 
 def main(args):
     if args.all:
@@ -275,11 +322,12 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--type', help="image output type", choices=['eps', 'png', 'pdf'], default='eps')
     parser.add_argument('-d', '--dpi', help="image resolution", type=int, default=300)
 
-    project_dir = getcwd() + '/../'
+    project_dir = os.path.join(os.path.dirname(__file__), '../')
     bin_dir = project_dir + 'bin/'
     data_dir = project_dir + 'data/'
     parser.add_argument('-o', '--output', help="output data directory", default=data_dir)
     parser.add_argument('-b', '--binary', help="binary directory", default=bin_dir)
+    parser.add_argument('-p', '--project', help="project directory", default=project_dir)
 
     args = parser.parse_args()
     main(args)

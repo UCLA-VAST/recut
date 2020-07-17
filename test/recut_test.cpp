@@ -1347,16 +1347,16 @@ INSTANTIATE_TEST_CASE_P(
       std::make_tuple(1024, 128, 128, 6, 1, false, true),
       std::make_tuple(2048, 256, 256, 6, 1, false, false),
       std::make_tuple(4096, 512, 512, 6, 1, false, false),
-      std::make_tuple(8192, 1024, 1024, 6, 1, false, false), // 31 // 31
+      std::make_tuple(8192, 1024, 1024, 6, 1, false, false), // 31 
 
-      // record for benchmarks
-      std::make_tuple(16, 16, 16, 6, 1, false, true),
+      // 1:1 grid:interval ratios
+      std::make_tuple(16, 16, 16, 6, 1, false, true), // 32
       std::make_tuple(32, 32, 32, 6, 1, false, true),
       std::make_tuple(64, 64, 64, 6, 1, false, true),
       std::make_tuple(128, 128, 128, 6, 1, false, true),
       std::make_tuple(256, 256, 256, 6, 1, false, true),
       std::make_tuple(512, 512, 512, 6, 1, false, true),
-      std::make_tuple(1024, 1024, 1024, 6, 1, false, true)
+      std::make_tuple(1024, 1024, 1024, 6, 1, false, true) // 38
 #endif
 #endif
       ));
