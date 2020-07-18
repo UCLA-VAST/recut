@@ -31,6 +31,7 @@ option(TEST_ALL_BENCHMARKS
   "Conduct full run of tests which can be used for results or benchmarks"
   OFF)
 
+set( GIT_HASH OFF CACHE STRING "Hash of the latest git commit")
 #  Scheduling
 option( NO_INTERVAL_RV OFF)
 option( SCHEDULE_INTERVAL_RV OFF)
@@ -138,6 +139,9 @@ foreach(I ${ALL_TARGETS})
   endif()
   if (USE_HUGE_PAGE)
     target_compile_definitions(${I} PRIVATE USE_HUGE_PAGE)
+  endif()
+  if (GIT_HASH)
+    target_compile_definitions(${I} PRIVATE GIT_HASH)
   endif()
 
   target_link_libraries(${I} PRIVATE OpenMP::OpenMP_CXX)

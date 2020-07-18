@@ -22,6 +22,9 @@ namespace fs = std::filesystem;
 
 #define PI 3.14159265
 #define assertm(exp, msg) assert(((void)msg, exp))
+// be able to change pp values into std::string
+#define XSTR(x) STR(x)
+#define STR(x) #x
 
 // taken from Bryce Adelstein Lelbach's Benchmarking C++ Code talk:
 struct high_resolution_timer {
