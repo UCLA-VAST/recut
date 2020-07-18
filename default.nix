@@ -1,28 +1,29 @@
-{
-  pkgs   ? import <nixpkgs> {},
-         stdenv ? pkgs.stdenv
-}:
-rec {
-  myProject = stdenv.mkDerivation {
-    name = "recut";
-    version = "0.1";
+with import <nixpkgs> {};
+let
+  unstable = import (fetchTarball https://nixos.org/channels/nixos-unstable/nixexprs.tar.xz) { };
+  in
 
-    src = ./.;
-    checkPhase = ''
-      make -C test check
-      make -C benchmark check
-      '';
+stdenv.mkDerivation {
+  name = "recut";
 
-    installPhase = ''
-      mkdir -p $out/include
-      cp -r include/attoparsecpp $out/include/
-      '';
+  # https://nixos.org/nix/manual/#builtin-filterSource
+  src = builtins.filterSource 
+    (path: type: lib.cleanSourceFilter path type 
+    && baseNameOf path != "build"
+    && baseNameOf path != "bin"
+    && baseNameOf path != "data") ./.;
 
-    nativeBuildInputs = with pkgs; [
-    ];
+  nativeBuildInputs = [ unstable.cmake ];
+  buildInputs = [ openssl boost libtiff unstable.mpich 
+    python38Packages.matplotlib ];
 
-    buildInputs = with pkgs; [
-# (callPackage ./googlebench.nix { stdenv = stdenv; })
-    ];
-  };
+  buildPhase = "mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug -DUSE_MCP3D=ON && echo; echo; pwd; make -j 56 && make install -j 56";
+
+  checkPhase="echo; pwd; cd ../bin && ./recut_test --gtest_output=json:../data/test_detail.json ../data/test_detail.log";
+  /*command=cd bin && ./recut_bench --benchmark_filter=load_tile*/
+
+  installPhase = ''
+    mkdir -p $out/bin
+    cp bin/* $out/bin/
+  '';
 }

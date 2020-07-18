@@ -1,7 +1,9 @@
-#!/usr/bin/env python
-
 import os
 import argparse
+# set backend that allows save plots without X11 forwarding/
+# $DISPLAY set
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import subprocess
 import json
@@ -57,27 +59,23 @@ def rplot(xiter, xlabel, yiter, ylabel, title, args, lineprops=['k-x', 'r-o', 'g
 def radius(args):
     """ Radius Stage Plots """
     # TODO timestamp
-    radius_json = args.output + 'test_radius.json'
-    bench_json = args.output + 'bench_radius.json'
-    if args.rerun:
-        # run the radius script from scratch
+    test_fn = args.output + 'radius_test'
+    bench_fn = args.output + 'radius_bench'
+
+    if args.rerun: # run the radius script from scratch
+        if args.recompile:
+            recompile(args, ['TEST_ALL_BENCHMARKS'])
 
         # test
-        test_cmd = args.binary + './recut_test --gtest_filter=Radius.* --gtest_output=json:' + radius_json
-        tlog = 'test.log'
-        subprocess.run(['touch', tlog])
-        with open(tlog) as out:
-            subprocess.run(test_cmd.split(), stdout=out)
+        test_cmd = args.binary + './recut_test --gtest_filter=Radius.* --gtest_output=json:{test_fn}.json'
+        run_with_log(test_fn, test_cmd)
 
         # bench
-        bench_cmd = args.binary + './recut_bench --benchmark_filter=radius.* --benchmark_out_format=json:../data/bench_radius.json'
-        blog = 'bench.log'
-        subprocess.run(['touch', blog])
-        with open(blog) as out:
-            subprocess.run(bench_cmd.split(), stdout=out)
+        bench_cmd = args.binary + './recut_bench --benchmark_filter=radius.* --benchmark_out_format=json:{bench_fn}.json'
+        run_with_log(bench_fn, bench_cmd)
 
     if args.save or args.show:
-        df = json.load(open(radius_json))
+        df = json.load(open(f'{test_fn}.json'))
         test= df['testsuites'][0]['testsuite'][0]
         recut_keys = [i for i in test.keys() if 'Recut' in i]
         xy_keys = [i for i in test.keys() if 'XY' in i]
@@ -94,12 +92,12 @@ def radius(args):
         assert(grid_sizes == sorted(grid_sizes_xy))
         radius_sizes = [i/4 for i in grid_sizes]
 
-        xargs = [radius_sizes, r'Radius size (pixels)']
+        xargs = [(radius_sizes, radius_sizes), r'Radius size (pixels)']
         yiter = (recut_errors, xy_errors)
         legends = (r'Recut', r'APP2')
         rplot(*xargs, yiter, r'Error rate (\%)', r'Calculate Radius and Prune Accuracy', args, legends=legends)
 
-        data = json.load(open(bench_json))
+        data = json.load(open(f'{bench_fn}.json'))
         df = data['benchmarks']
         # only collect it once, the benchmark data is inherently ordered
         grid_sizes = [int(i['name'].split('/')[-1]) for i in df if 'recut' in i['name']]
@@ -113,26 +111,35 @@ def radius(args):
         radius_sizes = [i/4 for i in grid_sizes]
 
         legends = (r'Recut $ O(n) $', r'APP2 $ O(nr^3) $', r'Accurate $ O(nr^4) $')
-        rplot(radius_sizes, r'Radius size (pixels)', real_times,
+        rplot((radius_sizes, radius_sizes, radius_sizes), r'Radius size (pixels)', real_times,
                 r'Elapsed time (%s)' % time_unit, r'Calculate Radius Performance Sequential', args, legends=legends)
 
-        # ## Fastmarching Performance
 
 def value(args):
+    ''' Fastmarching Performance '''
     flags=['NO_SCHEDULE', 'NO_INTERVAL_RV', 'SCHEDULE_INTERVAL_RV']
+    desired_test_runs = [11, 12, 18, 19, 25, 26, 32, 33]
+    # desired_test_runs = range(11, 32)
+    test_fn = args.output + 'value_test'
 
     for flag in flags:
+        if args.recompile:
+            recompile(args, ('TEST_ALL_BENCHMARKS', flag))
+
+        desired_tests = get_desired_test_info(args, desired_test_runs, test_fn, flag)
+        if args.rerun:
+            for test_args in desired_tests:
+                run_with_log(*test_args)
+
         # Gather all json files
+        # load all desired test files
         test_dicts = []
-        # for i in range(11, 32):
-        for i in range(11, 12):
-            name='{}recut-test-{}-{}-2.json'.format(args.output, flag, i)
+        for fn, cmd in desired_tests:
             try:
-                df = json.load(open(name))
+                df = json.load(open(f'{fn}.json'))
+                test_dicts.append(df['testsuites'][0]['testsuite'][0])
             except:
-                print('Warning: fn:{} not found'.format(name))
-            test_dicts.append(df['testsuites'][0]['testsuite'][0])
-        len(test_dicts)
+                print(f'Warning: fn:{fn}.json not found')
 
         # rearrange into lists by ratio
         ratios = (2, 4, 8)
@@ -171,17 +178,22 @@ def value(args):
                     r'Intervals per grid vs. computational throughput {}'.format(flag),  args,
                     **local_kwargs)
 
-            rplot(*xargs,
-                    r_frac_difference, r'Error rate (\%)',
-                    r'Intervals per grid vs. error rate {}'.format(flag),
-                    args,
-                    **local_kwargs)
+            # rplot(*xargs,
+                    # r_frac_difference, r'Error rate (\%)',
+                    # r'Intervals per grid vs. error rate {}'.format(flag),
+                    # args,
+                    # **local_kwargs)
+
+def get_hash():
+    return subprocess.check_output(["git", "describe", "--always"]).strip().decode()
 
 def recmake(args, flags):
     flagstr = ''
     for flag in flags:
         flagstr += f'-D{flag}=ON '
-
+ 
+    GIT_HASH = get_hash()
+    flagstr += f'-DGIT_HASH={GIT_HASH} '
     cmd = f'cd {args.project}; rm -rf build; mkdir build; cd build; ~/downloads/cmake-3.17.0-Linux-x86_64/bin/cmake .. -DCMAKE_BUILD_TYPE=Debug {flagstr}'
     print(cmd)
     subprocess.run(cmd, shell=True)
@@ -197,11 +209,26 @@ def recompile(args, flags):
     remake(args)
 
 def run_with_log(fn, cmd):
+    GIT_HASH = get_hash()
     log = f'{fn}.log'
+    json_fn = f'{fn}.json'
     subprocess.run(['touch', log])
     with open(log) as out:
         print(f'{cmd} > {log}')
         subprocess.run(cmd.split(), stdout=out)
+    # tag with the git hash
+    subprocess.run(f'echo GIT_HASH:{GIT_HASH} >> {log}', shell=True)
+    # every json file produced by this script is tagged with git hash
+    subprocess.run("jq '.GIT_HASH = \"%s\"' %s" % (GIT_HASH, json_fn), shell=True)
+
+def get_desired_test_info(args, desired_test_runs, test_fn , flag):
+    desired_tests = []
+    for test_num in desired_test_runs:
+        test_fn_specific = f'{test_fn}-{flag}-{test_num}'
+        test_cmd = f'{args.binary}./recut_test --gtest_output=json:{test_fn_specific}.json --gtest_filter=*.ChecksIfFinalVerticesCorrect/{test_num}'
+        desired_tests.append((test_fn_specific, test_cmd))
+    return desired_tests
+
 
 def read(args):
     benchmark_fn = args.output + 'read_bench'
@@ -209,23 +236,20 @@ def read(args):
     desired_test_runs= range(32,39)
     flags = ['NO_SCHEDULE']
 
-    desired_tests = []
     for flag in flags:
         # needs to be recompiled with TEST ALL BENCHMARKS preprocessor set to true
-        # recompile(args, ('TEST_ALL_BENCHMARKS', flag))
-        for test_num in desired_test_runs:
-            test_fn_specific = f'{test_fn}-{flag}-{test_num}'
-            test_cmd = f'{args.binary}./recut_test --gtest_output=json:{test_fn_specific}.json --gtest_filter=*.ChecksIfFinalVerticesCorrect/{test_num}'
-            desired_tests.append((test_fn_specific, test_cmd))
+        # to gather all the correct tests
+        if args.recompile:
+            recompile(args, ('TEST_ALL_BENCHMARKS', flag))
+
+        desired_tests = get_desired_test_info(args, desired_test_runs, test_fn, flag)
 
     if args.rerun:
-
         benchmark_cmd = f'{args.binary}./recut_bench --benchmark_filter=load* --benchmark_out_format=json --benchmark_out={benchmark_fn}.json'
-
         run_with_log(benchmark_fn, benchmark_cmd)
 
         for test_args in desired_tests:
-            run_with_log(test_args)
+            run_with_log(*test_args)
 
 
     if args.save or args.show:
@@ -270,7 +294,7 @@ def read(args):
                 args,
                 legends=pretty_name)
 
-        # load test component
+        # load all desired test files
         test_jsons = [json.load(open(f'{args[0]}.json')) for args in desired_tests]
         test_dicts = [test_json['testsuites'][0]['testsuite'][0] for test_json in test_jsons]
         filtered_test_dicts = filter_key_value(test_dicts, 'Grid / interval ratio', 1) 
@@ -301,7 +325,7 @@ def main(args):
 
     if args.case == 'radius':
         radius(args)
-    if args.case == 'case':
+    if args.case == 'value':
         value(args)
     if args.case == 'read':
         read(args)
@@ -320,7 +344,8 @@ if __name__ == '__main__':
     parser.add_argument('-w', '--save', help="save all plots to file", action="store_true")
     parser.add_argument('-s', '--show', help="show figures interactively while generating", action="store_true")
     parser.add_argument('-t', '--type', help="image output type", choices=['eps', 'png', 'pdf'], default='eps')
-    parser.add_argument('-d', '--dpi', help="image resolution", type=int, default=300)
+    parser.add_argument('-l', '--recompile', help="recompile with CMake then Make", action="store_true")
+    parser.add_argument('-d', '--dpi', help="image resolution", type=int, default=100)
 
     project_dir = os.path.join(os.path.dirname(__file__), '../')
     bin_dir = project_dir + 'bin/'

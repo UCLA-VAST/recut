@@ -1363,5 +1363,6 @@ INSTANTIATE_TEST_CASE_P(
 
       int main(int argc, char **argv) {
         testing::InitGoogleTest(&argc, argv);
+        testing::Test::RecordProperty("GlobalProperty", XSTR(GIT_HASH));
         return RUN_ALL_TESTS();
       }
