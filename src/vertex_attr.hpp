@@ -300,6 +300,7 @@ public:
     cout << '\n';
   }
 
+  // equivalent to peek, read only
   T *top() {
     if (empty()) {
       throw;
@@ -314,6 +315,7 @@ public:
       throw;
   }
 
+  // remove top element
   T *pop(VID_t ib, std::string cmp_field) {
     check_empty();
     T *min_elem = elems[0];
@@ -329,6 +331,8 @@ public:
     // min_elem->handles.erase(ib);
     // min_elem->handles[ib] = std::numeric_limits<handle_t>::max();
     min_elem->handle = std::numeric_limits<handle_t>::max();
+
+    stats_update();
     return min_elem;
   }
 
@@ -338,7 +342,15 @@ public:
     // mark handle such that all swaps are recorded in correct handle
     t->handle = elems.size() - 1;
     up_heap(elems.size() - 1, ib, cmp_field);
-    // return t->handle_nb;
+
+    // check for a new max_size
+    if (elems.size() > this->max_size) {
+      this->max_size = elems.size();
+    }
+
+    this->op_count++;
+    this->cumulative_count += this->elems.size();
+    stats_update();
   }
 
   handle_t find(handle_t vid) {
@@ -382,8 +394,18 @@ public:
   }
   int size() { return elems.size(); }
 
+  uint64_t op_count = 0;
+  uint64_t max_size = 0;
+  uint64_t cumulative_count = 0;
+
 private:
   vector<T *> elems;
+
+    // keep track of total sizes summed across all valid
+  void stats_update() {
+    this->op_count++;
+    this->cumulative_count += this->elems.size();
+  }
 
   // used for indexing handle
   bool swap_heap(int id1, int id2, VID_t ib, std::string cmp_field) {

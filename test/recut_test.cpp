@@ -1217,7 +1217,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
   // update with fixed tile_thresholds for the entire update
   auto update_stats = recut.update("value", tile_thresholds);
-  auto interval_open_count = update_stats->interval_open_count;
+  auto interval_open_count = update_stats->interval_open_counts;
   // print vector
   std::ostringstream cat;
   std::copy(interval_open_count.begin(), interval_open_count.end(), std::ostream_iterator<int>(cat, ", "));
@@ -1228,6 +1228,11 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   RecordProperty("Total intervals", interval_open_count.size());
   auto mean = sum_opens / (double)interval_open_count.size();
   RecordProperty("Mean tile reads", mean);
+
+  auto sum_mean_q = = std::accumulate(update_stats->mean_sizes.begin(), update_stats->mean_sizes.end(), 0);
+  // TODO mean and std switched into a separate function put in utils
+  RecordProperty("Mean queue size",  sum_mean_q);
+  //RecordProperty("Max queue size", update_stats->mean());
 
   recut.finalize(args.output_tree); // this fills args.output_tree
   //cout << "recut update no IO elapsed (s)" << recut_update_value_elapsed << '\n';
