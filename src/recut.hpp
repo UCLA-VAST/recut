@@ -31,10 +31,28 @@ struct InstrumentedUpdateStatistics {
   double total_time;
   double computation_time;
   double io_time;
-  std::vector<uint16_t> interval_open_count;
+  std::vector<uint16_t> interval_open_counts;
+  std::vector<uint64_t> op_counts;
+  std::vector<uint64_t> max_sizes;
+  std::vector<uint64_t> mean_sizes;
+  std::vector<uint64_t> cumulative_counts;
 
-  InstrumentedUpdateStatistics(int iterations, double total_time, double computation_time, double io_time, std::vector<uint16_t> interval_open_count)
-    : iterations(iterations), total_time(total_time), computation_time(computation_time), io_time(io_time), interval_open_count(interval_open_count) {}
+  template <typename T>
+  InstrumentedUpdateStatistics(int iterations, double total_time, double computation_time, double io_time, std::vector<uint16_t> interval_open_counts,
+      const VID_t &grid_interval_size, const VID_t &interval_block_size, const T &heap_vec)
+    : iterations(iterations), total_time(total_time), computation_time(computation_time), io_time(io_time), interval_open_counts(interval_open_counts) {
+    
+          for (int i = 0; i < grid_interval_size; i++) {
+            for (int j = 0; j < interval_block_size; j++) {
+              op_counts.push_back(heap_vec[i][j].op_count);
+              max_sizes.push_back(heap_vec[i][j].max_size);
+              mean_sizes.push_back(heap_vec[i][j].cumulative_count / heap_vec[i][j].op_count);
+              cumulative_counts.push_back(heap_vec[i][j].cumulative_count);
+            }
+          }
+    
+    }
+
 
 };
 
@@ -2144,7 +2162,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
           //", block iterations: "<< final_inner_iter + 1<< '\n';
 #endif
 
-          return std::make_unique<InstrumentedUpdateStatistics>(outer_iteration_idx, total_update_time, computation_time, io_time, interval_open_count);
+          return std::make_unique<InstrumentedUpdateStatistics>(outer_iteration_idx, total_update_time, computation_time, io_time, interval_open_count, grid_interval_size, grid.GetNBlocks(), this->heap_vec );
         } // end update()
 
       /* get the vid with respect to the entire image passed to the
