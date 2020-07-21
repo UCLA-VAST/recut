@@ -32,10 +32,10 @@ struct InstrumentedUpdateStatistics {
   double computation_time;
   double io_time;
   std::vector<uint16_t> interval_open_counts;
-  std::vector<uint64_t> op_counts;
+
+  // These refer to the FIFO sizes
   std::vector<uint64_t> max_sizes;
   std::vector<uint64_t> mean_sizes;
-  std::vector<uint64_t> cumulative_counts;
 
   template <typename T>
   InstrumentedUpdateStatistics(int iterations, double total_time, double computation_time, double io_time, std::vector<uint16_t> interval_open_counts,
@@ -44,10 +44,8 @@ struct InstrumentedUpdateStatistics {
     
           for (int i = 0; i < grid_interval_size; i++) {
             for (int j = 0; j < interval_block_size; j++) {
-              op_counts.push_back(heap_vec[i][j].op_count);
               max_sizes.push_back(heap_vec[i][j].max_size);
               mean_sizes.push_back(heap_vec[i][j].cumulative_count / heap_vec[i][j].op_count);
-              cumulative_counts.push_back(heap_vec[i][j].cumulative_count);
             }
           }
     

@@ -666,3 +666,21 @@ inline size_t GetAvailMem() {
   return 0L;
 #endif
 }
+
+// avoid a dependency on boost.accumulators
+// return mean of iterable and sample standard deviation
+template <typename T>
+std::tuple<double, double, double> iter_stats(T v) {
+
+  double sum = std::accumulate(v.begin(), v.end(), 0.0);
+  double mean = sum / v.size();
+
+  std::vector<double> diff(v.size());
+  std::transform(v.begin(), v.end(), diff.begin(), [mean](double x) { return x - mean; });
+  double sq_sum = std::inner_product(diff.begin(), diff.end(), diff.begin(), 0.0);
+
+  // the mean is calculated from this data set the population mean
+  // is unknown, therefore use the sample stdev (n - 1)
+  double stdev = std::sqrt(sq_sum / (v.size() - 1));
+  return {mean, sum, stdev};
+}
