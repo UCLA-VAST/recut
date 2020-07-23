@@ -97,16 +97,16 @@ struct VertexAttr {
 
   std::string description() {
     std::string descript = "vid:" + std::to_string(vid);
-    descript += "\n";
+    descript += '\n';
     descript += "value:" + std::to_string(value);
-    descript += "\n";
+    descript += '\n';
     descript += "state:";
     for (int i = 7; i >= 0; i--) {
       descript += edge_state.test(i) ? "1" : "0";
     }
-    descript += "\n";
+    descript += '\n';
     descript += "radius:" + std::to_string(radius);
-    descript += "\n";
+    descript += '\n';
     return descript;
   }
 

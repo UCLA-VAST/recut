@@ -10,6 +10,8 @@
 #ifndef MCP3D_VAA3D_MARKERS
 #define MCP3D_VAA3D_MARKERS
 
+typedef uint64_t VID_t;
+
 #include <vector>
 #include <list>
 #include <map>
@@ -77,6 +79,7 @@ struct MyMarker
 	MyMarker(const MyPoint & v){x=v.x; y=v.y; z=v.z; radius = 0.0; type = 3; parent = 0;}
 	MyMarker(const MYXYZ & v){x=v.x; y=v.y; z=v.z; radius = 0.0; type = 3; parent = 0;}
 
+
 	double & operator [] (const int i) {
 		assert(i>=0 && i <= 2);
 		return (i==0) ? x : ((i==1) ? y : z);
@@ -102,6 +105,17 @@ struct MyMarker
 	{
 		return ((long long)(z+0.5) * sz01 + (long long)(y+0.5)*sz0 + (long long)(x+0.5));
 	}
+
+	VID_t vid(VID_t xdim, VID_t ydim)
+	{
+		return static_cast<VID_t>( x ) + static_cast<VID_t>( y ) * xdim + static_cast<VID_t>( z ) * xdim * ydim;
+	}
+
+    std::string description(VID_t xdim, VID_t ydim) {
+      return std::to_string(static_cast<int>(x)) + ", " + std::to_string(static_cast<int>(y)) + ", " + std::to_string(static_cast<int>(z)) + " index: " + std::to_string(this->vid(xdim, ydim));
+    }
+
+
 
     // offsets is in zyx order
     template <typename T>

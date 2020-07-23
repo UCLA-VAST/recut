@@ -118,7 +118,8 @@ def radius(args):
 def value(args):
     ''' Fastmarching Performance '''
     flags=['NO_SCHEDULE', 'NO_INTERVAL_RV', 'SCHEDULE_INTERVAL_RV']
-    desired_test_runs = [11, 12, 18, 19, 25, 26, 32, 33]
+    # desired_test_runs = [11, 12, 18, 19, 25, 26, 32, 33]
+    desired_test_runs = [32, 33, 34, 35, 36, 37, 38]
     # desired_test_runs = range(11, 32)
     test_fn = args.output + 'value_test'
 
