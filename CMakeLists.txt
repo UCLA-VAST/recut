@@ -46,7 +46,7 @@ option(NO_RV "Reject any vertices from having new updated values after they have
 # Define your logging level in order of increasing additive levels of specificity
 # TODO this should by a command line option with -v, -vv, -vvv
 option(LOG "Overview logging details of the recut run, this suffices for basic timing info, granularity at interval level" ON)
-option(LOG_FULL "roughly block by block processing granularity" ON)
+option(LOG_FULL "roughly block by block processing granularity" OFF)
 option(FULL_PRINT "Print vertex by vertex behavior. Warning: will significantly slow performance" OFF)
 
 option( MMAP "Determines read speed of vertex info from INTERVAL_BASE" ON)
@@ -166,8 +166,13 @@ foreach(I ${ALL_TARGETS})
   set_target_properties(${I} PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
 endforeach()
 
+if (USE_MCP3D) 
+  message(STATUS "USE_MCP3D ON")
+endif()
+
 # test specific
 if (TEST_ALL_BENCHMARKS)
+  message(STATUS " TEST_ALL_BENCHMARKS ON")
   target_compile_definitions(recut_test PRIVATE TEST_ALL_BENCHMARKS)
 endif()
 

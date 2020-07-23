@@ -974,6 +974,48 @@ TEST(RecutPipeline, DISABLED_PrintDefaultInfo) {
     << get_used_vertex_size(2048, 4) << std::scientific << endl;
 }
 
+TEST(CompareTree, All) {
+  std::vector<MyMarker*> truth;
+  std::vector<MyMarker*> check;
+  VID_t grid_size = 4;
+  auto interval_size = grid_size;
+  VID_t block_size = 2;
+
+  auto args = get_args(grid_size, interval_size, block_size, 100, 1); 
+  auto recut = Recut<uint16_t>(args);
+  recut.initialize();
+
+  std::vector<MyMarker*> false_negatives;
+  std::vector<MyMarker*> false_positives;
+
+  // block id 0
+  truth.push_back(new MyMarker(0., 0., 0.));
+  check.push_back(new MyMarker(0., 0., 0.));
+
+  // block id 1
+  truth.push_back(new MyMarker(2., 1., 0.));
+  check.push_back(new MyMarker(2., 1., 0.));
+
+  // block id 2
+  auto neg = new MyMarker(0., 2., 0.);
+  truth.push_back(neg);
+  false_negatives.push_back(neg);
+  auto pos = new MyMarker(0., 2., 2.);
+  check.push_back(pos);
+  false_positives.push_back(pos);
+
+  // block id 5
+  truth.push_back(new MyMarker(0., 0., 2.));
+  check.push_back(new MyMarker(0., 0., 2.));
+
+  auto results = compare_tree(truth, check, grid_size, grid_size, recut);
+
+  ASSERT_TRUE(*(false_negatives[0]) == *(results.false_negatives[0]));
+  ASSERT_TRUE(*(false_positives[0]) == *(results.false_positives[0]));
+  // it's a problem if two markers with same vid are in a results vector
+  ASSERT_EQ(results.duplicates, 0);
+}
+
 TEST(Radius, Full) {
   bool print_all = true;
   bool check_xy = false;
@@ -1254,9 +1296,9 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   RecordProperty("Selected vertices / computation (s)", args.output_tree.size() / update_stats->computation_time);
   RecordProperty("Selected vertices / IO (s)", args.output_tree.size() / update_stats->io_time);
   RecordProperty("Iterations", update_stats->iterations);
-  RecordProperty("Value update computation (s)", update_stats->computation_time);
-  RecordProperty("Value update IO (s)", update_stats->io_time);
-  RecordProperty("Value update elapsed (s)", update_stats->total_time);
+  RecordProperty("Value update computation (ms)", 1000 * update_stats->computation_time);
+  RecordProperty("Value update IO (ms)", 1000 * update_stats->io_time);
+  RecordProperty("Value update elapsed (ms)", 1000 * update_stats->total_time);
   RecordProperty("Value update computation / IO ratio", update_stats->computation_time / update_stats->io_time);
   RecordProperty("Grid / interval ratio", grid_size / interval_size);
 
@@ -1290,7 +1332,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
     cout << "sequential fastmarching elapsed (s)" << timer->elapsed() << '\n';
     // warning record property will auto cast to an int
-    RecordProperty("Sequential elapsed (s)", timer->elapsed());
+    RecordProperty("Sequential elapsed (ms)", 1000 * timer->elapsed());
     RecordProperty("Recut speedup factor %", 100 * (update_stats->total_time / timer->elapsed()) ) ;
 
     //// would have to keep interval in memory for this to work
@@ -1303,7 +1345,14 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     auto diff = absdiff(sequential_output_tree.size(), args.output_tree.size());
     RecordProperty("Error", diff);
     RecordProperty("Error rate (%)", 100 * (diff / sequential_output_tree.size()));
-    ASSERT_EQ(sequential_output_tree.size(), args.output_tree.size());
+
+    EXPECT_EQ(sequential_output_tree.size(), args.output_tree.size());
+
+    auto results = compare_tree(sequential_output_tree, args.output_tree, grid_size, grid_size, recut);
+    EXPECT_EQ(results.false_positives.size(), 0);
+    EXPECT_EQ(results.false_negatives.size(), 0);
+    // it's a problem if two markers with same vid are in a results vector
+    ASSERT_EQ(results.duplicates, 0);
   }
 #endif
 }
@@ -1335,7 +1384,10 @@ INSTANTIATE_TEST_CASE_P(
       // real data multi-block
       std::make_tuple(8, 8, 4, 6, 100., false, true), // 9
       // real data multi-interval
-      std::make_tuple(8, 4, 4, 6, 100., false, true) // 10
+      std::make_tuple(8, 4, 4, 6, 100., false, true), // 10
+      // delete later
+      std::make_tuple(64, 64, 16, 6, 1, false, true) // 11
+      //std::make_tuple(256, 256, 64, 6, 1, false, true) // 12
 #ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for
       ,
       // interval grid ratio tests

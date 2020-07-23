@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <numeric>
 #include "markers.h"
 #include "recut_parameters.hpp"
 #include <algorithm> //min
@@ -643,6 +644,59 @@ inline double diff_time(struct timespec time1, struct timespec time2) {
   return time2.tv_sec - time1.tv_sec + (time2.tv_nsec - time1.tv_nsec) * 1e-9;
 }
 
+struct CompareResults {
+  std::vector<MyMarker*> false_negatives;
+  std::vector<MyMarker*> false_positives;
+  VID_t duplicates;
+};
+
+// prints mismatches between two trees in uid sorted order
+template <typename T, typename T2, typename T3>
+struct CompareResults compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3& recut) {
+
+  // the MyMarker operator< provided by library doesn't work
+  //auto lt = [](const MyMarker* lhs, const MyMarker* rhs) {
+    //return std::tie(lhs->z, lhs->y, lhs->x) < std::tie(rhs->z, rhs->y, rhs->x);
+  //};
+
+  // this can make understanding results easier,
+  // not necessary for correctness or perf
+  //std::sort(truth_tree.begin(), truth_tree.end(), lt);
+  //std::sort(check_tree.begin(), check_tree.end(), lt);
+
+  VID_t sz, duplicates;
+  duplicates = 0;
+  std::vector<MyMarker*> false_negatives;
+  for (const auto& truth_vertex : truth_tree) {
+    auto block_id = recut.get_block_id(truth_vertex->ind(xdim, ydim));
+
+    auto remove_begin = std::remove_if(check_tree.begin(), check_tree.end(), [&truth_vertex, xdim, ydim](MyMarker* elem) { 
+        return elem->vid(xdim, ydim) == truth_vertex->vid(xdim, ydim);
+    }); 
+    if (remove_begin != check_tree.end()) {
+      sz = check_tree.size();
+      //std::cout << "size: " << sz << '\n';
+      check_tree.erase(remove_begin, check_tree.end());
+      //std::cout << "final size " << check_tree.size() << '\n';
+      if (sz != check_tree.size() + 1) {
+        std::cout << "Failure: found " << sz - check_tree.size() << "duplicates of vid: " << truth_vertex->vid(xdim, ydim) << '\n';
+        duplicates++;
+      }
+      std::cout <<"match at ";
+    } else {
+      std::cout << "false negative at "; 
+      false_negatives.push_back(truth_vertex);
+    }
+    std::cout << truth_vertex->description(xdim, ydim) << " found in block " << block_id << '\n';
+  }
+
+  for (const auto& v : check_tree) {
+    cout << "false positive at: " << v->description(xdim, ydim) << '\n';
+  }
+
+  return { false_negatives, check_tree, duplicates };
+}
+
 /* returns available memory to system in bytes
 */
 inline size_t GetAvailMem() {
@@ -674,13 +728,19 @@ std::tuple<double, double, double> iter_stats(T v) {
 
   double sum = std::accumulate(v.begin(), v.end(), 0.0);
   double mean = sum / v.size();
+  double stdev;
 
-  std::vector<double> diff(v.size());
-  std::transform(v.begin(), v.end(), diff.begin(), [mean](double x) { return x - mean; });
-  double sq_sum = std::inner_product(diff.begin(), diff.end(), diff.begin(), 0.0);
+  if (v.size() == 1) {
+    stdev = 0.;
+  } else {
+    std::vector<double> diff(v.size());
+    std::transform(v.begin(), v.end(), diff.begin(), [mean](double x) { return x - mean; });
+    double sq_sum = std::inner_product(diff.begin(), diff.end(), diff.begin(), 0.0);
 
-  // the mean is calculated from this data set the population mean
-  // is unknown, therefore use the sample stdev (n - 1)
-  double stdev = std::sqrt(sq_sum / (v.size() - 1));
+    // the mean is calculated from this data set the population mean
+    // is unknown, therefore use the sample stdev (n - 1)
+    stdev = std::sqrt(sq_sum / (v.size() - 1));
+  }
+
   return {mean, sum, stdev};
 }

@@ -44,8 +44,13 @@ struct InstrumentedUpdateStatistics {
     
           for (int i = 0; i < grid_interval_size; i++) {
             for (int j = 0; j < interval_block_size; j++) {
-              max_sizes.push_back(heap_vec[i][j].max_size);
-              mean_sizes.push_back(heap_vec[i][j].cumulative_count / heap_vec[i][j].op_count);
+              auto heap = heap_vec[i][j];
+              max_sizes.push_back(heap.max_size);
+              if (heap.cumulative_count == 0 || heap.op_count == 0) {
+                mean_sizes.push_back(0);
+              } else {
+                mean_sizes.push_back(heap.cumulative_count / heap.op_count);
+              }
             }
           }
     
@@ -182,7 +187,7 @@ template <class image_t> class Recut {
     void get_interval_subscript(const VID_t id, VID_t &i, VID_t &j, VID_t &k);
     inline void get_img_subscript(VID_t id, VID_t &i, VID_t &j, VID_t &k);
     inline void get_block_subscript(VID_t id, VID_t &i, VID_t &j, VID_t &k);
-    inline VID_t get_block_id(VID_t id);
+    inline VID_t get_block_id(const VID_t id);
     VID_t get_interval_id(VID_t vid);
     VID_t get_sub_to_interval_id(VID_t i, VID_t j, VID_t k);
     void check_ghost_update(VID_t interval_id, VID_t block_id,
@@ -564,7 +569,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
    * Note: block_nums are renumbered within each interval
    * does not consider overlap of ghost regions
    */
-  template <class image_t> VID_t Recut<image_t>::get_block_id(VID_t vid) {
+  template <class image_t> VID_t Recut<image_t>::get_block_id(const VID_t vid) {
     VID_t i, j, k;
     i = j = k = 0;
     get_img_subscript(vid, i, j, k);
@@ -1907,7 +1912,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
               throw;
           }
 #ifdef FULL_PRINT
-          print_image_3D(mcp3d_tile.Volume<image_t>(0), interval_extents);
+          //print_image_3D(mcp3d_tile.Volume<image_t>(0), interval_extents);
 #endif
 
 #ifdef LOG
@@ -2202,7 +2207,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
         }
 
       template <class image_t>
-        inline void Recut<image_t>::get_img_subscript(const VID_t id, VID_t &i,
+        inline void Recut<image_t>::get_img_subscript(VID_t id, VID_t &i,
             VID_t &j, VID_t &k) {
           i = id % image_length_x;
           j = (id / image_length_x) % image_length_y;
