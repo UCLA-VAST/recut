@@ -19,6 +19,9 @@ add_subdirectory(extern/benchmark)
 # works for cmake 3.9+
 find_package(OpenMP REQUIRED)
 
+#add_library(range_v3 INTERFACE IMPORTED)
+#set_target_properties(range_v3 PROPERTIES INTERFACE_INCLUDE_DIRECTORIES extern/range-v3/include)
+
 # CMake Preprocessor Defines:
 
 #  this creates tests that match the benchmarks
@@ -145,6 +148,7 @@ foreach(I ${ALL_TARGETS})
   endif()
 
   target_link_libraries(${I} PRIVATE OpenMP::OpenMP_CXX)
+  #target_link_libraries(${I} PRIVATE range_v3)
   target_compile_features(${I} PRIVATE cxx_std_17)
   # these are the actual flags passed during compilation
   target_compile_options(${I} PRIVATE -fno-omit-frame-pointer -g)

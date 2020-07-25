@@ -1386,8 +1386,8 @@ INSTANTIATE_TEST_CASE_P(
       // real data multi-interval
       std::make_tuple(8, 4, 4, 6, 100., false, true), // 10
       // delete later
-      std::make_tuple(64, 64, 16, 6, 1, false, true) // 11
-      //std::make_tuple(256, 256, 64, 6, 1, false, true) // 12
+      std::make_tuple(64, 64, 16, 6, 1, false, true), // 11
+      std::make_tuple(256, 256, 64, 6, 1, false, true) // 12
 #ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for
       ,
       // interval grid ratio tests

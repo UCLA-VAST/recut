@@ -659,8 +659,7 @@ struct CompareResults compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim,
     //return std::tie(lhs->z, lhs->y, lhs->x) < std::tie(rhs->z, rhs->y, rhs->x);
   //};
 
-  // this can make understanding results easier,
-  // not necessary for correctness or perf
+  // this can make understanding results easier, not necessary for correctness or perf
   //std::sort(truth_tree.begin(), truth_tree.end(), lt);
   //std::sort(check_tree.begin(), check_tree.end(), lt);
 
@@ -670,16 +669,19 @@ struct CompareResults compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim,
   for (const auto& truth_vertex : truth_tree) {
     auto block_id = recut.get_block_id(truth_vertex->ind(xdim, ydim));
 
-    auto remove_begin = std::remove_if(check_tree.begin(), check_tree.end(), [&truth_vertex, xdim, ydim](MyMarker* elem) { 
+    auto match_count = std::count_if(check_tree.begin(), check_tree.end(), [&truth_vertex, xdim, ydim](MyMarker* elem) { 
         return elem->vid(xdim, ydim) == truth_vertex->vid(xdim, ydim);
     }); 
-    if (remove_begin != check_tree.end()) {
-      sz = check_tree.size();
+    if (match_count > 0) {
+      //sz = check_tree.size();
       //std::cout << "size: " << sz << '\n';
-      check_tree.erase(remove_begin, check_tree.end());
+      //check_tree.erase(remove_begin, check_tree.end());
       //std::cout << "final size " << check_tree.size() << '\n';
-      if (sz != check_tree.size() + 1) {
-        std::cout << "Failure: found " << sz - check_tree.size() << "duplicates of vid: " << truth_vertex->vid(xdim, ydim) << '\n';
+      //if (sz != check_tree.size() + 1) {
+        //std::cout << "Failure: found " << sz - check_tree.size() << "duplicates of vid: " << truth_vertex->vid(xdim, ydim) << '\n';
+        //duplicates++;
+      //}
+      if (match_count > 1) {
         duplicates++;
       }
       std::cout <<"match at ";
@@ -690,11 +692,22 @@ struct CompareResults compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim,
     std::cout << truth_vertex->description(xdim, ydim) << " found in block " << block_id << '\n';
   }
 
+  std::vector<MyMarker*> false_positives;
   for (const auto& v : check_tree) {
-    cout << "false positive at: " << v->description(xdim, ydim) << '\n';
+    auto block_id = recut.get_block_id(v->ind(xdim, ydim));
+
+    auto match_count = std::count_if(truth_tree.begin(), truth_tree.end(), [&v, xdim, ydim](MyMarker* elem) { 
+        return elem->vid(xdim, ydim) == v->vid(xdim, ydim);
+    }); 
+    if (match_count == 0) {
+      cout << "false positive at: " << v->description(xdim, ydim) << '\n';
+      false_positives.push_back(v);
+    } else if (match_count > 1) {
+      duplicates++;
+    } 
   }
 
-  return { false_negatives, check_tree, duplicates };
+  return { false_negatives, false_positives, duplicates };
 }
 
 /* returns available memory to system in bytes
