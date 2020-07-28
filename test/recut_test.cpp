@@ -991,6 +991,8 @@ TEST(CompareTree, All) {
   // block id 0
   truth.push_back(new MyMarker(0., 0., 0.));
   check.push_back(new MyMarker(0., 0., 0.));
+  // test the MyMarker* lambda works 
+  ASSERT_TRUE(eq(truth[0], check[0]));
 
   // block id 1
   truth.push_back(new MyMarker(2., 1., 0.));
@@ -1000,6 +1002,7 @@ TEST(CompareTree, All) {
   auto neg = new MyMarker(0., 2., 0.);
   truth.push_back(neg);
   false_negatives.push_back(neg);
+
   auto pos = new MyMarker(0., 2., 2.);
   check.push_back(pos);
   false_positives.push_back(pos);
@@ -1008,12 +1011,72 @@ TEST(CompareTree, All) {
   truth.push_back(new MyMarker(0., 0., 2.));
   check.push_back(new MyMarker(0., 0., 2.));
 
-  auto results = compare_tree(truth, check, grid_size, grid_size, recut);
+  // test the MyMarker* lambda works 
+  ASSERT_TRUE(lt(neg, pos));
 
-  ASSERT_TRUE(*(false_negatives[0]) == *(results.false_negatives[0]));
-  ASSERT_TRUE(*(false_positives[0]) == *(results.false_positives[0]));
+  auto a = new MyMarker(0., 0., 2.);
+  auto b = new MyMarker(0., 0., 2.);
+  // test the MyMarker* lambda works 
+  ASSERT_TRUE(eq(a, b));
+
+  auto counter = unique_count(truth);
+  // no repeats therefore count should be the same
+  ASSERT_EQ(truth.size(), counter);
+    
+  // add repeats
+  // block id 1
+  truth.push_back(new MyMarker(2., 1., 0.));
+  check.push_back(new MyMarker(2., 1., 0.));
+
+  counter = unique_count(truth);
+  // repeats therefore count should be diff 
+  ASSERT_EQ(truth.size(), counter + 1);
+
+  for (const auto & v : truth) {
+    std::cout << v->description(grid_size, grid_size) << '\n';
+  }
+  for (const auto & v : check) {
+    std::cout << v->description(grid_size, grid_size) << '\n';
+  }
+
+  auto results = compare_tree(truth, check, grid_size, grid_size, recut);
+  // make sure duplicates are found
+  ASSERT_EQ(results->duplicates, 2);
+
+  // remove duplicates
+  truth.pop_back();
+  check.pop_back();
+  std::cout << "removed duplicates\n";
+
+  for (const auto & v : truth) {
+    std::cout << v->description(grid_size, grid_size) << '\n';
+  }
+  for (const auto & v : check) {
+    std::cout << v->description(grid_size, grid_size) << '\n';
+  }
+
+  results = compare_tree(truth, check, grid_size, grid_size, recut);
   // it's a problem if two markers with same vid are in a results vector
-  ASSERT_EQ(results.duplicates, 0);
+  ASSERT_EQ(results->duplicates, 0);
+
+  auto get_mismatch = [&](auto false_negatives, auto check_false_negatives) {
+    auto check = check_false_negatives  
+        | rng::views::transform( [](auto pairi) { return pairi.first; } )
+        | rng::to_vector
+        | rng::action::sort;
+    auto truth = get_vids(false_negatives, grid_size, grid_size);
+    std::cout << "mismatch";
+    print(check);
+    print(truth);
+    auto diff = rng::views::set_intersection(truth, check); // set_difference
+    return rng::distance(diff); // return range length
+  };
+
+  auto count_mismatch_negatives = get_mismatch(false_negatives, results->false_negatives);
+  auto count_mismatch_positives = get_mismatch(false_positives, results->false_positives);
+
+  ASSERT_EQ(count_mismatch_positives, 1);
+  ASSERT_EQ(count_mismatch_negatives, 1);
 }
 
 TEST(Radius, Full) {
@@ -1349,10 +1412,10 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     EXPECT_EQ(sequential_output_tree.size(), args.output_tree.size());
 
     auto results = compare_tree(sequential_output_tree, args.output_tree, grid_size, grid_size, recut);
-    EXPECT_EQ(results.false_positives.size(), 0);
-    EXPECT_EQ(results.false_negatives.size(), 0);
+    EXPECT_EQ(results->false_positives.size(), 0);
+    EXPECT_EQ(results->false_negatives.size(), 0);
     // it's a problem if two markers with same vid are in a results vector
-    ASSERT_EQ(results.duplicates, 0);
+    ASSERT_EQ(results->duplicates, 0);
   }
 #endif
 }
@@ -1387,7 +1450,7 @@ INSTANTIATE_TEST_CASE_P(
       std::make_tuple(8, 4, 4, 6, 100., false, true), // 10
       // delete later
       std::make_tuple(64, 64, 16, 6, 1, false, true), // 11
-      std::make_tuple(256, 256, 64, 6, 1, false, true) // 12
+      std::make_tuple(128, 128, 16, 16, 1, false, true) // 12
 #ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for
       ,
       // interval grid ratio tests

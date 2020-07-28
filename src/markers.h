@@ -101,12 +101,12 @@ struct MyMarker
 		return (z!=other.z || y!=other.y || x!=other.x);
 	}
 
-	long long ind(long long sz0, long long sz01)
+	long long ind(long long sz0, long long sz01) const
 	{
 		return ((long long)(z+0.5) * sz01 + (long long)(y+0.5)*sz0 + (long long)(x+0.5));
 	}
 
-	VID_t vid(VID_t xdim, VID_t ydim)
+	VID_t vid(VID_t xdim, VID_t ydim) const
 	{
 		return static_cast<VID_t>( x ) + static_cast<VID_t>( y ) * xdim + static_cast<VID_t>( z ) * xdim * ydim;
 	}
