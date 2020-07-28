@@ -4,9 +4,7 @@
 # jobs leveraging asynctasks.vim and asyncrun.vim
 
 [project-init]
-command=rm -rf build && mkdir build && cd build && ~/downloads/cmake-3.17.0-Linux-x86_64/bin/cmake .. -DCMAKE_BUILD_TYPE=Debug -DUSE_HUGE_PAGE=True
-#command=rm -rf build && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug
-#RelWithDebInfo
+command=rm -rf build && mkdir build && cd build && ~/downloads/cmake-3.17.0-Linux-x86_64/bin/cmake .. -DCMAKE_BUILD_TYPE=Debug -DUSE_MCP3D=ON -DUSE_OMP_BLOCK=ON -DLOG_FULL=ON -DFULL_PRINT=ON
 cwd=<root>
 
 [project-build]
@@ -14,13 +12,12 @@ command=cd build && make -j 56 && make install -j 56
 cwd=<root>
 
 [project-test]
-command=cd bin && ./recut_test --gtest_output=json:../data/test_detail.json --gtest_filter=*.ChecksIfFinalVerticesCorrect* | tee ../data/test_detail.log
+command=cd bin && ./recut_test --gtest_output=json:../data/test_detail.json --gtest_filter=*.ChecksIfFinalVerticesCorrect/11 | tee ../data/test_detail.log
 cwd=<root>
 
 # rebuild and run test
 [project-change]
-command=cd build && make -j 56 && make install -j 56 && cd ../bin && ./recut_test --gtest_output=json:../data/test_detail.json --gtest_filter=*.*
-
+command=cd build && make -j 56 && make install -j 56 && cd ../bin && ./recut_test --gtest_output=json:../data/test_detail.json --gtest_filter=*.ChecksIfFinalVerticesCorrect/11
 cwd=<root>
 
 [project-bench]
