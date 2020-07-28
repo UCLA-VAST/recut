@@ -715,6 +715,7 @@ auto compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3& recut) {
     const auto block = recut.get_block_id(vid);
     std::cout <<  "match"<< " at: " << vid << " block: " << block << '\n';
   }
+  std::cout <<  "total matches: "<< rng::distance(matches) << '\n';
 
   // move all this logic into the function body of tests
   auto get_negatives = [&](auto& tree, auto& matches, auto specifier) {
@@ -727,12 +728,10 @@ auto compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3& recut) {
       | rng::to_vector ;
   };
 
-  auto res = new CompareResults<std::vector<std::pair<VID_t, VID_t>>>(
+  return new CompareResults<std::vector<std::pair<VID_t, VID_t>>>(
       get_negatives(truth_vids, matches, "negative"), 
       get_negatives(check_vids, matches, "positive"), 
       duplicates);
-
-  return res;
 }
 
 /* returns available memory to system in bytes
