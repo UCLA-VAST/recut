@@ -10,7 +10,10 @@
 #include <ctime>   // for srand
 #include <filesystem>
 #include <math.h>
+#include "range/v3/all.hpp"
+
 namespace fs = std::filesystem;
+namespace rng = ranges::v3;
 
 #ifdef USE_MCP3D
 #include "common/mcp3d_common.hpp"
@@ -26,6 +29,23 @@ namespace fs = std::filesystem;
 // be able to change pp values into std::string
 #define XSTR(x) STR(x)
 #define STR(x) #x
+
+// the MyMarker operator< provided by library doesn't work
+static const auto lt = [](const MyMarker* lhs, const MyMarker* rhs) {
+   return std::tie(lhs->z, lhs->y, lhs->x) < std::tie(rhs->z, rhs->y, rhs->x);
+};
+
+static const auto eq = [](const MyMarker* lhs, const MyMarker* rhs) {
+   //return *lhs == *rhs;
+  //std::cout << "eq lhs " << lhs->description(2,2) << " rhs " << rhs->description(2,2) << '\n';
+   return lhs->x == rhs->x && lhs->y == rhs->y && lhs->z == rhs->z;
+};
+
+// composing with pipe '|' is possible with actions and views
+// passing a container to an action must be done by using std::move
+const auto unique_count = [](std::vector<MyMarker*> v) {
+  return rng::distance(std::move(v) | rng::actions::sort(lt) | rng::actions::unique(eq));
+};
 
 // taken from Bryce Adelstein Lelbach's Benchmarking C++ Code talk:
 struct high_resolution_timer {
@@ -644,70 +664,93 @@ inline double diff_time(struct timespec time1, struct timespec time2) {
   return time2.tv_sec - time1.tv_sec + (time2.tv_nsec - time1.tv_nsec) * 1e-9;
 }
 
+template<typename T>
 struct CompareResults {
-  std::vector<MyMarker*> false_negatives;
-  std::vector<MyMarker*> false_positives;
+  T false_negatives;
+  T false_positives;
   VID_t duplicates;
+
+  CompareResults(T false_negatives, T false_positives, VID_t duplicates) :
+    false_negatives(false_negatives), false_positives(false_positives),
+    duplicates(duplicates) {}
+
+  //CompareResults() {}
 };
 
 // prints mismatches between two trees in uid sorted order
 template <typename T, typename T2, typename T3>
-struct CompareResults compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3& recut) {
+auto compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3& recut) {
 
-  // the MyMarker operator< provided by library doesn't work
-  //auto lt = [](const MyMarker* lhs, const MyMarker* rhs) {
-    //return std::tie(lhs->z, lhs->y, lhs->x) < std::tie(rhs->z, rhs->y, rhs->x);
-  //};
+  std::cout << "compare tree\n";
+  // duplicates will be asserted to == 0 at caller
+  VID_t duplicates = 0;
+  duplicates += truth_tree.size() - unique_count(truth_tree);
+  duplicates += check_tree.size() - unique_count(check_tree);
 
-  // this can make understanding results easier, not necessary for correctness or perf
-  //std::sort(truth_tree.begin(), truth_tree.end(), lt);
-  //std::sort(check_tree.begin(), check_tree.end(), lt);
+  for (const auto & v : truth_tree) {
+    std::cout << v->description(xdim, ydim) << '\n';
+  }
+  for (const auto & v : check_tree) {
+    std::cout << v->description(xdim, ydim) << '\n';
+  }
+  std::cout << (*(truth_tree[0]) == *(check_tree[0])) << '\n';
 
-  VID_t sz, duplicates;
-  duplicates = 0;
-  std::vector<MyMarker*> false_negatives;
-  for (const auto& truth_vertex : truth_tree) {
-    auto block_id = recut.get_block_id(truth_vertex->ind(xdim, ydim));
+  auto truth_vids = truth_tree | 
+    rng::view::transform([&](auto v) {
+            return v->vid(xdim, ydim); }); 
 
-    auto match_count = std::count_if(check_tree.begin(), check_tree.end(), [&truth_vertex, xdim, ydim](MyMarker* elem) { 
-        return elem->vid(xdim, ydim) == truth_vertex->vid(xdim, ydim);
-    }); 
-    if (match_count > 0) {
-      //sz = check_tree.size();
-      //std::cout << "size: " << sz << '\n';
-      //check_tree.erase(remove_begin, check_tree.end());
-      //std::cout << "final size " << check_tree.size() << '\n';
-      //if (sz != check_tree.size() + 1) {
-        //std::cout << "Failure: found " << sz - check_tree.size() << "duplicates of vid: " << truth_vertex->vid(xdim, ydim) << '\n';
-        //duplicates++;
-      //}
-      if (match_count > 1) {
-        duplicates++;
-      }
-      std::cout <<"match at ";
-    } else {
-      std::cout << "false negative at "; 
-      false_negatives.push_back(truth_vertex);
-    }
-    std::cout << truth_vertex->description(xdim, ydim) << " found in block " << block_id << '\n';
+  auto check_vids = check_tree | 
+    rng::view::transform([&](auto v) {
+            return v->vid(xdim, ydim); }); 
+
+  auto matches = rng::view::set_intersection( truth_tree, check_tree, eq);
+
+  //std::vector<MyMarker*> matches ;
+    //std::set_intersection( truth_tree.begin(),
+      //truth_tree.end(), check_tree.begin(),
+      //truth_tree.end(), matches, eq);
+
+  for (auto&& v : matches) {
+    const auto vid = v->vid(xdim, ydim);
+    const auto block = recut.get_block_id(vid);
+    std::cout <<  "match"<< " at: " << v->description(xdim, ydim) << "block: " << block << '\n';
   }
 
-  std::vector<MyMarker*> false_positives;
-  for (const auto& v : check_tree) {
-    auto block_id = recut.get_block_id(v->ind(xdim, ydim));
+  // move all this logic into the function body of tests
+  auto get_negatives = [&](auto& tree, auto& matches, auto specifier) {
+    return rng::view::set_difference( tree, matches) 
+      | rng::view::transform([&](auto v) { 
+          const auto vid = v->vid(xdim, ydim);
+          const auto block = recut.get_block_id(vid);
+          std::cout << "false " << specifier << " at: " << v->description(xdim, ydim) <<" block: " << block <<  '\n';
+          return std::make_pair(vid, block);
+        })
+      | rng::to_vector ;
+  };
 
-    auto match_count = std::count_if(truth_tree.begin(), truth_tree.end(), [&v, xdim, ydim](MyMarker* elem) { 
-        return elem->vid(xdim, ydim) == v->vid(xdim, ydim);
-    }); 
-    if (match_count == 0) {
-      cout << "false positive at: " << v->description(xdim, ydim) << '\n';
-      false_positives.push_back(v);
-    } else if (match_count > 1) {
-      duplicates++;
-    } 
-  }
+  auto res = new CompareResults<std::vector<std::pair<VID_t, VID_t>>>(
+      get_negatives(truth_tree, matches, "negative"), 
+      get_negatives(check_tree, matches, "positive"), 
+      duplicates);
+  //res->false_negatives = get_negatives(truth_tree, matches);
+  //res->false_positives = get_negatives(check_tree, matches);
 
-  return { false_negatives, false_positives, duplicates };
+  //std::vector<MyMarker*> false_positives;
+  //for (const auto& v : check_tree) {
+    //auto block_id = recut.get_block_id(v->ind(xdim, ydim));
+
+    //auto match_count = std::count_if(truth_tree.begin(), truth_tree.end(), [&v, xdim, ydim](MyMarker* elem) { 
+        //return elem->vid(xdim, ydim) == v->vid(xdim, ydim);
+    //}); 
+    //if (match_count == 0) {
+      //cout << "false positive at: " << v->description(xdim, ydim) << '\n';
+      //false_positives.push_back(v);
+    //} else if (match_count > 1) {
+      //duplicates++;
+    //} 
+  //}
+
+  return res;
 }
 
 /* returns available memory to system in bytes
