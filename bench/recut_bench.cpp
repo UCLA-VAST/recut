@@ -79,6 +79,67 @@ static void bench_critical_loop(benchmark::State &state) {
 ->ReportAggregatesOnly(true)
   ->Unit(benchmark::kMillisecond);
 
+  static void recut_radius_real_data(benchmark::State &state) {
+    std::vector<int> tcases = {6};
+    int slt_pct = 1;
+    uint16_t bkg_thresh = 0;
+    auto grid_size = state.range(0);
+    auto interval_size = state.range(1);
+    auto block_size = state.range(2);
+    TileThresholds<uint16_t> *tile_thresholds;
+    auto force_regenerate_image = false;
+
+    for (auto &tcase : tcases) {
+      // the total number of blocks allows more parallelism
+      // ideally intervals >> thread count
+      auto args = get_args(grid_size, interval_size, block_size, slt_pct,
+          tcase, force_regenerate_image);
+
+      // establish the tile thresholds for the entire test run (recut and
+      // sequential) to prevent unnecessary recalculations of theshodls
+      if (tcase == 6) {
+        //tile_thresholds = recut.get_tile_thresholds(image);
+        // bkg_thresh table: 421 ~.01 foreground
+        // if any pixels are found above or below these values it will fail
+        tile_thresholds = new TileThresholds<uint16_t>(30000, 0, 421);
+      } else {
+        // note these default thresholds apply to any generated image
+        // thus they will only be replaced if we're reading a real image
+        tile_thresholds = new TileThresholds<uint16_t>(2, 0, 0);
+      }
+
+      // run
+      auto recut = Recut<uint16_t>(args);
+      auto root_vids = recut.initialize();
+
+      for (auto _ : state) {
+        // warning: pause and resume high overhead
+        state.PauseTiming();
+        recut.setup_value(root_vids);
+        recut.update("value", tile_thresholds);
+        recut.setup_radius();
+        state.ResumeTiming();
+
+        recut.update("radius");
+        recut.release();
+      }
+    }
+  }
+  BENCHMARK(recut_radius_real_data)
+  ->Args({512, 512, 8})
+  ->Args({512, 512, 16})
+  ->Args({512, 512, 32})
+  ->Args({512, 512, 64})
+  ->Args({512, 512, 128})
+  ->Args({512, 512, 256})
+  ->Args({512, 512, 512})
+  //->Args({1024, 512, 32})
+  //->Args({1024, 512, 64})
+  //->Args({1024, 512, 128})
+  //->Args({1024, 512, 256})
+  //->Args({1024, 512, 512})
+  ->Unit(benchmark::kMillisecond);
+
   static void recut_radius(benchmark::State &state) {
     std::vector<int> tcases = {5};
     int slt_pct = 100;

@@ -24,7 +24,7 @@ def test_ratios(ratios, r_ratios):
         for check_ratio in check_ratios:
             assert (ratio == check_ratio),"ratio did not match"
 
-def rplot(xiter, xlabel, yiter, ylabel, title, args, lineprops=['k-x', 'r-o', 'g-d'],
+def rplot(xiter, xlabel, yiter, ylabel, title, args, lineprops=['k-x', 'r-o', 'g-d', 'b->', 'm-s'],
         legends=[''], legend_metric=''):
     assert(len(xiter) == len(yiter))
     assert(len(yiter) == len(legends))
@@ -34,13 +34,14 @@ def rplot(xiter, xlabel, yiter, ylabel, title, args, lineprops=['k-x', 'r-o', 'g
     for x, y, lineprop, legend in zip(xiter, yiter, lineprops, legends):
         plt.plot(x, y, lineprop, label=str(legend) + legend_metric)
     plt.xlabel(xlabel)
-    plt.xticks(x, rotation=75)
+    # take the first one even though they should all match
+    plt.xticks(xiter[0], rotation=75)
     plt.ylabel(ylabel)
     if len(xiter) > 1:
         plt.legend()
     plt.title(title)
     plt.tight_layout()
-    fig_output_path = f'{args.output}{title}.{args.type}'
+    fig_output_path = f'{args.output}{title}.{args.type}'.replace(' ', '_').replace('$', '').replace('\\', '')
 
     # pu.figure_setup()
     # fig_size = pu.get_fig_size(10, 10)
@@ -55,6 +56,14 @@ def rplot(xiter, xlabel, yiter, ylabel, title, args, lineprops=['k-x', 'r-o', 'g
         plt.show()
     else:
         plt.close()
+
+def get_desired_test_info(args, desired_test_runs, test_fn , flag):
+    desired_tests = []
+    for test_num in desired_test_runs:
+        test_fn_specific = f'{test_fn}-{flag}-{test_num}'
+        test_cmd = f'{args.binary}./recut_test --gtest_output=json:{test_fn_specific}.json --gtest_filter=*.ChecksIfFinalVerticesCorrect/{test_num}'
+        desired_tests.append((test_fn_specific, test_cmd))
+    return desired_tests
 
 def radius(args):
     """ Radius Stage Plots """
@@ -117,17 +126,20 @@ def radius(args):
 
 def value(args):
     ''' Fastmarching Performance '''
-    flags=['NO_SCHEDULE', 'NO_INTERVAL_RV', 'SCHEDULE_INTERVAL_RV']
+    cross_compile_flags=['NO_SCHEDULE', 'NO_INTERVAL_RV', 'SCHEDULE_INTERVAL_RV']
+    baseline_flags = ['TEST_ALL_BENCHMARKS', 'USE_OMP_BLOCK']
     # desired_test_runs = [11, 12, 18, 19, 25, 26, 32, 33]
     desired_test_runs = [32, 33, 34, 35, 36, 37, 38]
     # desired_test_runs = range(11, 32)
     test_fn = args.output + 'value_test'
 
-    for flag in flags:
-        if args.recompile:
-            recompile(args, ('TEST_ALL_BENCHMARKS', flag))
-
+    for flag in cross_compile_flags:
+        # wrap all test specifiers
         desired_tests = get_desired_test_info(args, desired_test_runs, test_fn, flag)
+
+        if args.recompile:
+            recompile(args, (*baseline_flags, flag))
+
         if args.rerun:
             for test_args in desired_tests:
                 run_with_log(*test_args)
@@ -214,108 +226,187 @@ def run_with_log(fn, cmd):
     log = f'{fn}.log'
     json_fn = f'{fn}.json'
     subprocess.run(['touch', log])
+    log_cmd = f'{cmd} &>> {log}'
+    # tag log with the git hash
     with open(log) as out:
         print(f'{cmd} > {log}')
         subprocess.run(cmd.split(), stdout=out)
-    # tag with the git hash
-    subprocess.run(f'echo GIT_HASH:{GIT_HASH} >> {log}', shell=True)
+    # print(log_cmd)
+    # subprocess.run(log_cmd, shell=True)
+    # subprocess.run(f'echo GIT_HASH:{GIT_HASH} >> {log}', shell=True)
     # every json file produced by this script is tagged with git hash
     subprocess.run("jq '.GIT_HASH = \"%s\"' %s" % (GIT_HASH, json_fn), shell=True)
 
-def get_desired_test_info(args, desired_test_runs, test_fn , flag):
-    desired_tests = []
-    for test_num in desired_test_runs:
-        test_fn_specific = f'{test_fn}-{flag}-{test_num}'
-        test_cmd = f'{args.binary}./recut_test --gtest_output=json:{test_fn_specific}.json --gtest_filter=*.ChecksIfFinalVerticesCorrect/{test_num}'
-        desired_tests.append((test_fn_specific, test_cmd))
-    return desired_tests
+def scalability(args):
+    benchmark = True
+    test = True
+    name = 'scalability'
+    benchmark_fn = args.output + f'{name}_bench'
+    test_fn = args.output + f'{name}_test'
+    desired_test_runs = range(39,46)
+    baseline_flags = ['TEST_ALL_BENCHMARKS', 'USE_OMP_BLOCK']
+    cross_compile_flags = ['NO_SCHEDULE']
 
-
-def read(args):
-    benchmark_fn = args.output + 'read_bench'
-    test_fn = args.output + 'read_test'
-    desired_test_runs= range(32,39)
-    flags = ['NO_SCHEDULE']
-
-    for flag in flags:
-        # needs to be recompiled with TEST ALL BENCHMARKS preprocessor set to true
-        # to gather all the correct tests
-        if args.recompile:
-            recompile(args, ('TEST_ALL_BENCHMARKS', flag))
-
-        desired_tests = get_desired_test_info(args, desired_test_runs, test_fn, flag)
+    if test:
+        desired_tests = []
+        for flag in cross_compile_flags:
+            # needs to be recompiled with TEST ALL BENCHMARKS preprocessor set to true
+            # to gather all the correct tests
+            if args.recompile:
+                recompile(args, (*baseline_flags, flag))
+            desired_tests.extend(get_desired_test_info(args, desired_test_runs, test_fn, flag))
 
     if args.rerun:
+        rerun(desired_tests, test)
+
+    if args.save or args.show:
+        if test:
+            test_jsons = [json.load(open(f'{args[0]}.json')) for args in desired_tests]
+            test_dicts = [test_json['testsuites'][0]['testsuite'][0] for test_json in test_jsons]
+            grid_sizes = (512, 1024, 2048, 4096)
+            # rearrange dicts by their grid_size
+            grid_dicts = [filter_key_value(test_dicts, 'grid_size',
+                grid_size) for grid_size in grid_sizes]
+
+            # extract desired test data info
+            # extract block size
+            block_sizes = [extract_values(grid_dict, 'block_size') for grid_dict in grid_dicts]
+
+            ylabel = r'Selected vertices / computation (s)'
+            throughput = [extract_values(grid_dict, ylabel) for grid_dict in grid_dicts]
+            title = r'Image scale vs. throughput [1\% label density]'
+            xargs = (block_sizes, r'Block side length (pixels)')
+            yargs = (throughput, ylabel)
+
+            rplot(*xargs,
+                    *yargs,
+                    title,
+                    args,
+                    legends=[str(g) for g in grid_sizes],
+                    legend_metric=' grid size'
+                    )
+
+            # narrow down to the first two grid sizes
+            # only up to 1024 has a comparison to the sequential runs
+            exclude = 2
+            seq_grid_sizes = grid_sizes[:exclude]
+            # rearrange dicts by their grid_size
+            seq_grid_dicts = grid_dicts[:exclude]
+            seq_block_sizes = block_sizes[:exclude]
+
+            field = r'Recut speedup factor %'
+            speedup = [extract_values(grid_dict, field) for grid_dict in seq_grid_dicts]
+            ylabel = r'Recut speedup factor (\%)'
+            title = r'Speedup factor vs. sequential [1\% label density]'
+            xargs = (seq_block_sizes, r'Block side length (pixels)')
+            yargs = (speedup, ylabel)
+
+            rplot(*xargs,
+                    *yargs,
+                    title,
+                    args,
+                    legends=[str(g) for g in seq_grid_sizes],
+                    legend_metric=' grid size'
+                    )
+
+
+def rerun(desired_tests, test=False, benchmark=False, benchmark_fn='', benchmark_regex=''):
+    if benchmark:
         benchmark_cmd = f'{args.binary}./recut_bench --benchmark_filter=load* --benchmark_out_format=json --benchmark_out={benchmark_fn}.json'
         run_with_log(benchmark_fn, benchmark_cmd)
 
+    if test:
         for test_args in desired_tests:
             run_with_log(*test_args)
 
+def read(args):
+    benchmark = True
+    test = True
+    benchmark_fn = args.output + 'read_bench'
+    test_fn = args.output + 'read_test'
+    desired_test_runs= range(32,39)
+    baseline_flags = ['TEST_ALL_BENCHMARKS', 'USE_OMP_BLOCK']
+    cross_compile_flags = ['ALL']
+
+    if test:
+        desired_tests = []
+        for flag in cross_compile_flags:
+            # needs to be recompiled with TEST ALL BENCHMARKS preprocessor set to true
+            # to gather all the correct tests
+            if args.recompile:
+                recompile(args, (*baseline_flags, flag))
+
+            desired_tests.extend(get_desired_test_info(args, desired_test_runs, test_fn, flag))
+
+    if args.rerun:
+        rerun(desired_tests, test, benchmark, benchmark_fn, benchmark_regex)
 
     if args.save or args.show:
 
-        # get benchmark component
-        benchmark_data = json.load(open(f'{benchmark_fn}.json'))['benchmarks']
+        if benchmark:
+            # get benchmark component
+            benchmark_data = json.load(open(f'{benchmark_fn}.json'))['benchmarks']
 
-        # define desired fields
-        fields = ["load_exact_tile", "load_tile_from_large_image"]
-        pretty_name = ["Exact tile", "Tile in large image"]
+            # define desired fields
+            fields = ["load_exact_tile", "load_tile_from_large_image"]
+            pretty_name = ["Exact tile", "Tile in large image"]
 
-        # extract desired benchmark data info
-        bench_dicts = [filter_key_value(benchmark_data, 'name', field) for field in fields]
-        grid_sizes = [extract_postfix(d, 'name') for d in bench_dicts ]
+            # extract desired benchmark data info
+            bench_dicts = [filter_key_value(benchmark_data, 'name', field) for field in fields]
+            grid_sizes = [extract_postfix(d, 'name') for d in bench_dicts ]
 
-        #throughput
-        bytes_per_second = [extract_values(d, 'bytes_per_second') for d in bench_dicts ]
-        # convert to more convenient metric
-        MB_per_second = [list(map(lambda x: x / 1000000, b)) for b in bytes_per_second]
+            #throughput
+            bytes_per_second = [extract_values(d, 'bytes_per_second') for d in bench_dicts ]
+            # convert to more convenient metric
+            MB_per_second = [list(map(lambda x: x / 1000000, b)) for b in bytes_per_second]
 
-        # latencies converted
-        cpu_time_second = [list(map(lambda x: x / 1000, extract_values(d, 'cpu_time'))) for d in bench_dicts ]
-        real_time_second = [list(map(lambda x: x / 1000, extract_values(d, 'real_time'))) for d in bench_dicts ]
+            # latencies converted
+            cpu_time_second = [list(map(lambda x: x / 1000, extract_values(d, 'cpu_time'))) for d in bench_dicts ]
+            real_time_second = [list(map(lambda x: x / 1000, extract_values(d, 'real_time'))) for d in bench_dicts ]
 
-        xargs = (grid_sizes, r'Grid side length (pixels)')
+            xargs = (grid_sizes, r'Grid side length (pixels)')
 
-        rplot(*xargs,
-                MB_per_second, r'MB/s',
-                r'Image read throughput',
-                args,
-                legends=pretty_name)
+            rplot(*xargs,
+                    MB_per_second, r'MB/s',
+                    r'Image read throughput',
+                    args,
+                    legends=pretty_name)
 
-        rplot(*xargs,
-                cpu_time_second, r'Time (s)',
-                r'Image read latency (CPU time)',
-                args,
-                legends=pretty_name)
-
-        rplot(*xargs,
-                real_time_second, r'Time (s)',
-                r'Image read latency (real time)',
-                args,
-                legends=pretty_name)
+            rplot(*xargs,
+                    cpu_time_second, r'Time (s)',
+                    r'Image read latency (CPU time)',
+                    args,
+                    legends=pretty_name) 
+            rplot(*xargs,
+                    real_time_second, r'Time (s)',
+                    r'Image read latency (real time)',
+                    args,
+                    legends=pretty_name)
 
         # load all desired test files
-        test_jsons = [json.load(open(f'{args[0]}.json')) for args in desired_tests]
-        test_dicts = [test_json['testsuites'][0]['testsuite'][0] for test_json in test_jsons]
-        filtered_test_dicts = filter_key_value(test_dicts, 'Grid / interval ratio', 1) 
-        assert(len(test_dicts) == len(filtered_test_dicts))
+        if test:
+            test_jsons = [json.load(open(f'{args[0]}.json')) for args in desired_tests]
+            test_dicts = [test_json['testsuites'][0]['testsuite'][0] for test_json in test_jsons]
+            filtered_test_dicts = filter_key_value(test_dicts, 'Grid / interval ratio', 1) 
+            assert(len(test_dicts) == len(filtered_test_dicts))
 
-        # extract desired test data info
-        ylabel = r'Value update computation (s)'
-        title = r'Value update computation vs image read'
-        test_grid_sizes = extract_values(filtered_test_dicts, 'grid_size')
-        comp_time = extract_values(filtered_test_dicts, ylabel)
+            # extract desired test data info
+            ylabel = r'Value update computation (s)'
+            title = r'Value update computation vs image read'
+            test_grid_sizes = extract_values(filtered_test_dicts, 'grid_size')
+            comp_time = extract_values(filtered_test_dicts, ylabel)
 
-        xargs = ((test_grid_sizes, *grid_sizes), r'Grid side length (pixels)')
-        yiter = [comp_time, *real_time_second]
+            xargs = ((test_grid_sizes, *grid_sizes), r'Grid side length (pixels)')
+            print(xargs)
+            yiter = [comp_time, *real_time_second]
+            print(yiter)
 
-        rplot(*xargs,
-                yiter, r'Wall time (s)',
-                title,
-                args,
-                legends=('Sequential computation', 'Exact tile read', 'Tile in large image read')
-                )
+            rplot(*xargs,
+                    yiter, r'Wall time (s)',
+                    title,
+                    args,
+                    legends=('Sequential computation', 'Exact tile read', 'Tile in large image read')
+                    )
 
 def main(args):
     if args.all:
@@ -330,6 +421,8 @@ def main(args):
         value(args)
     if args.case == 'read':
         read(args)
+    if args.case == 'scalability':
+        scalability(args)
 
 
 if __name__ == '__main__':
@@ -339,7 +432,7 @@ if __name__ == '__main__':
     group.add_argument('-a', '--all', help="Use all known cases",
             action="store_true")
     group.add_argument('-c', '--case', help="Specify which case to use",
-            choices=['radius', 'value', 'read'])
+            choices=['radius', 'scalability', 'value', 'read'])
 
     parser.add_argument('-r', '--rerun', help="Rerun all to generate new test data", action="store_true")
     parser.add_argument('-w', '--save', help="save all plots to file", action="store_true")
