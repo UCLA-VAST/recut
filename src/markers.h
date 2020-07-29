@@ -10,15 +10,16 @@
 #ifndef MCP3D_VAA3D_MARKERS
 #define MCP3D_VAA3D_MARKERS
 
-typedef uint64_t VID_t;
-
 #include <vector>
 #include <list>
 #include <map>
 #include <iostream>
 #include <fstream>
+#include <cstdint>
 #include <cassert>
 #include "common/mcp3d_macros.hpp"
+
+typedef uint64_t VID_t;
 
 using namespace std;
 

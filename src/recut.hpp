@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <bitset>
 #include <cstdlib>
-#include <deque>
 #include <fstream>
 #include <future>
 #include <iostream>
@@ -122,7 +121,7 @@ template <class image_t> class Recut {
     vector<vector<atomwrapper<bool>>> active_blocks;
     vector<vector<atomwrapper<bool>>> processing_blocks;
     vector<vector<local_heap>> heap_vec;
-    vector<vector<deque<VertexAttr *>>> surface_vec;
+    vector<vector<vector<uint64_t>>> surface_vec;
     // runtime global data structures
     vector<vector<vector<vector<struct VertexAttr>>>> updated_ghost_vec;
     vector<vector<vector<bool>>> active_neighbors;
@@ -241,7 +240,8 @@ template <class image_t> class Recut {
     void print_interval(VID_t interval_id, std::string stage);
     void print_grid(std::string stage);
     void setup_radius();
-    void setup_value(const std::vector<VID_t> root_vids);
+    void setup_value(const std::vector<VID_t>& root_vids);
+    //void setup_prune(const std::vector<VID_t>& root_vids);
     std::vector<VID_t> process_marker_dir(vector<int> global_image_offsets,
         vector<int> global_image_extents);
     ~Recut<image_t>();
@@ -344,35 +344,15 @@ template <class image_t> void Recut<image_t>::setup_radius() {
           << " to active\n";
 #endif
       }
-      // if (interval->get_valid_start()) {
-      // auto vid = interval->get_start_vertex();
-      // auto interval_id = get_interval_id(vid);
-      // auto block_id = get_block_id(vid);
-
-      // interval->SetActive(true);
-      // VertexAttr *dummy_attr =
-      // new VertexAttr(); // march is protect from dummy values like this
-      // dummy_attr->vid = vid;
-      // dummy_attr->radius = 1;
-
-      // safe_push(this->heap_vec[interval_id][block_id], dummy_attr,
-      // interval_id, block_id, "radius");
-      // active_blocks[interval_id][block_id].store(true);
-      //// place ghost update accounts for
-      //// edges of intervals in addition to blocks
-      //// this only adds to update_ghost_vec if the root happens
-      //// to be on a boundary
-      //// check_ghost_update(interval_id, dummy_attr, block_id, is_root,
-      //// "radius"); // add to aimage_y_len other ghost zone blocks
-    }
     }
   }
+}
 
   // activates
   // the intervals of the root and reads
   // them to the respective heaps
   template <class image_t>
-    void Recut<image_t>::setup_value(const std::vector<VID_t> root_vids) {
+    void Recut<image_t>::setup_value(const std::vector<VID_t>& root_vids) {
       bool is_root = true; // changes behavior of check_ghost_update
       assertm(!(root_vids.empty()), "Must have at least one root");
       for (const auto &vid : root_vids) {
@@ -395,7 +375,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
         // this only adds to update_ghost_vec if the root happens
         // to be on a boundary
         check_ghost_update(interval_id, block_id, dummy_attr, is_root,
-            "value"); // add to aimage_y_len other ghost zone blocks
+            "value"); // add to any other ghost zone blocks
 #ifdef LOG
         cout << "Set interval " << interval_id << " block " << block_id
           << " to active ";
@@ -476,7 +456,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
               // interval
               auto surface = this->surface_vec[interval_id][block_id];
               assertm(surface.size() != 0, "surface size is zero");
-              if (std::count(surface.begin(), surface.end(), v)) {
+              if (std::count(surface.begin(), surface.end(), v->vid)) {
                 cout << "L "; // L for leaf and because disambiguates selected S
               } else {
                 cout << "- ";
@@ -679,7 +659,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
       VID_t i, j, k;
       i = j = k = 0;
       get_img_subscript(vid, i, j, k);
-      // mod out aimage_y_len contributions from the interval
+      // mod out any contributions from the interval
       auto ia = i % interval_length_x;
       auto ja = j % interval_length_y;
       auto ka = k % interval_length_z;
@@ -779,13 +759,13 @@ template <class image_t> void Recut<image_t>::setup_radius() {
           cout << "\tAdjacent higher"
             << " radius " << +(dst->radius) << '\n';
 #endif
-          this->surface_vec[interval_id][block_id].push_back(dst);
+          this->surface_vec[interval_id][block_id].push_back(dst->vid);
           check_ghost_update(interval_id, block_id, dst, false, "radius");
         } else if (dst->radius == current->radius) {
 #ifdef FULL_PRINT
           cout << "\tAdjacent same\n";
 #endif
-          // aimage_y_len match adjacent same match will do
+          // any match adjacent same match will do
           same_radius_adjacent = dst;
         }
       } else {
@@ -847,7 +827,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
            tile_thresholds->calc_weight(dst_vox)) *
           0.5);
 
-      // this automatically excludes aimage_y_len root vertex since they have a
+      // this automatically excludes any root vertex since they have a
       // value of 0.
       if (dst->value > new_field) {
 
@@ -969,19 +949,19 @@ template <class image_t> void Recut<image_t>::setup_radius() {
   /*
    * This function holds all the logic of whether the update of a vertex within
    * one intervals and blocks domain is adjacent to another interval and block.
-   * If the vertex is within an adjacent region then it passes the vertex to
+   * If the vertex is covered by an adjacent region then it passes the vertex to
    * place_vertex for potential updating or saving. Assumes star stencil, no
    * diagonal connection in 3D this yields 6 possible block and or interval
    * connection corners.  block_id and interval_id are in linearly addressed
-   * row- order dst is always guaranteed to be within block_id and interval_id
-   * region dst has already been protected from global padded out of bounds from
+   * row-order. dst is always guaranteed to be within block_id and interval_id
+   * region. dst has already been protected by global padding out of bounds from
    * guard in accumulate. This function determines if dst is in a border region
    * and which neighbor block / interval should be notified of adjacent change
    * Warning: both update_ghost_vec and heap_vec store pointers to the same
    * underlying VertexAttr data, therefore out of order / race condition changes
    * are not protected against, however because only the first two values of
    * edge state can ever be changed by a separate thread this does not cause
-   * aimage_y_len issues
+   * issues
    */
   template <class image_t>
     void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
@@ -1218,7 +1198,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
    * otherwise This function takes no responsibility for updating the interval
    * as active or marking the block as active. It simply updates the correct
    * interval and blocks new vertex in that blocks unique heap. The caller is
-   * responsible for making aimage_y_len changes to activity state of interval or
+   * responsible for making any changes to activity state of interval or
    * block.
    */
   template <class image_t>
@@ -1227,13 +1207,20 @@ template <class image_t> void Recut<image_t>::setup_radius() {
         bool ignore_KNOWN_NEW, bool is_root,
         std::string stage) {
       // get attr
+      assert(updated_attr != nullptr);
       auto dst = get_attr_vid(interval_id, block_id, updated_attr->vid, nullptr);
+      assert(dst != nullptr);
 
       // handle simpler radii stage and exit
       if (stage == "radius") {
         if (dst->radius > updated_attr->radius) {
-          this->surface_vec[interval_id][block_id].push_back(dst);
-          return true;
+          if (dst->valid_vid()) { // "dst must have a valid vid"
+#ifdef FULL_PRINT
+            std::cout << "Integrate vertex for surface vec at " << interval_id << " " << block_id <<" " << dst->vid << '\n';
+#endif
+            this->surface_vec[interval_id][block_id].push_back(dst->vid);
+            return true;
+          }
         }
         return false;
       }
@@ -1264,8 +1251,6 @@ template <class image_t> void Recut<image_t>::setup_radius() {
       // handles[block_id] is set for cells within block_id blocks internal
       // domain or block_id ghost cell region, it represents all cells added to
       // heap block_id and all cells that can be manipulated by thread block_id
-      assert(dst != NULL);
-      assert(updated_attr != NULL);
       if (dst->value > updated_attr->value) {
         float old_val = dst->value;
         dst->copy_edge_state(*updated_attr); // copy connection to dst
@@ -1325,11 +1310,10 @@ template <class image_t> void Recut<image_t>::setup_radius() {
           // get mutator so that doesn't have to reloaded when assigning
           auto mutator = updated_ghost_vec->find(key);
           std::vector<struct VertexAttr> *vec = mutator.getValue();
-          // NULL if not found, continuing saves a redundant mutator assign
+          // nullptr if not found, continuing saves a redundant mutator assign
           if (!vec) {
             active_neighbors[interval_id][nb][block_id] = false; // reset to false
-            continue; // FIXME this should never occur because of active_neighbor
-            // right?
+            continue; // FIXME this should never occur because of active_neighbor right?
           }
 
           for (struct VertexAttr updated_attr : *vec) {
@@ -1379,8 +1363,8 @@ template <class image_t> void Recut<image_t>::setup_radius() {
       }
 
       /*
-       * If aimage_y_len interval is active return false, a interval is active if
-       * aimage_y_len of its blocks are still active
+       * If any interval is active return false, a interval is active if
+       * any of its blocks are still active
        */
       template <class image_t> bool Recut<image_t>::are_intervals_finished() {
         VID_t tot_active = 0;
@@ -1407,7 +1391,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
       }
 
       /*
-       * If aimage_y_len block is active return false, a block is active if its
+       * If any block is active return false, a block is active if its
        * corresponding heap is not empty
        */
       template <class image_t>
@@ -1455,9 +1439,13 @@ template <class image_t> void Recut<image_t>::setup_radius() {
           bool found_adjacent_invalid;
           if (stage == "radius") {
             while (!(this->surface_vec[interval_id][block_id].empty())) {
-              // pointers must still be in memory
-              VertexAttr *current = this->surface_vec[interval_id][block_id].front();
-              this->surface_vec[interval_id][block_id].pop_front();
+              uint64_t vid = this->surface_vec[interval_id][block_id].back();
+              this->surface_vec[interval_id][block_id].pop_back();
+#ifdef FULL_PRINT
+          std::cout << "process vertex for surface vec at " << interval_id << " "<< block_id <<" " << vid << '\n';
+#endif
+              VertexAttr *current = get_attr_vid( interval_id, block_id, vid, nullptr);
+              assertm(current->valid_vid(), "surface vec must recover a valid_vid vertex");
 
 #ifdef LOG_FULL
               visited += 1;
@@ -1514,7 +1502,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
               if (!(dummy_min->root())) {
                 current->mark_selected(); // set as KNOWN NEW
                 assert(current->valid_vid());
-                // Note: aimage_y_len adjustments to current if in a neighboring domain
+                // Note: any adjustments to current if in a neighboring domain
                 // i.e. current->handles.contains(nb) are not in a data race
                 // with the nb thread. All VertexAttr have redundant copies in each
                 // ghost region
@@ -1534,12 +1522,12 @@ template <class image_t> void Recut<image_t>::setup_radius() {
               if (found_adjacent_invalid) {
                 if (stage == "value") {
 #ifdef FULL_PRINT
-                  cout << "found surface vertex " << current->vid << '\n';
+                  cout << "found surface vertex " << interval_id << " " << block_id << " " << current->vid << '\n';
 #endif
                   current->radius = 1;
                   assertm(current->selected() || current->root(),
                       "surface was not selected");
-                  this->surface_vec[interval_id][block_id].push_back(current);
+                  this->surface_vec[interval_id][block_id].push_back(current->vid);
                 }
               }
             }
@@ -1745,7 +1733,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
             vector<tf::Taskflow *> prevent_destruction;
 #endif // TF
 
-            // if aimage_y_len active status for aimage_y_len block of interval_id is
+            // if any active status for any block of interval_id is
             // true
             while (aimage_y_len_of(this->active_blocks[interval_id].begin(),
                   this->active_blocks[interval_id].end(),
@@ -2229,18 +2217,18 @@ template <class image_t> void Recut<image_t>::setup_radius() {
           if (current == (neighbor + 1))
             assertm(
                 img_sub == interval_block_size - 1,
-                "Does not currently support diagonal connections or aimage_y_len ghost "
+                "Does not currently support diagonal connections or any ghost "
                 "regions greater that 1");
           return 0;
           if (current == (neighbor - 1))
             assertm(img_sub == 0, "Does not currently support diagonal connections or "
-                "aimage_y_len ghost regions greater that 1");
+                "any ghost regions greater that 1");
           return pad_block_size - 1;
 
           // failed
           assertm(
               false,
-              "Does not currently support diagonal connections or aimage_y_len ghost "
+              "Does not currently support diagonal connections or any ghost "
               "regions greater that 1");
         }
 
@@ -2284,7 +2272,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
           // first convert from tile id to non- padded block subs
           get_img_subscript(img_vid, i, j, k);
           // in case interval_length isn't evenly divisible by block size
-          // mod out aimage_y_len contributions from the interval
+          // mod out any contributions from the interval
           auto ia = i % interval_length_x;
           auto ja = j % interval_length_y;
           auto ka = k % interval_length_z;
@@ -2322,7 +2310,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
               assertm(absdiff(iblock, nb_iblock) + absdiff(jblock, nb_jblock) +
                   absdiff(kblock, nb_kblock) ==
                   1,
-                  "Does not currently support diagonal connections or aimage_y_len "
+                  "Does not currently support diagonal connections or any "
                   "ghost "
                   "regions greater that 1");
               pad_img_block_i = rotate_index(img_block_i, iblock, nb_iblock,
@@ -2345,7 +2333,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
                 absdiff(iinterval, nb_iinterval) + absdiff(jinterval, nb_jinterval) +
                 absdiff(kinterval, nb_kinterval) ==
                 1,
-                "Does not currently support diagonal connections or aimage_y_len ghost "
+                "Does not currently support diagonal connections or any ghost "
                 "regions greater that 1");
             // check that its in correct block of other interval, can only be 1 block
             // over note that all block ids are relative to their interval so this
@@ -2361,15 +2349,20 @@ template <class image_t> void Recut<image_t>::setup_radius() {
                 pad_block_length_y);
             rotate_index(nb_kblock, kinterval, nb_kinterval, interval_block_len_z,
                 pad_block_length_z);
-            // cout << "\t\tiblock " << iblock << " nb_iblock " << nb_iblock << '\n';
-            // cout << "\t\tjblock " << jblock << " nb_jblock " << nb_jblock << '\n';
-            // cout << "\t\tkblock " << kblock << " nb_kblock " << nb_kblock << '\n';
-            assertm(
-                absdiff(iblock, nb_iblock) + absdiff(jblock, nb_jblock) +
-                absdiff(kblock, nb_kblock) <=
-                1,
-                "Does not currently support diagonal connections or aimage_y_len ghost "
-                "regions greater that 1");
+            // do any block dimensions differ than current
+            auto idiff = absdiff(iblock, nb_iblock) != 0;
+            auto jdiff = absdiff(jblock, nb_jblock) != 0;
+            auto kdiff = absdiff(kblock, nb_kblock) != 0;
+            if ((idiff && (jdiff || kdiff)) 
+              || (jdiff && (idiff || kdiff))
+              || (kdiff && (idiff || jdiff))  ) {
+               cout << "\t\tiblock " << iblock << " nb_iblock " << nb_iblock << '\n';
+               cout << "\t\tjblock " << jblock << " nb_jblock " << nb_jblock << '\n';
+               cout << "\t\tkblock " << kblock << " nb_kblock " << nb_kblock << '\n';
+              assertm(false,
+                  "Does not currently support diagonal connections or a ghost "
+                  "regions greater that 1");
+            }
 #endif
             // checked by rotate that subscript is 1 away
             pad_img_block_i = rotate_index(img_block_i, iinterval, nb_iinterval,
@@ -2426,9 +2419,9 @@ template <class image_t> void Recut<image_t>::setup_radius() {
           cout << "Created global heap_vec" << '\n';
 #endif
 
-          this->surface_vec = std::vector<std::vector<std::deque<VertexAttr *>>>(
-              grid_interval_size, std::vector<std::deque<VertexAttr *>>(
-                interval_block_size, std::deque<VertexAttr *>()));
+          this->surface_vec = std::vector<std::vector<std::vector<uint64_t>>>(
+              grid_interval_size, std::vector<std::vector<uint64_t>>(
+                interval_block_size, std::vector<uint64_t>()));
 
 #ifdef LOG_FULL
           cout << "Created global surface_vec" << '\n';
@@ -2879,8 +2872,8 @@ template <class image_t> void Recut<image_t>::setup_radius() {
         this->setup_radius();
         this->update("radius");
 
-        // this->setup_prune();
-        // this->update("prune"));
+         //this->setup_prune(root_vids);
+         //this->update("prune");
 
         // aggregate results
         this->finalize(this->args->output_tree);

@@ -668,13 +668,13 @@ template<typename T>
 struct CompareResults {
   T false_negatives;
   T false_positives;
-  VID_t duplicates;
+  VID_t duplicate_count;
+  VID_t match_count;
 
-  CompareResults(T false_negatives, T false_positives, VID_t duplicates) :
+  CompareResults(T false_negatives, T false_positives, VID_t duplicate_count, VID_t match_count) :
     false_negatives(false_negatives), false_positives(false_positives),
-    duplicates(duplicates) {}
+    duplicate_count(duplicate_count) , match_count(match_count) {}
 
-  //CompareResults() {}
 };
 
 auto print = [](auto iter){ 
@@ -696,26 +696,28 @@ template <typename T, typename T2, typename T3>
 auto compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3& recut) {
 
   std::cout << "compare tree\n";
-  // duplicates will be asserted to == 0 at caller
-  VID_t duplicates = 0;
-  duplicates += truth_tree.size() - unique_count(truth_tree);
-  duplicates += check_tree.size() - unique_count(check_tree);
+  // duplicate_count will be asserted to == 0 at caller
+  VID_t duplicate_count = 0;
+  duplicate_count += truth_tree.size() - unique_count(truth_tree);
+  duplicate_count += check_tree.size() - unique_count(check_tree);
 
   auto truth_vids = get_vids(truth_tree, xdim, ydim); 
   auto check_vids = get_vids(check_tree, xdim, ydim);
 
-  std::cout << "truth_vids\n";
-  print(truth_vids);
-  std::cout << "check_vids\n";
-  print(check_vids);
+  //std::cout << "truth_vids\n";
+  //print(truth_vids);
+  //std::cout << "check_vids\n";
+  //print(check_vids);
 
   auto matches = rng::views::set_intersection( truth_vids, check_vids);
 
-  for (auto&& vid : matches) {
-    const auto block = recut.get_block_id(vid);
-    std::cout <<  "match"<< " at: " << vid << " block: " << block << '\n';
-  }
-  std::cout <<  "total matches: "<< rng::distance(matches) << '\n';
+  //for (auto&& vid : matches) {
+    //const auto block = recut.get_block_id(vid);
+    //std::cout <<  "match"<< " at: " << vid << " block: " << block << '\n';
+  //}
+
+  VID_t match_count = rng::distance(matches);
+  std::cout <<  "match count: "<< match_count<< '\n';
 
   // move all this logic into the function body of tests
   auto get_negatives = [&](auto& tree, auto& matches, auto specifier) {
@@ -731,7 +733,7 @@ auto compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3& recut) {
   return new CompareResults<std::vector<std::pair<VID_t, VID_t>>>(
       get_negatives(truth_vids, matches, "negative"), 
       get_negatives(check_vids, matches, "positive"), 
-      duplicates);
+      duplicate_count, match_count);
 }
 
 /* returns available memory to system in bytes
