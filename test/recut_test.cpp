@@ -1034,7 +1034,7 @@ TEST(CompareTree, All) {
 
   auto results = compare_tree(truth, check, grid_size, grid_size, recut);
   // make sure duplicates are found
-  ASSERT_EQ(results->duplicates, 2);
+  ASSERT_EQ(results->duplicate_count, 2);
 
   // remove duplicates
   truth.pop_back();
@@ -1042,7 +1042,7 @@ TEST(CompareTree, All) {
 
   results = compare_tree(truth, check, grid_size, grid_size, recut);
   // it's a problem if two markers with same vid are in a results vector
-  ASSERT_EQ(results->duplicates, 0);
+  ASSERT_EQ(results->duplicate_count, 0);
 
   auto get_mismatch = [&](auto false_negatives, auto check_false_negatives) {
     auto check = check_false_negatives  
@@ -1208,38 +1208,6 @@ class RecutPipelineParameterTests
   std::tuple<int, int, int, int, double, bool, bool>> {};
 
 TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
-  // record_property_pp_macros
-#ifdef NO_INTERVAL_RV
-  RecordProperty("NO_INTERVAL_RV", 1);
-#endif
-#ifdef SCHEDULE_INTERVAL_RV
-  RecordProperty("SCHEDULE_INTERVAL_RV", 1);
-#endif
-#ifdef USE_OMP_BLOCK
-  RecordProperty("USE_OMP_BLOCK", 1);
-#endif
-#ifdef USE_OMP_INTERVAL
-  RecordProperty("USE_OMP_INTERVAL", 1);
-#endif
-#ifdef MMAP
-  RecordProperty("MMAP", 1);
-#endif
-#ifdef NO_RV
-  RecordProperty("NO_RV", 1);
-#endif
-#ifdef CONCURRENT_MAP
-  RecordProperty("CONCURRENT_MAP", 1);
-#endif
-#ifdef FULL_PRINT
-  // this significantly slows performance so it should be stamped to any performance stats
-  RecordProperty("FULL_PRINT", 1);
-#endif
-#ifdef USE_HUGE_PAGE
-  RecordProperty("USE_HUGE_PAGE", 1);
-#endif
-#ifdef USE_MCP3D
-  RecordProperty("USE_MCP3D", 1);
-#endif
 
   // documents the meaning of each tuple member
   auto grid_size = std::get<0>(GetParam());
@@ -1334,7 +1302,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   recut.finalize(args.output_tree); // this fills args.output_tree
   double actual_slt_pct =
     (100. * args.output_tree.size()) / (grid_size * grid_size * grid_size);
-  cout << "Selected " << actual_slt_pct << "% of pixels\n";
+  cout << "Selected " << actual_slt_pct << "% of pixels, total count: " << args.output_tree.size() << '\n';
   RecordProperty("Foreground (%)", actual_slt_pct);
   RecordProperty("Foreground count (pixels)", args.output_tree.size());
   RecordProperty("Selected vertices/s", args.output_tree.size() / update_stats->total_time);
@@ -1346,6 +1314,19 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   RecordProperty("Value update elapsed (ms)", 1000 * update_stats->total_time);
   RecordProperty("Value update computation / IO ratio", update_stats->computation_time / update_stats->io_time);
   RecordProperty("Grid / interval ratio", grid_size / interval_size);
+
+  // radius
+  recut.setup_radius();
+  update_stats = recut.update("radius");
+
+  RecordProperty("Selected vertices/s radius", args.output_tree.size() / update_stats->total_time);
+  RecordProperty("Selected vertices / computation (s) radius", args.output_tree.size() / update_stats->computation_time);
+  RecordProperty("Selected vertices / IO (s) radius", args.output_tree.size() / update_stats->io_time);
+  RecordProperty("Iterations radius", update_stats->iterations);
+  RecordProperty("Value update computation (ms) radius", 1000 * update_stats->computation_time);
+  RecordProperty("Value update IO (ms) radius", 1000 * update_stats->io_time);
+  RecordProperty("Value update elapsed (ms) radius", 1000 * update_stats->total_time);
+  RecordProperty("Value update computation / IO ratio radius", update_stats->computation_time / update_stats->io_time);
 
   // pregenerated data has a known number of selected
   // pixels
@@ -1391,14 +1372,22 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     RecordProperty("Error", diff);
     RecordProperty("Error rate (%)", 100 * (diff / sequential_output_tree.size()));
 
-    EXPECT_EQ(sequential_output_tree.size(), args.output_tree.size());
-
     // compare_tree will print to log matches, false positive and negative
     auto results = compare_tree(sequential_output_tree, args.output_tree, grid_size, grid_size, recut);
-    EXPECT_EQ(results->false_positives.size(), 0);
-    EXPECT_EQ(results->false_negatives.size(), 0);
+    RecordProperty("False positives", results->false_positives.size());
+    RecordProperty("False negatives", results->false_negatives.size());
+    RecordProperty("Match count", results->match_count);
+
     // it's a problem if two markers with same vid are in a results vector
-    ASSERT_EQ(results->duplicates, 0);
+    ASSERT_EQ(results->duplicate_count, 0);
+
+    //check the compare tree worked properly
+    ASSERT_EQ(args.output_tree.size(), results->match_count + results->false_positives.size());
+    ASSERT_EQ(sequential_output_tree.size(), results->match_count + results->false_negatives.size());
+
+    EXPECT_EQ(results->false_positives.size(), 0);
+    EXPECT_EQ(sequential_output_tree.size(), args.output_tree.size());
+    EXPECT_EQ(results->false_negatives.size(), 0);
   }
 #endif
 }
@@ -1430,10 +1419,7 @@ INSTANTIATE_TEST_CASE_P(
       // real data multi-block
       std::make_tuple(8, 8, 4, 6, 100., false, true), // 9
       // real data multi-interval
-      std::make_tuple(8, 4, 4, 6, 100., false, true), // 10
-      // delete later
-      std::make_tuple(64, 64, 16, 6, 1, false, true), // 11
-      std::make_tuple(128, 128, 16, 6, 1, false, true) // 12
+      std::make_tuple(8, 4, 4, 6, 100., false, true) // 10
 #ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for
       ,
       // interval grid ratio tests
@@ -1468,7 +1454,40 @@ INSTANTIATE_TEST_CASE_P(
       std::make_tuple(128, 128, 128, 6, 1, false, true),
       std::make_tuple(256, 256, 256, 6, 1, false, true),
       std::make_tuple(512, 512, 512, 6, 1, false, true),
-      std::make_tuple(1024, 1024, 1024, 6, 1, false, true) // 38
+      std::make_tuple(1024, 1024, 1024, 6, 1, false, true), // 38
+
+      // block parallelism
+      std::make_tuple(512, 512, 8, 6, 1, false, true), // 39
+      std::make_tuple(512, 512, 16, 6, 1, false, true), 
+      std::make_tuple(512, 512, 32, 6, 1, false, true), 
+      std::make_tuple(512, 512, 64, 6, 1, false, true),
+      std::make_tuple(512, 512, 128, 6, 1, false, true),
+      std::make_tuple(512, 512, 256, 6, 1, false, true),
+      std::make_tuple(512, 512, 512, 6, 1, false, true), 
+
+      std::make_tuple(1024, 512, 32, 6, 1, false, true), // 46
+      std::make_tuple(1024, 512, 64, 6, 1, false, true),
+      std::make_tuple(1024, 512, 128, 6, 1, false, true),
+      std::make_tuple(1024, 512, 256, 6, 1, false, true),
+      std::make_tuple(1024, 512, 512, 6, 1, false, true), 
+
+      std::make_tuple(2048, 512, 32, 6, 1, false, false), // 49
+      std::make_tuple(2048, 512, 64, 6, 1, false, false),
+      std::make_tuple(2048, 512, 128, 6, 1, false, false),
+      std::make_tuple(2048, 512, 256, 6, 1, false, false),
+      std::make_tuple(2048, 512, 512, 6, 1, false, false),
+
+      std::make_tuple(4096, 512, 32, 6, 1, false, false), // 54
+      std::make_tuple(4096, 512, 64, 6, 1, false, false),
+      std::make_tuple(4096, 512, 128, 6, 1, false, false),
+      std::make_tuple(4096, 512, 256, 6, 1, false, false),
+      std::make_tuple(4096, 512, 512, 6, 1, false, false), 
+
+      std::make_tuple(8192, 512, 32, 6, 1, false, false), // 59
+      std::make_tuple(8192, 512, 64, 6, 1, false, false),
+      std::make_tuple(8192, 512, 128, 6, 1, false, false),
+      std::make_tuple(8192, 512, 256, 6, 1, false, false),
+      std::make_tuple(8192, 512, 512, 6, 1, false, false) 
 #endif
 #endif
       ));
@@ -1476,5 +1495,38 @@ INSTANTIATE_TEST_CASE_P(
       int main(int argc, char **argv) {
         testing::InitGoogleTest(&argc, argv);
         testing::Test::RecordProperty("GlobalProperty", XSTR(GIT_HASH));
+        // record_property_pp_macros
+#ifdef NO_INTERVAL_RV
+        testing::Test::RecordProperty("NO_INTERVAL_RV", 1);
+#endif
+#ifdef SCHEDULE_INTERVAL_RV
+        testing::Test::RecordProperty("SCHEDULE_INTERVAL_RV", 1);
+#endif
+#ifdef USE_OMP_BLOCK
+        testing::Test::RecordProperty("USE_OMP_BLOCK", 1);
+#endif
+#ifdef USE_OMP_INTERVAL
+        testing::Test::RecordProperty("USE_OMP_INTERVAL", 1);
+#endif
+#ifdef MMAP
+        testing::Test::RecordProperty("MMAP", 1);
+#endif
+#ifdef NO_RV
+        testing::Test::RecordProperty("NO_RV", 1);
+#endif
+#ifdef CONCURRENT_MAP
+        testing::Test::RecordProperty("CONCURRENT_MAP", 1);
+#endif
+#ifdef FULL_PRINT
+        // this significantly slows performance so it should be stamped to any performance stats
+        testing::Test::RecordProperty("FULL_PRINT", 1);
+#endif
+#ifdef USE_HUGE_PAGE
+        testing::Test::RecordProperty("USE_HUGE_PAGE", 1);
+#endif
+#ifdef USE_MCP3D
+        testing::Test::RecordProperty("USE_MCP3D", 1);
+#endif
+
         return RUN_ALL_TESTS();
       }

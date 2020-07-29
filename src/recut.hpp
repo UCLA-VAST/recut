@@ -2361,15 +2361,20 @@ template <class image_t> void Recut<image_t>::setup_radius() {
                 pad_block_length_y);
             rotate_index(nb_kblock, kinterval, nb_kinterval, interval_block_len_z,
                 pad_block_length_z);
-            // cout << "\t\tiblock " << iblock << " nb_iblock " << nb_iblock << '\n';
-            // cout << "\t\tjblock " << jblock << " nb_jblock " << nb_jblock << '\n';
-            // cout << "\t\tkblock " << kblock << " nb_kblock " << nb_kblock << '\n';
-            assertm(
-                absdiff(iblock, nb_iblock) + absdiff(jblock, nb_jblock) +
-                absdiff(kblock, nb_kblock) <=
-                1,
-                "Does not currently support diagonal connections or aimage_y_len ghost "
-                "regions greater that 1");
+            // do any block dimensions differ than current
+            auto idiff = absdiff(iblock, nb_iblock) != 0;
+            auto jdiff = absdiff(jblock, nb_jblock) != 0;
+            auto kdiff = absdiff(kblock, nb_kblock) != 0;
+            if ((idiff && (jdiff || kdiff)) 
+              || (jdiff && (idiff || kdiff))
+              || (kdiff && (idiff || jdiff))  ) {
+               cout << "\t\tiblock " << iblock << " nb_iblock " << nb_iblock << '\n';
+               cout << "\t\tjblock " << jblock << " nb_jblock " << nb_jblock << '\n';
+               cout << "\t\tkblock " << kblock << " nb_kblock " << nb_kblock << '\n';
+              assertm(false,
+                  "Does not currently support diagonal connections or a ghost "
+                  "regions greater that 1");
+            }
 #endif
             // checked by rotate that subscript is 1 away
             pad_img_block_i = rotate_index(img_block_i, iinterval, nb_iinterval,
