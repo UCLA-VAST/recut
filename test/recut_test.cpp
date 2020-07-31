@@ -1326,6 +1326,19 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   record_update_stats(args, value_update_stats.get(), "");
   record_update_stats(args, radius_update_stats.get(), "radius");
 
+  // radius
+  recut.setup_radius();
+  update_stats = recut.update("radius");
+
+  RecordProperty("Selected vertices/s radius", args.output_tree.size() / update_stats->total_time);
+  RecordProperty("Selected vertices / computation (s) radius", args.output_tree.size() / update_stats->computation_time);
+  RecordProperty("Selected vertices / IO (s) radius", args.output_tree.size() / update_stats->io_time);
+  RecordProperty("Iterations radius", update_stats->iterations);
+  RecordProperty("Value update computation (ms) radius", 1000 * update_stats->computation_time);
+  RecordProperty("Value update IO (ms) radius", 1000 * update_stats->io_time);
+  RecordProperty("Value update elapsed (ms) radius", 1000 * update_stats->total_time);
+  RecordProperty("Value update computation / IO ratio radius", update_stats->computation_time / update_stats->io_time);
+
   // pregenerated data has a known number of selected
   // pixels
   if (check_against_selected) {
