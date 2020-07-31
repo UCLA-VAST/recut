@@ -240,8 +240,7 @@ template <class image_t> class Recut {
     void print_interval(VID_t interval_id, std::string stage);
     void print_grid(std::string stage);
     void setup_radius();
-    void setup_value(const std::vector<VID_t>& root_vids);
-    //void setup_prune(const std::vector<VID_t>& root_vids);
+    void activate_vids(const std::vector<VID_t>& root_vids, std::string stage);
     std::vector<VID_t> process_marker_dir(vector<int> global_image_offsets,
         vector<int> global_image_extents);
     ~Recut<image_t>();
@@ -352,7 +351,8 @@ template <class image_t> void Recut<image_t>::setup_radius() {
   // the intervals of the root and reads
   // them to the respective heaps
   template <class image_t>
-    void Recut<image_t>::setup_value(const std::vector<VID_t>& root_vids) {
+    void Recut<image_t>::activate_vids(const std::vector<VID_t>& root_vids, std::string stage, 
+        std::vector<VID_t>& q=nullptr) {
       bool is_root = true; // changes behavior of check_ghost_update
       assertm(!(root_vids.empty()), "Must have at least one root");
       for (const auto &vid : root_vids) {
@@ -361,21 +361,28 @@ template <class image_t> void Recut<image_t>::setup_radius() {
         Interval *interval = grid.GetInterval(interval_id);
 
         interval->SetActive(true);
-        VertexAttr *dummy_attr =
-          new VertexAttr();       // march is protect from dummy values like this
-        dummy_attr->mark_root(vid); // 0000 0000, selected no parent, all zeros
-        // indicates KNOWN_FIX root
-        dummy_attr->value = 0.0;
-
-        safe_push(this->heap_vec[interval_id][block_id], dummy_attr, interval_id,
-            block_id, "value");
         active_blocks[interval_id][block_id].store(true);
+
+        if (stage == "value") {
+          VertexAttr *dummy_attr =
+            new VertexAttr();       // march is protect from dummy values like this
+          dummy_attr->mark_root(vid); // 0000 0000, selected no parent, all zeros
+          // indicates KNOWN_FIX root
+          dummy_attr->value = 0.0;
+          safe_push(this->heap_vec[interval_id][block_id], dummy_attr, interval_id,
+              block_id, stage);
+        } else if (stage == "radius") {
+          q.push_back(vid);
+        } else {
+          assertm(false, "stage behavior no yet specified");
+        }
+
         // place ghost update accounts for
         // edges of intervals in addition to blocks
         // this only adds to update_ghost_vec if the root happens
         // to be on a boundary
         check_ghost_update(interval_id, block_id, dummy_attr, is_root,
-            "value"); // add to any other ghost zone blocks
+            stage); // add to any other ghost zone blocks
 #ifdef LOG
         cout << "Set interval " << interval_id << " block " << block_id
           << " to active ";
@@ -1531,6 +1538,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
                 }
               }
             }
+          } else if (stage == "prune") {
           }
 
 #ifdef LOG_FULL
@@ -1553,35 +1561,7 @@ template <class image_t> void Recut<image_t>::setup_radius() {
           active_blocks[interval_id][block_id].store(false);
           processing_blocks[interval_id][block_id].store(
               false); // release block_id heap
-        }
-
-      // template <class image_t>
-      // void Recut<image_t>::create_march_thread(VID_t interval_id, VID_t
-      // block_id)
-      // {
-      //// process if block has been activated and is not currently being
-      //// processed by another task thread
-      // if (active_blocks[interval_id][block_id] &&
-      // !processing_blocks[interval_id][block_id]) {
-      ////cout << "Start active block_id " << block_id << '\n';
-      // processing_blocks[interval_id][block_id] = true;
-      // thread(&Recut<image_t>::march_narrow_band, this, interval_id,
-      // block_id).detach();
-      ////cout << "Ran through active block_id " << block_id << '\n';
-      //}
-      //}
-
-      // template <class image_t>
-      // void Recut<image_t>::create_integrate_thread(VID_t interval_id, VID_t
-      // block_id) { if
-      // (aimage_y_len_of(this->active_neighbors[interval_id][block_id].begin(),
-      // this->active_neighbors[interval_id][block_id].end(),
-      //[](bool i) {return i;})) {
-      //// Note: can optimize to taskflow if necessary
-      // thread(&Recut<image_t>::integrate_updated_ghost, this, interval_id,
-      // block_id).detach();
-      //}
-      //}
+        } // end march_narrow_band
 
       /* intervals are arranged in c-order in 3D, therefore each
        * intervals can be accessed via it's intervals subscript or by a linear idx
@@ -2866,14 +2846,16 @@ template <class image_t> void Recut<image_t>::setup_radius() {
       template <class image_t> void Recut<image_t>::run_pipeline() {
         auto root_vids = this->initialize();
 
-        this->setup_value(root_vids);
+        this->activate_vids(root_vids);
         this->update("value");
 
         this->setup_radius();
         this->update("radius");
 
-         //this->setup_prune(root_vids);
-         //this->update("prune");
+        std::vector<VID_t> q;
+        q.reserve(6000); // average max size on 1% neuro data
+        this->activate_vids(root_vids);
+        this->update("prune");
 
         // aggregate results
         this->finalize(this->args->output_tree);
