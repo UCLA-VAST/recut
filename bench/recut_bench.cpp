@@ -22,8 +22,8 @@ static void bench_critical_loop(benchmark::State &state) {
   int tcase = 4;
   // the total number of intervals allows more parallelism
   // ideally intervals >> thread count
-  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-      GEN_IMAGE);
+  auto args =
+      get_args(grid_size, grid_size, grid_size, slt_pct, tcase, GEN_IMAGE);
   VID_t selected = args.recut_parameters().selected;
 
   // adjust final runtime parameters
@@ -46,17 +46,23 @@ static void bench_critical_loop(benchmark::State &state) {
   // initialize portion will still be included
   auto root_vids = recut.initialize();
 
+  auto grid_interval_size = recut.grid.GetNIntervals();
+  auto interval_block_size = recut.grid.GetNBlocks();
+  auto fifo = std::vector<std::vector<std::vector<uint64_t>>>(
+      grid_interval_size, std::vector<std::vector<uint64_t>>(
+                              interval_block_size, std::vector<uint64_t>()));
+
   // This is the performance loop where gbench
   // will execute until timing stats converge
   for (auto _ : state) {
     // reactivates
     // the intervals of the root and readds
     // them to the respective heaps
-    recut.setup_value(root_vids);
+    recut.activate_vids(root_vids, "value", fifo);
     // from our gen img of initialize update
     // does fastmarching, updated vertices
     // are mmap'd
-    recut.update("value");
+    recut.update("value", fifo);
 
     // to destroy the information for this run
     // so that it doesn't affect the next run
@@ -73,227 +79,239 @@ static void bench_critical_loop(benchmark::State &state) {
   // state.SetLabel(std::to_string(selected * 26 / 1024) + "kB");
   state.SetItemsProcessed(state.iterations() * selected);
 }
-  BENCHMARK(bench_critical_loop)
-  ->RangeMultiplier(2)
-  ->Range(16, 256)
-->ReportAggregatesOnly(true)
-  ->Unit(benchmark::kMillisecond);
+BENCHMARK(bench_critical_loop)
+    ->RangeMultiplier(2)
+    ->Range(16, 256)
+    ->ReportAggregatesOnly(true)
+    ->Unit(benchmark::kMillisecond);
 
-  static void recut_radius_real_data(benchmark::State &state) {
-    std::vector<int> tcases = {6};
-    int slt_pct = 1;
-    uint16_t bkg_thresh = 0;
-    auto grid_size = state.range(0);
-    auto interval_size = state.range(1);
-    auto block_size = state.range(2);
-    TileThresholds<uint16_t> *tile_thresholds;
-    auto force_regenerate_image = false;
+static void recut_radius_real_data(benchmark::State &state) {
+  std::vector<int> tcases = {6};
+  int slt_pct = 1;
+  uint16_t bkg_thresh = 0;
+  auto grid_size = state.range(0);
+  auto interval_size = state.range(1);
+  auto block_size = state.range(2);
+  TileThresholds<uint16_t> *tile_thresholds;
+  auto force_regenerate_image = false;
 
-    for (auto &tcase : tcases) {
-      // the total number of blocks allows more parallelism
-      // ideally intervals >> thread count
-      auto args = get_args(grid_size, interval_size, block_size, slt_pct,
-          tcase, force_regenerate_image);
+  for (auto &tcase : tcases) {
+    // the total number of blocks allows more parallelism
+    // ideally intervals >> thread count
+    auto args = get_args(grid_size, interval_size, block_size, slt_pct, tcase,
+                         force_regenerate_image);
 
-      // establish the tile thresholds for the entire test run (recut and
-      // sequential) to prevent unnecessary recalculations of theshodls
-      if (tcase == 6) {
-        //tile_thresholds = recut.get_tile_thresholds(image);
-        // bkg_thresh table: 421 ~.01 foreground
-        // if any pixels are found above or below these values it will fail
-        tile_thresholds = new TileThresholds<uint16_t>(30000, 0, 421);
-      } else {
-        // note these default thresholds apply to any generated image
-        // thus they will only be replaced if we're reading a real image
-        tile_thresholds = new TileThresholds<uint16_t>(2, 0, 0);
-      }
+    // establish the tile thresholds for the entire test run (recut and
+    // sequential) to prevent unnecessary recalculations of theshodls
+    if (tcase == 6) {
+      // tile_thresholds = recut.get_tile_thresholds(image);
+      // bkg_thresh table: 421 ~.01 foreground
+      // if any pixels are found above or below these values it will fail
+      tile_thresholds = new TileThresholds<uint16_t>(30000, 0, 421);
+    } else {
+      // note these default thresholds apply to any generated image
+      // thus they will only be replaced if we're reading a real image
+      tile_thresholds = new TileThresholds<uint16_t>(2, 0, 0);
+    }
 
-      // run
-      auto recut = Recut<uint16_t>(args);
-      auto root_vids = recut.initialize();
+    // run
+    auto recut = Recut<uint16_t>(args);
+    auto root_vids = recut.initialize();
 
-      for (auto _ : state) {
-        // warning: pause and resume high overhead
-        state.PauseTiming();
-        recut.setup_value(root_vids);
-        recut.update("value", tile_thresholds);
-        recut.setup_radius();
-        state.ResumeTiming();
+    auto grid_interval_size = recut.grid.GetNIntervals();
+    auto interval_block_size = recut.grid.GetNBlocks();
+    auto fifo = std::vector<std::vector<std::vector<uint64_t>>>(
+        grid_interval_size, std::vector<std::vector<uint64_t>>(
+                                interval_block_size, std::vector<uint64_t>()));
 
-        recut.update("radius");
-        recut.release();
-      }
+    for (auto _ : state) {
+      // warning: pause and resume high overhead
+      state.PauseTiming();
+      recut.activate_vids(root_vids, "value", fifo);
+      recut.update("value", fifo, tile_thresholds);
+      recut.setup_radius(fifo);
+      state.ResumeTiming();
+
+      recut.update("radius", fifo);
+      recut.release();
     }
   }
-  BENCHMARK(recut_radius_real_data)
-  ->Args({512, 512, 16})
-  ->Args({512, 512, 32})
-  ->Args({512, 512, 64})
-  ->Args({512, 512, 128})
-  ->Args({512, 512, 256})
-  ->Args({512, 512, 512})
-  //->Args({1024, 512, 32})
-  //->Args({1024, 512, 64})
-  //->Args({1024, 512, 128})
-  //->Args({1024, 512, 256})
-  //->Args({1024, 512, 512})
-  ->Unit(benchmark::kMillisecond);
+}
+BENCHMARK(recut_radius_real_data)
+    ->Args({512, 512, 16})
+    ->Args({512, 512, 32})
+    ->Args({512, 512, 64})
+    ->Args({512, 512, 128})
+    ->Args({512, 512, 256})
+    ->Args({512, 512, 512})
+    //->Args({1024, 512, 32})
+    //->Args({1024, 512, 64})
+    //->Args({1024, 512, 128})
+    //->Args({1024, 512, 256})
+    //->Args({1024, 512, 512})
+    ->Unit(benchmark::kMillisecond);
 
-  static void recut_radius(benchmark::State &state) {
-    std::vector<int> tcases = {5};
-    int slt_pct = 100;
-    bool print_all = false;
-    uint16_t bkg_thresh = 0;
-    auto grid_size = state.range(0);
+static void recut_radius(benchmark::State &state) {
+  std::vector<int> tcases = {5};
+  int slt_pct = 100;
+  bool print_all = false;
+  uint16_t bkg_thresh = 0;
+  auto grid_size = state.range(0);
 
-    for (auto &tcase : tcases) {
-      // the total number of blocks allows more parallelism
-      // ideally intervals >> thread count
-      auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-          true);
+  for (auto &tcase : tcases) {
+    // the total number of blocks allows more parallelism
+    // ideally intervals >> thread count
+    auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, true);
 
-      // run
-      auto recut = Recut<uint16_t>(args);
-      auto root_vids = recut.initialize();
+    // run
+    auto recut = Recut<uint16_t>(args);
+    auto root_vids = recut.initialize();
 
-      for (auto _ : state) {
-        // warning: pause and resume high overhead
-        state.PauseTiming();
-        recut.setup_value(root_vids);
-        recut.update("value");
-        recut.setup_radius();
-        state.ResumeTiming();
+    auto grid_interval_size = recut.grid.GetNIntervals();
+    auto interval_block_size = recut.grid.GetNBlocks();
+    auto fifo = std::vector<std::vector<std::vector<uint64_t>>>(
+        grid_interval_size, std::vector<std::vector<uint64_t>>(
+                                interval_block_size, std::vector<uint64_t>()));
 
-        recut.update("radius");
-        recut.release();
-      }
+    for (auto _ : state) {
+      // warning: pause and resume high overhead
+      state.PauseTiming();
+      recut.activate_vids(root_vids, "value", fifo);
+      recut.update("value", fifo);
+      recut.setup_radius(fifo);
+      state.ResumeTiming();
+
+      recut.update("radius", fifo);
+      recut.release();
     }
   }
-  BENCHMARK(recut_radius)
-  ->RangeMultiplier(2)
-->Range(8, 128)
-  ->Unit(benchmark::kMillisecond);
+}
+BENCHMARK(recut_radius)
+    ->RangeMultiplier(2)
+    ->Range(8, 128)
+    ->Unit(benchmark::kMillisecond);
 
-  static void accurate_radius(benchmark::State &state) {
-    std::vector<int> tcases = {5};
-    int slt_pct = 100;
-    bool print_all = false;
-    uint16_t bkg_thresh = 0;
-    auto grid_size = state.range(0);
-    VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
-    uint16_t *radii_grid = new uint16_t[tol_sz];
-    for (auto &tcase : tcases) {
-      auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, true);
+static void accurate_radius(benchmark::State &state) {
+  std::vector<int> tcases = {5};
+  int slt_pct = 100;
+  bool print_all = false;
+  uint16_t bkg_thresh = 0;
+  auto grid_size = state.range(0);
+  VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
+  uint16_t *radii_grid = new uint16_t[tol_sz];
+  for (auto &tcase : tcases) {
+    auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, true);
 
-      // run
-      auto recut = Recut<uint16_t>(args);
-      recut.initialize();
-      VID_t interval_num = 0;
+    // run
+    auto recut = Recut<uint16_t>(args);
+    recut.initialize();
+    VID_t interval_num = 0;
 
-      for (auto _ : state) {
-        // calculate radius with baseline accurate method
-        for (VID_t i = 0; i < tol_sz; i++) {
-          if (recut.generated_image[i]) {
-            radii_grid[i] = get_radius_accurate(recut.generated_image, grid_size,
-                i, bkg_thresh);
-          }
+    for (auto _ : state) {
+      // calculate radius with baseline accurate method
+      for (VID_t i = 0; i < tol_sz; i++) {
+        if (recut.generated_image[i]) {
+          radii_grid[i] = get_radius_accurate(recut.generated_image, grid_size,
+                                              i, bkg_thresh);
         }
       }
     }
-    delete[] radii_grid;
   }
-  BENCHMARK(accurate_radius)
-  ->RangeMultiplier(2)
-  ->Range(8, 128)
-->ReportAggregatesOnly(true)
-  ->Unit(benchmark::kMillisecond);
+  delete[] radii_grid;
+}
+BENCHMARK(accurate_radius)
+    ->RangeMultiplier(2)
+    ->Range(8, 128)
+    ->ReportAggregatesOnly(true)
+    ->Unit(benchmark::kMillisecond);
 
-  static void xy_radius(benchmark::State &state) {
-    std::vector<int> tcases = {5};
-    int slt_pct = 100;
-    bool print_all = false;
-    uint16_t bkg_thresh = 0;
-    auto grid_size = state.range(0);
-    VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
-    uint16_t *radii_grid_xy = new uint16_t[tol_sz];
-    for (auto &tcase : tcases) {
-      auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, true);
+static void xy_radius(benchmark::State &state) {
+  std::vector<int> tcases = {5};
+  int slt_pct = 100;
+  bool print_all = false;
+  uint16_t bkg_thresh = 0;
+  auto grid_size = state.range(0);
+  VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
+  uint16_t *radii_grid_xy = new uint16_t[tol_sz];
+  for (auto &tcase : tcases) {
+    auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, true);
 
-      // run
-      auto recut = Recut<uint16_t>(args);
-      recut.initialize();
-      VID_t interval_num = 0;
+    // run
+    auto recut = Recut<uint16_t>(args);
+    recut.initialize();
+    VID_t interval_num = 0;
 
-      for (auto _ : state) {
-        // build original production version
-        for (VID_t i = 0; i < tol_sz; i++) {
-          if (recut.generated_image[i]) {
-            radii_grid_xy[i] = get_radius_hanchuan_XY(recut.generated_image,
-                grid_size, i, bkg_thresh);
-          }
+    for (auto _ : state) {
+      // build original production version
+      for (VID_t i = 0; i < tol_sz; i++) {
+        if (recut.generated_image[i]) {
+          radii_grid_xy[i] = get_radius_hanchuan_XY(recut.generated_image,
+                                                    grid_size, i, bkg_thresh);
         }
       }
     }
-    delete[] radii_grid_xy;
   }
-  BENCHMARK(xy_radius)
-  ->RangeMultiplier(2)
-  ->Range(8, 128)
-->ReportAggregatesOnly(true)
-  ->Unit(benchmark::kMillisecond);
+  delete[] radii_grid_xy;
+}
+BENCHMARK(xy_radius)
+    ->RangeMultiplier(2)
+    ->Range(8, 128)
+    ->ReportAggregatesOnly(true)
+    ->Unit(benchmark::kMillisecond);
 
 #ifdef USE_MCP3D
 
-  static void load_exact_tile(benchmark::State &state) {
-    auto tcase = 0;
-    int slt_pct = 100;
-    int grid_size = state.range(0);
-    auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, false);
-    VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
+static void load_exact_tile(benchmark::State &state) {
+  auto tcase = 0;
+  int slt_pct = 100;
+  int grid_size = state.range(0);
+  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, false);
+  VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
 
-    for (auto _ : state) {
-      mcp3d::MImage image;
-      cout << args.image_root_dir() << '\n';
-      // the vectors are in z, y, x order
-      read_tiff(args.image_root_dir(), {0, 0, 0}, {grid_size, grid_size, grid_size},
-          image);
-    }
-    auto total_pixels = static_cast<VID_t>(grid_size) * grid_size * grid_size;
-    state.SetBytesProcessed(state.iterations() * total_pixels * sizeof(uint16_t));
-    state.SetItemsProcessed(state.iterations() * total_pixels);
+  for (auto _ : state) {
+    mcp3d::MImage image;
+    cout << args.image_root_dir() << '\n';
+    // the vectors are in z, y, x order
+    read_tiff(args.image_root_dir(), {0, 0, 0},
+              {grid_size, grid_size, grid_size}, image);
   }
-  BENCHMARK(load_exact_tile)
-  ->RangeMultiplier(2)
-  ->Range(16, 1024)
-->ReportAggregatesOnly(true)
-  ->Unit(benchmark::kMillisecond);
+  auto total_pixels = static_cast<VID_t>(grid_size) * grid_size * grid_size;
+  state.SetBytesProcessed(state.iterations() * total_pixels * sizeof(uint16_t));
+  state.SetItemsProcessed(state.iterations() * total_pixels);
+}
+BENCHMARK(load_exact_tile)
+    ->RangeMultiplier(2)
+    ->Range(16, 1024)
+    ->ReportAggregatesOnly(true)
+    ->Unit(benchmark::kMillisecond);
 
-  static void load_tile_from_large_image(benchmark::State &state) {
-    auto tcase = 6;
-    int slt_pct = 100;
-    int grid_size = state.range(0);
-    int mid_pixel_in_total_xy_image = 4096;
-    // note: z dim doesn't usually extend past 256 depth
-    auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, false);
-    VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
+static void load_tile_from_large_image(benchmark::State &state) {
+  auto tcase = 6;
+  int slt_pct = 100;
+  int grid_size = state.range(0);
+  int mid_pixel_in_total_xy_image = 4096;
+  // note: z dim doesn't usually extend past 256 depth
+  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, false);
+  VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
 
-    for (auto _ : state) {
-      mcp3d::MImage image;
-      cout << args.image_root_dir() << '\n';
-      // the vectors are in z, y, x order
-      read_tiff(args.image_root_dir(), {0, mid_pixel_in_total_xy_image, mid_pixel_in_total_xy_image}, {grid_size, grid_size, grid_size},
-          image);
-    }
-    auto total_pixels = static_cast<VID_t>(grid_size) * grid_size * grid_size;
-    state.SetBytesProcessed(state.iterations() * total_pixels * sizeof(uint16_t));
-    state.SetItemsProcessed(state.iterations() * total_pixels);
+  for (auto _ : state) {
+    mcp3d::MImage image;
+    cout << args.image_root_dir() << '\n';
+    // the vectors are in z, y, x order
+    read_tiff(args.image_root_dir(),
+              {0, mid_pixel_in_total_xy_image, mid_pixel_in_total_xy_image},
+              {grid_size, grid_size, grid_size}, image);
   }
-  BENCHMARK(load_tile_from_large_image)
-  ->RangeMultiplier(2)
-  ->Range(16, 1024)
-->ReportAggregatesOnly(true)
-  ->Unit(benchmark::kMillisecond);
+  auto total_pixels = static_cast<VID_t>(grid_size) * grid_size * grid_size;
+  state.SetBytesProcessed(state.iterations() * total_pixels * sizeof(uint16_t));
+  state.SetItemsProcessed(state.iterations() * total_pixels);
+}
+BENCHMARK(load_tile_from_large_image)
+    ->RangeMultiplier(2)
+    ->Range(16, 1024)
+    ->ReportAggregatesOnly(true)
+    ->Unit(benchmark::kMillisecond);
 
 #endif
 
-  BENCHMARK_MAIN();
+BENCHMARK_MAIN();
