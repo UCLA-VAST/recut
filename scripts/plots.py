@@ -124,8 +124,8 @@ def radius(args):
                 r'Elapsed time (%s)' % time_unit, r'Calculate Radius Performance Sequential', args, legends=legends)
 
 
-def value(args):
-    ''' Fastmarching Performance '''
+        def value(args):
+            ''' Fastmarching Performance '''
     cross_compile_flags=['NO_SCHEDULE', 'NO_INTERVAL_RV', 'SCHEDULE_INTERVAL_RV']
     baseline_flags = ['TEST_ALL_BENCHMARKS', 'USE_OMP_BLOCK']
     # desired_test_runs = [11, 12, 18, 19, 25, 26, 32, 33]
@@ -204,15 +204,15 @@ def recmake(args, flags):
     flagstr = ''
     for flag in flags:
         flagstr += f'-D{flag}=ON '
- 
+
     GIT_HASH = get_hash()
     flagstr += f'-DGIT_HASH={GIT_HASH} '
-    cmd = f'cd {args.project}; rm -rf build; mkdir build; cd build; ~/downloads/cmake-3.17.0-Linux-x86_64/bin/cmake .. -DCMAKE_BUILD_TYPE=Debug {flagstr}'
+    cmd = f'cd {args.project}; rm -rf build; mkdir build; cd build; ~/downloads/cmake-3.17.0-Linux-x86_64/bin/cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug {flagstr}'
     print(cmd)
     subprocess.run(cmd, shell=True)
 
 def remake(args):
-    cmd = f'cd {args.project}; cd build; make -j 56; make install -j 56'
+    cmd = f'cd {args.project}; cd build; ninja install'
     print(cmd)
     subprocess.run(cmd, shell=True)
 
@@ -310,9 +310,9 @@ def scalability(args):
                     )
 
 
-def rerun(desired_tests, test=False, benchmark=False, benchmark_fn='', benchmark_regex=''):
-    if benchmark:
-        benchmark_cmd = f'{args.binary}./recut_bench --benchmark_filter=load* --benchmark_out_format=json --benchmark_out={benchmark_fn}.json'
+            def rerun(desired_tests, test=False, benchmark=False, benchmark_fn='', benchmark_regex=''):
+                if benchmark:
+                    benchmark_cmd = f'{args.binary}./recut_bench --benchmark_filter=load* --benchmark_out_format=json --benchmark_out={benchmark_fn}.json'
         run_with_log(benchmark_fn, benchmark_cmd)
 
     if test:
@@ -376,18 +376,18 @@ def read(args):
                     cpu_time_second, r'Time (s)',
                     r'Image read latency (CPU time)',
                     args,
-                    legends=pretty_name) 
+                    legends=pretty_name)
             rplot(*xargs,
                     real_time_second, r'Time (s)',
                     r'Image read latency (real time)',
                     args,
                     legends=pretty_name)
 
-        # load all desired test files
+            # load all desired test files
         if test:
             test_jsons = [json.load(open(f'{args[0]}.json')) for args in desired_tests]
             test_dicts = [test_json['testsuites'][0]['testsuite'][0] for test_json in test_jsons]
-            filtered_test_dicts = filter_key_value(test_dicts, 'Grid / interval ratio', 1) 
+            filtered_test_dicts = filter_key_value(test_dicts, 'Grid / interval ratio', 1)
             assert(len(test_dicts) == len(filtered_test_dicts))
 
             # extract desired test data info
@@ -408,9 +408,9 @@ def read(args):
                     legends=('Sequential computation', 'Exact tile read', 'Tile in large image read')
                     )
 
-def main(args):
-    if args.all:
-        radius(args)
+            def main(args):
+                if args.all:
+                    radius(args)
         value(args)
         read(args)
         return
