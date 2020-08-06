@@ -39,9 +39,10 @@
 // that returns a value will give strange: "void value not ignored as it ought
 // to be" errors
 
-template <class T, typename DataType>
+template <class T, typename DataType, typename T2>
 void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
-                       std::string stage, double &error_rate) {
+                       std::string stage, double &error_rate,
+                       std::vector<std::vector<T2>> fifo) {
   auto tol_sz = static_cast<VID_t>(grid_size) * grid_size * grid_size;
   // cout << "check image " << endl;
   double error_sum = 0.0;
@@ -89,17 +90,17 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
           }
         } else if (stage == "surface") {
           // if truth shows a value of 1 it is a surface
-          // vertex, therefore surface_vec should also
+          // vertex, therefore fifo should also
           // contain this value
           if (ground_truth[vid] == 1) {
             ASSERT_NE(v, nullptr);
             auto found = false;
-            for (const auto &vid : recut.surface_vec[interval_id][block_id]) {
+            for (const auto &vid : fifo[interval_id][block_id]) {
               if (vid == v->vid)
                 found = true;
             }
             // if truth shows a value of 1 it is a surface
-            // vertex, therefore surface_vec should also
+            // vertex, therefore fifo should also
             // contain this value
             ASSERT_TRUE(found) << "vid " << vid << " x" << xi << " y " << yi
                                << " z " << zi << " v->vid " << v->vid << '\n';
@@ -1127,7 +1128,7 @@ TEST(Radius, Full) {
 
           auto grid_interval_size = recut.grid.GetNIntervals();
           auto interval_block_size = recut.grid.GetNBlocks();
-          fifo = std::vector<std::vector<std::vector<uint64_t>>>(
+          auto fifo = std::vector<std::vector<std::vector<uint64_t>>>(
               grid_interval_size,
               std::vector<std::vector<uint64_t>>(interval_block_size,
                                                  std::vector<uint64_t>()));
@@ -1135,10 +1136,10 @@ TEST(Radius, Full) {
           recut.activate_vids(root_vids, "value", fifo);
           recut.update("value", fifo);
           if (print_all) {
-            recut.print_grid("value");
+            recut.print_grid("value", fifo);
             recut.print_grid("surface", fifo);
             cout << "All surface vids: \n";
-            for (auto &outer : recut.surface_vec) {
+            for (auto &outer : fifo) {
               for (auto &inner : outer) {
                 for (auto &vid : inner) {
                   cout << '\t' << vid << '\n';
@@ -1168,11 +1169,17 @@ TEST(Radius, Full) {
           // make sure all surface vertices were identified correctly
           double xy_err, recut_err;
           ASSERT_NO_FATAL_FAILURE(check_recut_error(
-              recut, radii_grid.get(), grid_size, "surface", recut_err));
+              recut, radii_grid.get(), grid_size, "surface", recut_err, fifo));
 
-          recut.setup_radius();
-          // conducting update on radius consumes all recut.surface_vec values
+          recut.setup_radius(fifo);
+          // conducting update on radius consumes all fifo values
           recut.update("radius", fifo);
+          for (const auto &o : fifo) {
+            for (const auto &i : o) {
+              ASSERT_EQ(i.size(), 0);
+            }
+          }
+
           VID_t interval_num = 0;
 
           // Debug by eye
@@ -1185,7 +1192,7 @@ TEST(Radius, Full) {
                              {grid_size, grid_size, grid_size});
             }
             std::cout << "Recut radii\n";
-            recut.print_grid("radius");
+            recut.print_grid("radius", fifo);
           }
 
           if (check_xy) {
@@ -1194,7 +1201,7 @@ TEST(Radius, Full) {
                 grid_size, recut.params->selected, xy_err));
           }
           ASSERT_NO_FATAL_FAILURE(check_recut_error(
-              recut, radii_grid.get(), grid_size, "radius", recut_err));
+              recut, radii_grid.get(), grid_size, "radius", recut_err, fifo));
           ASSERT_NEAR(recut_err, 0., .001);
 
           if (print_csv) {
@@ -1210,6 +1217,19 @@ TEST(Radius, Full) {
           recut_stream << "Recut Error " << iteration_trace.str();
           RecordProperty(xy_stream.str(), xy_err);
           RecordProperty(recut_stream.str(), recut_err);
+
+          std::cout << "roots:\n";
+          rng::for_each(root_vids, [](auto i) { std::cout << i << ", "; });
+          std::cout << '\n';
+
+          // starting from roots, prune stage will
+          // find final list of vertices
+          auto stage = "prune";
+          recut.activate_vids(root_vids, stage, fifo);
+          recut.update(stage, fifo);
+
+          std::cout << "Recut prune\n";
+          recut.print_grid("label", fifo);
         }
       }
     }
@@ -1288,12 +1308,6 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   RecordProperty("max_int", tile_thresholds->max_int);
   RecordProperty("min_int", tile_thresholds->min_int);
 
-  auto grid_interval_size = recut.grid.GetNIntervals();
-  auto interval_block_size = recut.grid.GetNBlocks();
-  fifo = std::vector<std::vector<std::vector<uint64_t>>>(
-      grid_interval_size, std::vector<std::vector<uint64_t>>(
-                              interval_block_size, std::vector<uint64_t>()));
-
   // update with fixed tile_thresholds for the entire update
   auto value_update_stats = recut.update("value", fifo, tile_thresholds);
 
@@ -1326,7 +1340,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   }
 
   // radius
-  recut.setup_radius();
+  recut.setup_radius(fifo);
   auto radius_update_stats = recut.update("radius", fifo);
 
   recut.finalize(args.output_tree); // this fills args.output_tree
@@ -1394,12 +1408,6 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     RecordProperty("Sequential elapsed (ms)", 1000 * timer->elapsed());
     RecordProperty("Recut speedup factor %",
                    100 * (value_update_stats->total_time / timer->elapsed()));
-
-    //// would have to keep interval in memory for this to work
-    // if ( sequential_output_tree.size() != args.output_tree.size()) {
-    // cout << "recut's label did not match sequential:\n";
-    // recut.print_grid("label");
-    //}
 
     RecordProperty("Sequential tree size", sequential_output_tree.size());
     auto diff = absdiff(sequential_output_tree.size(), args.output_tree.size());

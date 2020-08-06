@@ -27,7 +27,7 @@ find_package(OpenMP REQUIRED)
 #  take a long time to complete
 #  during normal development this should be off
 #  and all tests should run in under 2s
-option(TEST_ALL_BENCHMARKS 
+option(TEST_ALL_BENCHMARKS
   "Conduct full run of tests which can be used for results or benchmarks"
   OFF)
 
@@ -99,7 +99,7 @@ set(ALL_TARGETS recut_test recut_bench)
 foreach(I ${ALL_TARGETS})
   message(STATUS "${I}")
 
-  # Cmake accepts user preprocessor #define's on invocation 
+  # Cmake accepts user preprocessor #define's on invocation
   # these are passed on to the preprocessor below
   if (LOG)
     target_compile_definitions(${I} PRIVATE LOG)
@@ -167,7 +167,7 @@ foreach(I ${ALL_TARGETS})
   set_target_properties(${I} PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
 endforeach()
 
-if (USE_MCP3D) 
+if (USE_MCP3D)
   message(STATUS "USE_MCP3D ON")
 endif()
 
