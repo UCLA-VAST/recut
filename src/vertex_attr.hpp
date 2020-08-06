@@ -44,9 +44,9 @@ struct bitfield {
     return *this;
   }
 
-  //friend std::ostream& (std::ostream& os, bitfield const& bf) {
-    //char[8]
-    //os
+  // friend std::ostream& (std::ostream& os, bitfield const& bf) {
+  // char[8]
+  // os
   //}
 
   bool operator==(const bitfield &a) const { return a.field_ == this->field_; }
@@ -65,7 +65,8 @@ struct VertexAttr {
   // size of this map is max 4 since a corner voxel can it at most
   // 3 other blocks ghost zones
   handle_t handle; // same type as VID_t
-  float value;     // distance to source: 4 bytes
+  VertexAttr *parent = nullptr;
+  float value; // distance to source: 4 bytes
   struct bitfield
       edge_state; // most sig. bits (little-endian) refer to state : 1 bytes
   uint8_t radius = std::numeric_limits<uint8_t>::max();
@@ -97,6 +98,8 @@ struct VertexAttr {
 
   std::string description() {
     std::string descript = "vid:" + std::to_string(vid);
+    descript += '\n';
+    descript = "parent vid:" + std::to_string(parent->vid);
     descript += '\n';
     descript += "value:" + std::to_string(value);
     descript += '\n';
@@ -145,15 +148,24 @@ struct VertexAttr {
   void copy_edge_state(const VertexAttr &a) { edge_state = a.edge_state; }
 
   char label() const {
-    if (this->root()) {return 'R';}
-    if (this->selected()) {return 'S';}
-    if (this->unvisited()) {return '-';}
-    if (this->band()) {return 'B';}
+    if (this->root()) {
+      return 'R';
+    }
+    if (this->selected()) {
+      return 'S';
+    }
+    if (this->unvisited()) {
+      return '-';
+    }
+    if (this->band()) {
+      return 'B';
+    }
     return '?';
   }
 
-  friend std::ostream& operator<<(std::ostream& os, const VertexAttr& v) {
-    os << "{vid: " << v.vid << ", value: " << v.value << ", radius: " << +(v.radius) << ", label: " << v.label() << '}';
+  friend std::ostream &operator<<(std::ostream &os, const VertexAttr &v) {
+    os << "{vid: " << v.vid << ", value: " << v.value
+       << ", radius: " << +(v.radius) << ", label: " << v.label() << '}';
     return os;
   }
 
@@ -185,6 +197,11 @@ struct VertexAttr {
     return edge_state.test(6) && edge_state.test(7);
   }
 
+  void mark_unvisited() { // 11XX XXXX default unvisited state
+    edge_state.set(7);
+    edge_state.set(6);
+  }
+
   /* returns true if X1XX XXXX
    * means node is either BAND or unvisited
    * and has not been selected as KNOWN_NEW
@@ -200,6 +217,12 @@ struct VertexAttr {
     vid = set_vid;
   }
 
+  void mark_band() {
+    // add to band (01XX XXXX)
+    edge_state.unset(7);
+    edge_state.set(6);
+  }
+
   void mark_band(VID_t set_vid) {
     // add to band (01XX XXXX)
     edge_state.unset(7);
@@ -207,7 +230,7 @@ struct VertexAttr {
     vid = set_vid;
   }
 
-  bool band() const { // 01XX XXXX 
+  bool band() const { // 01XX XXXX
     return edge_state.test(6) && !(edge_state.test(7));
   }
 
@@ -401,7 +424,7 @@ public:
 private:
   vector<T *> elems;
 
-    // keep track of total sizes summed across all valid
+  // keep track of total sizes summed across all valid
   void stats_update() {
     this->op_count++;
     this->cumulative_count += this->elems.size();
