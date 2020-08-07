@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <bitset>
 #include <cstdlib>
+
 #include <fstream>
 #include <future>
 #include <iostream>
@@ -760,13 +761,39 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
   //    no longer considered for analysis
   // and band (01XX...), during the prune stage marking a vertex as band
   // means the vertex was kept and has at least one child
+  // Note: only selected and roots are ever added to fifo for the bfs
   if (dst->selected()) {
     assertm(dst->valid_vid(), "selected must have a valid vid");
     assertm(dst->vid == dst_id, "get_attr_vid failed getting correct vertex");
-#ifdef FULL_PRINT
-#endif
-    march_narrow_band_recursive(interval_id, block_id, dst, current->parent,
-                                coverage - 1, fifo);
+
+    // if you reached an edge,
+    // the coverage of a parent ran out
+    // or current is a root
+    // then reset the parent and the coverage and record the vertex
+    // dst can only be 1 hop away (adjacent) from current, therefore
+    // all
+    if ((current->radius < 2) || (dst->radius == 1)) {
+      // add to band (01XX XXXX)
+      // this will prevent this vertex from being revisited
+      dst->mark_band();
+
+      // print to swc
+      print_vertex(dst);
+
+      // refresh the coverage now that it's runout
+      // coverage = current->radius;
+    } else {
+      // otherwise consider current to be covered by parent
+      // and mark it as pruned such that it
+      // is ignored in future search
+      dst->mark_unvisited();
+    }
+
+    // even if it is pruned still set it's parent
+    // so the vertex itself it can be used to pass messages
+    // beyond just vid to other blocks / intervals
+    dst->parent = current;
+    fifo.push_back(dst_id);
   }
 }
 
@@ -1510,50 +1537,7 @@ void Recut<image_t>::march_narrow_band_recursive(const VID_t interval_id,
                                                  const VID_t block_id,
                                                  T current, T parent,
                                                  uint8_t coverage,
-                                                 Container &fifo) {
-  assertm(parent != nullptr,
-          "march_narrow_band_recursive() received a nullptr parent");
-  // if you reached an edge,
-  // the coverage of a parent ran out
-  // or current is a root
-  // then reset the parent and the coverage and record the vertex
-  if ((current->radius == 1) || (coverage < 1) || (current->root())) {
-    // parent is now known
-    current->parent = parent;
-
-    // roots are only ever added by the fifo from march_narrow_band()
-    // never from accumulate_prune()
-    // ensuring they are only visited once
-    if (!(current->root())) {
-      // add to band (01XX XXXX)
-      // this will prevent this vertex from being revisited
-      current->mark_band();
-    }
-
-    // print to swc
-    print_vertex(current);
-
-    // refresh the coverage now that it's runout
-    coverage = current->radius;
-    // refresh the parent
-    parent = current;
-  } else {
-    // otherwise consider current to be covered by parent
-    // and mark it as pruned such that it
-    // is ignored in future search
-    current->mark_unvisited();
-    // even though it is pruned still set it's parent
-    // so the vertex itself it can be used to pass messages
-    // beyond just vid to other blocks / intervals
-    current->parent = parent;
-  }
-
-  VID_t revisits;
-  bool found_adjacent_invalid;
-  update_neighbors(nullptr, interval_id, block_id, current, revisits, "prune",
-                   nullptr, found_adjacent_invalid, nullptr, nullptr, fifo,
-                   coverage);
-}
+                                                 Container &fifo) {}
 
 template <typename image_t>
 void Recut<image_t>::print_vertex(VertexAttr *current) {
@@ -1694,6 +1678,7 @@ void Recut<image_t>::march_narrow_band(
       // fifo while loop only handles roots
       // the rest of the search happens
       // recursively within march_narrow_band_recursive()
+      // FIXME switch to front
       uint64_t vid = fifo.back();
       fifo.pop_back();
 #ifdef FULL_PRINT
@@ -1708,8 +1693,17 @@ void Recut<image_t>::march_narrow_band(
       visited += 1;
 #endif
 
-      march_narrow_band_recursive(interval_id, block_id, current, parent,
-                                  coverage, fifo);
+      assertm(parent != nullptr,
+              "march_narrow_band() received a nullptr parent");
+
+      VID_t revisits;
+      bool found_adjacent_invalid;
+      VertexAttr *found_higher_parent = nullptr;
+      VertexAttr *same_radius_adjacent = nullptr;
+      update_neighbors(nullptr, interval_id, block_id, current, revisits,
+                       "prune", nullptr, found_adjacent_invalid,
+                       found_higher_parent, same_radius_adjacent, fifo,
+                       coverage);
     }
   } else {
     assertm(false, "stage specifier not recognized");
