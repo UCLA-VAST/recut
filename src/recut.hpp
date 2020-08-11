@@ -111,6 +111,7 @@ public:
   // performance
   RecutCommandLineArgs *args;
   RecutParameters *params;
+  std::vector<std::vector<std::deque<uint64_t>>> global_fifo;
 
 #ifdef CONCURRENT_MAP
   // interval specific global data structures
@@ -203,13 +204,14 @@ public:
                         bool &found_background);
   template <class Container>
   void accumulate_prune(VID_t interval_id, VID_t dst_id, VID_t block_id,
-                        struct VertexAttr *current, uint8_t coverage,
+                        struct VertexAttr *current,
+                        struct VertexAttr &found_higher_parent, bool &covered,
                         Container &fifo);
   template <class Container>
   void accumulate_radius(VID_t interval_id, VID_t dst_id, VID_t block_id,
                          struct VertexAttr *current, VID_t &revisits,
                          int parent_code, bool &found_adjacent_invalid,
-                         VertexAttr *found_higher_parent,
+                         VertexAttr &found_higher_parent,
                          VertexAttr *same_radius_adjacent, int stride,
                          int pad_stride, Container &fifo);
   template <typename TNew>
@@ -221,9 +223,9 @@ public:
                         std::string stage,
                         const TileThresholds<image_t> *tile_thresholds,
                         bool &found_adjacent_invalid,
-                        VertexAttr *found_higher_parent,
+                        VertexAttr &found_higher_parent,
                         VertexAttr *same_radius_adjacent, Container &fifo,
-                        uint8_t coverage = 0);
+                        bool &covered);
   template <class Container>
   void integrate_updated_ghost(VID_t interval_id, VID_t block_id,
                                std::string stage, Container &fifo);
@@ -751,7 +753,8 @@ template <class Container>
 void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
                                       VID_t block_id,
                                       struct VertexAttr *current,
-                                      uint8_t coverage, Container &fifo) {
+                                      struct VertexAttr &found_higher_parent,
+                                      bool &covered, Container &fifo) {
 
   auto dst = get_attr_vid(interval_id, block_id, dst_id, nullptr);
 
@@ -762,38 +765,38 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
   // and band (01XX...), during the prune stage marking a vertex as band
   // means the vertex was kept and has at least one child
   // Note: only selected and roots are ever added to fifo for the bfs
-  if (dst->selected()) {
+  if (dst->selected() || dst->root() ||
+      (dst->unselected() && dst->valid_radius())) {
+    // or if unselected but radius is valid meaning it's been pruned
     assertm(dst->valid_vid(), "selected must have a valid vid");
     assertm(dst->vid == dst_id, "get_attr_vid failed getting correct vertex");
 
-    // if you reached an edge,
-    // the coverage of a parent ran out
-    // or current is a root
-    // then reset the parent and the coverage and record the vertex
     // dst can only be 1 hop away (adjacent) from current, therefore
-    // all
-    if ((current->radius < 2) || (dst->radius == 1)) {
-      // add to band (01XX XXXX)
-      // this will prevent this vertex from being revisited
-      dst->mark_band();
-
-      // print to swc
-      print_vertex(dst);
-
-      // refresh the coverage now that it's runout
-      // coverage = current->radius;
-    } else {
-      // otherwise consider current to be covered by parent
-      // and mark it as pruned such that it
-      // is ignored in future search
-      dst->mark_unvisited();
+    // all radii greater than 1 imply some redundancy in coverage
+    if (dst->radius > 1) {
+      covered = true;
     }
 
-    // even if it is pruned still set it's parent
+    if (dst->radius > found_higher_parent.radius) {
+      // get the neighbor with the highest
+      found_higher_parent = *dst;
+#ifdef FULL_PRINT
+      std::cout << "  radius of: " << +(dst->radius) << " at dst " << dst_id
+                << " above " << +(found_higher_parent.radius) << '\n';
+#endif
+    }
+
+    // even if it will be pruned still set it's parent
     // so the vertex itself it can be used to pass messages
     // beyond just vid to other blocks / intervals
-    dst->parent = current;
-    fifo.push_back(dst_id);
+    // or keep a contiguous path
+    // dst->parent = current;
+    if (dst->selected()) {
+#ifdef FULL_PRINT
+      std::cout << "  added dst " << dst_id << '\n';
+#endif
+      fifo.push_back(dst_id);
+    }
   }
 }
 
@@ -814,7 +817,7 @@ template <class Container>
 void Recut<image_t>::accumulate_radius(
     VID_t interval_id, VID_t dst_id, VID_t block_id, struct VertexAttr *current,
     VID_t &revisits, int parent_code, bool &found_adjacent_invalid,
-    VertexAttr *found_higher_parent, VertexAttr *same_radius_adjacent,
+    VertexAttr &found_higher_parent, VertexAttr *same_radius_adjacent,
     int stride, int pad_stride, Container &fifo) {
 
   // note the current vertex can belong in the boundary
@@ -847,7 +850,7 @@ void Recut<image_t>::accumulate_radius(
       // this necessitates it is 1 higher than current
       // OR an update from another block / interval
       // creates new lower updates
-      found_higher_parent = dst;
+      found_higher_parent = *dst;
       dst->radius = updated_radius;
 #ifdef FULL_PRINT
       cout << "\tAdjacent higher"
@@ -1208,8 +1211,8 @@ void Recut<image_t>::update_neighbors(
     const image_t *tile, VID_t interval_id, VID_t block_id,
     struct VertexAttr *current, VID_t &revisits, std::string stage,
     const TileThresholds<image_t> *tile_thresholds,
-    bool &found_adjacent_invalid, VertexAttr *found_higher_parent,
-    VertexAttr *same_radius_adjacent, Container &fifo, uint8_t coverage) {
+    bool &found_adjacent_invalid, VertexAttr &found_higher_parent,
+    VertexAttr *same_radius_adjacent, Container &fifo, bool &covered) {
 
   VID_t i, j, k;
   i = j = k = 0;
@@ -1278,8 +1281,8 @@ void Recut<image_t>::update_neighbors(
         stride = ii + jj * this->block_length_x + kk * z_stride;
         pad_stride = ii + jj * this->pad_block_length_x + kk * z_pad_stride;
 #ifdef FULL_PRINT
-        cout << "x " << x << " y " << y << " z " << z << " dst_id " << dst_id
-             << " vid " << current->vid << '\n';
+        // cout << "x " << x << " y " << y << " z " << z << " dst_id " << dst_id
+        //<< " vid " << current->vid << '\n';
 #endif
         if (stage == "value") {
           accumulate_value(tile, interval_id, dst_id, block_id, current,
@@ -1291,8 +1294,8 @@ void Recut<image_t>::update_neighbors(
                             found_higher_parent, same_radius_adjacent, stride,
                             pad_stride, fifo);
         } else if (stage == "prune") {
-          accumulate_prune(interval_id, dst_id, block_id, current, coverage,
-                           fifo);
+          accumulate_prune(interval_id, dst_id, block_id, current,
+                           found_higher_parent, covered, fifo);
         }
       }
     }
@@ -1545,10 +1548,14 @@ void Recut<image_t>::print_vertex(VertexAttr *current) {
   // std::cout << current->description() << '\n';
   VID_t i, j, k;
   get_img_subscript(current->vid, i, j, k);
+  auto parent_vid = std::string{"-"};
+  if (current->parent != nullptr) { // parent set properly
+    parent_vid = std::to_string(current->parent->vid);
+  }
   // FIXME must refer to the row number instead of vid
   // FIXME place in separate file according to soma
-  std::cout << current->vid << " " << i << " " << j << " " << k
-            << current->radius << current->parent->vid << '\n';
+  std::cout << current->vid << " " << i << " " << j << " " << k << " "
+            << +(current->radius) << " " << parent_vid << '\n';
 }
 
 template <class image_t>
@@ -1591,11 +1598,13 @@ void Recut<image_t>::march_narrow_band(
       // can be a background vertex which occurs due to pixel value below the
       // threshold
       found_adjacent_invalid = false;
-      VertexAttr *found_higher_parent = nullptr;
+      VertexAttr found_higher_parent = *current;
       VertexAttr *same_radius_adjacent = nullptr;
+      auto covered = false;
       update_neighbors(tile, interval_id, block_id, current, revisits, stage,
                        tile_thresholds, found_adjacent_invalid,
-                       found_higher_parent, same_radius_adjacent, fifo);
+                       found_higher_parent, same_radius_adjacent, fifo,
+                       covered);
 
       // Prune logic
       // set the proper parent, either a same or a higher adjacent
@@ -1654,9 +1663,10 @@ void Recut<image_t>::march_narrow_band(
       // can be a background vertex which occurs due to pixel value below the
       // threshold
       found_adjacent_invalid = false;
+      auto covered = false;
       update_neighbors(tile, interval_id, block_id, current, revisits, stage,
-                       tile_thresholds, found_adjacent_invalid, nullptr,
-                       nullptr, fifo);
+                       tile_thresholds, found_adjacent_invalid, *current,
+                       nullptr, fifo, covered);
       if (found_adjacent_invalid) {
 #ifdef FULL_PRINT
         cout << "found surface vertex " << interval_id << " " << block_id << " "
@@ -1672,22 +1682,17 @@ void Recut<image_t>::march_narrow_band(
     uint64_t vid = fifo.back();
     VertexAttr *current = get_attr_vid(interval_id, block_id, vid, nullptr);
     assertm(current->valid_vid(), "fifo must recover a valid_vid vertex");
-    auto coverage = current->radius;
     auto parent = current;
     while (!(fifo.empty())) {
-      // fifo while loop only handles roots
-      // the rest of the search happens
-      // recursively within march_narrow_band_recursive()
+      auto covered = false;
+      // fifo only starts with roots
       // FIXME switch to front
-      uint64_t vid = fifo.back();
-      fifo.pop_back();
-#ifdef FULL_PRINT
-      std::cout << "process vertex for fifo at " << interval_id << " "
-                << block_id << " " << vid << '\n';
-#endif
+      uint64_t vid = fifo.front();
+      fifo.pop_front();
+
       current = get_attr_vid(interval_id, block_id, vid, nullptr);
       assertm(current->valid_vid(), "fifo must recover a valid_vid vertex");
-      assertm(current->root(), "fifo must contain only root vertices");
+      // assertm(current->root(), "fifo must contain only root vertices");
 
 #ifdef LOG_FULL
       visited += 1;
@@ -1698,12 +1703,56 @@ void Recut<image_t>::march_narrow_band(
 
       VID_t revisits;
       bool found_adjacent_invalid;
-      VertexAttr *found_higher_parent = nullptr;
+      VertexAttr found_higher_parent = *current;
       VertexAttr *same_radius_adjacent = nullptr;
       update_neighbors(nullptr, interval_id, block_id, current, revisits,
                        "prune", nullptr, found_adjacent_invalid,
                        found_higher_parent, same_radius_adjacent, fifo,
-                       coverage);
+                       covered);
+
+      // if the current vertex had an adjacent with a radius
+      // higher than it (i.e. 2 or greater) then current
+      // will be pruned
+      if (found_higher_parent.vid != current->vid) {
+        // to prevent islands, refer the new parent to have
+        // the old parent so that there is a path back to
+        // the root
+        // found_higher_parent->parent = current->parent;
+        current->parent = &found_higher_parent;
+        if (found_higher_parent.unselected()) {
+          current->parent = found_higher_parent.parent;
+        }
+        std::cout << "  found higher dst: " << found_higher_parent.vid
+                  << " final parent: " << current->parent << '\n';
+      }
+
+      auto keep_vertex = [this](auto vertex) {
+        // considers current to be covered by parent
+        // and mark it as pruned such that it
+        // is ignored in future search
+        // add to band (01XX XXXX)
+        if (!(vertex->root())) {
+          // this will prevent this vertex from being revisited
+          vertex->mark_band();
+        }
+
+        // print to swc
+        print_vertex(vertex);
+      };
+
+      if (covered) {
+        // unless it's a surface / leaf, then always keep it
+        // roots can never be added back in by accumulate_prune
+        // so fifo is safe from infinite loops
+        if ((current->root()) || (current->radius == 1)) {
+          keep_vertex(current);
+        } else {
+          // never visit again and never print it
+          current->mark_unvisited();
+        }
+      } else {
+        keep_vertex(current);
+      }
     }
   } else {
     assertm(false, "stage specifier not recognized");
@@ -1716,7 +1765,7 @@ void Recut<image_t>::march_narrow_band(
        << " start size " << start_size << " visiting " << visited
        << " revisits " << revisits << " in " << diff_time(time0, time1) << " s"
        << '\n';
-  //}
+//}
 #endif
 
 #ifdef RV
@@ -2164,11 +2213,6 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                        TileThresholds<image_t> *tile_thresholds) {
   VID_t grid_interval_size = grid.GetNIntervals();
   VID_t interval_block_size = grid.GetNBlocks();
-  // if (!fifo) {
-  // auto fifo = std::vector<std::vector<std::vector<uint64_t>>>(
-  // grid_interval_size, std::vector<std::vector<uint64_t>>(
-  // interval_block_size, std::vector<uint64_t>()));
-  //}
 
   // init all timers
   struct timespec update_start_time, update_finish_time;
@@ -2437,8 +2481,8 @@ Recut<image_t>::get_attr_vid(const VID_t interval_id, const VID_t block_id,
   // (pad_block_offset - 1) stored in row-wise order with respect to the cubic
   // block blocks within the interval are always stored according to their
   // linear block num such that a block_id * the total number of padded
-  // vertices in a block i.e. pad_block_offset or (interval_block_size + 2) ^ 2
-  // yields offset to the offset to the first vertex of the block.
+  // vertices in a block i.e. pad_block_offset or (interval_block_size + 2) ^
+  // 2 yields offset to the offset to the first vertex of the block.
   VID_t block_start = pad_block_offset * block_id;
   auto first_block_attr = attr + block_start;
 
@@ -2465,7 +2509,8 @@ Recut<image_t>::get_attr_vid(const VID_t interval_id, const VID_t block_id,
   // idx, relative to current interval
   int nb_block = (int)get_block_id(img_vid);
   int nb_interval = (int)get_interval_id(img_vid);
-  // cout << "nb_interval " << nb_interval << " nb_block " << nb_block << '\n';
+  // cout << "nb_interval " << nb_interval << " nb_block " << nb_block <<
+  // '\n';
 
   // adjust block subscripts so they reflect the interval or block they belong
   // to also adjust based on actual 3D padding of block Rotate all values
@@ -2650,6 +2695,12 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
 #ifdef LOG_FULL
   cout << "Created processing blocks" << '\n';
 #endif
+
+  // fifo is a queue representing the vids left to
+  // process at each stage
+  this->global_fifo = std::vector<std::vector<std::deque<uint64_t>>>(
+      grid_interval_size, std::vector<std::deque<uint64_t>>(
+                              interval_block_size, std::deque<uint64_t>()));
 }
 
 template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
@@ -2940,7 +2991,8 @@ void Recut<image_t>::finalize(vector<vertex_t> &outtree) {
         // KNOWN_ROOT preserved 0000 0000 and created
         // if not selected 0 and 0, skip
 #ifdef FULL_PRINT
-        // cout << "checking attr " << *attr << " at offset " << offset << '\n';
+        // cout << "checking attr " << *attr << " at offset " << offset <<
+        // '\n';
 #endif
         if (attr->unselected() && !(attr->root()))
           continue; // skips unvisited 11XX XXXX and band 01XX XXXX
@@ -3033,31 +3085,23 @@ template <class image_t> void Recut<image_t>::run_pipeline() {
   // create a list of root vids
   auto root_vids = this->initialize();
 
-  // fifo is a queue representing the vids left to
-  // process at each stage
-  VID_t grid_interval_size = grid.GetNIntervals();
-  VID_t interval_block_size = grid.GetNBlocks();
-  auto fifo = std::vector<std::vector<std::vector<uint64_t>>>(
-      grid_interval_size, std::vector<std::vector<uint64_t>>(
-                              interval_block_size, std::vector<uint64_t>()));
-
   // starting from the roots
   // value stage will save all surface vertices into
   // fifo
   std::string stage = "value";
-  this->activate_vids(root_vids, stage, fifo);
-  this->update(stage, fifo);
+  this->activate_vids(root_vids, stage, global_fifo);
+  this->update(stage, global_fifo);
 
   // radius stage will consume fifo surface vertices
   stage = "radius";
-  this->setup_radius(fifo);
-  this->update(stage, fifo);
+  this->setup_radius(global_fifo);
+  this->update(stage, global_fifo);
 
   // starting from roots, prune stage will
   // create final list of vertices
   stage = "prune";
-  this->activate_vids(root_vids, stage, fifo);
-  this->update(stage, fifo);
+  this->activate_vids(root_vids, stage, global_fifo);
+  this->update(stage, global_fifo);
 
   // aggregate results
   this->finalize(this->args->output_tree);

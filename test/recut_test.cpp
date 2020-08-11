@@ -4,6 +4,7 @@
 #include <bits/stdc++.h>
 #include <cstdlib> //rand
 #include <ctime>   // for srand
+#include <deque>
 #include <fcntl.h>
 #include <fstream>
 #include <iostream>
@@ -236,12 +237,7 @@ void test_get_attr_vid(bool mmap, int grid_size, int interval_size,
   recut.mmap_ = mmap;
 
   auto root_vids = recut.initialize();
-  VID_t grid_interval_size = recut.grid.GetNIntervals();
-  VID_t interval_block_size = recut.grid.GetNBlocks();
-  auto fifo = std::vector<std::vector<std::vector<uint64_t>>>(
-      grid_interval_size, std::vector<std::vector<uint64_t>>(
-                              interval_block_size, std::vector<uint64_t>()));
-  recut.activate_vids(root_vids, "value", fifo);
+  recut.activate_vids(root_vids, "value", recut.global_fifo);
 
   ASSERT_EQ(recut.image_length_x, grid_size);
   ASSERT_EQ(recut.image_length_y, grid_size);
@@ -1126,20 +1122,13 @@ TEST(Radius, Full) {
                            {grid_size, grid_size, grid_size});
           }
 
-          auto grid_interval_size = recut.grid.GetNIntervals();
-          auto interval_block_size = recut.grid.GetNBlocks();
-          auto fifo = std::vector<std::vector<std::vector<uint64_t>>>(
-              grid_interval_size,
-              std::vector<std::vector<uint64_t>>(interval_block_size,
-                                                 std::vector<uint64_t>()));
-
-          recut.activate_vids(root_vids, "value", fifo);
-          recut.update("value", fifo);
+          recut.activate_vids(root_vids, "value", recut.global_fifo);
+          recut.update("value", recut.global_fifo);
           if (print_all) {
-            recut.print_grid("value", fifo);
-            recut.print_grid("surface", fifo);
+            recut.print_grid("value", recut.global_fifo);
+            recut.print_grid("surface", recut.global_fifo);
             cout << "All surface vids: \n";
-            for (auto &outer : fifo) {
+            for (auto &outer : recut.global_fifo) {
               for (auto &inner : outer) {
                 for (auto &vid : inner) {
                   cout << '\t' << vid << '\n';
@@ -1168,13 +1157,14 @@ TEST(Radius, Full) {
 
           // make sure all surface vertices were identified correctly
           double xy_err, recut_err;
-          ASSERT_NO_FATAL_FAILURE(check_recut_error(
-              recut, radii_grid.get(), grid_size, "surface", recut_err, fifo));
+          ASSERT_NO_FATAL_FAILURE(
+              check_recut_error(recut, radii_grid.get(), grid_size, "surface",
+                                recut_err, recut.global_fifo));
 
-          recut.setup_radius(fifo);
+          recut.setup_radius(recut.global_fifo);
           // conducting update on radius consumes all fifo values
-          recut.update("radius", fifo);
-          for (const auto &o : fifo) {
+          recut.update("radius", recut.global_fifo);
+          for (const auto &o : recut.global_fifo) {
             for (const auto &i : o) {
               ASSERT_EQ(i.size(), 0);
             }
@@ -1192,7 +1182,7 @@ TEST(Radius, Full) {
                              {grid_size, grid_size, grid_size});
             }
             std::cout << "Recut radii\n";
-            recut.print_grid("radius", fifo);
+            recut.print_grid("radius", recut.global_fifo);
           }
 
           if (check_xy) {
@@ -1200,8 +1190,9 @@ TEST(Radius, Full) {
                 recut.generated_image, radii_grid.get(), radii_grid_xy.get(),
                 grid_size, recut.params->selected, xy_err));
           }
-          ASSERT_NO_FATAL_FAILURE(check_recut_error(
-              recut, radii_grid.get(), grid_size, "radius", recut_err, fifo));
+          ASSERT_NO_FATAL_FAILURE(
+              check_recut_error(recut, radii_grid.get(), grid_size, "radius",
+                                recut_err, recut.global_fifo));
           ASSERT_NEAR(recut_err, 0., .001);
 
           if (print_csv) {
@@ -1225,11 +1216,11 @@ TEST(Radius, Full) {
           // starting from roots, prune stage will
           // find final list of vertices
           auto stage = "prune";
-          recut.activate_vids(root_vids, stage, fifo);
-          recut.update(stage, fifo);
+          recut.activate_vids(root_vids, stage, recut.global_fifo);
+          recut.update(stage, recut.global_fifo);
 
           std::cout << "Recut prune\n";
-          recut.print_grid("label", fifo);
+          recut.print_grid("label", recut.global_fifo);
         }
       }
     }
@@ -1272,12 +1263,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   auto recut = Recut<uint16_t>(args);
   std::vector<VID_t> root_vids;
   root_vids = recut.initialize();
-  VID_t grid_interval_size = recut.grid.GetNIntervals();
-  VID_t interval_block_size = recut.grid.GetNBlocks();
-  auto fifo = std::vector<std::vector<std::vector<uint64_t>>>(
-      grid_interval_size, std::vector<std::vector<uint64_t>>(
-                              interval_block_size, std::vector<uint64_t>()));
-  recut.activate_vids(root_vids, "value", fifo);
+  recut.activate_vids(root_vids, "value", recut.global_fifo);
 
 #ifdef USE_MCP3D
   mcp3d::MImage image;
@@ -1309,7 +1295,8 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   RecordProperty("min_int", tile_thresholds->min_int);
 
   // update with fixed tile_thresholds for the entire update
-  auto value_update_stats = recut.update("value", fifo, tile_thresholds);
+  auto value_update_stats =
+      recut.update("value", recut.global_fifo, tile_thresholds);
 
   {
     auto interval_open_count = value_update_stats->interval_open_counts;
@@ -1340,8 +1327,8 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   }
 
   // radius
-  recut.setup_radius(fifo);
-  auto radius_update_stats = recut.update("radius", fifo);
+  recut.setup_radius(recut.global_fifo);
+  auto radius_update_stats = recut.update("radius", recut.global_fifo);
 
   recut.finalize(args.output_tree); // this fills args.output_tree
   double actual_slt_pct =

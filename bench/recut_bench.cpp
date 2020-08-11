@@ -46,23 +46,17 @@ static void bench_critical_loop(benchmark::State &state) {
   // initialize portion will still be included
   auto root_vids = recut.initialize();
 
-  auto grid_interval_size = recut.grid.GetNIntervals();
-  auto interval_block_size = recut.grid.GetNBlocks();
-  auto fifo = std::vector<std::vector<std::vector<uint64_t>>>(
-      grid_interval_size, std::vector<std::vector<uint64_t>>(
-                              interval_block_size, std::vector<uint64_t>()));
-
   // This is the performance loop where gbench
   // will execute until timing stats converge
   for (auto _ : state) {
     // reactivates
     // the intervals of the root and readds
     // them to the respective heaps
-    recut.activate_vids(root_vids, "value", fifo);
+    recut.activate_vids(root_vids, "value", recut.global_fifo);
     // from our gen img of initialize update
     // does fastmarching, updated vertices
     // are mmap'd
-    recut.update("value", fifo);
+    recut.update("value", recut.global_fifo);
 
     // to destroy the information for this run
     // so that it doesn't affect the next run
@@ -118,21 +112,15 @@ static void recut_radius_real_data(benchmark::State &state) {
     auto recut = Recut<uint16_t>(args);
     auto root_vids = recut.initialize();
 
-    auto grid_interval_size = recut.grid.GetNIntervals();
-    auto interval_block_size = recut.grid.GetNBlocks();
-    auto fifo = std::vector<std::vector<std::vector<uint64_t>>>(
-        grid_interval_size, std::vector<std::vector<uint64_t>>(
-                                interval_block_size, std::vector<uint64_t>()));
-
     for (auto _ : state) {
       // warning: pause and resume high overhead
       state.PauseTiming();
-      recut.activate_vids(root_vids, "value", fifo);
-      recut.update("value", fifo, tile_thresholds);
-      recut.setup_radius(fifo);
+      recut.activate_vids(root_vids, "value", recut.global_fifo);
+      recut.update("value", recut.global_fifo, tile_thresholds);
+      recut.setup_radius(recut.global_fifo);
       state.ResumeTiming();
 
-      recut.update("radius", fifo);
+      recut.update("radius", recut.global_fifo);
       recut.release();
     }
   }
@@ -167,21 +155,15 @@ static void recut_radius(benchmark::State &state) {
     auto recut = Recut<uint16_t>(args);
     auto root_vids = recut.initialize();
 
-    auto grid_interval_size = recut.grid.GetNIntervals();
-    auto interval_block_size = recut.grid.GetNBlocks();
-    auto fifo = std::vector<std::vector<std::vector<uint64_t>>>(
-        grid_interval_size, std::vector<std::vector<uint64_t>>(
-                                interval_block_size, std::vector<uint64_t>()));
-
     for (auto _ : state) {
       // warning: pause and resume high overhead
       state.PauseTiming();
-      recut.activate_vids(root_vids, "value", fifo);
-      recut.update("value", fifo);
-      recut.setup_radius(fifo);
+      recut.activate_vids(root_vids, "value", recut.global_fifo);
+      recut.update("value", recut.global_fifo);
+      recut.setup_radius(recut.global_fifo);
       state.ResumeTiming();
 
-      recut.update("radius", fifo);
+      recut.update("radius", recut.global_fifo);
       recut.release();
     }
   }
