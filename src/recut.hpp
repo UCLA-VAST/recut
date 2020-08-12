@@ -211,7 +211,6 @@ public:
   void accumulate_radius(VID_t interval_id, VID_t dst_id, VID_t block_id,
                          struct VertexAttr *current, VID_t &revisits,
                          int parent_code, bool &found_adjacent_invalid,
-                         VertexAttr &found_higher_parent,
                          VertexAttr *same_radius_adjacent, int stride,
                          int pad_stride, Container &fifo);
   template <typename TNew>
@@ -778,12 +777,15 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
     }
 
     if (dst->radius > found_higher_parent.radius) {
-      // get the neighbor with the highest
-      found_higher_parent = *dst;
 #ifdef FULL_PRINT
       std::cout << "  radius of: " << +(dst->radius) << " at dst " << dst_id
                 << " above " << +(found_higher_parent.radius) << '\n';
 #endif
+      // get the neighbor with the highest
+      found_higher_parent = *dst;
+      // must trace a contiguous path to Root or Band vertices
+      assertm(found_higher_parent.parent != nullptr,
+              "parent of found_higher_parent can't be nullptr");
     }
 
     // even if it will be pruned still set it's parent
@@ -795,6 +797,8 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
 #ifdef FULL_PRINT
       std::cout << "  added dst " << dst_id << '\n';
 #endif
+      dst->parent = current;
+      dst->mark_band();
       fifo.push_back(dst_id);
     }
   }
@@ -817,8 +821,8 @@ template <class Container>
 void Recut<image_t>::accumulate_radius(
     VID_t interval_id, VID_t dst_id, VID_t block_id, struct VertexAttr *current,
     VID_t &revisits, int parent_code, bool &found_adjacent_invalid,
-    VertexAttr &found_higher_parent, VertexAttr *same_radius_adjacent,
-    int stride, int pad_stride, Container &fifo) {
+    VertexAttr *same_radius_adjacent, int stride, int pad_stride,
+    Container &fifo) {
 
   // note the current vertex can belong in the boundary
   // region of a separate block /interval and is only
@@ -850,7 +854,6 @@ void Recut<image_t>::accumulate_radius(
       // this necessitates it is 1 higher than current
       // OR an update from another block / interval
       // creates new lower updates
-      found_higher_parent = *dst;
       dst->radius = updated_radius;
 #ifdef FULL_PRINT
       cout << "\tAdjacent higher"
@@ -1291,8 +1294,7 @@ void Recut<image_t>::update_neighbors(
         } else if (stage == "radius") {
           accumulate_radius(interval_id, dst_id, block_id, current, revisits,
                             parent_code, found_adjacent_invalid,
-                            found_higher_parent, same_radius_adjacent, stride,
-                            pad_stride, fifo);
+                            same_radius_adjacent, stride, pad_stride, fifo);
         } else if (stage == "prune") {
           accumulate_prune(interval_id, dst_id, block_id, current,
                            found_higher_parent, covered, fifo);
@@ -1576,19 +1578,20 @@ void Recut<image_t>::march_narrow_band(
 #endif
 
   VID_t revisits = 0;
-  VertexAttr *current;
-  bool found_adjacent_invalid;
+
   if (stage == "radius") {
+    VertexAttr *current; // for performance
     while (!(fifo.empty())) {
       uint64_t vid = fifo.back();
       fifo.pop_back();
+      VertexAttr *current = get_attr_vid(interval_id, block_id, vid, nullptr);
+      assertm(current->valid_vid(), "fifo must recover a valid_vid vertex");
+
 #ifdef FULL_PRINT
       std::cout << "process vertex for fifo at " << interval_id << " "
                 << block_id << " " << vid << " label " << current->label()
                 << '\n';
 #endif
-      VertexAttr *current = get_attr_vid(interval_id, block_id, vid, nullptr);
-      assertm(current->valid_vid(), "fifo must recover a valid_vid vertex");
 
 #ifdef LOG_FULL
       visited += 1;
@@ -1597,7 +1600,7 @@ void Recut<image_t>::march_narrow_band(
       // invalid can either be out of range of the entire global image or it
       // can be a background vertex which occurs due to pixel value below the
       // threshold
-      found_adjacent_invalid = false;
+      auto found_adjacent_invalid = false;
       VertexAttr found_higher_parent = *current;
       VertexAttr *same_radius_adjacent = nullptr;
       auto covered = false;
@@ -1617,6 +1620,7 @@ void Recut<image_t>::march_narrow_band(
       //}
     }
   } else if (stage == "value") {
+    VertexAttr *current;
     while (!(heap_vec[interval_id][block_id].empty())) {
 
       if (restart_bool) {
@@ -1662,7 +1666,7 @@ void Recut<image_t>::march_narrow_band(
       // invalid can either be out of range of the entire global image or it
       // can be a background vertex which occurs due to pixel value below the
       // threshold
-      found_adjacent_invalid = false;
+      auto found_adjacent_invalid = false;
       auto covered = false;
       update_neighbors(tile, interval_id, block_id, current, revisits, stage,
                        tile_thresholds, found_adjacent_invalid, *current,
@@ -1679,10 +1683,7 @@ void Recut<image_t>::march_narrow_band(
       }
     }
   } else if (stage == "prune") {
-    uint64_t vid = fifo.back();
-    VertexAttr *current = get_attr_vid(interval_id, block_id, vid, nullptr);
-    assertm(current->valid_vid(), "fifo must recover a valid_vid vertex");
-    auto parent = current;
+    VertexAttr *current;
     while (!(fifo.empty())) {
       auto covered = false;
       // fifo only starts with roots
@@ -1698,9 +1699,6 @@ void Recut<image_t>::march_narrow_band(
       visited += 1;
 #endif
 
-      assertm(parent != nullptr,
-              "march_narrow_band() received a nullptr parent");
-
       VID_t revisits;
       bool found_adjacent_invalid;
       VertexAttr found_higher_parent = *current;
@@ -1710,31 +1708,49 @@ void Recut<image_t>::march_narrow_band(
                        found_higher_parent, same_radius_adjacent, fifo,
                        covered);
 
+      // Parent
+      // by default current will have a root of itself
+      if (current->root()) {
+        current->parent = current;
+      }
+
+      assertm(current->parent != nullptr, "parent can't be nullptr");
+      // if the parent has been pruned then set the current
+      // parent further upstream, since a parent is not allowed to be
+      // unselected once it is printed
+      if (current->parent->unvisited()) {
+        current->parent = current->parent->parent;
+      }
+
       // if the current vertex had an adjacent with a radius
       // higher than it (i.e. 2 or greater) then current
       // will be pruned
-      if (found_higher_parent.vid != current->vid) {
-        // to prevent islands, refer the new parent to have
-        // the old parent so that there is a path back to
-        // the root
-        // found_higher_parent->parent = current->parent;
-        current->parent = &found_higher_parent;
-        if (found_higher_parent.unselected()) {
-          current->parent = found_higher_parent.parent;
-        }
-        std::cout << "  found higher dst: " << found_higher_parent.vid
-                  << " final parent: " << current->parent << '\n';
-      }
+      // if (found_higher_parent.vid != current->vid) {
+      //// to prevent islands, refer the new parent to have
+      //// the old parent so that there is a path back to
+      //// the root
+      //// found_higher_parent->parent = current->parent;
+      // current->parent = &found_higher_parent;
+      // if (found_higher_parent.unselected()) {
+      // current->parent = found_higher_parent.parent;
+      //}
+      // std::cout << "  found higher dst: " << found_higher_parent.vid
+      //<< " final parent: " << current->parent->vid << '\n';
+      //}
+
+      assertm(current->parent != nullptr, "parent can't be nullptr");
+      assertm(current->parent->band() || current->parent->root(),
+              "parent must not be unselected");
 
       auto keep_vertex = [this](auto vertex) {
         // considers current to be covered by parent
         // and mark it as pruned such that it
         // is ignored in future search
         // add to band (01XX XXXX)
-        if (!(vertex->root())) {
-          // this will prevent this vertex from being revisited
-          vertex->mark_band();
-        }
+        //if (!(vertex->root())) {
+          //// this will prevent this vertex from being revisited
+          //vertex->mark_band();
+        //}
 
         // print to swc
         print_vertex(vertex);
@@ -1748,6 +1764,9 @@ void Recut<image_t>::march_narrow_band(
           keep_vertex(current);
         } else {
           // never visit again and never print it
+          // all dsts of current, will eventually switch their
+          // parent from current to current->parent once
+          // they are processed
           current->mark_unvisited();
         }
       } else {

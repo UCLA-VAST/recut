@@ -174,6 +174,7 @@ struct VertexAttr {
     vid = a.vid;
     value = a.value;
     radius = a.radius;
+    parent = a.parent;
     // do not copy handle_t
     return *this;
   }
