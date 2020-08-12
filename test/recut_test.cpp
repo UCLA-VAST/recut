@@ -1162,6 +1162,7 @@ TEST(Radius, Full) {
                                 recut_err, recut.global_fifo));
 
           recut.setup_radius(recut.global_fifo);
+
           // conducting update on radius consumes all fifo values
           recut.update("radius", recut.global_fifo);
           for (const auto &o : recut.global_fifo) {
