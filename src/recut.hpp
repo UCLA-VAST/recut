@@ -1714,13 +1714,18 @@ void Recut<image_t>::march_narrow_band(
         current->parent = current;
       }
 
-      assertm(current->parent != nullptr, "parent can't be nullptr");
-      // if the parent has been pruned then set the current
-      // parent further upstream, since a parent is not allowed to be
-      // unselected once it is printed
-      if (current->parent->unvisited()) {
-        current->parent = current->parent->parent;
-      }
+      auto adjust_parent = [](auto &vertex) {
+        // if the parent has been pruned then set the current
+        // parent further upstream, since a parent is not allowed to be
+        // unselected once it is printed
+        assertm(vertex->parent != nullptr, "parent can't be nullptr");
+        if (vertex->parent->unvisited()) {
+          vertex->parent = vertex->parent->parent;
+        }
+        assertm(vertex->parent != nullptr, "parent can't be nullptr");
+        assertm(vertex->parent->band() || vertex->parent->root(),
+                "parent must not be unselected");
+      };
 
       // if the current vertex had an adjacent with a radius
       // higher than it (i.e. 2 or greater) then current
@@ -1738,40 +1743,42 @@ void Recut<image_t>::march_narrow_band(
       //<< " final parent: " << current->parent->vid << '\n';
       //}
 
-      assertm(current->parent != nullptr, "parent can't be nullptr");
-      assertm(current->parent->band() || current->parent->root(),
-              "parent must not be unselected");
+      // auto keep_vertex = [this](auto vertex) {
+      // considers current to be covered by parent
+      // and mark it as pruned such that it
+      // is ignored in future search
+      // add to band (01XX XXXX)
+      // if (!(vertex->root())) {
+      //// this will prevent this vertex from being revisited
+      // vertex->mark_band();
+      //}
 
-      auto keep_vertex = [this](auto vertex) {
-        // considers current to be covered by parent
-        // and mark it as pruned such that it
-        // is ignored in future search
-        // add to band (01XX XXXX)
-        //if (!(vertex->root())) {
-          //// this will prevent this vertex from being revisited
-          //vertex->mark_band();
-        //}
-
-        // print to swc
-        print_vertex(vertex);
-      };
+      // print to swc
+      // print_vertex(vertex);
+      //};
 
       if (covered) {
         // unless it's a surface / leaf, then always keep it
         // roots can never be added back in by accumulate_prune
         // so fifo is safe from infinite loops
-        if ((current->root()) || (current->radius == 1)) {
-          keep_vertex(current);
-        } else {
+        if (!((current->root()) || (current->radius == 1))) {
           // never visit again and never print it
           // all dsts of current, will eventually switch their
           // parent from current to current->parent once
           // they are processed
           current->mark_unvisited();
+          // get radii before adjusting parent is intended to
+          // preserve coverage info as it decreases in range
+          // only pruned / unselected vertices will have their radii mutated
+          // as a form of message passing
+          current->radius = current->parent->radius - 1;
+          adjust_parent(current);
+          continue;
         }
-      } else {
-        keep_vertex(current);
       }
+
+      adjust_parent(current);
+      print_vertex(current);
     }
   } else {
     assertm(false, "stage specifier not recognized");
