@@ -1222,6 +1222,9 @@ TEST(Radius, Full) {
 
           std::cout << "Recut prune\n";
           recut.print_grid("label", recut.global_fifo);
+
+          std::cout << "Recut radii post prune\n";
+          recut.print_grid("radius", recut.global_fifo);
         }
       }
     }
