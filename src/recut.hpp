@@ -764,8 +764,8 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
   // and band (01XX...), during the prune stage marking a vertex as band
   // means the vertex was kept and has at least one child
   // Note: only selected and roots are ever added to fifo for the bfs
-  if (dst->selected() || dst->root() ||
-      (dst->unselected() && dst->valid_radius())) {
+  if (dst->band() || dst->root() ||
+      (dst->unselected() && dst->valid_parent())) {
     // or if unselected but radius is valid meaning it's been pruned
     assertm(dst->valid_vid(), "selected must have a valid vid");
     assertm(dst->vid == dst_id, "get_attr_vid failed getting correct vertex");
@@ -774,34 +774,30 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
     // all radii greater than 1 imply some redundancy in coverage
     if (dst->radius > 1) {
       covered = true;
-    }
-
-    if (dst->radius > found_higher_parent.radius) {
+      if (found_higher_parent.radius < (dst->radius - 1)) {
+        found_higher_parent = *dst;
+      }
 #ifdef FULL_PRINT
       std::cout << "  radius of: " << +(dst->radius) << " at dst " << dst_id
-                << " above " << +(found_higher_parent.radius) << '\n';
+                << " " << dst->label() << " covers " << +(current->radius) << '\n';
 #endif
-      // get the neighbor with the highest
-      found_higher_parent = *dst;
-      // must trace a contiguous path to Root or Band vertices
-      assertm(found_higher_parent.parent != nullptr,
-              "parent of found_higher_parent can't be nullptr");
     }
+
+  }
 
     // even if it will be pruned still set it's parent
     // so the vertex itself it can be used to pass messages
     // beyond just vid to other blocks / intervals
     // or keep a contiguous path
-    // dst->parent = current;
-    if (dst->selected()) {
+    if (dst->selected() && !(dst->valid_parent())) {
 #ifdef FULL_PRINT
       std::cout << "  added dst " << dst_id << '\n';
 #endif
       dst->parent = current;
-      dst->mark_band();
+      assertm(dst->valid_parent(), "dst must be assigned a valid parent");
       fifo.push_back(dst_id);
+      check_ghost_update(interval_id, block_id, dst, false, "radius");
     }
-  }
 }
 
 /**
@@ -1027,7 +1023,7 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_id, VID_t block_id,
   if (!vec) {
     vec = new std::vector<struct VertexAttr>;
   }
-  vec->emplace_back(dst->edge_state, dst->value, dst->vid, dst->radius);
+  vec->emplace_back(dst->edge_state, dst->value, dst->vid, dst->radius, dst->parent);
   // Note: this block is unique to a single thread, therefore no other
   // thread could have this same key, since the keys are unique with
   // respect to their permutation. This means that we do not need to
@@ -1037,7 +1033,7 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_id, VID_t block_id,
   mutator.assignValue(vec); // assign via mutator vs. relookup
 #else
   updated_ghost_vec[nb_interval_id][block_id][nb].emplace_back(
-      dst->edge_state, dst->value, dst->vid, dst->radius);
+      dst->edge_state, dst->value, dst->vid, dst->radius, dst->parent);
 #endif
   active_neighbors[nb_interval_id][nb][block_id] = true;
 
@@ -1332,8 +1328,26 @@ bool Recut<image_t>::integrate_vertex(VID_t interval_id, VID_t block_id,
                   << " " << block_id << " " << dst->vid << '\n';
 #endif
         fifo.push_back(dst->vid);
+        // deep copy into the shared memory location in the separate block
+        *dst = *updated_attr;
         return true;
       }
+    }
+    return false;
+  }
+
+  // handle simpler prune stage and exit
+  if (stage == "prune") {
+    if (*dst != *updated_attr) {
+      assertm(dst->valid_vid(), "dst must have a valid vid");
+#ifdef FULL_PRINT
+        std::cout << "Integrate vertex at " << interval_id
+                  << " " << block_id << " " << dst->vid << '\n';
+#endif
+        // deep copy into the shared memory location in the separate block
+        *dst = *updated_attr;
+        fifo.push_back(dst->vid);
+        return true;
     }
     return false;
   }
@@ -1359,8 +1373,7 @@ bool Recut<image_t>::integrate_vertex(VID_t interval_id, VID_t block_id,
   // less than, thus points with no update on a border will not be
   // added back and forth continously.
   // Only updates in the ghost region outside domain of block_id, in domain
-  // of nb, therefore the updates must go into the heapvec of nb
-  // to distinguish the internal handles used for either heaps
+  // of nb, therefore the updates must go into the heapvec of nb to distinguish the internal handles used for either heaps
   // handles[block_id] is set for cells within block_id blocks internal
   // domain or block_id ghost cell region, it represents all cells added to
   // heap block_id and all cells that can be manipulated by thread block_id
@@ -1470,6 +1483,14 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
       active_blocks[interval_id][block_id].store(true);
     }
   } else if (stage == "radius") {
+    if (!(fifo.empty())) {
+#ifdef FULL_PRINT
+      cout << "Setting interval: " << interval_id << " block: " << block_id
+           << " to active\n";
+#endif
+      active_blocks[interval_id][block_id].store(true);
+    }
+  } else if (stage == "prune") {
     if (!(fifo.empty())) {
 #ifdef FULL_PRINT
       cout << "Setting interval: " << interval_id << " block: " << block_id
@@ -1727,36 +1748,6 @@ void Recut<image_t>::march_narrow_band(
                 "parent must not be unselected");
       };
 
-      // if the current vertex had an adjacent with a radius
-      // higher than it (i.e. 2 or greater) then current
-      // will be pruned
-      // if (found_higher_parent.vid != current->vid) {
-      //// to prevent islands, refer the new parent to have
-      //// the old parent so that there is a path back to
-      //// the root
-      //// found_higher_parent->parent = current->parent;
-      // current->parent = &found_higher_parent;
-      // if (found_higher_parent.unselected()) {
-      // current->parent = found_higher_parent.parent;
-      //}
-      // std::cout << "  found higher dst: " << found_higher_parent.vid
-      //<< " final parent: " << current->parent->vid << '\n';
-      //}
-
-      // auto keep_vertex = [this](auto vertex) {
-      // considers current to be covered by parent
-      // and mark it as pruned such that it
-      // is ignored in future search
-      // add to band (01XX XXXX)
-      // if (!(vertex->root())) {
-      //// this will prevent this vertex from being revisited
-      // vertex->mark_band();
-      //}
-
-      // print to swc
-      // print_vertex(vertex);
-      //};
-
       if (covered) {
         // unless it's a surface / leaf, then always keep it
         // roots can never be added back in by accumulate_prune
@@ -1771,13 +1762,21 @@ void Recut<image_t>::march_narrow_band(
           // preserve coverage info as it decreases in range
           // only pruned / unselected vertices will have their radii mutated
           // as a form of message passing
-          current->radius = current->parent->radius - 1;
+          if (found_higher_parent.vid != current->vid) {
+            std::cout << "  refreshed radius - 1 of " << found_higher_parent.radius - 1 << " from vid " << found_higher_parent.vid << '\n';
+            current->radius = found_higher_parent.radius - 1;
+          } else {
+            current->radius = current->parent->radius - 1;
+          }
           adjust_parent(current);
           continue;
         }
       }
 
       adjust_parent(current);
+      if (!(current->root())) {
+        current->mark_band();
+      }
       print_vertex(current);
     }
   } else {
@@ -3127,6 +3126,7 @@ template <class image_t> void Recut<image_t>::run_pipeline() {
   // create final list of vertices
   stage = "prune";
   this->activate_vids(root_vids, stage, global_fifo);
+  //this->open_swc_outputs(root_vids);
   this->update(stage, global_fifo);
 
   // aggregate results

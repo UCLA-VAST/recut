@@ -65,7 +65,7 @@ struct VertexAttr {
   // size of this map is max 4 since a corner voxel can it at most
   // 3 other blocks ghost zones
   handle_t handle; // same type as VID_t
-  VertexAttr *parent = nullptr;
+  VertexAttr *parent;
   float value; // distance to source: 4 bytes
   struct bitfield
       edge_state; // most sig. bits (little-endian) refer to state : 1 bytes
@@ -76,21 +76,23 @@ struct VertexAttr {
       : edge_state(192), value(numeric_limits<float>::max()),
         vid(numeric_limits<VID_t>::max()),
         handle(numeric_limits<handle_t>::max()),
-        radius(numeric_limits<uint8_t>::max()) {}
+        radius(numeric_limits<uint8_t>::max()) ,
+        parent(nullptr) {}
 
   VertexAttr(float value)
       : edge_state(192), value(value), vid(numeric_limits<VID_t>::max()),
         handle(numeric_limits<handle_t>::max()),
-        radius(numeric_limits<uint8_t>::max()) {}
+        radius(numeric_limits<uint8_t>::max()),
+        parent(nullptr) {}
 
   // copy constructor
   VertexAttr(const VertexAttr &a)
-      : edge_state(a.edge_state), value(a.value), vid(a.vid), radius(a.radius) {
+      : edge_state(a.edge_state), value(a.value), vid(a.vid), radius(a.radius), parent(a.parent) {
   }
 
   // emplace back constructor
-  VertexAttr(struct bitfield edge_state, float value, VID_t vid, uint8_t radius)
-      : edge_state(edge_state), value(value), vid(vid), radius(radius) {}
+  VertexAttr(struct bitfield edge_state, float value, VID_t vid, uint8_t radius, VertexAttr* parent)
+      : edge_state(edge_state), value(value), vid(vid), radius(radius), parent(parent) {}
 
   bool root() const {
     return (!edge_state.test(7) && !edge_state.test(6)); // 00XX XXXX ROOT
@@ -112,6 +114,10 @@ struct VertexAttr {
     descript += '\n';
     return descript;
   }
+
+  /* returns whether this vertex has been added to a heap
+   */
+  bool valid_parent() { return parent != nullptr; }
 
   /* returns whether this vertex has been added to a heap
    */
@@ -181,12 +187,14 @@ struct VertexAttr {
 
   bool operator==(const VertexAttr &a) const {
     return (value == a.value) && (vid == a.vid) &&
-           (edge_state.field_ == a.edge_state.field_) && (radius == a.radius);
+           (edge_state.field_ == a.edge_state.field_) && (radius == a.radius)
+           && (parent == a.parent);
   }
 
   bool operator!=(const VertexAttr &a) const {
     return (value != a.value) || (vid != a.vid) ||
-           (edge_state.field_ != a.edge_state.field_) || (radius == a.radius);
+           (edge_state.field_ != a.edge_state.field_) || (radius != a.radius)
+           || (parent != a.parent);
   }
 
   void mark_selected() {
