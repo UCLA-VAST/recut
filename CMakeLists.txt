@@ -19,6 +19,14 @@ add_subdirectory(extern/benchmark)
 # works for cmake 3.9+
 find_package(OpenMP REQUIRED)
 
+# Internal defines to Recut
+# determine which targets to build
+# a user of Recut in header only mode can ignore
+# building of tests and benchmarks 
+set(RECUT_ENABLE_CL_EXECUTABLE OFF CACHE BOOL "Suppress Recut building its command line executable")
+set(RECUT_ENABLE_TESTING OFF CACHE BOOL "Suppress Recut building its test targets")
+set(RECUT_ENABLE_BENCHMARKING OFF CACHE BOOL "Suppress Recut building its benchmarks targets")
+
 # CMake Preprocessor Defines:
 
 #  this creates tests that match the benchmarks
@@ -85,17 +93,41 @@ set(HEADER
 # will not link shared dependencies properly
 #set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
 
-#add_executable(recut ${SRC} ${HEADER} ${PARAMS})
-add_executable(recut_test test/recut_test.cpp ${HEADER} ${MARKERS} ${PARAMS} ${APP2})
-add_executable(recut_bench bench/recut_bench.cpp ${HEADER} ${MARKERS} ${PARAMS} ${APP2})
+if (RECUT_ENABLE_CL_EXECUTABLE)
+  add_executable(recut ${SRC} ${HEADER} ${PARAMS})
+endif()
+if (RECUT_ENABLE_TESTING)
+  add_executable(recut_test test/recut_test.cpp ${HEADER} ${MARKERS} ${PARAMS} ${APP2})
+endif()
+if (RECUT_ENABLE_BENCHMARKING)
+  add_executable(recut_bench bench/recut_bench.cpp ${HEADER} ${MARKERS} ${PARAMS} ${APP2})
+endif()
 
 include_directories(include)
+include_directories(src)
 
-target_link_libraries(recut_test PRIVATE gtest)
-target_link_libraries(recut_bench PRIVATE benchmark)
+# variable and target dependent links
+if (RECUT_ENABLE_TESTING)
+  target_link_libraries(recut_test PRIVATE gtest)
+endif()
+if (RECUT_ENABLE_BENCHMARKING)
+  target_link_libraries(recut_bench PRIVATE benchmark)
+endif()
 
-#set(ALL_TARGETS recut recut_test recut_bench)
-set(ALL_TARGETS recut_test recut_bench)
+# determine which targets to build
+# a user of Recut in header only mode can ignore
+# building of tests and benchmarks 
+set(ALL_TARGETS "")
+if (RECUT_ENABLE_CL_EXECUTABLE)
+  list(APPEND ALL_TARGETS recut)
+endif()
+if (RECUT_ENABLE_TESTING)
+  list(APPEND ALL_TARGETS recut_test)
+endif()
+if (RECUT_ENABLE_BENCHMARKING)
+  list(APPEND ALL_TARGETS recut_bench)
+endif()
+
 foreach(I ${ALL_TARGETS})
   message(STATUS "${I}")
 
@@ -172,9 +204,11 @@ if (USE_MCP3D)
 endif()
 
 # test specific
-if (TEST_ALL_BENCHMARKS)
-  message(STATUS " TEST_ALL_BENCHMARKS ON")
-  target_compile_definitions(recut_test PRIVATE TEST_ALL_BENCHMARKS)
-endif()
+if (RECUT_ENABLE_TESTING)
+  if (TEST_ALL_BENCHMARKS)
+    message(STATUS " TEST_ALL_BENCHMARKS ON")
+    target_compile_definitions(recut_test PRIVATE TEST_ALL_BENCHMARKS)
+  endif()
 
-add_test(NAME recut_test COMMAND ${PROJECT_SOURCE_DIR}/bin/recut_test)
+  add_test(NAME recut_test COMMAND ${PROJECT_SOURCE_DIR}/bin/recut_test)
+endif()

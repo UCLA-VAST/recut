@@ -1,4 +1,4 @@
-#include "../src/recut.hpp"
+#include "recut.hpp"
 #include "app2_helpers.hpp"
 #include "gtest/gtest.h"
 #include <bits/stdc++.h>

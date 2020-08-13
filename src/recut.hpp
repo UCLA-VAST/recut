@@ -2942,6 +2942,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     return process_marker_dir(args->image_offsets, args->image_extents);
   }
 }
+
 template <class image_t>
 template <typename vertex_t>
 void Recut<image_t>::finalize(vector<vertex_t> &outtree) {
@@ -3126,7 +3127,7 @@ template <class image_t> void Recut<image_t>::run_pipeline() {
   // create final list of vertices
   stage = "prune";
   this->activate_vids(root_vids, stage, global_fifo);
-  //this->open_swc_outputs(root_vids);
+  std::ofstream out("out.swc");
   this->update(stage, global_fifo);
 
   // aggregate results

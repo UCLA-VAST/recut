@@ -783,3 +783,9 @@ std::tuple<double, double, double> iter_stats(T v) {
 
   return {mean, sum, stdev};
 }
+
+template <typename I>
+std::ostream open_swc_outputs(I root_vids) {
+  std::ofstream out("out.swc");
+  return out;
+}

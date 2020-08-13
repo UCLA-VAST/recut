@@ -4,12 +4,12 @@
 # jobs leveraging asynctasks.vim and asyncrun.vim
 
 [project-init]
-command=rm -rf build && mkdir build && cd build && ~/downloads/cmake-3.17.0-Linux-x86_64/bin/cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug -DUSE_MCP3D=ON -DUSE_OMP_BLOCK=ON -DLOG=ON -DLOG_FULL=ON -DFULL_PRINT=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+command=rm -rf build && mkdir build && cd build && ~/downloads/cmake-3.17.0-Linux-x86_64/bin/cmake .. -DCMAKE_BUILD_TYPE=Debug -DUSE_MCP3D=ON -DUSE_OMP_BLOCK=ON -DLOG=ON -DLOG_FULL=ON -DFULL_PRINT=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DRECUT_ENABLE_TESTING=ON -DRECUT_ENABLE_BENCHMARKING=ON
 #-DTEST_ALL_BENCHMARKS=ON
 cwd=<root>
 
 [project-build]
-command=cd build && ninja install
+command=cd build && make -j 56 && make install -j 56
 cwd=<root>
 
 [project-test]
