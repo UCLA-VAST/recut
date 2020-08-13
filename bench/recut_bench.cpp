@@ -1,4 +1,4 @@
-#include "../src/recut.hpp"
+#include "recut.hpp"
 #include "../test/app2_helpers.hpp"
 #include <benchmark/benchmark.h>
 
