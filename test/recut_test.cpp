@@ -1335,6 +1335,16 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   auto radius_update_stats = recut.update("radius", recut.global_fifo);
 
   recut.finalize(args.output_tree); // this fills args.output_tree
+
+  // prune
+  auto stage = "prune";
+  recut.activate_vids(root_vids, stage, recut.global_fifo);
+  auto prune_update_stats = recut.update(stage, recut.global_fifo);
+
+  auto prune_output_tree = std::vector<MyMarker* >();
+  prune_output_tree.reserve(args.output_tree.size() / 100);
+  recut.finalize(prune_output_tree, true); // this fills args.output_tree
+
   double actual_slt_pct =
       (100. * args.output_tree.size()) / (grid_size * grid_size * grid_size);
   cout << "Selected " << actual_slt_pct

@@ -256,7 +256,8 @@ public:
   update(std::string stage, Container &fifo = nullptr,
          TileThresholds<image_t> *tile_thresholds = nullptr);
   const std::vector<VID_t> initialize();
-  template <typename vertex_t> void finalize(vector<vertex_t> &outtree);
+  template <typename vertex_t>
+  void finalize(vector<vertex_t> &outtree, bool accept_band = false);
   VID_t parentToVID(struct VertexAttr *attr);
   inline VID_t get_block_id(VID_t iblock, VID_t jblock, VID_t kblock);
   template <class Container>
@@ -779,25 +780,25 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
       }
 #ifdef FULL_PRINT
       std::cout << "  radius of: " << +(dst->radius) << " at dst " << dst_id
-                << " " << dst->label() << " covers " << +(current->radius) << '\n';
+                << " " << dst->label() << " covers " << +(current->radius)
+                << '\n';
 #endif
     }
-
   }
 
-    // even if it will be pruned still set it's parent
-    // so the vertex itself it can be used to pass messages
-    // beyond just vid to other blocks / intervals
-    // or keep a contiguous path
-    if (dst->selected() && !(dst->valid_parent())) {
+  // even if it will be pruned still set it's parent
+  // so the vertex itself it can be used to pass messages
+  // beyond just vid to other blocks / intervals
+  // or keep a contiguous path
+  if (dst->selected() && !(dst->valid_parent())) {
 #ifdef FULL_PRINT
-      std::cout << "  added dst " << dst_id << '\n';
+    std::cout << "  added dst " << dst_id << '\n';
 #endif
-      dst->parent = current;
-      assertm(dst->valid_parent(), "dst must be assigned a valid parent");
-      fifo.push_back(dst_id);
-      check_ghost_update(interval_id, block_id, dst, false, "radius");
-    }
+    dst->parent = current;
+    assertm(dst->valid_parent(), "dst must be assigned a valid parent");
+    fifo.push_back(dst_id);
+    check_ghost_update(interval_id, block_id, dst, false, "radius");
+  }
 }
 
 /**
@@ -1023,7 +1024,8 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_id, VID_t block_id,
   if (!vec) {
     vec = new std::vector<struct VertexAttr>;
   }
-  vec->emplace_back(dst->edge_state, dst->value, dst->vid, dst->radius, dst->parent);
+  vec->emplace_back(dst->edge_state, dst->value, dst->vid, dst->radius,
+                    dst->parent);
   // Note: this block is unique to a single thread, therefore no other
   // thread could have this same key, since the keys are unique with
   // respect to their permutation. This means that we do not need to
@@ -1341,13 +1343,13 @@ bool Recut<image_t>::integrate_vertex(VID_t interval_id, VID_t block_id,
     if (*dst != *updated_attr) {
       assertm(dst->valid_vid(), "dst must have a valid vid");
 #ifdef FULL_PRINT
-        std::cout << "Integrate vertex at " << interval_id
-                  << " " << block_id << " " << dst->vid << '\n';
+      std::cout << "Integrate vertex at " << interval_id << " " << block_id
+                << " " << dst->vid << '\n';
 #endif
-        // deep copy into the shared memory location in the separate block
-        *dst = *updated_attr;
-        fifo.push_back(dst->vid);
-        return true;
+      // deep copy into the shared memory location in the separate block
+      *dst = *updated_attr;
+      fifo.push_back(dst->vid);
+      return true;
     }
     return false;
   }
@@ -1373,10 +1375,11 @@ bool Recut<image_t>::integrate_vertex(VID_t interval_id, VID_t block_id,
   // less than, thus points with no update on a border will not be
   // added back and forth continously.
   // Only updates in the ghost region outside domain of block_id, in domain
-  // of nb, therefore the updates must go into the heapvec of nb to distinguish the internal handles used for either heaps
-  // handles[block_id] is set for cells within block_id blocks internal
-  // domain or block_id ghost cell region, it represents all cells added to
-  // heap block_id and all cells that can be manipulated by thread block_id
+  // of nb, therefore the updates must go into the heapvec of nb to distinguish
+  // the internal handles used for either heaps handles[block_id] is set for
+  // cells within block_id blocks internal domain or block_id ghost cell region,
+  // it represents all cells added to heap block_id and all cells that can be
+  // manipulated by thread block_id
   if (dst->value > updated_attr->value) {
     float old_val = dst->value;
     dst->copy_edge_state(*updated_attr); // copy connection to dst
@@ -1763,7 +1766,9 @@ void Recut<image_t>::march_narrow_band(
           // only pruned / unselected vertices will have their radii mutated
           // as a form of message passing
           if (found_higher_parent.vid != current->vid) {
-            std::cout << "  refreshed radius - 1 of " << found_higher_parent.radius - 1 << " from vid " << found_higher_parent.vid << '\n';
+            std::cout << "  refreshed radius - 1 of "
+                      << found_higher_parent.radius - 1 << " from vid "
+                      << found_higher_parent.vid << '\n';
             current->radius = found_higher_parent.radius - 1;
           } else {
             current->radius = current->parent->radius - 1;
@@ -2945,13 +2950,27 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
 
 template <class image_t>
 template <typename vertex_t>
-void Recut<image_t>::finalize(vector<vertex_t> &outtree) {
+void Recut<image_t>::finalize(vector<vertex_t> &outtree, bool accept_band) {
 
   struct timespec time0, time1;
 #ifdef FULL_PRINT
   cout << "Generating results." << '\n';
 #endif
   clock_gettime(CLOCK_REALTIME, &time0);
+
+  auto filter_by_label = [=](auto v) -> bool {
+    if (accept_band) {
+      if (v->unvisited()) {
+        return false;
+      }
+    } else {
+      assertm(!(v->band()), "BAND vertex was lost");
+      if (v->unvisited() || v->band()) {
+        return false; // skips unvisited 11XX XXXX and band 01XX XXXX
+      }
+    }
+    return true;
+  };
 
   //#pragma omp declare reduction (merge : vector<vertex_t*> :
   // omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end()))
@@ -2971,11 +2990,9 @@ void Recut<image_t>::finalize(vector<vertex_t> &outtree) {
       //#pragma omp parallel for reduction(merge : outtree)
       for (struct VertexAttr *attr = interval->GetData();
            attr < interval->GetData() + interval->GetNVertices(); attr++) {
-        // only KNOWN_ROOT and KNOWN_NEW pass through this
-        // KNOWN_ROOT preserved 0000 0000 and created
-        // if not selected 0 and 0, skip
-        if (attr->unselected())
-          continue; // skips unvisited 11XX XXXX and band 01XX XXXX
+        if (filter_by_label(attr)) {
+          continue;
+        }
         assert(attr->valid_vid());
         // don't create redundant copies of same vid
         if (tmp.find(attr->vid) == tmp.end()) {
@@ -3020,8 +3037,9 @@ void Recut<image_t>::finalize(vector<vertex_t> &outtree) {
         // cout << "checking attr " << *attr << " at offset " << offset <<
         // '\n';
 #endif
-        if (attr->unselected() && !(attr->root()))
-          continue; // skips unvisited 11XX XXXX and band 01XX XXXX
+        if (filter_by_label(attr)) {
+          continue;
+        }
         assert(attr->valid_vid());
         // don't create redundant copies of same vid
         if (tmp.find(attr->vid) == tmp.end()) { // check not already added
@@ -3070,9 +3088,10 @@ void Recut<image_t>::finalize(vector<vertex_t> &outtree) {
       }
       for (struct VertexAttr *attr = interval->GetData();
            attr < interval->GetData() + interval->GetNVertices(); attr++) {
-        // if not selected 0 and 0, skip
-        if (attr->unselected())
+        if (filter_by_label(attr)) {
           continue;
+        }
+        assert(attr->valid_vid());
         // different copies have same values other than handle
         auto connects = attr->connections(image_length_x, image_length_y);
         if (connects.size() != 1) {
