@@ -4,8 +4,8 @@ let
 in
 { pkgs ? import <nixpkgs> {} }:
 with pkgs; mkShell {
-  buildInputs = [ openssl boost libtiff jq
-    clang-tools python38Packages.pandas python38Packages.plotly python38Packages.matplotlib unstable.cmake
+  buildInputs = [ openssl boost libtiff 
+    plotly python38Packages.matplotlib unstable.cmake
     unstable.mpich];
 }
 

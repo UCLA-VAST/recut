@@ -15,7 +15,7 @@ stdenv.mkDerivation {
 
   nativeBuildInputs = [ unstable.cmake ];
   buildInputs = [ openssl boost libtiff unstable.mpich 
-    python38Packages.matplotlib ];
+    python38Packages.matplotlib clang_10 llvmPackages.openmp ];
 
   buildPhase = "mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug -DUSE_MCP3D=ON && echo; echo; pwd; make -j 56 && make install -j 56";
 
