@@ -13,7 +13,7 @@
 #include "range/v3/all.hpp"
 
 namespace fs = std::filesystem;
-namespace rng = ranges::v3;
+namespace rng = ranges;
 
 #ifdef USE_MCP3D
 #include "common/mcp3d_common.hpp"
@@ -32,13 +32,13 @@ namespace rng = ranges::v3;
 
 // the MyMarker operator< provided by library doesn't work
 static const auto lt = [](const MyMarker* lhs, const MyMarker* rhs) {
-   return std::tie(lhs->z, lhs->y, lhs->x) < std::tie(rhs->z, rhs->y, rhs->x);
+  return std::tie(lhs->z, lhs->y, lhs->x) < std::tie(rhs->z, rhs->y, rhs->x);
 };
 
 static const auto eq = [](const MyMarker* lhs, const MyMarker* rhs) {
-   //return *lhs == *rhs;
+  //return *lhs == *rhs;
   //std::cout << "eq lhs " << lhs->description(2,2) << " rhs " << rhs->description(2,2) << '\n';
-   return lhs->x == rhs->x && lhs->y == rhs->y && lhs->z == rhs->z;
+  return lhs->x == rhs->x && lhs->y == rhs->y && lhs->z == rhs->z;
 };
 
 // composing with pipe '|' is possible with actions and views
@@ -677,19 +677,19 @@ struct CompareResults {
 
 };
 
-auto print = [](auto iter){ 
-  rng::for_each(iter, 
-    [](auto i) { std::cout << i << ", "; }); 
+auto print = [](auto iter){
+  rng::for_each(iter,
+      [](auto i) { std::cout << i << ", "; });
   std::cout << '\n';
 };
 
 auto get_vids = [](auto tree, auto xdim, auto ydim) {
-  return tree 
+  return tree
     | rng::views::transform([&](auto v) {
-          return v->vid(xdim, ydim); }) 
-    | rng::to_vector 
-    | rng::action::sort; 
-}; 
+        return v->vid(xdim, ydim); })
+    | rng::to_vector
+    | rng::action::sort;
+};
 
 // prints mismatches between two trees in uid sorted order
 template <typename T, typename T2, typename T3>
@@ -701,7 +701,7 @@ auto compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3& recut) {
   duplicate_count += truth_tree.size() - unique_count(truth_tree);
   duplicate_count += check_tree.size() - unique_count(check_tree);
 
-  auto truth_vids = get_vids(truth_tree, xdim, ydim); 
+  auto truth_vids = get_vids(truth_tree, xdim, ydim);
   auto check_vids = get_vids(check_tree, xdim, ydim);
 
   //std::cout << "truth_vids\n";
@@ -712,8 +712,8 @@ auto compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3& recut) {
   auto matches = rng::views::set_intersection( truth_vids, check_vids);
 
   //for (auto&& vid : matches) {
-    //const auto block = recut.get_block_id(vid);
-    //std::cout <<  "match"<< " at: " << vid << " block: " << block << '\n';
+  //const auto block = recut.get_block_id(vid);
+  //std::cout <<  "match"<< " at: " << vid << " block: " << block << '\n';
   //}
 
   VID_t match_count = rng::distance(matches);
@@ -721,18 +721,18 @@ auto compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3& recut) {
 
   // move all this logic into the function body of tests
   auto get_negatives = [&](auto& tree, auto& matches, auto specifier) {
-    return rng::views::set_difference( tree, matches) 
-      | rng::views::transform([&](auto vid) { 
+    return rng::views::set_difference( tree, matches)
+      | rng::views::transform([&](auto vid) {
           const auto block = recut.get_block_id(vid);
           std::cout << "false " << specifier << " at: " << vid <<" block: " << block <<  '\n';
           return std::make_pair(vid, block);
-        })
-      | rng::to_vector ;
+          })
+    | rng::to_vector ;
   };
 
   return new CompareResults<std::vector<std::pair<VID_t, VID_t>>>(
-      get_negatives(truth_vids, matches, "negative"), 
-      get_negatives(check_vids, matches, "positive"), 
+      get_negatives(truth_vids, matches, "negative"),
+      get_negatives(check_vids, matches, "positive"),
       duplicate_count, match_count);
 }
 

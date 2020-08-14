@@ -4,8 +4,10 @@
 # jobs leveraging asynctasks.vim and asyncrun.vim
 
 [project-init]
-command=rm -rf build && mkdir build && cd build && ~/downloads/cmake-3.17.0-Linux-x86_64/bin/cmake .. -DCMAKE_BUILD_TYPE=Debug -DUSE_MCP3D=ON -DUSE_OMP_BLOCK=ON -DLOG=ON -DLOG_FULL=ON -DFULL_PRINT=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DRECUT_ENABLE_TESTING=ON -DRECUT_ENABLE_BENCHMARKING=ON
+command=rm -rf build && mkdir build && cd build && ~/downloads/cmake-3.17.0-Linux-x86_64/bin/cmake -H.. -DUSE_MCP3D=ON -DUSE_OMP_BLOCK=ON -DLOG=ON -DLOG_FULL=ON -DFULL_PRINT=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DRECUT_ENABLE_TESTING=ON -DRECUT_ENABLE_BENCHMARKING=ON && cp compile_commands.json ..
 #-DTEST_ALL_BENCHMARKS=ON
+#-DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Debug 
+#-BDebug -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc 
 cwd=<root>
 
 [project-build]
