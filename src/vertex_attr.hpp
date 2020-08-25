@@ -101,7 +101,12 @@ struct VertexAttr {
   std::string description() {
     std::string descript = "vid:" + std::to_string(vid);
     descript += '\n';
-    descript = "parent vid:" + std::to_string(parent->vid);
+    descript += "parent vid:";
+    auto parent_vid = std::string("-");
+    if (parent) {
+      parent_vid = std::to_string(parent->vid);
+    }
+    descript += parent_vid;
     descript += '\n';
     descript += "value:" + std::to_string(value);
     descript += '\n';
@@ -139,9 +144,11 @@ struct VertexAttr {
     return (edge_state.test(7) && !edge_state.test(6)); // 10XX XXXX KNOWN NEW
   }
 
-  /* can not be above idx value 5
-   */
+  // unsets any previous marked connect
+  // a connection can only be in 1 of 6 directions
+  // therefore throws if pass above idx value 5
   template <typename T> void mark_connect(T idx) {
+    assertm(idx <= 5, "parent code idx must be <= 5");
     edge_state.unset(5); // if only 1 connection allowed
     edge_state.unset(4);
     edge_state.unset(3);

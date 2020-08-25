@@ -151,6 +151,45 @@ VID_t get_used_vertex_size(VID_t grid_size, VID_t block_size) {
 
 // interval_extents are in z, y, x order
 template <typename T>
+void print_marker_3D(T markers, std::vector<int> interval_extents,
+    std::string stage) {
+  for (int zi = 0; zi < interval_extents[0]; zi++) {
+    cout << "y | Z=" << zi << '\n';
+    for (int xi = 0; xi < 2 * interval_extents[2] + 4; xi++) {
+      cout << "-";
+    }
+    cout << '\n';
+    for (int yi = 0; yi < interval_extents[1]; yi++) {
+      cout << yi << " | ";
+      for (int xi = 0; xi < interval_extents[2]; xi++) {
+        VID_t index = ((VID_t)xi) + yi * interval_extents[2] +
+          zi * interval_extents[1] * interval_extents[2];
+        //auto match = std::find(markers.begin(), markers.end(), index);
+        //auto match = markers | find_if
+        auto value = std::string{"- "};
+        for (const auto& m : markers) {
+          // z,y,x order!
+          // this is xdim, ydim
+          if (m->vid(interval_extents[2], interval_extents[1]) == index) {
+            if (stage == "label") {
+              value = "B";
+            } else if (stage == "radius") {
+              value = std::to_string(m->radius);
+            } else {
+              assertm(false, "stage not recognized");
+            }
+          }
+        }
+        cout << value << " ";
+      }
+    }
+    cout << '\n';
+  }
+  cout << '\n';
+}
+
+// interval_extents are in z, y, x order
+template <typename T>
 void print_image_3D(T *inimg1d, std::vector<int> interval_extents) {
   for (int zi = 0; zi < interval_extents[0]; zi++) {
     cout << "y | Z=" << zi << '\n';
@@ -687,8 +726,11 @@ auto get_vids = [](auto tree, auto xdim, auto ydim) {
   return tree
     | rng::views::transform([&](auto v) {
         return v->vid(xdim, ydim); })
-    | rng::to_vector
-    | rng::action::sort;
+    | rng::to_vector;
+};
+
+auto get_vids_sorted = [](auto tree, auto xdim, auto ydim) {
+  return get_vids(tree, xdim, ydim) | rng::action::sort;
 };
 
 // prints mismatches between two trees in uid sorted order
@@ -701,8 +743,8 @@ auto compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3& recut) {
   duplicate_count += truth_tree.size() - unique_count(truth_tree);
   duplicate_count += check_tree.size() - unique_count(check_tree);
 
-  auto truth_vids = get_vids(truth_tree, xdim, ydim);
-  auto check_vids = get_vids(check_tree, xdim, ydim);
+  auto truth_vids = get_vids_sorted(truth_tree, xdim, ydim);
+  auto check_vids = get_vids_sorted(check_tree, xdim, ydim);
 
   //std::cout << "truth_vids\n";
   //print(truth_vids);
@@ -789,3 +831,10 @@ std::ostream open_swc_outputs(I root_vids) {
   std::ofstream out("out.swc");
   return out;
 }
+
+auto get_img_vid = [](const VID_t i, const VID_t j,
+    const VID_t k,
+    const VID_t image_length_x, const VID_t image_length_y) -> VID_t {
+  auto image_length_xy = image_length_x * image_length_y;
+  return k * image_length_xy + j * image_length_x + i;
+};
