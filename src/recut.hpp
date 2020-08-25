@@ -96,7 +96,7 @@ template <class image_t> class Recut {
           pad_block_length_y, pad_block_length_z, pad_block_offset, block_length_x,
           block_length_y, block_length_z, interval_length_x, interval_length_y,
           interval_length_z, grid_interval_length_x, grid_interval_length_y,
-          grid_interval_length_z;
+          grid_interval_length_z, interval_block_size;
 
     Grid grid;
     image_t *generated_image = nullptr;
@@ -177,7 +177,7 @@ template <class image_t> class Recut {
     inline VertexAttr *get_attr_vid(VID_t interval_id, VID_t block_id, VID_t vid,
         VID_t *output_offset);
     void place_vertex(VID_t nb_interval_id, VID_t block_id, VID_t nb,
-        struct VertexAttr *dst, bool is_root, std::string stage);
+        struct VertexAttr *dst, std::string stage);
     bool check_blocks_finish(VID_t interval_id);
     bool are_intervals_finished();
     inline VID_t get_img_vid(VID_t i, VID_t j, VID_t k);
@@ -194,8 +194,7 @@ template <class image_t> class Recut {
     VID_t get_interval_id(VID_t vid);
     VID_t get_sub_to_interval_id(VID_t i, VID_t j, VID_t k);
     void check_ghost_update(VID_t interval_id, VID_t block_id,
-        struct VertexAttr *dst, bool is_root,
-        std::string stage);
+        struct VertexAttr *dst, std::string stage);
     int get_parent_code(VID_t dst_id, VID_t src_id);
     bool accumulate_value(const image_t *tile, VID_t interval_id, VID_t dst_id,
         VID_t block_id, struct VertexAttr *current,
@@ -384,7 +383,6 @@ template <class image_t>
 template <class Container>
 void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
     std::string stage, Container &fifo) {
-  bool is_root = true; // changes behavior of check_ghost_update
   assertm(!(root_vids.empty()), "Must have at least one root");
   for (const auto &vid : root_vids) {
     auto interval_id = get_interval_id(vid);
@@ -414,7 +412,7 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
     // edges of intervals in addition to blocks
     // this only adds to update_ghost_vec if the root happens
     // to be on a boundary
-    check_ghost_update(interval_id, block_id, dummy_attr, is_root,
+    check_ghost_update(interval_id, block_id, dummy_attr, 
         stage); // add to any other ghost zone blocks
 
 #ifdef LOG
@@ -746,7 +744,7 @@ void Recut<image_t>::vertex_update(VID_t interval_id, VID_t block_id,
       << '\n';
 #endif
   }
-  check_ghost_update(interval_id, block_id, dst, false, stage);
+  check_ghost_update(interval_id, block_id, dst, stage);
 }
 
 template <class image_t>
@@ -798,11 +796,7 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
     dst->parent = current;
     assertm(dst->valid_parent(), "dst must be assigned a valid parent");
     fifo.push_back(dst_id);
-    auto is_root = false;
-    if (dst->root()) {
-      is_root = true;
-    }
-    check_ghost_update(interval_id, block_id, dst, is_root, "prune");
+    check_ghost_update(interval_id, block_id, dst, "prune");
   }
 }
 
@@ -862,7 +856,7 @@ void Recut<image_t>::accumulate_radius(
         << " radius " << +(dst->radius) << '\n';
 #endif
       fifo.push_back(dst->vid);
-      check_ghost_update(interval_id, block_id, dst, false, "radius");
+      check_ghost_update(interval_id, block_id, dst, "radius");
     } else if (dst->radius == current->radius) {
 #ifdef FULL_PRINT
       cout << "\tAdjacent same\n";
@@ -967,7 +961,7 @@ bool Recut<image_t>::accumulate_value(
 template <class image_t>
 void Recut<image_t>::place_vertex(VID_t nb_interval_id, VID_t block_id,
     VID_t nb, struct VertexAttr *dst,
-    bool is_root, std::string stage) {
+    std::string stage) {
 
   // ASYNC option means that another block and thread can be started during
   // the processing of the current thread. If ASYNC is not defined then simply
@@ -1041,11 +1035,6 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_id, VID_t block_id,
 #else
   updated_ghost_vec[nb_interval_id][block_id][nb].emplace_back(
       dst->edge_state, dst->value, dst->vid, dst->radius, dst->parent);
-  auto check_vert = updated_ghost_vec[nb_interval_id][block_id][nb].back();
-  if (is_root) {
-    // peek leaving intact
-    assertm(check_vert.root(), "root status must be maintained");
-  }
 #endif
   active_neighbors[nb_interval_id][nb][block_id] = true;
 
@@ -1078,8 +1067,7 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_id, VID_t block_id,
  */
 template <class image_t>
 void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
-    struct VertexAttr *dst, bool is_root,
-    std::string stage) {
+    struct VertexAttr *dst, std::string stage) {
   VID_t i, j, k, ii, jj, kk, iii, jjj, kkk;
   vector<VID_t> interval_subs = {0, 0, 0};
   i = j = k = ii = jj = kk = 0;
@@ -1117,7 +1105,7 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
         nb = get_block_id(interval_block_len_x - 1, jblock, kblock);
       }
       if ((nb >= 0) && (nb < tot_blocks)) // within valid block bounds
-        place_vertex(nb_interval_id, block_id, nb, dst, is_root, stage);
+        place_vertex(nb_interval_id, block_id, nb, dst, stage);
     }
   }
   if (jj == 0) {
@@ -1129,7 +1117,7 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
         nb = get_block_id(iblock, interval_block_len_y - 1, kblock);
       }
       if ((nb >= 0) && (nb < tot_blocks)) // within valid block bounds
-        place_vertex(nb_interval_id, block_id, nb, dst, is_root, stage);
+        place_vertex(nb_interval_id, block_id, nb, dst, stage);
     }
   }
   if (kk == 0) {
@@ -1142,7 +1130,7 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
         nb = get_block_id(iblock, jblock, interval_block_len_z - 1);
       }
       if ((nb >= 0) && (nb < tot_blocks)) // within valid block bounds
-        place_vertex(nb_interval_id, block_id, nb, dst, is_root, stage);
+        place_vertex(nb_interval_id, block_id, nb, dst, stage);
     }
   }
 
@@ -1156,7 +1144,7 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
         nb = get_block_id(iblock, jblock, 0);
       }
       if ((nb >= 0) && (nb < tot_blocks)) // within valid block bounds
-        place_vertex(nb_interval_id, block_id, nb, dst, is_root, stage);
+        place_vertex(nb_interval_id, block_id, nb, dst, stage);
     }
   }
   if (jj == block_length_y - 1) {
@@ -1168,7 +1156,7 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
         nb = get_block_id(iblock, 0, kblock);
       }
       if ((nb >= 0) && (nb < tot_blocks)) // within valid block bounds
-        place_vertex(nb_interval_id, block_id, nb, dst, is_root, stage);
+        place_vertex(nb_interval_id, block_id, nb, dst, stage);
     }
   }
   if (ii == block_length_z - 1) {
@@ -1180,7 +1168,7 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
         nb = get_block_id(0, jblock, kblock);
       }
       if ((nb >= 0) && (nb < tot_blocks)) // within valid block bounds
-        place_vertex(nb_interval_id, block_id, nb, dst, is_root, stage);
+        place_vertex(nb_interval_id, block_id, nb, dst, stage);
     }
   }
 }
@@ -1690,8 +1678,8 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
             // with the nb thread. All VertexAttr have redundant copies in each
             // ghost region
           } else {
-            std::cout << "\n\n\nroot value found vid: " << dummy_min->vid << '\n';
-            //current->value = 0.;
+            std::cout << "root value found vid: " << dummy_min->vid << '\n';
+            current->value = 0.;
             // 0000 0000, selected no parent, all zeros
             current->mark_root(dummy_min->vid);
             assertm(current->value == 0, "root value not set properly");
@@ -2414,7 +2402,7 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
 
       return std::make_unique<InstrumentedUpdateStatistics>(
           outer_iteration_idx, total_update_time, computation_time, io_time,
-          interval_open_count, grid_interval_size, grid.GetNBlocks(),
+          interval_open_count, grid_interval_size, interval_block_size,
           this->heap_vec);
     } // end update()
 
@@ -2846,7 +2834,7 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
 
     const VID_t grid_interval_size =
       grid_interval_length_x * grid_interval_length_y * grid_interval_length_z;
-    const VID_t interval_block_size =
+    interval_block_size =
       interval_block_len_x * interval_block_len_y * interval_block_len_z;
     pad_block_length_x = block_length_x + 2;
     pad_block_length_y = block_length_y + 2;
@@ -2968,17 +2956,14 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
       cout << "Generating results." << '\n';
 #endif
       clock_gettime(CLOCK_REALTIME, &time0);
-      auto block_id = 0;
 
-      auto filter_by_label = [this](auto v, auto accept_band, auto interval_id, auto block_id) -> bool {
+      // only KNOWN_ROOT and KNOWN_NEW pass through this
+      // both are selected 0 and 0, skip
+      // band can be optionally included as well
+      auto filter_by_label = [this](auto v, auto accept_band) -> bool {
         // unvisited vertices during vvalue by default
         // don't have a vid and should be ignored
         if (!(v->valid_vid())) {
-          return false;
-        }
-        // ghost regions of blocks or intervals are redundant
-        // and should be ignored
-        if (interval_id != get_interval_id(v->vid)) {
           return false;
         }
         if (accept_band) {
@@ -2994,30 +2979,36 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
         return true;
       };
 
+      auto filter_by_vid = [this](auto vid, auto& find_interval_id,
+          auto& find_block_id) -> bool {
+        find_interval_id = get_interval_id(vid);
+        if (find_interval_id >= grid.GetNIntervals()) {
+          return false;
+        }
+        find_block_id = get_block_id(vid);
+        if (find_block_id >= interval_block_size) {
+          return false;
+        }
+        if (!(grid.GetInterval(find_interval_id)->IsInMemory())) {
+          grid.GetInterval(find_interval_id)->LoadFromDisk();
+        }
+        return true;
+      };
+
       // FIXME terrible performance
       map<VID_t, MyMarker *> tmp; // hash set
       // create all valid new marker objects
-      for (size_t interval_id = 0; interval_id < grid.GetNIntervals();
-          ++interval_id) {
-        Interval *interval = grid.GetInterval(interval_id);
-        if (this->mmap_) {
-          if (!(grid.GetInterval(interval_id)->IsInMemory()))
-            continue;
-        } else {
-          grid.GetInterval(interval_id)->LoadFromDisk();
-        }
+      VID_t interval_id, block_id;
+      for (VID_t vid = 0; vid < this->image_size; vid++) {
+        if (filter_by_vid(vid, interval_id, block_id)) {
 
-        struct VertexAttr *start = interval->GetData();
-        for (VID_t offset = 0; offset < interval->GetNVertices(); offset++) {
-          auto attr = start + offset;
-          // only KNOWN_ROOT and KNOWN_NEW pass through this
-          // KNOWN_ROOT preserved 0000 0000 and created
-          // if not selected 0 and 0, skip
+          auto attr = get_attr_vid(interval_id, block_id, vid, nullptr);
+
 #ifdef FULL_PRINT
           // cout << "checking attr " << *attr << " at offset " << offset <<
           // '\n';
 #endif
-          if (filter_by_label(attr, accept_band, interval_id, block_id)) {
+          if (filter_by_label(attr, accept_band)) {
             assert(attr->valid_vid());
             // don't create redundant copies of same vid
             if (tmp.find(attr->vid) == tmp.end()) { // check not already added
@@ -3041,36 +3032,18 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
               // check that all copied across blocks and intervals of a
               // single vertex all match same values other than handle
               // FIXME this needs to be moved to recut_test.cpp
-              // auto previous_match = tmp[attr->vid];
-              // assert(*previous_match == *attr);
+              //auto previous_match = tmp[attr->vid];
+              //assert(*previous_match == *attr);
+              assertm(false, "Can't have two matching vids");
             }
           }
         }
-        // keep everything mmapped until all processing/reading is done
-        if (!(this->mmap_) && release_intervals) {
-          grid.GetInterval(interval_id)->Release();
-        }
-#ifdef FULL_PRINT
-        cout << "Total marker size : " << outtree.size() << " after interval "
-          << interval_id << '\n';
-#endif
       }
 
-      // iterate through all possible, to assign parents correct pointer of
-      // MyMarker
-      for (size_t interval_id = 0; interval_id < grid.GetNIntervals();
-          ++interval_id) {
-        Interval *interval = grid.GetInterval(interval_id);
-        if (this->mmap_) {
-          if (!(grid.GetInterval(interval_id)->IsInMemory()))
-            continue;
-        } else {
-          grid.GetInterval(interval_id)->LoadFromDisk();
-        }
-        for (struct VertexAttr *attr = interval->GetData();
-            attr < interval->GetData() + interval->GetNVertices(); attr++) {
-          if (filter_by_label(attr, accept_band, interval_id, block_id)) {
-            assert(attr->valid_vid());
+      for (VID_t vid = 0; vid < this->image_size; vid++) {
+        if (filter_by_vid(vid, interval_id, block_id)) {
+          auto attr = get_attr_vid(interval_id, block_id, vid, nullptr);
+          if (filter_by_label(attr, accept_band)) {
             // different copies have same values other than handle
             auto connects = attr->connections(image_length_x, image_length_y);
             if ((connects[0] == attr->vid) && (!(attr->root()))) {
@@ -3100,8 +3073,12 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
             }
           }
         }
-        // release both user-space or mmap'd data since info is all in outtree
-        // now
+      }
+
+      // release both user-space or mmap'd data since info is all in outtree
+      // now
+      for (size_t interval_id = 0; interval_id < grid.GetNIntervals();
+          ++interval_id) {
         if (release_intervals) {
           grid.GetInterval(interval_id)->Release();
         }
