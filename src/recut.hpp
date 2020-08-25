@@ -2969,7 +2969,16 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
 #endif
       clock_gettime(CLOCK_REALTIME, &time0);
 
-      auto filter_by_label = [=](auto v) -> bool {
+      auto filter_by_label = [this](auto v, auto accept_band, auto interval_id, auto block_id) -> bool {
+        // unvisited vertices during vvalue by default
+        // don't have a vid and should be ignored
+        if (!(v->valid_vid())) {
+          return false;
+        }
+        // ghost regions of blocks or intervals are redundant
+        // and should be ignored 
+        if (interval_id != get_interval_id(v->vid)) {
+          return false;
         if (accept_band) {
           if (v->unvisited()) {
             return false;
@@ -3001,7 +3010,7 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
           //#pragma omp parallel for reduction(merge : outtree)
           for (struct VertexAttr *attr = interval->GetData();
               attr < interval->GetData() + interval->GetNVertices(); attr++) {
-            if (filter_by_label(attr)) {
+            if (filter_by_label(attr, accept_band, interval_id, block_id)) {
               assert(attr->valid_vid());
               // don't create redundant copies of same vid
               if (tmp.find(attr->vid) == tmp.end()) {
