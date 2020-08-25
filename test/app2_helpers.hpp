@@ -593,12 +593,12 @@ uint16_t get_radius_accurate(const T *inimg1d, int grid_size, VID_t current_vid,
  * test function based off APP2 by hanchuan peng to test accuracy of
  * fastmarching based calculate radius method
  */
-template <class T>
+template <typename T>
 uint16_t get_radius_hanchuan_XY(const T *inimg1d, int grid_size,
-                                VID_t current_vid, T thresh) {
+                                VID_t vid, T thresh) {
   std::vector<int> sz = {grid_size, grid_size, grid_size};
   VID_t x, y, z;
-  get_img_subscript(current_vid, x, y, z, grid_size);
+  get_img_subscript(vid, x, y, z, grid_size);
 
   long sz0 = sz[0];
   long sz01 = sz[0] * sz[1];
@@ -683,7 +683,7 @@ template <class T>
 bool swc2topo_segs(vector<MyMarker *> &inswc,
                    vector<HierarchySegment *> &topo_segs,
                    int length_method = INTENSITY_DISTANCE_METHOD,
-                   T *inimg1d = 0, long sz0 = 0, long sz1 = 0, long sz2 = 0) {
+                   T *inimg1d = 0, const long sz0 = 0, const long sz1 = 0, const long sz2 = 0) {
   if (length_method == INTENSITY_DISTANCE_METHOD &&
       (inimg1d == 0 || sz0 == 0 || sz1 == 0 || sz2 == 0)) {
     cerr << "need image input for INTENSITY_DISTANCE_METHOD " << endl;
@@ -868,13 +868,13 @@ bool hierarchy_prune(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc,
 // hierarchy coverage pruning
 template <class T>
 bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
-          long sz0, long sz1, long sz2, double bkg_thresh = 10.0,
+          const long sz0, const long sz1, const long sz2, T bkg_thresh,
           double length_thresh = 2.0, double SR_ratio = 1.0 / 9.0,
           bool is_leaf_prune = true, bool is_smooth = true) {
   double T_max = (1ll << sizeof(T));
 
-  int64_t sz01 = sz0 * sz1;
-  int64_t tol_sz = sz01 * sz2;
+  const int64_t sz01 = sz0 * sz1;
+  const int64_t tol_sz = sz01 * sz2;
 
   map<MyMarker *, int> child_num;
   getLeaf_markers(inswc, child_num);
@@ -966,17 +966,16 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
   {
     cout << "Calculating radius for every node" << endl;
     int64_t in_sz[4] = {sz0, sz1, sz2, 1};
+    assertm((sz0 == sz1) && (sz1 == sz2), "happ() wasn't extended to handle different dimensions yet");
     for (int64_t i = 0; i < filter_segs.size(); i++) {
       HierarchySegment *seg = filter_segs[i];
       MyMarker *leaf_marker = seg->leaf_marker;
       MyMarker *root_marker = seg->root_marker;
       MyMarker *p = leaf_marker;
       while (true) {
-        double real_thres = 40;
-        if (real_thres < bkg_thresh)
-          real_thres = bkg_thresh; // by PHC 20121012
-
-        p->radius = markerRadiusXY(inimg1d, in_sz, *p, real_thres);
+        // assumes dim sizes are equal for now, can be easily switchd
+        auto vid = get_img_vid(p->x, p->y, p->z, sz0, sz1);
+        p->radius = get_radius_hanchuan_XY(inimg1d, sz0, vid, bkg_thresh);
         if (p == root_marker)
           break;
         p = p->parent;
