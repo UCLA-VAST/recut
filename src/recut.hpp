@@ -946,9 +946,6 @@ bool Recut<image_t>::accumulate_value(
 
     if (!(dst->root())) {
       // add to band (01XX XXXX)
-      if (dst->vid == 21) {
-        std::cout << "Warning vid 21 is getting switched to band\n";
-      }
       dst->mark_band(dst_id);
     }
     dst->mark_connect(parent_code);
@@ -1052,16 +1049,14 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_id, VID_t block_id,
 #endif
   active_neighbors[nb_interval_id][nb][block_id] = true;
 
-//#ifdef FULL_PRINT
-  if (dst->vid == 21) {
+#ifdef FULL_PRINT
   VID_t i, j, k;
   get_block_subscript(nb, i, j, k);
   printf("Place vertex %p\n", (void*) &check_vert);
   cout << "\t\t\tghost update interval " << nb_interval_id << " nb block " << nb
     << " block i " << i << " block j " << j << " block k " << k << " vid "
     << dst->vid << check_vert.description() << '\n';
-  }
-//#endif
+#endif
 }
 
 /*
@@ -1688,10 +1683,6 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
 
           // preserve state of roots
           if (!(dummy_min->root())) {
-            if (dummy_min->vid == 21) {
-            std::cout << interval_id << " " << block_id << dummy_min->description() << '\n';
-            printf("Mark selected %p\n", current);
-            }
             current->mark_selected(); // set as KNOWN NEW
             assert(current->valid_vid());
             // Note: any adjustments to current if in a neighboring domain
@@ -1699,12 +1690,10 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
             // with the nb thread. All VertexAttr have redundant copies in each
             // ghost region
           } else {
-            std::cout << "\n\n\nroot value found vid: " << dummy_min->vid << " ";
-            std::cout << interval_id << " " << block_id << dummy_min->description() << '\n';
-            current->value = 0.;
+            std::cout << "\n\n\nroot value found vid: " << dummy_min->vid << '\n';
+            //current->value = 0.;
             // 0000 0000, selected no parent, all zeros
             current->mark_root(dummy_min->vid);
-            assert(current->root());
             assertm(current->value == 0, "root value not set properly");
           }
 
