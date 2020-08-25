@@ -1325,7 +1325,7 @@ template <class image_t>
 template <class Container>
 bool Recut<image_t>::integrate_vertex(VID_t interval_id, VID_t block_id,
     struct VertexAttr *updated_attr,
-    bool ignore_KNOWN_NEW, 
+    bool ignore_KNOWN_NEW,
     std::string stage, Container &fifo) {
   // get attr
   assert(updated_attr != nullptr);
@@ -1472,7 +1472,7 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
 #endif
           // note fifo must respect that this vertex belongs to the domain
           // of nb, not block_id
-          integrate_vertex(interval_id, block_id, &updated_attr, false, 
+          integrate_vertex(interval_id, block_id, &updated_attr, false,
               stage, fifo);
         } // end for each VertexAttr
         active_neighbors[interval_id][nb][block_id] = false; // reset to false
@@ -2968,6 +2968,7 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
       cout << "Generating results." << '\n';
 #endif
       clock_gettime(CLOCK_REALTIME, &time0);
+      auto block_id = 0;
 
       auto filter_by_label = [this](auto v, auto accept_band, auto interval_id, auto block_id) -> bool {
         // unvisited vertices during vvalue by default
@@ -2976,9 +2977,10 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
           return false;
         }
         // ghost regions of blocks or intervals are redundant
-        // and should be ignored 
+        // and should be ignored
         if (interval_id != get_interval_id(v->vid)) {
           return false;
+        }
         if (accept_band) {
           if (v->unvisited()) {
             return false;
@@ -2992,161 +2994,117 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
         return true;
       };
 
-      //#pragma omp declare reduction (merge : vector<vertex_t*> :
-      // omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end()))
-      // create all marker objects
-      if (is_same<vertex_t, VertexAttr>::value) {
-        cout << "Warning: unimplemented section of finalize, behavior is "
-          "prototype "
-          "version"
-          << '\n';
-        // FIXME terrible performance, need an actual hash set impl, w/o buckets
-        unordered_set<VID_t> tmp;
-        for (size_t interval_id = 0; interval_id < grid.GetNIntervals();
-            ++interval_id) {
-          Interval *interval = grid.GetInterval(interval_id);
-          if (!(this->mmap_))
-            grid.GetInterval(interval_id)->LoadFromDisk();
-          //#pragma omp parallel for reduction(merge : outtree)
-          for (struct VertexAttr *attr = interval->GetData();
-              attr < interval->GetData() + interval->GetNVertices(); attr++) {
-            if (filter_by_label(attr, accept_band, interval_id, block_id)) {
-              assert(attr->valid_vid());
-              // don't create redundant copies of same vid
-              if (tmp.find(attr->vid) == tmp.end()) {
-                VID_t i, j, k;
-                i = j = k = 0;
-                tmp.insert(attr->vid);
-                // creates a copy of attr therfore interval can be safely deleted
-                // upon ~Recut at the end of fastmarching_parallel()
-                // function where program falls out of scope
-                cout << "Warning: VertexAttr needs a valid cpy constructor defined"
-                  << '\n';
-                // outtree.push_back(*attr);
-              }
-            }
-          }
-          if (!(this->mmap_) && release_intervals)
-            grid.GetInterval(interval_id)->Release();
+      // FIXME terrible performance
+      map<VID_t, MyMarker *> tmp; // hash set
+      // create all valid new marker objects
+      for (size_t interval_id = 0; interval_id < grid.GetNIntervals();
+          ++interval_id) {
+        Interval *interval = grid.GetInterval(interval_id);
+        if (this->mmap_) {
+          if (!(grid.GetInterval(interval_id)->IsInMemory()))
+            continue;
+        } else {
+          grid.GetInterval(interval_id)->LoadFromDisk();
         }
-      } else if (is_same<vertex_t, MyMarker *>::value) {
-#ifdef FULL_PRINT
-        cout << "Using MyMarker* type outtree" << '\n';
-#endif
-        // FIXME terrible performance
-        map<VID_t, MyMarker *> tmp; // hash set
-        // create all valid new marker objects
-        for (size_t interval_id = 0; interval_id < grid.GetNIntervals();
-            ++interval_id) {
-          Interval *interval = grid.GetInterval(interval_id);
-          if (this->mmap_) {
-            if (!(grid.GetInterval(interval_id)->IsInMemory()))
-              continue;
-          } else {
-            grid.GetInterval(interval_id)->LoadFromDisk();
-          }
 
-          struct VertexAttr *start = interval->GetData();
-          for (VID_t offset = 0; offset < interval->GetNVertices(); offset++) {
-            auto attr = start + offset;
-            // only KNOWN_ROOT and KNOWN_NEW pass through this
-            // KNOWN_ROOT preserved 0000 0000 and created
-            // if not selected 0 and 0, skip
+        struct VertexAttr *start = interval->GetData();
+        for (VID_t offset = 0; offset < interval->GetNVertices(); offset++) {
+          auto attr = start + offset;
+          // only KNOWN_ROOT and KNOWN_NEW pass through this
+          // KNOWN_ROOT preserved 0000 0000 and created
+          // if not selected 0 and 0, skip
 #ifdef FULL_PRINT
-            // cout << "checking attr " << *attr << " at offset " << offset <<
-            // '\n';
+          // cout << "checking attr " << *attr << " at offset " << offset <<
+          // '\n';
 #endif
-            if (filter_by_label(attr)) {
-              assert(attr->valid_vid());
-              // don't create redundant copies of same vid
-              if (tmp.find(attr->vid) == tmp.end()) { // check not already added
+          if (filter_by_label(attr, accept_band, interval_id, block_id)) {
+            assert(attr->valid_vid());
+            // don't create redundant copies of same vid
+            if (tmp.find(attr->vid) == tmp.end()) { // check not already added
 #ifdef FULL_PRINT
-                // cout << "\tadding attr " << attr->vid << '\n';
+              // cout << "\tadding attr " << attr->vid << '\n';
 #endif
-                VID_t i, j, k;
-                i = j = k = 0;
-                // get original i, j, k
-                get_img_subscript(attr->vid, i, j, k);
-                // FIXME
-                // set vid to be in context of entire domain of image
-                // i += image_offsets[2]; // x
-                // j += image_offsets[1]; // y
-                // k += image_offsets[0]; // z
-                // attr->vid = get_img_vid(i, j, k);
-                auto marker = new MyMarker(i, j, k);
-                tmp[attr->vid] = marker; // save this marker ptr to a map
-                outtree.push_back(marker);
-              } else {
-                // check that all copied across blocks and intervals of a
-                // single vertex all match same values other than handle
-                // FIXME this needs to be moved to recut_test.cpp
-                // auto previous_match = tmp[attr->vid];
-                // assert(*previous_match == *attr);
-              }
+              VID_t i, j, k;
+              i = j = k = 0;
+              // get original i, j, k
+              get_img_subscript(attr->vid, i, j, k);
+              // FIXME
+              // set vid to be in context of entire domain of image
+              // i += image_offsets[2]; // x
+              // j += image_offsets[1]; // y
+              // k += image_offsets[0]; // z
+              // attr->vid = get_img_vid(i, j, k);
+              auto marker = new MyMarker(i, j, k);
+              tmp[attr->vid] = marker; // save this marker ptr to a map
+              outtree.push_back(marker);
+            } else {
+              // check that all copied across blocks and intervals of a
+              // single vertex all match same values other than handle
+              // FIXME this needs to be moved to recut_test.cpp
+              // auto previous_match = tmp[attr->vid];
+              // assert(*previous_match == *attr);
             }
           }
-          // keep everything mmapped until all processing/reading is done
-          if (!(this->mmap_) && release_intervals) {
-            grid.GetInterval(interval_id)->Release();
-          }
-#ifdef FULL_PRINT
-          cout << "Total marker size : " << outtree.size() << " after interval "
-            << interval_id << '\n';
-#endif
         }
-        // iterate through all possible, to assign parents correct pointer of
-        // MyMarker
-        for (size_t interval_id = 0; interval_id < grid.GetNIntervals();
-            ++interval_id) {
-          Interval *interval = grid.GetInterval(interval_id);
-          if (this->mmap_) {
-            if (!(grid.GetInterval(interval_id)->IsInMemory()))
-              continue;
-          } else {
-            grid.GetInterval(interval_id)->LoadFromDisk();
-          }
-          for (struct VertexAttr *attr = interval->GetData();
-              attr < interval->GetData() + interval->GetNVertices(); attr++) {
-            if (filter_by_label(attr)) {
-              assert(attr->valid_vid());
-              // different copies have same values other than handle
-              auto connects = attr->connections(image_length_x, image_length_y);
-              if ((connects[0] == attr->vid) && (!(attr->root()))) {
-                std::cout << "could not find a valid connection for non-root node: "
-                  << attr->description() << '\n';
-                printf("with address of %p\n", (void*) attr);
-                std::cout << "in interval " << interval_id << '\n';
-                assertm(false, "must have a valid connection");
-              } else if (connects.size() > 1) {
-                cout << "Warning multi-connection (" << connects.size()
-                  << ") node:" << '\n'
-                  << attr->description() << '\n';
-                for (const auto &elm : connects) {
-                  cout << elm << '\n';
-                }
-                assertm(false, "must have exactly 1 connections");
+        // keep everything mmapped until all processing/reading is done
+        if (!(this->mmap_) && release_intervals) {
+          grid.GetInterval(interval_id)->Release();
+        }
+#ifdef FULL_PRINT
+        cout << "Total marker size : " << outtree.size() << " after interval "
+          << interval_id << '\n';
+#endif
+      }
+
+      // iterate through all possible, to assign parents correct pointer of
+      // MyMarker
+      for (size_t interval_id = 0; interval_id < grid.GetNIntervals();
+          ++interval_id) {
+        Interval *interval = grid.GetInterval(interval_id);
+        if (this->mmap_) {
+          if (!(grid.GetInterval(interval_id)->IsInMemory()))
+            continue;
+        } else {
+          grid.GetInterval(interval_id)->LoadFromDisk();
+        }
+        for (struct VertexAttr *attr = interval->GetData();
+            attr < interval->GetData() + interval->GetNVertices(); attr++) {
+          if (filter_by_label(attr, accept_band, interval_id, block_id)) {
+            assert(attr->valid_vid());
+            // different copies have same values other than handle
+            auto connects = attr->connections(image_length_x, image_length_y);
+            if ((connects[0] == attr->vid) && (!(attr->root()))) {
+              std::cout << "could not find a valid connection for non-root node: "
+                << attr->description() << '\n';
+              printf("with address of %p\n", (void*) attr);
+              std::cout << "in interval " << interval_id << '\n';
+              assertm(false, "must have a valid connection");
+            } else if (connects.size() > 1) {
+              cout << "Warning multi-connection (" << connects.size()
+                << ") node:" << '\n'
+                << attr->description() << '\n';
+              for (const auto &elm : connects) {
+                cout << elm << '\n';
               }
-              auto marker = tmp[attr->vid];      // get the ptr
-              auto parent = tmp[connects[0]]; // adjust
-              if (marker == parent) {
-                marker->parent = 0;
-                cout << "found root at " << attr->vid << '\n';
-                printf("with address of %p\n", (void*) attr);
-                assertm(attr->root(), "a marker with a parent of 0, must be a root");
-              } else {
-                marker->parent = parent;
-              }
+              assertm(false, "must have exactly 1 connections");
+            }
+            auto marker = tmp[attr->vid];      // get the ptr
+            auto parent = tmp[connects[0]]; // adjust
+            if (marker == parent) {
+              marker->parent = 0;
+              cout << "found root at " << attr->vid << '\n';
+              printf("with address of %p\n", (void*) attr);
+              assertm(attr->root(), "a marker with a parent of 0, must be a root");
+            } else {
+              marker->parent = parent;
             }
           }
-          // release both user-space or mmap'd data since info is all in outtree
-          // now
-          if (release_intervals) {
-            grid.GetInterval(interval_id)->Release();
-          }
         }
-      } else {
-        assertm(false, "Outtree type passed not recognized. Supports "
-            "VertexAttr and MyMarker*");
+        // release both user-space or mmap'd data since info is all in outtree
+        // now
+        if (release_intervals) {
+          grid.GetInterval(interval_id)->Release();
+        }
       }
 
 #ifdef LOG
