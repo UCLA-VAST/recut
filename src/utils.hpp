@@ -166,7 +166,7 @@ void print_marker_3D(T markers, std::vector<int> interval_extents,
           zi * interval_extents[1] * interval_extents[2];
         //auto match = std::find(markers.begin(), markers.end(), index);
         //auto match = markers | find_if
-        auto value = std::string{"- "};
+        auto value = std::string{"-"};
         for (const auto& m : markers) {
           // z,y,x order!
           // this is xdim, ydim
@@ -182,6 +182,7 @@ void print_marker_3D(T markers, std::vector<int> interval_extents,
         }
         cout << value << " ";
       }
+      cout << '\n';
     }
     cout << '\n';
   }
@@ -838,3 +839,85 @@ auto get_img_vid = [](const VID_t i, const VID_t j,
   auto image_length_xy = image_length_x * image_length_y;
   return k * image_length_xy + j * image_length_x + i;
 };
+
+template <typename T, typename T2>
+void create_coverage_mask(std::vector<MyMarker*>& markers, T* mask,
+    T2 sz0, T2 sz1, T2 sz2) {
+  auto sz01 = static_cast<VID_t>( sz0 * sz1);
+  for (const auto& marker : markers) {
+    int32_t r = marker->radius;
+    assertm(marker->radius > 0, "Markers must have a radius > 0");
+    // by definition a radius of 1 doess not cover it's neighbor
+    // a radius of 2 or greater would cover a neighbor
+    // therefore account for this by subtracting 1 from all radii values
+    r -= 1;
+    auto x = static_cast<int32_t>(marker->x);
+    auto y = static_cast<int32_t>(marker->y);
+    auto z = static_cast<int32_t>(marker->z);
+    for (int32_t kk = -r; kk <= r; kk++) {
+      int32_t z2 = z + kk;
+      if (z2 < 0 || z2 >= sz2)
+        continue;
+      for (int32_t jj = -r; jj <= r; jj++) {
+        int32_t y2 = y + jj;
+        if (y2 < 0 || y2 >= sz1)
+          continue;
+        for (int32_t ii = -r; ii <= r; ii++) {
+          int32_t x2 = x + ii;
+          if (x2 < 0 || x2 >= sz0)
+            continue;
+          auto dst = abs(ii) + abs(jj) + abs(kk);
+          if (dst > r)
+            continue;
+          int32_t ind = z2 * sz01 + y2 * sz0 + x2;
+          if (mask[ind] > 0) {
+            std::cout << "Warning: marker " << marker->description(sz0, sz1) <<
+              " is over covering at pixel " << x2 << " " << y2 << " " << z2 << '\n';
+          }
+          mask[ind]++;
+        }
+      }
+    }
+  }
+}
+
+template <typename T, typename T2, typename T3>
+auto check_coverage(const T mask, const T2 inimg1d, const VID_t tol_sz,
+    T3 bkg_thresh) {
+  VID_t match_count = 0;
+  VID_t over_coverage = 0;
+  std::vector<VID_t> false_negatives;
+  std::vector<VID_t> false_positives;
+
+  for (VID_t i=0; i < tol_sz; i++) {
+    auto check = mask[i];
+    // ground represents the original pixel value wheras 
+    // check merely indicates how many times a pixel was
+    // covered in a pruning pass
+    auto ground = inimg1d[i];
+    //assertm(ground < 2, "this function only works on binarized images");
+
+    if (ground > bkg_thresh) {
+      if (check) {
+        match_count++;
+        // over_coverage is a measure of redundancy in the
+        // pruning method, it signifies that multiple
+        // markers covered the same pixel more than once
+        over_coverage += check - 1;
+      } else {
+        false_negatives.push_back(i);
+      }
+    } else {
+      if (check) {
+        false_positives.push_back(i);
+        // keep over_coverage independent of false_positive measure
+        // by subtracting 1 still
+        over_coverage += check - 1;
+      }
+    }
+  }
+
+  return new CompareResults<std::vector<VID_t>>(
+      false_negatives, false_positives, over_coverage,
+      match_count);
+}

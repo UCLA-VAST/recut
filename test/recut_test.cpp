@@ -1068,19 +1068,21 @@ TEST(Radius, Full) {
   bool print_all = true;
   bool check_xy = false;
   bool print_csv = false;
-  bool prune = false;
+  bool prune = true;
 
   int max_size = 8;
   // std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
   // max_size / 2, max_size};
   std::vector<int> grid_sizes = {max_size};
+  //std::vector<int> interval_sizes = {max_size};
   std::vector<int> interval_sizes = {max_size};
-  std::vector<int> block_sizes = {max_size};
+  //std::vector<int> block_sizes = {max_size};
+  std::vector<int> block_sizes = {max_size, max_size / 2, max_size / 4};
   // tcase 5 is a sphere of radius grid_size / 4 centered
   // in the middle of an image
   std::vector<int> tcases = {5};
   int slt_pct = 100;
-  uint16_t bkg_thresh = 0;
+  auto tile_thresholds = new TileThresholds<uint16_t>(2, 0, 0);
   std::unique_ptr<uint16_t[]> radii_grid_xy;
   if (print_csv) {
     cout << "name,iterations,error_rate(%)\n";
@@ -1094,6 +1096,7 @@ TEST(Radius, Full) {
     for (auto &interval_size : interval_sizes) {
       for (auto &block_size : block_sizes) {
         for (auto &tcase : tcases) {
+          auto interval_extents = {grid_size, grid_size, grid_size};
           auto args = get_args(grid_size, interval_size, block_size, slt_pct,
               tcase, true);
 
@@ -1128,14 +1131,14 @@ TEST(Radius, Full) {
           if (print_all) {
             recut.print_grid("value", recut.global_fifo);
             recut.print_grid("surface", recut.global_fifo);
-            cout << "All surface vids: \n";
-            for (auto &outer : recut.global_fifo) {
-              for (auto &inner : outer) {
-                for (auto &vid : inner) {
-                  cout << '\t' << vid << '\n';
-                }
-              }
-            }
+            //cout << "All surface vids: \n";
+            //for (auto &outer : recut.global_fifo) {
+            //for (auto &inner : outer) {
+            //for (auto &vid : inner) {
+            //cout << '\t' << vid << '\n';
+            //}
+            //}
+            //}
           }
 
           // Get accurate and approximate radii according to APP2
@@ -1145,11 +1148,11 @@ TEST(Radius, Full) {
             if (recut.generated_image[i]) {
               // calculate radius with baseline accurate method
               radii_grid[i] = get_radius_accurate(recut.generated_image,
-                  grid_size, i, bkg_thresh);
+                  grid_size, i, tile_thresholds->bkg_thresh);
               if (check_xy) {
                 // build original production version
                 radii_grid_xy[i] = get_radius_hanchuan_XY(
-                    recut.generated_image, grid_size, i, bkg_thresh);
+                    recut.generated_image, grid_size, i, tile_thresholds->bkg_thresh);
               }
               ++total_visited;
             }
@@ -1218,51 +1221,97 @@ TEST(Radius, Full) {
           recut.finalize(args.output_tree, false, false);
 
           if (prune) {
+            std::vector<MyMarker *> sequential_output_tree;
+            std::vector<MyMarker *> sequential_output_tree_prune;
+            std::vector<MyMarker> targets;
+            // convert roots into markers (vector)
+            std::vector<MyMarker *> root_markers;
+            if (tcase == 6) {
+              root_markers = vids_to_markers(root_vids, grid_size);
+            } else {
+              root_markers = {get_central_root(grid_size)};
+            }
+            fastmarching_tree(root_markers, targets, recut.generated_image,
+                sequential_output_tree, grid_size, grid_size, grid_size,
+                1, tile_thresholds->bkg_thresh, tile_thresholds->max_int,
+                tile_thresholds->min_int);
+
             // get sequential results for radius and pruning from app2
-            std::vector<MyMarker*> sequential_output_tree_prune;
             // take recut results before pruningg and do pruning
             // with app2
-            happ(args.output_tree, sequential_output_tree_prune, recut.generated_image, grid_size, grid_size, grid_size, bkg_thresh);
+            happ(sequential_output_tree, sequential_output_tree_prune, recut.generated_image, grid_size, grid_size, grid_size, tile_thresholds->bkg_thresh, 0.);
 
             // starting from roots, prune stage will
             // find final list of vertices
             auto stage = std::string{"prune"};
             recut.activate_vids(root_vids, stage, recut.global_fifo);
             recut.update(stage, recut.global_fifo);
-            std::vector<MyMarker*> recut_pruned_tree;
-            recut.finalize(recut_pruned_tree, true, false);
+            std::vector<MyMarker*> recut_output_tree_prune;
+            recut.finalize(recut_output_tree_prune, true, false);
 
-            std::cout << "Recut prune\n";
-            recut.print_grid("label", recut.global_fifo);
+            if (print_all) {
+              std::cout << "Recut prune\n";
+              recut.print_grid("label", recut.global_fifo);
 
-            std::cout << "Recut radii post prune\n";
-            recut.print_grid("radius", recut.global_fifo);
+              std::cout << "Recut radii post prune\n";
+              recut.print_grid("radius", recut.global_fifo);
 
-            auto interval_extents = {grid_size, grid_size, grid_size};
-            std::cout << "Seq prune\n";
-            print_marker_3D(sequential_output_tree_prune, interval_extents, "prune");
+              std::cout << "Seq prune\n";
+              print_marker_3D(sequential_output_tree_prune, interval_extents, "label");
 
-            std::cout << "Seq radius\n";
-            print_marker_3D(sequential_output_tree_prune, interval_extents, "radius");
+              std::cout << "Seq radius\n";
+              print_marker_3D(sequential_output_tree_prune, interval_extents, "radius");
+            }
 
-            // compare_tree will print to log matches, false positive and negative
-            auto results = compare_tree(sequential_output_tree_prune, recut_pruned_tree,
-                grid_size, grid_size, recut);
+            auto mask = std::make_unique<uint8_t[]>(tol_sz);
+            create_coverage_mask(recut_output_tree_prune, mask.get(), grid_size, grid_size, grid_size);
+            auto results = check_coverage(mask.get(), recut.generated_image, tol_sz, tile_thresholds->bkg_thresh);
+
+            auto seq_mask = std::make_unique<uint8_t[]>(tol_sz);
+            create_coverage_mask(sequential_output_tree_prune, seq_mask.get(), grid_size, grid_size, grid_size);
+            auto seq_results = check_coverage(seq_mask.get(), recut.generated_image, tol_sz, tile_thresholds->bkg_thresh);
+
+            if (print_all) {
+              std::cout << "Recut coverage mask\n";
+              print_image_3D(mask.get(), interval_extents);
+
+              std::cout << "Seq coverage mask\n";
+              print_image_3D(seq_mask.get(), interval_extents);
+            }
+
+            //// compare_tree will print to log matches, false positive and negative
+            //auto results = compare_tree(sequential_output_tree_prune, recut_output_tree_prune,
+            //grid_size, grid_size, recut);
+
+            stage = "prune";
             RecordProperty("False positives " + stage, results->false_positives.size());
             RecordProperty("False negatives " + stage, results->false_negatives.size());
             RecordProperty("Match count " + stage, results->match_count);
+            RecordProperty("Duplicate count " + stage, seq_results->duplicate_count);
+            RecordProperty("Total nodes " + stage, args.output_tree.size());
+            RecordProperty("Total pruned nodes " + stage, recut_output_tree_prune.size());
+            RecordProperty("Compression factor " + stage, args.output_tree.size() /
+                recut_output_tree_prune.size());
 
-            // it's a problem if two markers with same vid are in a results vector
-            ASSERT_EQ(results->duplicate_count, 0);
+            stage = "seq prune";
+            RecordProperty("False positives " + stage, seq_results->false_positives.size());
+            RecordProperty("False negatives " + stage, seq_results->false_negatives.size());
+            RecordProperty("Match count " + stage, seq_results->match_count);
+            RecordProperty("Duplicate count " + stage, seq_results->duplicate_count);
+            RecordProperty("Total nodes " + stage, sequential_output_tree.size());
+            RecordProperty("Total pruned nodes " + stage, sequential_output_tree_prune.size());
+            RecordProperty("Compression factor " + stage, sequential_output_tree.size() /
+                sequential_output_tree_prune.size());
 
-            // check the compare tree worked properly
-            ASSERT_EQ(recut_pruned_tree.size(),
-                results->match_count + results->false_positives.size());
-            ASSERT_EQ(recut_pruned_tree.size(),
-                results->match_count + results->false_negatives.size());
+
+            //// check the compare tree worked properly
+            //ASSERT_EQ(recut_output_tree_prune.size(),
+            //results->match_count + results->false_positives.size());
+            //ASSERT_EQ(recut_output_tree_prune.size(),
+            //results->match_count + results->false_negatives.size());
+            //EXPECT_EQ(recut_output_tree_prune.size(), sequential_output_tree_prune.size());
 
             EXPECT_EQ(results->false_positives.size(), 0);
-            EXPECT_EQ(recut_pruned_tree.size(), sequential_output_tree_prune.size());
             EXPECT_EQ(results->false_negatives.size(), 0);
           }
         }
@@ -1279,6 +1328,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
   // documents the meaning of each tuple member
   auto grid_size = std::get<0>(GetParam());
+  auto tol_sz = grid_size * grid_size * grid_size;
   RecordProperty("grid_size", grid_size);
   auto interval_size = std::get<1>(GetParam());
   RecordProperty("interval_size", interval_size);
@@ -1294,7 +1344,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   // if you were to set to true tcase 4 would have a mismatch
   // with the loaded image
   bool force_regenerate_image = false;
-  bool prune = false;
+  bool prune = true;
   std::string stage;
 
   // shared params
@@ -1304,7 +1354,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   args.recut_parameters();
   // uint16_t is image_t here
   TileThresholds<uint16_t> *tile_thresholds;
-  bool print_image = false;
+  bool print_all = true;
 
   auto recut = Recut<uint16_t>(args);
   std::vector<VID_t> root_vids;
@@ -1317,7 +1367,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     read_tiff(args.image_root_dir(), args.image_offsets, args.image_extents,
         image);
 
-    if (print_image) {
+    if (print_all) {
       print_image_3D(image.Volume<uint16_t>(0),
           {grid_size, grid_size, grid_size});
     }
@@ -1336,6 +1386,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     // thus they will only be replaced if we're reading a real image
     tile_thresholds = new TileThresholds<uint16_t>(2, 0, 0);
   }
+  std::cout << "Using bkg_thresh: " << tile_thresholds->bkg_thresh << '\n';
   RecordProperty("bkg_thresh", tile_thresholds->bkg_thresh);
   RecordProperty("max_int", tile_thresholds->max_int);
   RecordProperty("min_int", tile_thresholds->min_int);
@@ -1344,6 +1395,11 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   // update with fixed tile_thresholds for the entire update
   auto value_update_stats =
     recut.update("value", recut.global_fifo, tile_thresholds);
+
+  if (print_all) {
+    std::cout << "Recut value\n";
+    recut.print_grid("label", recut.global_fifo);
+  }
 
   {
     auto interval_open_count = value_update_stats->interval_open_counts;
@@ -1377,6 +1433,11 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   recut.setup_radius(recut.global_fifo);
   auto radius_update_stats = recut.update("radius", recut.global_fifo);
 
+  if (print_all) {
+    std::cout << "Recut radius\n";
+    recut.print_grid("radius", recut.global_fifo);
+  }
+
   // save the output_tree early before it is pruned to compare
   // to sequential
   bool accept_band = false;
@@ -1384,13 +1445,13 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   recut.finalize(args.output_tree, accept_band, release_intervals); // this fills args.output_tree
 
   // PRUNE
-  auto prune_output_tree = std::vector<MyMarker* >();
+  auto recut_output_tree_prune = std::vector<MyMarker* >();
   if (prune) {
     stage = std::string{"prune"};
     recut.activate_vids(root_vids, stage, recut.global_fifo);
     auto prune_update_stats = recut.update(stage, recut.global_fifo);
 
-    prune_output_tree.reserve(args.output_tree.size() / 100);
+    recut_output_tree_prune.reserve(args.output_tree.size() / 100);
     accept_band = true;
     release_intervals = true;
 
@@ -1400,11 +1461,11 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     std::cout << "Recut radii post prune\n";
     recut.print_grid("radius", recut.global_fifo);
 
-    recut.finalize(prune_output_tree, accept_band, release_intervals); // this fills args.output_tree
+    recut.finalize(recut_output_tree_prune, accept_band, release_intervals); // this fills args.output_tree
   }
 
   double actual_slt_pct =
-    (100. * args.output_tree.size()) / (grid_size * grid_size * grid_size);
+    (100. * args.output_tree.size()) / tol_sz;
   cout << "Selected " << actual_slt_pct
     << "% of pixels, total count: " << args.output_tree.size() << '\n';
   RecordProperty("Foreground (%)", actual_slt_pct);
@@ -1436,7 +1497,8 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
   // pregenerated data has a known number of selected
   // pixels
-  if (check_against_selected) { ASSERT_EQ(args.output_tree.size(), recut.params->selected);
+  if (check_against_selected) {
+    ASSERT_EQ(args.output_tree.size(), recut.params->selected);
   }
 
 #ifdef USE_MCP3D
@@ -1461,6 +1523,12 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
         sequential_output_tree, grid_size, grid_size, grid_size,
         1, tile_thresholds->bkg_thresh, tile_thresholds->max_int,
         tile_thresholds->min_int);
+
+    auto interval_extents = {grid_size, grid_size, grid_size};
+    if (print_all) {
+      std::cout << "Seq value\n";
+      print_marker_3D(sequential_output_tree, interval_extents, "label");
+    }
 
     cout << "sequential fastmarching elapsed (s)" << timer->elapsed() << '\n';
     // warning record property will auto cast to an int
@@ -1499,25 +1567,68 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     if (prune) {
       // run the seq version from app2 to compare
       happ(sequential_output_tree, sequential_output_tree_prune, image.Volume<uint16_t>(0), grid_size,
-          grid_size, grid_size, tile_thresholds->bkg_thresh);
+          grid_size, grid_size, tile_thresholds->bkg_thresh, 0.);
 
-      auto interval_extents = {grid_size, grid_size, grid_size};
-      if (print_image) {
+      if (print_all) {
         std::cout << "Seq prune\n";
-        print_marker_3D(sequential_output_tree_prune, interval_extents, "prune");
+        print_marker_3D(sequential_output_tree_prune, interval_extents, "label");
 
         std::cout << "Seq radius\n";
         print_marker_3D(sequential_output_tree_prune, interval_extents, "radius");
       }
 
+      auto mask = std::make_unique<uint8_t[]>(tol_sz);
+      create_coverage_mask(recut_output_tree_prune, mask.get(), grid_size, grid_size, grid_size);
+      auto results = check_coverage(mask.get(), image.Volume<uint16_t>(0), tol_sz, tile_thresholds->bkg_thresh);
+
+      auto seq_mask = std::make_unique<uint8_t[]>(tol_sz);
+      create_coverage_mask(sequential_output_tree_prune, seq_mask.get(), grid_size, grid_size, grid_size);
+      auto seq_results = check_coverage(seq_mask.get(), image.Volume<uint16_t>(0), tol_sz, tile_thresholds->bkg_thresh);
+
+      if (print_all) {
+        std::cout << "Recut coverage mask\n";
+        print_image_3D(mask.get(), interval_extents);
+
+        std::cout << "Seq coverage mask\n";
+        print_image_3D(seq_mask.get(), interval_extents);
+      }
+
       // compare_tree will print to log matches, false positive and negative
-      auto results = compare_tree(sequential_output_tree_prune, prune_output_tree,
-          grid_size, grid_size, recut);
+      //results = compare_tree(sequential_output_tree_prune, recut_output_tree_prune,
+      //grid_size, grid_size, recut);
 
       stage = "prune";
       RecordProperty("False positives " + stage, results->false_positives.size());
       RecordProperty("False negatives " + stage, results->false_negatives.size());
       RecordProperty("Match count " + stage, results->match_count);
+      RecordProperty("Duplicate count " + stage, results->duplicate_count);
+      RecordProperty("Total nodes " + stage, args.output_tree.size());
+      RecordProperty("Total pruned nodes " + stage, recut_output_tree_prune.size());
+      RecordProperty("Compression factor " + stage, args.output_tree.size() /
+          recut_output_tree_prune.size());
+
+      stage = "seq prune";
+      RecordProperty("False positives " + stage, seq_results->false_positives.size());
+      RecordProperty("False negatives " + stage, seq_results->false_negatives.size());
+      RecordProperty("Match count " + stage, seq_results->match_count);
+      RecordProperty("Duplicate count " + stage, seq_results->duplicate_count);
+      RecordProperty("Total nodes " + stage, sequential_output_tree.size());
+      RecordProperty("Total pruned nodes " + stage, sequential_output_tree_prune.size());
+      RecordProperty("Compression factor " + stage, sequential_output_tree.size() /
+          sequential_output_tree_prune.size());
+
+      // it's a problem if two markers with same vid are in a results vector
+      //ASSERT_EQ(results->duplicate_count, 0);
+
+      //// check the compare tree worked properly
+      //ASSERT_EQ(sequential_output_tree_prune.size(),
+      //results->match_count + results->false_positives.size());
+      //ASSERT_EQ(recut_output_tree_prune.size(),
+      //results->match_count + results->false_negatives.size());
+      //EXPECT_EQ(sequential_output_tree_prune.size(), recut_output_tree_prune.size());
+
+      EXPECT_EQ(results->false_positives.size(), 0);
+      EXPECT_EQ(results->false_negatives.size(), 0);
     }
   }
 #endif
