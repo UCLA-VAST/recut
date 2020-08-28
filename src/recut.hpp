@@ -489,7 +489,7 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
             cout << "- ";
           }
         } else if (stage == "radius") {
-          if (v->valid_radius()) {
+          if (v->valid_radius() && !(v->unvisited())) {
             cout << +(v->radius) << " ";
           } else {
             cout << "- ";
@@ -643,7 +643,7 @@ void Recut<image_t>::safe_push(T_heap &heap, T2 *node, VID_t interval_id,
   cout << "safe push heap size " << heap.size() << " vid: " << node->vid
     << '\n'; //" handle: " << node->handles[block_id] ;
   assert(!(node->valid_handle()));
-  assert(node->valid_vid());
+  assertm(current->valid_vid(), "must push a valid_vid vertex");
 #endif
   heap.push(node, block_id, cmp_field);
 #ifdef HLOG_FULL
@@ -699,6 +699,13 @@ inline VID_t Recut<image_t>::get_interval_id_vert_sub(const VID_t i,
  */
 template <class image_t>
 image_t Recut<image_t>::get_img_val(const image_t *tile, VID_t vid) {
+  // force_regenerate_image passes the whole image as the
+  // tile so the img vid is the correct address regardless
+  // of interval length sizes Note that force_regenerate_image
+  // is mostly used in test cases to try different scenarios
+  if (this->params->force_regenerate_image) {
+    return tile[vid];
+  }
   VID_t i, j, k;
   i = j = k = 0;
   get_img_subscript(vid, i, j, k);
@@ -795,6 +802,7 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
 #endif
     dst->parent = current;
     assertm(dst->valid_parent(), "dst must be assigned a valid parent");
+    assertm(dst->valid_vid(), "selected must have a valid vid");
     fifo.push_back(dst_id);
     check_ghost_update(interval_id, block_id, dst, "prune");
   }
@@ -943,7 +951,7 @@ bool Recut<image_t>::accumulate_value(
       dst->mark_band(dst_id);
     }
     dst->mark_connect(parent_code);
-    assert(dst->valid_vid());
+    assertm(dst->valid_vid(), "selected must have a valid vid");
 
     vertex_update(interval_id, block_id, dst, new_field, "value");
     assertm(dst->value == new_field,
@@ -1003,7 +1011,7 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_id, VID_t block_id,
     // same reason
     return;
   }
-#endif
+#endif // end of ASYNC
 
   // save vertex for later processing putting it in an overflow that will
   // be emptied in integrate_updated_ghost()
@@ -1041,10 +1049,9 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_id, VID_t block_id,
 #ifdef FULL_PRINT
   VID_t i, j, k;
   get_block_subscript(nb, i, j, k);
-  printf("Place vertex %p\n", (void*) &check_vert);
   cout << "\t\t\tghost update interval " << nb_interval_id << " nb block " << nb
     << " block i " << i << " block j " << j << " block k " << k << " vid "
-    << dst->vid << check_vert.description() << '\n';
+    << dst->vid << '\n';
 #endif
 }
 
@@ -1340,13 +1347,13 @@ bool Recut<image_t>::integrate_vertex(VID_t interval_id, VID_t block_id,
   // handle simpler prune stage and exit
   if (stage == "prune") {
     if (*dst != *updated_attr) {
-      assertm(dst->valid_vid(), "dst must have a valid vid");
 #ifdef FULL_PRINT
       std::cout << "Integrate vertex at " << interval_id << " " << block_id
         << " " << dst->vid << '\n';
 #endif
       // deep copy into the shared memory location in the separate block
       *dst = *updated_attr;
+      assertm(dst->valid_vid(), "dst must have a valid vid");
       fifo.push_back(dst->vid);
       return true;
     }
@@ -1672,7 +1679,8 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
           // preserve state of roots
           if (!(dummy_min->root())) {
             current->mark_selected(); // set as KNOWN NEW
-            assert(current->valid_vid());
+            current->vid = dummy_min->vid;
+            assertm(current->valid_vid(), "must recover a valid_vid vertex");
             // Note: any adjustments to current if in a neighboring domain
             // i.e. current->handles.contains(nb) are not in a data race
             // with the nb thread. All VertexAttr have redundant copies in each
@@ -1680,6 +1688,8 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
           } else {
             std::cout << "root value found vid: " << dummy_min->vid << '\n';
             current->value = 0.;
+            current->vid = dummy_min->vid;
+            assertm(current->valid_vid(), "must recover a valid_vid vertex");
             // 0000 0000, selected no parent, all zeros
             current->mark_root(dummy_min->vid);
             assertm(current->value == 0, "root value not set properly");
@@ -2976,6 +2986,10 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
             return false; // skips unvisited 11XX XXXX and band 01XX XXXX
           }
         }
+        if (v->radius < 1) {
+          std::cout << v->description();
+          assertm(false, "can't accept a vertex with a radii < 1");
+        }
         return true;
       };
 
@@ -3026,6 +3040,7 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
               // k += image_offsets[0]; // z
               // attr->vid = get_img_vid(i, j, k);
               auto marker = new MyMarker(i, j, k);
+              marker->radius = attr->radius;
               tmp[attr->vid] = marker; // save this marker ptr to a map
               outtree.push_back(marker);
             } else {
