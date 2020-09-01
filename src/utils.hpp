@@ -870,10 +870,10 @@ void create_coverage_mask(std::vector<MyMarker*>& markers, T* mask,
           if (dst > r)
             continue;
           int32_t ind = z2 * sz01 + y2 * sz0 + x2;
-          if (mask[ind] > 0) {
-            std::cout << "Warning: marker " << marker->description(sz0, sz1) <<
-              " is over covering at pixel " << x2 << " " << y2 << " " << z2 << '\n';
-          }
+          //if (mask[ind] > 0) {
+            //std::cout << "Warning: marker " << marker->description(sz0, sz1) <<
+              //" is over covering at pixel " << x2 << " " << y2 << " " << z2 << '\n';
+          //}
           mask[ind]++;
         }
       }

@@ -1077,7 +1077,8 @@ TEST(Radius, Full) {
   //std::vector<int> interval_sizes = {max_size};
   std::vector<int> interval_sizes = {max_size};
   //std::vector<int> block_sizes = {max_size};
-  std::vector<int> block_sizes = {max_size, max_size / 2, max_size / 4};
+  //std::vector<int> block_sizes = {max_size, max_size / 2, max_size / 4};
+  std::vector<int> block_sizes = {max_size / 4};
   // tcase 5 is a sphere of radius grid_size / 4 centered
   // in the middle of an image
   std::vector<int> tcases = {5};
@@ -1131,14 +1132,21 @@ TEST(Radius, Full) {
           if (print_all) {
             recut.print_grid("value", recut.global_fifo);
             recut.print_grid("surface", recut.global_fifo);
-            //cout << "All surface vids: \n";
-            //for (auto &outer : recut.global_fifo) {
-            //for (auto &inner : outer) {
-            //for (auto &vid : inner) {
-            //cout << '\t' << vid << '\n';
-            //}
-            //}
-            //}
+            auto total = 0;
+            std::cout << "All surface vids: \n";
+            for (int i=0; i < recut.global_fifo.size(); ++i) {
+              std::cout << "Interval " << i << '\n';
+              const auto outer = recut.global_fifo[i];
+              for (int j=0; j < outer.size(); ++j) {
+                const auto inner = outer[j];
+                std::cout << " Block " << j << '\n';
+                for (auto &vid : inner) {
+                  total++;
+                  cout << "\t" << vid << '\n';
+                }
+              }
+            }
+            cout << "Surface vid total size " << total <<  '\n';
           }
 
           // Get accurate and approximate radii according to APP2
@@ -1287,6 +1295,8 @@ TEST(Radius, Full) {
             RecordProperty("False positives " + stage, results->false_positives.size());
             RecordProperty("False negatives " + stage, results->false_negatives.size());
             RecordProperty("Match count " + stage, results->match_count);
+            RecordProperty("Match % " + stage,
+                (100 * results->match_count) / args.output_tree.size());
             RecordProperty("Duplicate count " + stage, seq_results->duplicate_count);
             RecordProperty("Total nodes " + stage, args.output_tree.size());
             RecordProperty("Total pruned nodes " + stage, recut_output_tree_prune.size());
@@ -1297,6 +1307,8 @@ TEST(Radius, Full) {
             RecordProperty("False positives " + stage, seq_results->false_positives.size());
             RecordProperty("False negatives " + stage, seq_results->false_negatives.size());
             RecordProperty("Match count " + stage, seq_results->match_count);
+            RecordProperty("Match % " + stage,
+                (100 * seq_results->match_count) / sequential_output_tree.size());
             RecordProperty("Duplicate count " + stage, seq_results->duplicate_count);
             RecordProperty("Total nodes " + stage, sequential_output_tree.size());
             RecordProperty("Total pruned nodes " + stage, sequential_output_tree_prune.size());
@@ -1354,7 +1366,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   args.recut_parameters();
   // uint16_t is image_t here
   TileThresholds<uint16_t> *tile_thresholds;
-  bool print_all = true;
+  bool print_all = false;
 
   auto recut = Recut<uint16_t>(args);
   std::vector<VID_t> root_vids;
@@ -1601,6 +1613,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
       RecordProperty("False positives " + stage, results->false_positives.size());
       RecordProperty("False negatives " + stage, results->false_negatives.size());
       RecordProperty("Match count " + stage, results->match_count);
+      RecordProperty("Match % " + stage, (100 * results->match_count) / args.output_tree.size());
       RecordProperty("Duplicate count " + stage, results->duplicate_count);
       RecordProperty("Total nodes " + stage, args.output_tree.size());
       RecordProperty("Total pruned nodes " + stage, recut_output_tree_prune.size());
@@ -1611,6 +1624,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
       RecordProperty("False positives " + stage, seq_results->false_positives.size());
       RecordProperty("False negatives " + stage, seq_results->false_negatives.size());
       RecordProperty("Match count " + stage, seq_results->match_count);
+      RecordProperty("Match % " + stage, (100 * seq_results->match_count) / sequential_output_tree.size());
       RecordProperty("Duplicate count " + stage, seq_results->duplicate_count);
       RecordProperty("Total nodes " + stage, sequential_output_tree.size());
       RecordProperty("Total pruned nodes " + stage, sequential_output_tree_prune.size());
