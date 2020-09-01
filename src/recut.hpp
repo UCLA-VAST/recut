@@ -412,7 +412,7 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
     // edges of intervals in addition to blocks
     // this only adds to update_ghost_vec if the root happens
     // to be on a boundary
-    check_ghost_update(interval_id, block_id, dummy_attr, 
+    check_ghost_update(interval_id, block_id, dummy_attr,
         stage); // add to any other ghost zone blocks
 
 #ifdef LOG
@@ -471,9 +471,13 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
       for (int xi = xadjust; xi < xadjust + interval_length_x; xi++) {
         VID_t vid = ((VID_t)xi) + yi * image_length_x + zi * image_length_xy;
         auto block_id = get_block_id(vid);
-        // cout << "\nvid " << vid << " block " << block_id << " xadj " <<
-        // xadjust
-        //<< " yadj " << yadjust << " zadj " << zadjust << '\n';
+        get_img_subscript(vid, i, j, k);
+        assertm(xi == i, "i mismatch");
+        assertm(yi == j, "j mismatch");
+        assertm(zi == k, "k mismatch");
+#ifdef FULL_PRINT
+        std::cout << "\nvid " << vid << " block " << block_id << " xi " << xi << " yi " << yi << " zi " << zi << '\n';
+#endif
         auto v = get_attr_vid(interval_id, block_id, vid, nullptr);
         if (v->root()) {
           assertm(v->value == 0., "root value must be 0.");
@@ -498,7 +502,7 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
           // for now just print the first block of the
           // interval
           auto surface = fifo[block_id];
-          assertm(surface.size() != 0, "surface size is zero");
+          //assertm(surface.size() != 0, "surface size is zero");
           if (std::count(surface.begin(), surface.end(), v->vid)) {
             cout << "L "; // L for leaf and because disambiguates selected S
           } else {
@@ -1704,10 +1708,13 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
               tile_thresholds, found_adjacent_invalid, *current,
               nullptr, fifo, covered);
           if (found_adjacent_invalid) {
+            auto check_block_id = get_block_id(current->vid);
 #ifdef FULL_PRINT
             cout << "found surface vertex " << interval_id << " " << block_id << " "
               << current->vid << " label " << current->label() << '\n';
+            cout << "calc block of " << check_block_id << '\n';
 #endif
+            assertm(check_block_id == block_id, "block of vid doesn't match this block_id");
             current->radius = 1;
             assertm(current->selected() || current->root(),
                 "surface was not selected");
@@ -1914,9 +1921,12 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
         // Check if above desired percent background
         double test_pct = bkg_count / static_cast<double>(interval_vertex_size);
         auto foreground_count = interval_vertex_size - bkg_count;
+        
+#ifdef FULL_PRINT
         cout << "bkg_thresh=" << local_bkg_thresh << " (" << test_pct
           << "%) background, total foreground count: " << foreground_count
           << '\n';
+#endif
         double test_diff = abs(test_pct - desired_bkg_pct);
 
         // check whether we overshot, if above
