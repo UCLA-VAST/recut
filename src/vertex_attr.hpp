@@ -147,14 +147,8 @@ struct VertexAttr {
   // unsets any previous marked connect
   // a connection can only be in 1 of 6 directions
   // therefore throws if pass above idx value 5
-  template <typename T> void mark_connect(T idx) {
-    assertm(idx <= 5, "parent code idx must be <= 5");
-    edge_state.unset(5); // if only 1 connection allowed
-    edge_state.unset(4);
-    edge_state.unset(3);
-    edge_state.unset(2);
-    edge_state.unset(1);
-    edge_state.unset(0);
+  template <typename T> void set_idx(T idx) {
+    assertm(idx <= 7, "idx must be <= 7");
     edge_state.set(idx);
   }
 
@@ -204,6 +198,10 @@ struct VertexAttr {
            || (parent != a.parent);
   }
 
+  void mark_surface() {
+    edge_state.set(5);
+  }
+
   void mark_selected() {
     edge_state.set(7); // set as KNOWN NEW
     edge_state.unset(6);
@@ -244,6 +242,10 @@ struct VertexAttr {
     edge_state.unset(7);
     edge_state.set(6);
     vid = set_vid;
+  }
+
+  bool surface() const { // XX1X XXXX
+    return edge_state.test(5);
   }
 
   bool band() const { // 01XX XXXX

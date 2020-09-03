@@ -476,7 +476,7 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
         assertm(yi == j, "j mismatch");
         assertm(zi == k, "k mismatch");
 #ifdef FULL_PRINT
-        std::cout << "\nvid " << vid << " block " << block_id << " xi " << xi << " yi " << yi << " zi " << zi << '\n';
+        //std::cout << "\nvid " << vid << " block " << block_id << " xi " << xi << " yi " << yi << " zi " << zi << '\n';
 #endif
         auto v = get_attr_vid(interval_id, block_id, vid, nullptr);
         if (v->root()) {
@@ -824,8 +824,7 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
  * vertex in question block_id : current block id current : minimum vertex
  * attribute selected
  */
-template <class image_t>
-template <class Container>
+template <class image_t> template <class Container>
 void Recut<image_t>::accumulate_radius(
     VID_t interval_id, VID_t dst_id, VID_t block_id, struct VertexAttr *current,
     VID_t &revisits, int parent_code, bool &found_adjacent_invalid,
@@ -849,6 +848,9 @@ void Recut<image_t>::accumulate_radius(
   //}
 
   uint8_t updated_radius = 1 + current->radius;
+  if (dst->vid == 82) {
+    std::cout << "printing vertex 82" << dst->description();
+  }
   if (dst->selected() || dst->root()) {
     assertm(dst->valid_vid(), "selected must have a valid vid");
     assertm(dst->vid == dst_id, "get_attr_vid failed getting correct vertex");
@@ -864,7 +866,7 @@ void Recut<image_t>::accumulate_radius(
       // creates new lower updates
       dst->radius = updated_radius;
 #ifdef FULL_PRINT
-      cout << "\tAdjacent higher"
+      cout << "\tAdjacent higher dst->vid " << dst->vid
         << " radius " << +(dst->radius) << '\n';
 #endif
       fifo.push_back(dst->vid);
@@ -954,7 +956,7 @@ bool Recut<image_t>::accumulate_value(
       // add to band (01XX XXXX)
       dst->mark_band(dst_id);
     }
-    dst->mark_connect(parent_code);
+    dst->parent = current;
     assertm(dst->valid_vid(), "selected must have a valid vid");
 
     vertex_update(interval_id, block_id, dst, new_field, "value");
@@ -1053,7 +1055,7 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_id, VID_t block_id,
 #ifdef FULL_PRINT
   VID_t i, j, k;
   get_block_subscript(nb, i, j, k);
-  cout << "\t\t\tghost update interval " << nb_interval_id << " nb block " << nb
+  cout << "\t\t\tghost update stage " << stage << " interval " << nb_interval_id << " nb block " << nb
     << " block i " << i << " block j " << j << " block k " << k << " vid "
     << dst->vid << '\n';
 #endif
@@ -1232,8 +1234,15 @@ void Recut<image_t>::update_neighbors(
   // all block ids are a linear row-wise idx, relative to current interval
   VID_t block = get_block_id(current->vid);
   cout << "\ni: " << i << " j: " << j << " k: " << k
-    << " current vid: " << current->vid << " value: " << current->value
-    << " addr: " << static_cast<void *>(current) << " interval "
+    << " stage: " << stage
+    << " current vid: " << current->vid;
+    if (stage == "value") {
+      std::cout << " value: " << current->value;
+    }
+    if (stage == "radius") {
+      std::cout << " radius: " << +(current->radius);
+    }
+    std::cout << " addr: " << static_cast<void *>(current) << " interval "
     << interval_id << " block " << block_id << " label " << current->label()
     << '\n';
   //" for block " << block_id << " within domain of block " << block << '\n';
@@ -1333,15 +1342,20 @@ bool Recut<image_t>::integrate_vertex(VID_t interval_id, VID_t block_id,
 
   // handle simpler radii stage and exit
   if (stage == "radius") {
+    //if ((dst->vid == 82) && (block_id == 21)) {
+    if ((dst->vid == 82)) {
+      std::cout << "integ vert " << dst->description() << '\n';
+    }
     if (dst->radius > updated_attr->radius) {
       if (dst->valid_vid()) { // "dst must have a valid vid"
 #ifdef FULL_PRINT
-        std::cout << "Integrate vertex for surface vec at " << interval_id
+        std::cout << "Integrate vertex for radius stage at " << interval_id
           << " " << block_id << " " << dst->vid << '\n';
 #endif
         fifo.push_back(dst->vid);
         // deep copy into the shared memory location in the separate block
         *dst = *updated_attr;
+        assertm(dst->radius == updated_attr->radius, "radius did not get copied");
         return true;
       }
     }
@@ -1390,9 +1404,12 @@ bool Recut<image_t>::integrate_vertex(VID_t interval_id, VID_t block_id,
   // cells within block_id blocks internal domain or block_id ghost cell region,
   // it represents all cells added to heap block_id and all cells that can be
   // manipulated by thread block_id
-  if (dst->value > updated_attr->value) {
+  if ((dst->value > updated_attr->value)
+      || (updated_attr->surface() && !(dst->surface()))) {
     float old_val = dst->value;
-    dst->copy_edge_state(*updated_attr); // copy connection to dst
+    //a dst can only be marked as surface
+    //it can never be reversed from surface to not
+    dst->copy_edge_state(*updated_attr);
     if (updated_attr->root()) {
       dst->mark_root(updated_attr->vid); // mark permanently as root
 #ifdef FULL_PRINT
@@ -1619,6 +1636,28 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
           uint64_t vid = fifo.back();
           fifo.pop_back();
           VertexAttr *current = get_attr_vid(interval_id, block_id, vid, nullptr);
+
+          // radius can't be mutated in value, so this is the opportunity
+          // to set to any vertex that shares a border with background 
+          // to the known radius of 1
+          if (current->surface()) {
+            current->radius = 1;
+            const auto nb_block_id = get_block_id(current->vid);
+            const auto nb_interval_id = get_interval_id(current->vid);
+            if (current->vid == 82) {
+              std::cout << "rad 82 ";
+            }
+            // if this vertex is in a border region
+            // other blocks need to know of it via check ghost update
+            if ((block_id == nb_block_id)
+                && (interval_id == nb_interval_id)) {
+              std::cout << "within same\n";
+              check_ghost_update(interval_id, block_id, current, stage);
+            } else {
+              std::cout << "within different\n";
+              //assertm(false, "from outside");
+            }
+          }
           assertm(current->valid_vid(), "fifo must recover a valid_vid vertex");
 
 #ifdef FULL_PRINT
@@ -1707,18 +1746,31 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
           update_neighbors(tile, interval_id, block_id, current, revisits, stage,
               tile_thresholds, found_adjacent_invalid, *current,
               nullptr, fifo, covered);
-          if (found_adjacent_invalid) {
-            auto check_block_id = get_block_id(current->vid);
+          if (found_adjacent_invalid || current->surface()) {
+            const auto nb_block_id = get_block_id(current->vid);
+            const auto nb_interval_id = get_interval_id(current->vid);
 #ifdef FULL_PRINT
-            cout << "found surface vertex " << interval_id << " " << block_id << " "
+            std::cout << "found surface vertex " << interval_id << " " << block_id << " "
               << current->vid << " label " << current->label() << '\n';
-            cout << "calc block of " << check_block_id << '\n';
+            std::cout << "nb_interval_id " << nb_interval_id << " nb_block_id " << nb_block_id << '\n';
+            if (current->surface()) {
+              std::cout << "previously marked as suface\n";
+            }
 #endif
-            assertm(check_block_id == block_id, "block of vid doesn't match this block_id");
-            current->radius = 1;
+            current->mark_surface();
             assertm(current->selected() || current->root(),
                 "surface was not selected");
-            fifo.push_back(current->vid);
+            if (interval_id != nb_interval_id) {
+              assertm(false, "not yet implemented");
+            }
+            if ((nb_block_id == block_id) && (nb_interval_id == interval_id)) {
+              //"block of vid doesn't match this block_id
+              fifo.push_back(current->vid);
+            } else {
+              updated_ghost_vec[interval_id][block_id][nb_block_id].emplace_back(
+                  current->edge_state, current->value, current->vid, current->radius, current->parent);
+              active_neighbors[interval_id][nb_block_id][block_id] = true;
+            }
           }
         }
       } else if (stage == "prune") {
@@ -1921,7 +1973,7 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
         // Check if above desired percent background
         double test_pct = bkg_count / static_cast<double>(interval_vertex_size);
         auto foreground_count = interval_vertex_size - bkg_count;
-        
+
 #ifdef FULL_PRINT
         cout << "bkg_thresh=" << local_bkg_thresh << " (" << test_pct
           << "%) background, total foreground count: " << foreground_count
@@ -3070,24 +3122,20 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
           auto attr = get_attr_vid(interval_id, block_id, vid, nullptr);
           if (filter_by_label(attr, accept_band)) {
             // different copies have same values other than handle
-            auto connects = attr->connections(image_length_x, image_length_y);
-            if ((connects[0] == attr->vid) && (!(attr->root()))) {
+            //if ((attr->parent == nullptr) && (!(attr->root()))) {
+            if (attr->root()) {
+              attr->parent = attr;
+            }
+            if (attr->parent == nullptr) {
               std::cout << "could not find a valid connection for non-root node: "
                 << attr->description() << '\n';
               printf("with address of %p\n", (void*) attr);
               std::cout << "in interval " << interval_id << '\n';
               assertm(false, "must have a valid connection");
-            } else if (connects.size() > 1) {
-              cout << "Warning multi-connection (" << connects.size()
-                << ") node:" << '\n'
-                << attr->description() << '\n';
-              for (const auto &elm : connects) {
-                cout << elm << '\n';
-              }
-              assertm(false, "must have exactly 1 connections");
             }
+            auto parent_vid = attr->parent->vid;
             auto marker = tmp[attr->vid];      // get the ptr
-            auto parent = tmp[connects[0]]; // adjust
+            auto parent = tmp[parent_vid]; // adjust
             if (marker == parent) {
               marker->parent = 0;
               cout << "found root at " << attr->vid << '\n';
@@ -3097,55 +3145,55 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
               marker->parent = parent;
             }
           }
+          }
         }
-      }
 
-      // release both user-space or mmap'd data since info is all in outtree
-      // now
-      for (size_t interval_id = 0; interval_id < grid.GetNIntervals();
-          ++interval_id) {
-        if (release_intervals) {
-          grid.GetInterval(interval_id)->Release();
+        // release both user-space or mmap'd data since info is all in outtree
+        // now
+        for (size_t interval_id = 0; interval_id < grid.GetNIntervals();
+            ++interval_id) {
+          if (release_intervals) {
+            grid.GetInterval(interval_id)->Release();
+          }
         }
-      }
 
 #ifdef LOG
-      cout << "Total marker size before pruning: " << outtree.size() << " nodes"
-        << '\n';
+        cout << "Total marker size before pruning: " << outtree.size() << " nodes"
+          << '\n';
 #endif
 
-      clock_gettime(CLOCK_REALTIME, &time1);
+        clock_gettime(CLOCK_REALTIME, &time1);
 #ifdef FULL_PRINT
-      cout << "Finished generating results within " << diff_time(time0, time1)
-        << " sec." << '\n';
+        cout << "Finished generating results within " << diff_time(time0, time1)
+          << " sec." << '\n';
 #endif
-    }
+      }
 
-  template <class image_t> void Recut<image_t>::run_pipeline() {
-    // create a list of root vids
-    auto root_vids = this->initialize();
+      template <class image_t> void Recut<image_t>::run_pipeline() {
+        // create a list of root vids
+        auto root_vids = this->initialize();
 
-    // starting from the roots
-    // value stage will save all surface vertices into
-    // fifo
-    std::string stage = "value";
-    this->activate_vids(root_vids, stage, global_fifo);
-    this->update(stage, global_fifo);
+        // starting from the roots
+        // value stage will save all surface vertices into
+        // fifo
+        std::string stage = "value";
+        this->activate_vids(root_vids, stage, global_fifo);
+        this->update(stage, global_fifo);
 
-    // radius stage will consume fifo surface vertices
-    stage = "radius";
-    this->setup_radius(global_fifo);
-    this->update(stage, global_fifo);
+        // radius stage will consume fifo surface vertices
+        stage = "radius";
+        this->setup_radius(global_fifo);
+        this->update(stage, global_fifo);
 
-    // starting from roots, prune stage will
-    // create final list of vertices
-    stage = "prune";
-    this->activate_vids(root_vids, stage, global_fifo);
-    std::ofstream out("out.swc");
-    this->update(stage, global_fifo);
+        // starting from roots, prune stage will
+        // create final list of vertices
+        stage = "prune";
+        this->activate_vids(root_vids, stage, global_fifo);
+        std::ofstream out("out.swc");
+        this->update(stage, global_fifo);
 
-    // aggregate results
-    auto accept_band = true;
-    auto release_intervals = true;
-    this->finalize(this->args->output_tree, accept_band, release_intervals);
-  }
+        // aggregate results
+        auto accept_band = true;
+        auto release_intervals = true;
+        this->finalize(this->args->output_tree, accept_band, release_intervals);
+      }
