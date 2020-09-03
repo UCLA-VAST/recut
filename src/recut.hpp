@@ -176,7 +176,7 @@ template <class image_t> class Recut {
         const double foreground_percent);
     inline VertexAttr *get_attr_vid(VID_t interval_id, VID_t block_id, VID_t vid,
         VID_t *output_offset);
-    void place_vertex(VID_t nb_interval_id, VID_t block_id, VID_t nb,
+    void place_vertex(const VID_t nb_interval_id, VID_t block_id, VID_t nb,
         struct VertexAttr *dst, std::string stage);
     bool check_blocks_finish(VID_t interval_id);
     bool are_intervals_finished();
@@ -188,8 +188,8 @@ template <class image_t> class Recut {
         vector<int> &interval_offsets,
         vector<int> &interval_extents);
     void get_interval_subscript(const VID_t id, VID_t &i, VID_t &j, VID_t &k);
-    inline void get_img_subscript(VID_t id, VID_t &i, VID_t &j, VID_t &k);
-    inline void get_block_subscript(VID_t id, VID_t &i, VID_t &j, VID_t &k);
+    inline void get_img_subscript(const VID_t id, VID_t &i, VID_t &j, VID_t &k);
+    inline void get_block_subscript(const VID_t id, VID_t &i, VID_t &j, VID_t &k);
     inline VID_t get_block_id(const VID_t id);
     VID_t get_interval_id(VID_t vid);
     VID_t get_sub_to_interval_id(VID_t i, VID_t j, VID_t k);
@@ -225,10 +225,10 @@ template <class image_t> class Recut {
           VertexAttr *same_radius_adjacent, Container &fifo,
           bool &covered);
     template <class Container>
-      void integrate_updated_ghost(VID_t interval_id, VID_t block_id,
+      void integrate_updated_ghost(const VID_t interval_id, const VID_t block_id,
           std::string stage, Container &fifo);
     template <class Container>
-      bool integrate_vertex(VID_t interval_id, VID_t block_id,
+      bool integrate_vertex(const VID_t interval_id, const VID_t block_id,
           struct VertexAttr *updated_attr, bool ignore_KNOWN_NEW,
           std::string stage, Container &fifo);
     template <class Container, typename T>
@@ -523,7 +523,7 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
  * packing. Ordered such that one is placed at higher
  * bits than two
  */
-uint32_t double_pack_key(VID_t one, VID_t two) {
+uint32_t double_pack_key(const VID_t one, const VID_t two) {
   uint32_t final = (uint32_t)two;
   final |= (uint32_t)one << 16;
   return final;
@@ -534,7 +534,7 @@ uint32_t double_pack_key(VID_t one, VID_t two) {
  * packing. ordered such that one is placed at the highest
  * bit location, left to right while ascending.
  */
-uint64_t triple_pack_key(VID_t one, VID_t two, VID_t three) {
+uint64_t triple_pack_key(const VID_t one, const VID_t two, const VID_t three) {
   uint64_t final = (uint64_t)three;
   final |= (uint64_t)two << 16;
   final |= (uint64_t)one << 32;
@@ -973,8 +973,8 @@ bool Recut<image_t>::accumulate_value(
 }
 
 template <class image_t>
-void Recut<image_t>::place_vertex(VID_t nb_interval_id, VID_t block_id,
-    VID_t nb, struct VertexAttr *dst,
+void Recut<image_t>::place_vertex(const VID_t nb_interval_id, const VID_t block_id,
+    const VID_t nb_block_id, struct VertexAttr *dst,
     std::string stage) {
 
   // ASYNC option means that another block and thread can be started during
@@ -991,25 +991,25 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_id, VID_t block_id,
   // during the processing of the current thread
   if (grid.GetInterval(nb_interval_id)
       ->IsInMemory() // mmap counts all intervals as in memory
-      && processing_blocks[nb_interval_id][nb].compare_exchange_strong(false,
+      && processing_blocks[nb_interval_id][nb_block_id].compare_exchange_strong(false,
         true)) {
     // will check if below band in march narrow
-    // use processing blocks to make sure no other neighbor of nb is
-    // modifying nb heap
+    // use processing blocks to make sure no other neighbor of nb_block_id is
+    // modifying nb_block_id heap
     bool dst_update_success =
-      integrate_vertex(nb_interval_id, nb, dst, true, stage);
+      integrate_vertex(nb_interval_id, nb_block_id, dst, true, stage);
     if (dst_update_success) { // only update if it's true, allows for
       // remaining true
-      active_blocks[nb_interval_id][nb].store(dst_update_success);
+      active_blocks[nb_interval_id][nb_block_id].store(dst_update_success);
       grid.GetInterval(nb_interval_id)->SetActive(true);
 #ifdef FULL_PRINT
       cout << "\t\t\tasync activate interval " << nb_interval_id << " block "
-        << nb << '\n';
+        << nb_block_id << '\n';
 #endif
     }
     // Note: possible optimization here via explicit setting of memory
     // ordering on atomic
-    processing_blocks[nb_interval_id][nb].store(false); // release nb heap
+    processing_blocks[nb_interval_id][nb_block_id].store(false); // release nb_block_id heap
     // The other block isn't processing, so an update to it at here
     // is currently true for this iteration. It does not need to be checked
     // again in integrate_updated_ghost via adding it to the
@@ -1031,7 +1031,7 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_id, VID_t block_id,
   // interval saving overhead
   grid.GetInterval(nb_interval_id)->SetActive(true);
 #ifdef CONCURRENT_MAP
-  auto key = triple_pack_key(nb_interval_id, block_id, nb);
+  auto key = triple_pack_key(nb_interval_id, block_id, nb_block_id);
   auto mutator = updated_ghost_vec->insertOrFind(key);
   std::vector<struct VertexAttr> *vec = mutator.getValue();
   if (!vec) {
@@ -1047,16 +1047,22 @@ void Recut<image_t>::place_vertex(VID_t nb_interval_id, VID_t block_id,
   // at preshing.com/20160201/new-concurrent-hash-maps-for-cpp/ for details
   mutator.assignValue(vec); // assign via mutator vs. relookup
 #else
-  updated_ghost_vec[nb_interval_id][block_id][nb].emplace_back(
+  updated_ghost_vec[nb_interval_id][block_id][nb_block_id].emplace_back(
       dst->edge_state, dst->value, dst->vid, dst->radius, dst->parent);
 #endif
-  active_neighbors[nb_interval_id][nb][block_id] = true;
+  active_neighbors[nb_interval_id][nb_block_id][block_id] = true;
+
+  if (block_id == 5) {
+    if (nb_block_id == 21) {
+    assertm(active_neighbors[0][21][5], "lk");
+    }
+  }
 
 #ifdef FULL_PRINT
   VID_t i, j, k;
-  get_block_subscript(nb, i, j, k);
-  cout << "\t\t\tghost update stage " << stage << " interval " << nb_interval_id << " nb block " << nb
-    << " block i " << i << " block j " << j << " block k " << k << " vid "
+  get_block_subscript(nb_block_id, i, j, k);
+  cout << "\t\t\tghost update stage " << stage << " interval " << nb_interval_id << " nb block " << nb_block_id
+    << " block_id " << block_id << " block i " << i << " block j " << j << " block k " << k << " vid "
     << dst->vid << '\n';
 #endif
 }
@@ -1331,7 +1337,7 @@ void Recut<image_t>::update_neighbors(
  */
 template <class image_t>
 template <class Container>
-bool Recut<image_t>::integrate_vertex(VID_t interval_id, VID_t block_id,
+bool Recut<image_t>::integrate_vertex(const VID_t interval_id, const VID_t block_id,
     struct VertexAttr *updated_attr,
     bool ignore_KNOWN_NEW,
     std::string stage, Container &fifo) {
@@ -1454,7 +1460,7 @@ bool Recut<image_t>::integrate_vertex(VID_t interval_id, VID_t block_id,
  */
 template <class image_t>
 template <class Container>
-void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
+void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_t block_id,
     std::string stage,
     Container &fifo) {
   VID_t tot_blocks = grid.GetNBlocks();
@@ -1474,9 +1480,27 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
         continue; // FIXME this should never occur because of active_neighbor
         // right?
       }
+      assertm(false, "not implemented");
 
       for (struct VertexAttr updated_attr : *vec) {
 #else
+
+        //if (stage == "radius") {
+          //if ((nb == 21) && (block_id == 5)) {
+            //std::cout << "\nActually inside nb active for 0, 21 5\n";
+            //std::cout << "print ghost vecs of active for 0, 5, 21\n";
+            //if (updated_ghost_vec[0][5][21].size() == 0) {
+              //std::cout << "shit it's zero\n";
+            //}
+            //for (const auto& v : updated_ghost_vec[0][5][21]) {
+              //if (v.vid() == 82) {
+                //std::cout << v.description() << '\n';
+              //}
+            //}
+          //}
+        //}
+
+  // updated_ghost_vec[x][a][b] in domain of a, in ghost of block b
         for (struct VertexAttr updated_attr :
             updated_ghost_vec[interval_id][nb][block_id]) {
 #endif
@@ -1488,10 +1512,15 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
 #endif
           // note fifo must respect that this vertex belongs to the domain
           // of nb, not block_id
+          // this updates the value of the vertex of block: block_id
+          // this vertex is in an overlapping ghost region
+          // so the vertex is technically in the domain of nb
+          // but the copy needs to be safely updated for march_narrow_band
+          // to execute safely in parallel
           integrate_vertex(interval_id, block_id, &updated_attr, false,
               stage, fifo);
         } // end for each VertexAttr
-        active_neighbors[interval_id][nb][block_id] = false; // reset to false
+        active_neighbors[interval_id][block_id][nb] = false; // reset to false
         // clear sets for all possible block connections of block_id from this
         // iter
 #ifdef CONCURRENT_MAP
@@ -1661,9 +1690,9 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
           assertm(current->valid_vid(), "fifo must recover a valid_vid vertex");
 
 #ifdef FULL_PRINT
-          std::cout << "process vertex for fifo at " << interval_id << " "
-            << block_id << " " << vid << " label " << current->label()
-            << '\n';
+          //std::cout << "process vertex for fifo at " << interval_id << " "
+            //<< block_id << " " << vid << " label " << current->label()
+            //<< '\n';
 #endif
 
 #ifdef LOG_FULL
@@ -2113,6 +2142,21 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
         //}
         //#else
 
+        //if (stage == "radius") {
+          //if (active_neighbors[0][21][5]) {
+            //std::cout << "nb active for 0, 21 5\n";
+            //std::cout << "print ghost vecs of active for 0, 5, 21\n";
+            //if (updated_ghost_vec[0][5][21].size() == 0) {
+              //std::cout << "shit it's zero\n";
+            //}
+            //for (const auto& v : updated_ghost_vec[0][5][21]) {
+              //if (v.vid() == 82) {
+                //std::cout << v.description() << '\n';
+              //}
+            //}
+          //}
+        //}
+
 #ifdef USE_OMP_BLOCK
 #pragma omp parallel for
 #endif
@@ -2517,7 +2561,7 @@ void Recut<image_t>::integrate_updated_ghost(VID_t interval_id, VID_t block_id,
     }
 
   template <class image_t>
-    inline void Recut<image_t>::get_img_subscript(VID_t id, VID_t &i, VID_t &j,
+    inline void Recut<image_t>::get_img_subscript(const VID_t id, VID_t &i, VID_t &j,
         VID_t &k) {
       i = id % image_length_x;
       j = (id / image_length_x) % image_length_y;

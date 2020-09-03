@@ -98,7 +98,7 @@ struct VertexAttr {
     return (!edge_state.test(7) && !edge_state.test(6)); // 00XX XXXX ROOT
   }
 
-  std::string description() {
+  std::string description() const {
     std::string descript = "vid:" + std::to_string(vid);
     descript += '\n';
     descript += "parent vid:";
@@ -122,23 +122,23 @@ struct VertexAttr {
 
   /* returns whether this vertex has been added to a heap
    */
-  bool valid_parent() { return parent != nullptr; }
+  bool valid_parent() const { return parent != nullptr; }
 
   /* returns whether this vertex has been added to a heap
    */
-  bool valid_handle() { return (handle != numeric_limits<handle_t>::max()); }
+  bool valid_handle() const { return (handle != numeric_limits<handle_t>::max()); }
 
   /* returns whether this vertex has had its radius updated from the default max
    */
-  bool valid_radius() { return radius != numeric_limits<uint8_t>::max(); }
+  bool valid_radius() const { return radius != numeric_limits<uint8_t>::max(); }
 
   /* returns whether this vertex has had its value updated from the default max
    */
-  bool valid_value() { return value != numeric_limits<float>::max(); }
+  bool valid_value() const { return value != numeric_limits<float>::max(); }
 
   /* returns whether this vertex has been added to a heap
    */
-  bool valid_vid() { return (vid != numeric_limits<VID_t>::max()); }
+  bool valid_vid() const { return (vid != numeric_limits<VID_t>::max()); }
 
   bool selected() const {
     return (edge_state.test(7) && !edge_state.test(6)); // 10XX XXXX KNOWN NEW
@@ -220,7 +220,7 @@ struct VertexAttr {
    * means node is either BAND or unvisited
    * and has not been selected as KNOWN_NEW
    */
-  bool unselected() {
+  bool unselected() const {
     // return edge_state.test(6);
     return !selected();
   }
@@ -265,7 +265,7 @@ struct VertexAttr {
    *  4   | z - 1
    *  5   | z + 1
    */
-  template <typename T> std::vector<VID_t> connections(T nxpad, T nxypad) {
+  template <typename T> std::vector<VID_t> connections(T nxpad, T nxypad) const {
     std::vector<VID_t> connect;
     connect.reserve(6);
     // returns vid of itself if there are no connections

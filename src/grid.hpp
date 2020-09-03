@@ -41,7 +41,7 @@ public:
     }
   }
 
-  inline Interval *GetInterval(size_t idx) {
+  inline Interval *GetInterval(const VID_t idx) {
     assertm(idx < interval_size_,
             "Requested interval can not exceed total contained in Grid");
     return intervals_[idx].get();
