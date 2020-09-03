@@ -389,6 +389,12 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
     auto block_id = get_block_id(vid);
     Interval *interval = grid.GetInterval(interval_id);
 
+#ifdef FULL_PRINT
+    cout << "activate_vids(): setting interval " << interval_id << " block " << block_id
+      << " to active ";
+    cout << "for marker vid " << vid << '\n';
+#endif
+
     interval->SetActive(true);
     active_blocks[interval_id][block_id].store(true);
 
@@ -415,11 +421,6 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
     check_ghost_update(interval_id, block_id, dummy_attr,
         stage); // add to any other ghost zone blocks
 
-#ifdef LOG
-    cout << "Set interval " << interval_id << " block " << block_id
-      << " to active ";
-    cout << "for marker vid " << vid << '\n';
-#endif
   }
 }
 
@@ -841,16 +842,8 @@ void Recut<image_t>::accumulate_radius(
   // and each block, interval have a ghost region
   // after filter in update_neighbors this pointer arithmetic is always valid
   auto dst = get_attr_vid(interval_id, block_id, dst_id, nullptr);
-  // if (dst->selected()) {
-  // auto expected_dst_vid = current->vid + stride;
-  // cout << " expected vid " << expected_dst_vid << '\n';
-  // assertm(expected_dst_vid == dst->vid, "pointer arithmetic invalid");
-  //}
 
   uint8_t updated_radius = 1 + current->radius;
-  if (dst->vid == 82) {
-    std::cout << "printing vertex 82" << dst->description();
-  }
   if (dst->selected() || dst->root()) {
     assertm(dst->valid_vid(), "selected must have a valid vid");
     assertm(dst->vid == dst_id, "get_attr_vid failed getting correct vertex");
@@ -1108,7 +1101,7 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
   get_block_subscript(block_id, iblock, jblock, kblock);
 
 #ifdef FULL_PRINT
-  cout << "\t\t\tcurrent block "
+  cout << "\t\t\tcheck_ghost_update on vid " << dst->vid << " current block " << block_id 
     << " block i " << iblock << " block j " << jblock << " block k "
     << kblock << '\n';
 #endif
@@ -1348,16 +1341,8 @@ bool Recut<image_t>::integrate_vertex(const VID_t interval_id, const VID_t block
 
   // handle simpler radii stage and exit
   if (stage == "radius") {
-    //if ((dst->vid == 82) && (block_id == 21)) {
-    if ((dst->vid == 82)) {
-      std::cout << "integ vert " << dst->description() << '\n';
-    }
     if (dst->radius > updated_attr->radius) {
       if (dst->valid_vid()) { // "dst must have a valid vid"
-#ifdef FULL_PRINT
-        std::cout << "Integrate vertex for radius stage at " << interval_id
-          << " " << block_id << " " << dst->vid << '\n';
-#endif
         fifo.push_back(dst->vid);
         // deep copy into the shared memory location in the separate block
         *dst = *updated_attr;
@@ -1371,10 +1356,6 @@ bool Recut<image_t>::integrate_vertex(const VID_t interval_id, const VID_t block
   // handle simpler prune stage and exit
   if (stage == "prune") {
     if (*dst != *updated_attr) {
-#ifdef FULL_PRINT
-      std::cout << "Integrate vertex at " << interval_id << " " << block_id
-        << " " << dst->vid << '\n';
-#endif
       // deep copy into the shared memory location in the separate block
       *dst = *updated_attr;
       assertm(dst->valid_vid(), "dst must have a valid vid");
@@ -1390,10 +1371,6 @@ bool Recut<image_t>::integrate_vertex(const VID_t interval_id, const VID_t block
       return false;
     }
   }
-#endif
-
-#ifdef FULL_PRINT
-  // cout << "\tiupdate, vid" << updated_attr->vid << '\n';
 #endif
 
   // These are collected from nb, so only when nb updates are lower do we
@@ -1419,7 +1396,7 @@ bool Recut<image_t>::integrate_vertex(const VID_t interval_id, const VID_t block
     if (updated_attr->root()) {
       dst->mark_root(updated_attr->vid); // mark permanently as root
 #ifdef FULL_PRINT
-      cout << "\tmark root: " << dst->vid << '\n';
+      cout << "\tfrom integrate_vertex(), mark root: " << dst->vid << '\n';
 #endif
     } else {
       dst->mark_band(
@@ -1432,18 +1409,10 @@ bool Recut<image_t>::integrate_vertex(const VID_t interval_id, const VID_t block
       // FIXME adapt this to handle radius as well
       safe_update(heap_vec[interval_id][block_id], dst, updated_attr->value,
           stage); // increase priority, lowers value in min-heap
-#ifdef FULL_PRINT
-      // cout << "\tiupdate: change in heap" << " value: " << dst->value << "
-      // oldval " << old_val << '\n';
-#endif
     } else {
       dst->value = updated_attr->value;
       safe_push(heap_vec[interval_id][block_id], dst, interval_id, block_id,
           stage);
-#ifdef FULL_PRINT
-      // cout << "\tipush: add to heap: " << dst->vid << " value: " <<
-      // dst->value << " oldval " << old_val << '\n';
-#endif
     }
     return true;
   }
@@ -1485,22 +1454,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
       for (struct VertexAttr updated_attr : *vec) {
 #else
 
-        //if (stage == "radius") {
-          //if ((nb == 21) && (block_id == 5)) {
-            //std::cout << "\nActually inside nb active for 0, 21 5\n";
-            //std::cout << "print ghost vecs of active for 0, 5, 21\n";
-            //if (updated_ghost_vec[0][5][21].size() == 0) {
-              //std::cout << "shit it's zero\n";
-            //}
-            //for (const auto& v : updated_ghost_vec[0][5][21]) {
-              //if (v.vid() == 82) {
-                //std::cout << v.description() << '\n';
-              //}
-            //}
-          //}
-        //}
-
-  // updated_ghost_vec[x][a][b] in domain of a, in ghost of block b
+        // updated_ghost_vec[x][a][b] in domain of a, in ghost of block b
         for (struct VertexAttr updated_attr :
             updated_ghost_vec[interval_id][nb][block_id]) {
 #endif
@@ -1508,7 +1462,8 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
 #ifdef FULL_PRINT
           cout << "integrate vid: " << updated_attr.vid
             << " ghost of block id: " << block_id
-            << " in block domain of block id: " << nb << '\n';
+            << " in block domain of block id: " << nb 
+            << " at interval " << interval_id << '\n';
 #endif
           // note fifo must respect that this vertex belongs to the domain
           // of nb, not block_id
@@ -1673,27 +1628,14 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
             current->radius = 1;
             const auto nb_block_id = get_block_id(current->vid);
             const auto nb_interval_id = get_interval_id(current->vid);
-            if (current->vid == 82) {
-              std::cout << "rad 82 ";
-            }
             // if this vertex is in a border region
             // other blocks need to know of it via check ghost update
             if ((block_id == nb_block_id)
                 && (interval_id == nb_interval_id)) {
-              std::cout << "within same\n";
               check_ghost_update(interval_id, block_id, current, stage);
-            } else {
-              std::cout << "within different\n";
-              //assertm(false, "from outside");
             }
           }
           assertm(current->valid_vid(), "fifo must recover a valid_vid vertex");
-
-#ifdef FULL_PRINT
-          //std::cout << "process vertex for fifo at " << interval_id << " "
-            //<< block_id << " " << vid << " label " << current->label()
-            //<< '\n';
-#endif
 
 #ifdef LOG_FULL
           visited += 1;
@@ -1710,16 +1652,6 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
               tile_thresholds, found_adjacent_invalid,
               found_higher_parent, same_radius_adjacent, fifo,
               covered);
-
-          // Prune logic
-          // set the proper parent, either a same or a higher adjacent
-          // if (found_higher_parent && alsdkfj) {
-          //}
-          // you can only prune when the dst has a higher radii
-          // and the current in question is
-          // radii 2 or more and not a root
-          // if ((current->radius >= 2) && !(current->root())) {
-          //}
         }
       } else if (stage == "value") {
         VertexAttr *current;
@@ -1758,7 +1690,9 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
             // with the nb thread. All VertexAttr have redundant copies in each
             // ghost region
           } else {
+#ifdef FULL_PRINT
             std::cout << "root value found vid: " << dummy_min->vid << '\n';
+#endif
             current->value = 0.;
             current->vid = dummy_min->vid;
             assertm(current->valid_vid(), "must recover a valid_vid vertex");
@@ -1862,9 +1796,11 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
               // only pruned / unselected vertices will have their radii mutated
               // as a form of message passing
               if (found_higher_parent.vid != current->vid) {
+#ifdef FULL_PRINT
                 std::cout << "  refreshed radius - 1 of "
                   << found_higher_parent.radius - 1 << " from vid "
                   << found_higher_parent.vid << '\n';
+#endif
                 current->radius = found_higher_parent.radius - 1;
               } else {
                 current->radius = current->parent->radius - 1;
@@ -2141,21 +2077,6 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
         // create_integrate_thread(interval_id, block_id);
         //}
         //#else
-
-        //if (stage == "radius") {
-          //if (active_neighbors[0][21][5]) {
-            //std::cout << "nb active for 0, 21 5\n";
-            //std::cout << "print ghost vecs of active for 0, 5, 21\n";
-            //if (updated_ghost_vec[0][5][21].size() == 0) {
-              //std::cout << "shit it's zero\n";
-            //}
-            //for (const auto& v : updated_ghost_vec[0][5][21]) {
-              //if (v.vid() == 82) {
-                //std::cout << v.description() << '\n';
-              //}
-            //}
-          //}
-        //}
 
 #ifdef USE_OMP_BLOCK
 #pragma omp parallel for
@@ -2851,7 +2772,9 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
 
 #ifdef USE_OMP
     omp_set_num_threads(params->user_thread_count());
+#ifdef LOG
     cout << "User specific thread count " << params->user_thread_count() << '\n';
+#endif
 #endif
 
     struct timespec time0, time1, time2, time3;
