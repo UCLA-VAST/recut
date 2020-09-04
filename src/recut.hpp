@@ -399,12 +399,12 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
     active_blocks[interval_id][block_id].store(true);
 
     VertexAttr *dummy_attr;
+    dummy_attr =
+      new VertexAttr(); // march is protect from dummy values like this
+    dummy_attr->mark_root(vid); // 0000 0000, selected no parent, all zeros
+    // indicates KNOWN_FIX root
+    dummy_attr->value = 0.0;
     if (stage == "value") {
-      dummy_attr =
-        new VertexAttr(); // march is protect from dummy values like this
-      dummy_attr->mark_root(vid); // 0000 0000, selected no parent, all zeros
-      // indicates KNOWN_FIX root
-      dummy_attr->value = 0.0;
       safe_push(this->heap_vec[interval_id][block_id], dummy_attr, interval_id,
           block_id, stage);
 
@@ -1047,7 +1047,7 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id, const VID_t block_
 
   if (block_id == 5) {
     if (nb_block_id == 21) {
-    assertm(active_neighbors[0][21][5], "lk");
+      assertm(active_neighbors[0][21][5], "lk");
     }
   }
 
@@ -1101,7 +1101,7 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
   get_block_subscript(block_id, iblock, jblock, kblock);
 
 #ifdef FULL_PRINT
-  cout << "\t\t\tcheck_ghost_update on vid " << dst->vid << " current block " << block_id 
+  cout << "\t\t\tcheck_ghost_update on vid " << dst->vid << " current block " << block_id
     << " block i " << iblock << " block j " << jblock << " block k "
     << kblock << '\n';
 #endif
@@ -1235,13 +1235,13 @@ void Recut<image_t>::update_neighbors(
   cout << "\ni: " << i << " j: " << j << " k: " << k
     << " stage: " << stage
     << " current vid: " << current->vid;
-    if (stage == "value") {
-      std::cout << " value: " << current->value;
-    }
-    if (stage == "radius") {
-      std::cout << " radius: " << +(current->radius);
-    }
-    std::cout << " addr: " << static_cast<void *>(current) << " interval "
+  if (stage == "value") {
+    std::cout << " value: " << current->value;
+  }
+  if (stage == "radius") {
+    std::cout << " radius: " << +(current->radius);
+  }
+  std::cout << " addr: " << static_cast<void *>(current) << " interval "
     << interval_id << " block " << block_id << " label " << current->label()
     << '\n';
   //" for block " << block_id << " within domain of block " << block << '\n';
@@ -1462,7 +1462,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
 #ifdef FULL_PRINT
           cout << "integrate vid: " << updated_attr.vid
             << " ghost of block id: " << block_id
-            << " in block domain of block id: " << nb 
+            << " in block domain of block id: " << nb
             << " at interval " << interval_id << '\n';
 #endif
           // note fifo must respect that this vertex belongs to the domain
@@ -1622,7 +1622,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
           VertexAttr *current = get_attr_vid(interval_id, block_id, vid, nullptr);
 
           // radius can't be mutated in value, so this is the opportunity
-          // to set to any vertex that shares a border with background 
+          // to set to any vertex that shares a border with background
           // to the known radius of 1
           if (current->surface()) {
             current->radius = 1;
