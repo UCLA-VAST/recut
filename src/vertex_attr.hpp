@@ -144,6 +144,24 @@ struct VertexAttr {
     return (edge_state.test(7) && !edge_state.test(6)); // 10XX XXXX KNOWN NEW
   }
 
+  // change an independent flag to indicate this vertex has been visited
+  void prune_visit() {
+    // XXX1 XXXX
+    edge_state.set(4);
+  }
+
+  // check an independent flag to see if during a prune update
+  // this vertex has already been visited and had it's parent
+  // changed
+  bool prune_visited() const {
+    // XXX? XXXX
+    return edge_state.test(4);
+  }
+
+  void set_parent(VertexAttr* v) {
+    this->parent = v;
+  }
+
   // unsets any previous marked connect
   // a connection can only be in 1 of 6 directions
   // therefore throws if pass above idx value 5

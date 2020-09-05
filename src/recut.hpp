@@ -777,7 +777,7 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
   // means the vertex was kept and has at least one child
   // Note: only selected and roots are ever added to fifo for the bfs
   if (dst->band() || dst->root() ||
-      (dst->unselected() && dst->valid_parent())) {
+      (dst->unselected() && dst->prune_visited())) {
     // or if unselected but radius is valid meaning it's been pruned
     assertm(dst->valid_vid(), "selected must have a valid vid");
     assertm(dst->vid == dst_id, "get_attr_vid failed getting correct vertex");
@@ -801,12 +801,12 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
   // so the vertex itself it can be used to pass messages
   // beyond just vid to other blocks / intervals
   // or keep a contiguous path
-  if (dst->selected() && !(dst->valid_parent())) {
+  if (dst->selected() && !(dst->prune_visited())) {
 #ifdef FULL_PRINT
     std::cout << "  added dst " << dst_id << '\n';
 #endif
-    dst->parent = current;
-    assertm(dst->valid_parent(), "dst must be assigned a valid parent");
+    dst->set_parent(current);
+    dst->prune_visit();
     assertm(dst->valid_vid(), "selected must have a valid vid");
     fifo.push_back(dst_id);
     check_ghost_update(interval_id, block_id, dst, "prune");
@@ -949,7 +949,9 @@ bool Recut<image_t>::accumulate_value(
       // add to band (01XX XXXX)
       dst->mark_band(dst_id);
     }
-    dst->parent = current;
+    // traces a path back to root
+    // parent will likely be mutated during prune stage
+    dst->set_parent(current);
     assertm(dst->valid_vid(), "selected must have a valid vid");
 
     vertex_update(interval_id, block_id, dst, new_field, "value");
@@ -1275,8 +1277,9 @@ void Recut<image_t>::update_neighbors(
         int offset = abs(ii) + abs(jj) + abs(kk);
         // this ensures a start stencil,
         // exclude current, exclude diagonals
-        if (offset == 0 || offset > 1)
+        if (offset == 0 || offset > 1) {
           continue;
+        }
         dst_id = get_img_vid(x, y, z);
 
         // all block_nums and interval_nums are a linear
@@ -1289,10 +1292,12 @@ void Recut<image_t>::update_neighbors(
         // can not be added in to processing stack
         // ghost vertices can only be added in to the stack
         // during `integrate_updated_ghost()`
-        if (ni != interval_id)
+        if (ni != interval_id) {
           continue; // can't add verts of other intervals
-        if (nb != block_id)
+        }
+        if (nb != block_id) {
           continue; // can't add verts of other blocks
+        }
 
         parent_code = get_parent_code(dst_id, current->vid);
         // note although this is summed only one of ii,jj,kk
@@ -1724,6 +1729,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
             assertm(current->selected() || current->root(),
                 "surface was not selected");
             if (interval_id != nb_interval_id) {
+              // if multiple blocks
               assertm(false, "not yet implemented");
             }
             if ((nb_block_id == block_id) && (nb_interval_id == interval_id)) {
@@ -1765,7 +1771,8 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
           // Parent
           // by default current will have a root of itself
           if (current->root()) {
-            current->parent = current;
+            current->set_parent(current);
+            current->prune_visit();
           }
 
           auto adjust_parent = [](auto &vertex) {
@@ -1774,7 +1781,8 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
             // unselected once it is printed
             assertm(vertex->parent != nullptr, "parent can't be nullptr");
             if (vertex->parent->unvisited()) {
-              vertex->parent = vertex->parent->parent;
+              vertex->set_parent(vertex->parent->parent);
+              vertex->prune_visit();
             }
             assertm(vertex->parent != nullptr, "parent can't be nullptr");
             assertm(vertex->parent->band() || vertex->parent->root(),
@@ -2895,9 +2903,9 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
     cout << "image_length_x: " << image_length_x
       << " image_length_y: " << image_length_y
       << " image_length_z: " << image_length_z << '\n';
-    cout << "nxblock: " << interval_block_len_x
-      << " image_y_lenblock: " << interval_block_len_y
-      << " image_z_lenblock: " << interval_block_len_z << '\n';
+    cout << "interval_block_len_x: " << interval_block_len_x
+      << " interval_block_len_y: " << interval_block_len_y
+      << " interval_block_len_z: " << interval_block_len_z << '\n';
     cout << "image_x_len_pad: " << image_x_len_pad
       << " image_y_len_pad: " << image_y_len_pad
       << " image_z_len_pad: " << image_z_len_pad << " image_xy_len_pad "
