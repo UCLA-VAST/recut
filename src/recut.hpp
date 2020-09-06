@@ -205,6 +205,7 @@ template <class image_t> class Recut {
       void accumulate_prune(VID_t interval_id, VID_t dst_id, VID_t block_id,
           struct VertexAttr *current,
           struct VertexAttr &found_higher_parent, bool &covered,
+          const bool dst_outside_domain,
           Container &fifo);
     template <class Container>
       void accumulate_radius(VID_t interval_id, VID_t dst_id, VID_t block_id,
@@ -765,9 +766,16 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
     VID_t block_id,
     struct VertexAttr *current,
     struct VertexAttr &found_higher_parent,
-    bool &covered, Container &fifo) {
+    bool &covered, const bool dst_outside_domain, Container &fifo) {
 
   auto dst = get_attr_vid(interval_id, block_id, dst_id, nullptr);
+  auto check = current + 1;
+  //if (dst->valid_vid()) {
+  //std::cout << "dst " << dst->description() << '\n';
+  //check->valid_vid();
+  //std::cout << "check " << check->description() << '\n';
+  //assertm(dst->vid == dst_id, "get_attr_vid returned the improper vertex from vid");
+  //}
 
   // selected (10XX....) excludes:
   // roots (00XX...) previously visited nodes are changed from selected to
@@ -801,7 +809,8 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
   // so the vertex itself it can be used to pass messages
   // beyond just vid to other blocks / intervals
   // or keep a contiguous path
-  if (dst->selected() && !(dst->prune_visited())) {
+  if ((dst->selected() && !(dst->prune_visited()))
+      && !dst_outside_domain) {
 #ifdef FULL_PRINT
     std::cout << "  added dst " << dst_id << '\n';
 #endif
@@ -1253,6 +1262,7 @@ void Recut<image_t>::update_neighbors(
   VID_t dst_id;
   int x, y, z;
   int parent_code;
+  bool dst_outside_domain, current_outside_domain;
   int stride, pad_stride;
   int z_stride = this->block_length_x * this->block_length_y;
   int z_pad_stride = this->pad_block_length_x * this->pad_block_length_y;
@@ -1284,19 +1294,42 @@ void Recut<image_t>::update_neighbors(
 
         // all block_nums and interval_nums are a linear
         // row-wise idx, relative to current interval
-        auto nb = get_block_id(dst_id);
-        auto ni = get_sub_to_interval_id(x, y, z);
+        auto dst_block_id = get_block_id(dst_id);
+        auto dst_interval_id = get_sub_to_interval_id(x, y, z);
+
+        auto current_block_id = get_block_id(current->vid);
+        auto current_interval_id = get_interval_id(current->vid);
 
         // Filter all dsts that don't protude into current
         // block and interval region, ghost destinations
         // can not be added in to processing stack
         // ghost vertices can only be added in to the stack
         // during `integrate_updated_ghost()`
-        if (ni != interval_id) {
-          continue; // can't add verts of other intervals
+        dst_outside_domain = false;
+        current_outside_domain = false;
+        if ((current_interval_id != interval_id) || (current_block_id != block_id)) {
+          current_outside_domain = true;
         }
-        if (nb != block_id) {
-          continue; // can't add verts of other blocks
+        if ((dst_interval_id != interval_id) || (dst_block_id != block_id)) {
+          dst_outside_domain = true;
+        }
+
+        // only prune considers dstss outside of the domain
+        // prune uses these ghost regions (+-1) to pass messages
+        // for example a root can be in the ghost region
+        // and the adjacent vertex in this block needs to know it's
+        // radius in order to be properly pruned
+        if (stage != "prune") {
+          if (dst_outside_domain)
+            continue;
+        }
+        // if current is already outside this block
+        // never take a dst unless it projects back into the current
+        // block and interval, otherwise you will go outside of the data race safe
+        // data region
+        if (current_outside_domain) {
+          if (dst_outside_domain)
+            continue;
         }
 
         parent_code = get_parent_code(dst_id, current->vid);
@@ -1305,8 +1338,8 @@ void Recut<image_t>::update_neighbors(
         stride = ii + jj * this->block_length_x + kk * z_stride;
         pad_stride = ii + jj * this->pad_block_length_x + kk * z_pad_stride;
 #ifdef FULL_PRINT
-        // cout << "x " << x << " y " << y << " z " << z << " dst_id " << dst_id
-        //<< " vid " << current->vid << '\n';
+        cout << "x " << x << " y " << y << " z " << z << " dst_id " << dst_id
+          << " vid " << current->vid << '\n';
 #endif
         if (stage == "value") {
           accumulate_value(tile, interval_id, dst_id, block_id, current,
@@ -1318,7 +1351,7 @@ void Recut<image_t>::update_neighbors(
               same_radius_adjacent, stride, pad_stride, fifo);
         } else if (stage == "prune") {
           accumulate_prune(interval_id, dst_id, block_id, current,
-              found_higher_parent, covered, fifo);
+              found_higher_parent, covered, dst_outside_domain, fifo);
         }
       }
     }
@@ -2499,25 +2532,34 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
 
   // Wrap-around rotate all values forward one
   // This logic disentangles 0 % 32 from 32 % 32 results
+  // This function is abstract in that it can adjust subscripts
+  // of vid, block or interval
   template <class image_t>
     inline VID_t Recut<image_t>::rotate_index(VID_t img_sub, const VID_t current,
         const VID_t neighbor,
         const VID_t interval_block_size,
         const VID_t pad_block_size) {
-      if (current == neighbor)
+      // when they are in the same block or index
+      // then you simply need to account for the 1
+      // voxel border region to get the correct subscript
+      // for this dimension
+      if (current == neighbor) {
         return img_sub + 1; // adjust to padded block idx
+      }
       // if it's in another block/interval it can only be 1 vox away
       // so make sure the subscript itself is on the correct edge of its block
       // domain
-      if (current == (neighbor + 1))
+      if (current == (neighbor + 1)) {
         assertm(img_sub == interval_block_size - 1,
             "Does not currently support diagonal connections or any ghost "
             "regions greater that 1");
-      return 0;
-      if (current == (neighbor - 1))
+        return 0;
+      }
+      if (current == (neighbor - 1)) {
         assertm(img_sub == 0, "Does not currently support diagonal connections or "
             "any ghost regions greater that 1");
-      return pad_block_size - 1;
+        return pad_block_size - 1;
+      }
 
       // failed
       assertm(false, "Does not currently support diagonal connections or any ghost "
@@ -2675,19 +2717,18 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
 
       VertexAttr *match = first_block_attr + offset;
 #ifdef FULL_PRINT
-      // cout << "\t\tget attr vid for tile vid: "<< img_vid<< " pad_img_block_i "
-      // << pad_img_block_i << " pad_img_block_j " << pad_img_block_j << "
-      // pad_img_block_k " << pad_img_block_k<<'\n';
-      ////cout << "\t\ti " << i << " j " << j << " k " << k<<'\n';
-      ////cout << "\t\tia " << ia << " ja " << ja << " ka " << k<<'\n';
-      // cout << "\t\tblock_num " << block_id << " nb_block " << nb_block << "
-      // interval num " << interval_id << " nb_interval num " << nb_interval <<
-      // '\n';;; cout << "\t\toffset " << offset << " block_start " << block_start
-      // <<
-      // '\n'; cout << "\t\ttotal interval size " << interval->GetNVertices() <<
-      // '\n'; assert(block_start + offset < interval->GetNVertices()); // no
-      // valid offset is beyond this val cout << "\t\tmatch-vid " << match->vid <<
-      // " match->value " << match->value << '\n' << '\n';
+      cout << "\t\tget attr vid for tile vid: "<< img_vid<< " pad_img_block_i "
+        << pad_img_block_i << " pad_img_block_j " << pad_img_block_j
+        << " pad_img_block_k " << pad_img_block_k<<'\n';
+      //cout << "\t\ti " << i << " j " << j << " k " << k<<'\n';
+      //cout << "\t\tia " << ia << " ja " << ja << " ka " << k<<'\n';
+      cout << "\t\tblock_num " << block_id << " nb_block " << nb_block
+        << " interval num " << interval_id << " nb_interval num " << nb_interval << '\n';
+      cout << "\t\toffset " << offset << " block_start " << block_start << '\n';
+      cout << "\t\ttotal interval size " << interval->GetNVertices() << '\n';
+      //assert(block_start + offset < interval->GetNVertices()); // no
+      //valid offset is beyond this val cout << "\t\tmatch-vid " << match->vid <<
+      //" match->value " << match->value << '\n' << '\n';
 #endif
       return match;
     }

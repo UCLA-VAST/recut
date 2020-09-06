@@ -99,6 +99,7 @@ struct VertexAttr {
   }
 
   std::string description() const {
+    std::cout << vid << '\n';
     std::string descript = "vid:" + std::to_string(vid);
     descript += '\n';
     descript += "parent vid:";
@@ -138,7 +139,12 @@ struct VertexAttr {
 
   /* returns whether this vertex has been added to a heap
    */
-  bool valid_vid() const { return (vid != numeric_limits<VID_t>::max()); }
+  bool valid_vid() const { 
+    //std::cout << "valid vid\n";
+    //std::cout << vid << '\n';
+    //std::cout << numeric_limits<VID_t>::max() << '\n';
+    //std::cout << "valid ? " << (vid != numeric_limits<VID_t>::max()) << '\n';
+    return (vid != numeric_limits<VID_t>::max()); }
 
   bool selected() const {
     return (edge_state.test(7) && !edge_state.test(6)); // 10XX XXXX KNOWN NEW
