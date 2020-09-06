@@ -863,6 +863,7 @@ TEST(VertexAttr, ReadWriteInterval) {
 TEST(VertexAttr, Defaults) {
   auto v1 = new VertexAttr();
   ASSERT_FALSE(v1->root());
+  ASSERT_FALSE(v1->valid_vid());
   ASSERT_EQ(v1->edge_state.field_, 192);
   ASSERT_TRUE(v1->unselected());
   ASSERT_TRUE(v1->unvisited());
@@ -1336,7 +1337,7 @@ class RecutPipelineParameterTests
 : public ::testing::TestWithParam<
   std::tuple<int, int, int, int, double, bool, bool>> {};
 
-TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
+TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
 
   // documents the meaning of each tuple member
   auto grid_size = std::get<0>(GetParam());
