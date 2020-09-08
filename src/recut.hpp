@@ -224,7 +224,7 @@ template <class image_t> class Recut {
           bool &found_adjacent_invalid,
           VertexAttr &found_higher_parent,
           VertexAttr *same_radius_adjacent, Container &fifo,
-          bool &covered);
+          bool &covered, bool current_outside_domain=false);
     template <class Container>
       void integrate_updated_ghost(const VID_t interval_id, const VID_t block_id,
           std::string stage, Container &fifo);
@@ -410,6 +410,15 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
           block_id, stage);
 
     } else if (stage == "prune") {
+      auto radius = numeric_limits<uint8_t>::max();
+      while (! heap_vec[interval_id][block_id].empty()) {
+        const auto v = safe_pop<local_heap, VertexAttr*>(heap_vec[interval_id][block_id], block_id, interval_id, "radius");
+        if (v->radius < radius) {
+          radius = v->radius;
+        }
+      }
+      dummy_attr->radius = radius;
+      assertm(dummy_attr->valid_radius(), "activate vids didn't find valid radius");
       fifo[interval_id][block_id].push_back(vid);
     } else {
       assertm(false, "stage behavior no yet specified");
@@ -812,7 +821,7 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
       if ((dst->selected() && !(dst->prune_visited()))
           && !dst_outside_domain) {
 #ifdef FULL_PRINT
-        std::cout << "  added dst " << dst_id << '\n';
+        std::cout << "  added dst " << dst_id << " rad " << +(dst->radius) << '\n';
 #endif
         dst->set_parent(current);
         dst->prune_visit();
@@ -862,6 +871,9 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
         // cout << "dst " << dst->vid << " check " << check_dst->vid << '\n';
         // assertm(dst->vid == check_dst->vid,
         //"get_attr_vid doesn't match pad stride arithmetic");
+
+
+        // Set the radius
         if (!(dst->valid_radius()) || (dst->radius > updated_radius)) {
           // if radius has not been set yet
           // this necessitates it is 1 higher than current
@@ -872,6 +884,10 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
           cout << "\tAdjacent higher dst->vid " << dst->vid
             << " radius " << +(dst->radius) << '\n';
 #endif
+          if (dst->root()) {
+            safe_push(heap_vec[interval_id][block_id], dst, interval_id, block_id,
+                "radius");
+          }
           fifo.push_back(dst->vid);
           check_ghost_update(interval_id, block_id, dst, "radius");
         } else if (dst->radius == current->radius) {
@@ -1056,7 +1072,6 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
       mutator.assignValue(vec); // assign via mutator vs. relookup
 #else
       if (stage == "prune") {
-        std::cout << "dst->vid " << dst->vid << '\n';
         assertm(dst->valid_radius(), "selected must have a valid radius");
       }
       updated_ghost_vec[nb_interval_id][block_id][nb_block_id].emplace_back(
@@ -1237,7 +1252,8 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
         struct VertexAttr *current, VID_t &revisits, std::string stage,
         const TileThresholds<image_t> *tile_thresholds,
         bool &found_adjacent_invalid, VertexAttr &found_higher_parent,
-        VertexAttr *same_radius_adjacent, Container &fifo, bool &covered) {
+        VertexAttr *same_radius_adjacent, Container &fifo, bool &covered,
+        bool current_outside_domain) {
 
       VID_t i, j, k;
       i = j = k = 0;
@@ -1264,7 +1280,7 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
       VID_t dst_id;
       int x, y, z;
       int parent_code;
-      bool dst_outside_domain, current_outside_domain;
+      bool dst_outside_domain;
       int stride, pad_stride;
       int z_stride = this->block_length_x * this->block_length_y;
       int z_pad_stride = this->pad_block_length_x * this->pad_block_length_y;
@@ -1299,19 +1315,12 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
             auto dst_block_id = get_block_id(dst_id);
             auto dst_interval_id = get_sub_to_interval_id(x, y, z);
 
-            auto current_block_id = get_block_id(current->vid);
-            auto current_interval_id = get_interval_id(current->vid);
-
             // Filter all dsts that don't protude into current
             // block and interval region, ghost destinations
             // can not be added in to processing stack
             // ghost vertices can only be added in to the stack
             // during `integrate_updated_ghost()`
             dst_outside_domain = false;
-            current_outside_domain = false;
-            if ((current_interval_id != interval_id) || (current_block_id != block_id)) {
-              current_outside_domain = true;
-            }
             if ((dst_interval_id != interval_id) || (dst_block_id != block_id)) {
               dst_outside_domain = true;
             }
@@ -1395,7 +1404,7 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
 
       // handle simpler prune stage and exit
       if (stage == "prune") {
-        if (*dst != *updated_attr) {
+        if (updated_attr->root() || (*dst != *updated_attr)) {
           // deep copy into the shared memory location in the separate block
           *dst = *updated_attr;
           std::cout << "updated " << updated_attr->description() << '\n';
@@ -1669,6 +1678,10 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
               // to the known radius of 1
               if (current->surface()) {
                 current->radius = 1;
+                if (current->root()) {
+                  safe_push(heap_vec[interval_id][block_id], current, interval_id, block_id,
+                      "radius");
+                }
                 const auto nb_block_id = get_block_id(current->vid);
                 const auto nb_interval_id = get_interval_id(current->vid);
                 // if this vertex is in a border region
@@ -1790,6 +1803,12 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
               fifo.pop_front();
 
               current = get_attr_vid(interval_id, block_id, vid, nullptr);
+              const auto current_interval_id = get_interval_id(current->vid);
+              const auto current_block_id = get_block_id(current->vid);
+              bool current_outside_domain = false;
+              if ((current_interval_id != interval_id) || (current_block_id != block_id)) {
+                current_outside_domain = true;
+              }
               assertm(current->valid_vid(), "fifo must recover a valid_vid vertex");
               // assertm(current->root(), "fifo must contain only root vertices");
 
@@ -1804,7 +1823,7 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
               update_neighbors(nullptr, interval_id, block_id, current, revisits,
                   "prune", nullptr, found_adjacent_invalid,
                   found_higher_parent, same_radius_adjacent, fifo,
-                  covered);
+                  covered, current_outside_domain);
 
               // Parent
               // by default current will have a root of itself
@@ -1813,18 +1832,24 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
                 current->prune_visit();
               }
 
-              auto adjust_parent = [](auto &vertex) {
+              auto adjust_parent = [](auto &vertex) -> bool {
                 // if the parent has been pruned then set the current
                 // parent further upstream, since a parent is not allowed to be
                 // unselected once it is printed
+                bool changed = false;
                 assertm(vertex->parent != nullptr, "parent can't be nullptr");
+                auto original_parent = vertex->parent;
                 if (vertex->parent->unvisited()) {
                   vertex->set_parent(vertex->parent->parent);
+                  if (vertex->parent  != original_parent) {
+                    changed = true;
+                  }
                   vertex->prune_visit();
                 }
                 assertm(vertex->parent != nullptr, "parent can't be nullptr");
                 assertm(vertex->parent->band() || vertex->parent->root(),
                     "parent must not be unselected");
+                return changed;
               };
 
               if (covered) {
@@ -1852,15 +1877,21 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
                     current->radius = current->parent->radius - 1;
                   }
                   adjust_parent(current);
+                  if (!current_outside_domain) {
+                    check_ghost_update(interval_id, block_id, current, stage);
+                  }
                   continue;
                 }
               }
 
-              adjust_parent(current);
+              auto changed = adjust_parent(current);
               if (!(current->root())) {
                 current->mark_band();
               }
               print_vertex(current);
+              if (changed && !current_outside_domain) {
+                check_ghost_update(interval_id, block_id, current, stage);
+              }
             }
           } else {
             assertm(false, "stage specifier not recognized");
@@ -2027,6 +2058,15 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
           if (!(grid.GetInterval(interval_id)->IsInMemory())) {
             grid.GetInterval(interval_id)->LoadFromDisk();
           }
+
+          // setup any border regions from activate_vids or setup functions
+#ifdef USE_OMP_BLOCK
+#pragma omp parallel for
+#endif
+          for (VID_t block_id = 0; block_id < interval_block_size; ++block_id) {
+            integrate_updated_ghost(interval_id, block_id, stage, fifo[block_id]);
+          }
+
 
           // iterations over blocks
           // if there is a single block per interval than this while

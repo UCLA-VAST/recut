@@ -1077,7 +1077,7 @@ TEST(Radius, Full) {
   std::vector<int> grid_sizes = {max_size};
   //std::vector<int> interval_sizes = {max_size};
   std::vector<int> interval_sizes = {max_size};
-  std::vector<int> block_sizes = {max_size / 4};
+  std::vector<int> block_sizes = {max_size, max_size / 4};
   //std::vector<int> block_sizes = {max_size, max_size / 2, max_size / 4};
   //std::vector<int> block_sizes = {max_size / 4};
   // tcase 5 is a sphere of radius grid_size / 4 centered
