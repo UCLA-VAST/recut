@@ -99,6 +99,7 @@ template <class image_t> class Recut {
           grid_interval_length_z, interval_block_size;
 
     Grid grid;
+    std::ofstream out;
     image_t *generated_image = nullptr;
     bool mmap_;
     size_t iteration;
@@ -779,12 +780,6 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
 
       auto dst = get_attr_vid(interval_id, block_id, dst_id, nullptr);
       auto check = current + 1;
-      //if (dst->valid_vid()) {
-      //std::cout << "dst " << dst->description() << '\n';
-      //check->valid_vid();
-      //std::cout << "check " << check->description() << '\n';
-      //assertm(dst->vid == dst_id, "get_attr_vid returned the improper vertex from vid");
-      //}
 
       // selected (10XX....) excludes:
       // roots (00XX...) previously visited nodes are changed from selected to
@@ -1407,8 +1402,10 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
         if (updated_attr->root() || (*dst != *updated_attr)) {
           // deep copy into the shared memory location in the separate block
           *dst = *updated_attr;
+#ifdef FULL_PRINT
           std::cout << "updated " << updated_attr->description() << '\n';
           std::cout << "dst " << dst->description() << '\n';
+#endif
           assertm(dst->valid_radius(), "dst must have a valid radius");
           assertm(dst->valid_vid(), "dst must have a valid vid");
           fifo.push_back(dst->vid);
@@ -1641,10 +1638,18 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
           if (current->parent != nullptr) { // parent set properly
             parent_vid = std::to_string(current->parent->vid);
           }
-          // FIXME must refer to the row number instead of vid
-          // FIXME place in separate file according to soma
-          std::cout << current->vid << " " << i << " " << j << " " << k << " "
-            << +(current->radius) << " " << parent_vid << '\n';
+          if (current->root()) {
+            parent_vid = "-1";
+          }
+          if (this->out.is_open()) {
+#pragma omp critical
+            this->out << current->vid << " " << i << " " << j << " " << k << " "
+              << +(current->radius) << " " << parent_vid << '\n';
+          } else {
+#pragma omp critical
+            std::cout << current->vid << " " << i << " " << j << " " << k << " "
+              << +(current->radius) << " " << parent_vid << '\n';
+          }
         }
 
       template <class image_t>
@@ -1888,9 +1893,11 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
               if (!(current->root())) {
                 current->mark_band();
               }
-              print_vertex(current);
-              if (changed && !current_outside_domain) {
-                check_ghost_update(interval_id, block_id, current, stage);
+              if (!current_outside_domain) {
+                print_vertex(current);
+                if (changed) {
+                  check_ghost_update(interval_id, block_id, current, stage);
+                }
               }
             }
           } else {
@@ -3248,8 +3255,9 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
             // create final list of vertices
             stage = "prune";
             this->activate_vids(root_vids, stage, global_fifo);
-            std::ofstream out("out.swc");
+            this->out.open("out.swc");
             this->update(stage, global_fifo);
+            this->out.close();
 
             // aggregate results
             auto accept_band = true;
