@@ -789,7 +789,7 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
       // means the vertex was kept and has at least one child
       // Note: only selected and roots are ever added to fifo for the bfs
       if (dst->band() || dst->root() ||
-          (dst->unselected() && dst->prune_visited())) {
+          (dst->unselected() && dst->prune_visited() && dst->valid_radius())) {
         // or if unselected but radius is valid meaning it's been pruned
         assertm(dst->valid_vid(), "selected must have a valid vid");
         assertm(dst->vid == dst_id, "get_attr_vid failed getting correct vertex");
@@ -822,6 +822,7 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
         dst->prune_visit();
         assertm(dst->valid_vid(), "selected must have a valid vid");
         assertm(dst->valid_radius(), "selected must have a valid radius");
+        assertm(dst->parent->valid_radius(), "dst parent invalid radius");
         fifo.push_back(dst_id);
         check_ghost_update(interval_id, block_id, dst, "prune");
       }
@@ -889,9 +890,6 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
 #ifdef FULL_PRINT
           cout << "\tAdjacent same\n";
 #endif
-          if (dst->root()) {
-            cout << "root was ignored for check_ghost_update\n";
-          }
           // any match adjacent same match will do
           same_radius_adjacent = dst;
         }
@@ -1815,7 +1813,7 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
                 current_outside_domain = true;
               }
               assertm(current->valid_vid(), "fifo must recover a valid_vid vertex");
-              // assertm(current->root(), "fifo must contain only root vertices");
+              assertm(current->valid_radius(), "fifo must recover a valid_radius vertex");
 
 #ifdef LOG_FULL
               visited += 1;
@@ -1845,11 +1843,13 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
                 assertm(vertex->parent != nullptr, "parent can't be nullptr");
                 auto original_parent = vertex->parent;
                 if (vertex->parent->unvisited()) {
+                  assertm(vertex->parent->parent->valid_radius(),
+                      "vertex->parent->parent must have valid_radius");
                   vertex->set_parent(vertex->parent->parent);
                   if (vertex->parent  != original_parent) {
                     changed = true;
                   }
-                  vertex->prune_visit();
+                  vertex->prune_visit(); // permanently mark vertex
                 }
                 assertm(vertex->parent != nullptr, "parent can't be nullptr");
                 assertm(vertex->parent->band() || vertex->parent->root(),
@@ -1877,9 +1877,25 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
                       << found_higher_parent.radius - 1 << " from vid "
                       << found_higher_parent.vid << '\n';
 #endif
+                    assertm(found_higher_parent.valid_radius(), "higher parent invalid radius");
+                    assertm(found_higher_parent.radius != 0, "higher parent can't have a radii of 0");
                     current->radius = found_higher_parent.radius - 1;
                   } else {
-                    current->radius = current->parent->radius - 1;
+                    //std::cout << current->vid << " " << current->parent->vid << '\n';
+                    //std::cout << current->description() << '\n';
+                    //std::cout << current->parent->description() << '\n';
+                    assertm(current->radius != 0, "current can't have a 0 radius");
+                    current->radius = current->radius - 1;
+                    //assertm(current->parent->valid_radius(), "current parent invalid radius");
+                    //if (current->parent->radius == 0) {
+                      //// this vertex is now covered by either an adjacent neigbor that is
+                      //// a either band, root, or another covered and pruned vertex
+                      //// it's parent carries no coverage info (radius of 0), so
+                      //// current also doesn't carry on any coverage info
+                      //current->radius = 0;
+                    //} else {
+                      //current->radius = current->parent->radius - 1;
+                    //}
                   }
                   adjust_parent(current);
                   if (!current_outside_domain) {

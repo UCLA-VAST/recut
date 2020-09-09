@@ -1072,14 +1072,11 @@ TEST(Radius, Full) {
   bool prune = true;
 
   int max_size = 8;
-  // std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
-  // max_size / 2, max_size};
+  //std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
+   //max_size / 2, max_size};
   std::vector<int> grid_sizes = {max_size};
-  //std::vector<int> interval_sizes = {max_size};
   std::vector<int> interval_sizes = {max_size};
-  std::vector<int> block_sizes = {max_size, max_size / 4};
-  //std::vector<int> block_sizes = {max_size, max_size / 2, max_size / 4};
-  //std::vector<int> block_sizes = {max_size / 4};
+  std::vector<int> block_sizes = {2}; // max_size / 2, max_size / 4};
   // tcase 5 is a sphere of radius grid_size / 4 centered
   // in the middle of an image
   std::vector<int> tcases = {5};
@@ -1134,16 +1131,18 @@ TEST(Radius, Full) {
             recut.print_grid("value", recut.global_fifo);
             recut.print_grid("surface", recut.global_fifo);
             auto total = 0;
-            std::cout << "All surface vids: \n";
-            for (int i=0; i < recut.global_fifo.size(); ++i) {
-              std::cout << "Interval " << i << '\n';
-              const auto outer = recut.global_fifo[i];
-              for (int j=0; j < outer.size(); ++j) {
-                const auto inner = outer[j];
-                std::cout << " Block " << j << '\n';
-                for (auto &vid : inner) {
-                  total++;
-                  cout << "\t" << vid << '\n';
+            if (false) {
+              std::cout << "All surface vids: \n";
+              for (int i=0; i < recut.global_fifo.size(); ++i) {
+                std::cout << "Interval " << i << '\n';
+                const auto outer = recut.global_fifo[i];
+                for (int j=0; j < outer.size(); ++j) {
+                  const auto inner = outer[j];
+                  std::cout << " Block " << j << '\n';
+                  for (auto &vid : inner) {
+                    total++;
+                    cout << "\t" << vid << '\n';
+                  }
                 }
               }
             }
@@ -1254,7 +1253,9 @@ TEST(Radius, Full) {
             // find final list of vertices
             auto stage = std::string{"prune"};
             recut.activate_vids(root_vids, stage, recut.global_fifo);
+            recut.out.open("out.swc");
             recut.update(stage, recut.global_fifo);
+            recut.out.close();
             std::vector<MyMarker*> recut_output_tree_prune;
             recut.finalize(recut_output_tree_prune, true, false);
 
