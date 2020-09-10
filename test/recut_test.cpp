@@ -1071,12 +1071,12 @@ TEST(Radius, Full) {
   bool print_csv = false;
   bool prune = true;
 
-  int max_size = 8;
+  int max_size = 32;
   //std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
    //max_size / 2, max_size};
   std::vector<int> grid_sizes = {max_size};
   std::vector<int> interval_sizes = {max_size};
-  std::vector<int> block_sizes = {2}; // max_size / 2, max_size / 4};
+  std::vector<int> block_sizes = {32}; // max_size / 2, max_size / 4};
   // tcase 5 is a sphere of radius grid_size / 4 centered
   // in the middle of an image
   std::vector<int> tcases = {5};

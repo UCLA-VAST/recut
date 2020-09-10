@@ -800,6 +800,7 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
           covered = true;
           if (found_higher_parent.radius < (dst->radius - 1)) {
             found_higher_parent = *dst;
+            //std::cout << "found higher " << dst->description() << '\n';
           }
 #ifdef FULL_PRINT
           std::cout << "  radius of: " << +(dst->radius) << " at dst " << dst_id
@@ -1401,8 +1402,8 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
           // deep copy into the shared memory location in the separate block
           *dst = *updated_attr;
 #ifdef FULL_PRINT
-          std::cout << "updated " << updated_attr->description() << '\n';
-          std::cout << "dst " << dst->description() << '\n';
+          //std::cout << "updated " << updated_attr->description() << '\n';
+          //std::cout << "dst " << dst->description() << '\n';
 #endif
           assertm(dst->valid_radius(), "dst must have a valid radius");
           assertm(dst->valid_vid(), "dst must have a valid vid");
@@ -1873,8 +1874,8 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
                   // as a form of message passing
                   if (found_higher_parent.vid != current->vid) {
 #ifdef FULL_PRINT
-                    std::cout << "  refreshed radius - 1 of "
-                      << found_higher_parent.radius - 1 << " from vid "
+                    std::cout << "  refreshed radius to "
+                      << +(found_higher_parent.radius - 1) << " from vid "
                       << found_higher_parent.vid << '\n';
 #endif
                     assertm(found_higher_parent.valid_radius(), "higher parent invalid radius");
@@ -1884,8 +1885,15 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
                     //std::cout << current->vid << " " << current->parent->vid << '\n';
                     //std::cout << current->description() << '\n';
                     //std::cout << current->parent->description() << '\n';
-                    assertm(current->radius != 0, "current can't have a 0 radius");
-                    current->radius = current->radius - 1;
+                    //assertm(current->radius != 0, "current can't have a 0 radius");
+
+                    // one of current's adjacent dst's has a radius of
+                    // 2 or greater, yet none of them had a value greater
+                    // than 1 above current->radius, otherwise a 
+                    // found_higher_parent would have been recorded
+                    if (current->radius != 0) {
+                      current->radius = current->radius - 1;
+                    }
                     //assertm(current->parent->valid_radius(), "current parent invalid radius");
                     //if (current->parent->radius == 0) {
                       //// this vertex is now covered by either an adjacent neigbor that is
