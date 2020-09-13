@@ -299,6 +299,21 @@ void trace_mesh_image(VID_t id, uint16_t *inimg1d, const VID_t selected, int gri
   }
 }
 
+bool is_covered_by_parent(VID_t index, VID_t root_vid, int radius, VID_t grid_size) {
+  VID_t i,j,k,pi,pj,pk;
+  get_img_subscript(index, i, j, k, grid_size);
+  get_img_subscript(root_vid, pi, pj, pk, grid_size);
+  auto x = static_cast<double>(i) - pi;
+  auto y = static_cast<double>(j) - pj;
+  auto z = static_cast<double>(k) - pk;
+  auto vdistance = sqrt(x * x + y * y + z * z);
+
+  if (static_cast<double>(radius) >= vdistance) {
+    return true;
+  }
+  return false;
+}
+
 /*
  * sets all to 1 for tcase 0
  * sets all to 0 for tcase > 3
@@ -393,6 +408,15 @@ VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
           // function trace_mesh_image
           inimg1d[index] = 0;
         } else if (tcase == 5) {
+          // make an accurate radius sphee centered around the root
+          if (is_covered_by_parent(index, root_vid, radius, grid_size)) {
+            inimg1d[index] = 1;
+            count_selected_pixels++;
+          } else {
+            inimg1d[index] = 0;
+          }
+        } else if (tcase == 7) {
+        // make a square centered around root
           inimg1d[index] = 0;
           if ((xi >= xmin) && (xi <= xmax)) {
             if ((yi >= ymin) && (yi <= ymax)) {
@@ -402,6 +426,7 @@ VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
               }
             }
           }
+          // tcase 6 means real image so it's not valid
         } else {
           assertm(false, "tcase specified not recognized for generate "
               "synthetic image (0-5)");
@@ -419,7 +444,7 @@ VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
   } else if (tcase == 4) {
     trace_mesh_image(root_vid, inimg1d, selected, grid_size);
     return selected;
-  } else if (tcase > 5) {
+  } else if (tcase > 7) {
     assertm(false, "tcase not recognized for creating image tcase 6 is for reading real images");
   }
   return selected; // never reached
@@ -841,6 +866,31 @@ auto get_img_vid = [](const VID_t i, const VID_t j,
 };
 
 template <typename T, typename T2>
+void create_coverage_mask_accurate(std::vector<MyMarker*>& markers, T* mask,
+    T2 sz0, T2 sz1, T2 sz2) {
+  assertm(sz0 == sz1, "must matching sizes for now");
+  assertm(sz1 == sz2, "must matching sizes for now");
+  auto sz01 = static_cast<VID_t>( sz0 * sz1);
+  auto tol_sz = sz01 * sz2;
+  VID_t count_selected_pixels = 0;
+  for (VID_t index=0; index < tol_sz; ++index) {
+    mask[index] = 0;
+    // check all marker to see if their radius covers it
+    for (const auto& marker : markers) {
+      assertm(marker->radius > 0, "Markers must have a radius > 0");
+      // by definition a radius of 1 doess not cover it's neighbor
+      // a radius of 2 or greater would cover a neighbor
+      // therefore account for this by subtracting 1 from all radii values
+      if (is_covered_by_parent(index, marker->vid(sz0, sz1), marker->radius - 1, sz0)) {
+        mask[index] = 1;
+        count_selected_pixels++;
+        break;
+      }
+    }
+  }
+}
+
+template <typename T, typename T2>
 void create_coverage_mask(std::vector<MyMarker*>& markers, T* mask,
     T2 sz0, T2 sz1, T2 sz2) {
   auto sz01 = static_cast<VID_t>( sz0 * sz1);
@@ -871,8 +921,8 @@ void create_coverage_mask(std::vector<MyMarker*>& markers, T* mask,
             continue;
           int32_t ind = z2 * sz01 + y2 * sz0 + x2;
           //if (mask[ind] > 0) {
-            //std::cout << "Warning: marker " << marker->description(sz0, sz1) <<
-              //" is over covering at pixel " << x2 << " " << y2 << " " << z2 << '\n';
+          //std::cout << "Warning: marker " << marker->description(sz0, sz1) <<
+          //" is over covering at pixel " << x2 << " " << y2 << " " << z2 << '\n';
           //}
           mask[ind]++;
         }
@@ -891,7 +941,7 @@ auto check_coverage(const T mask, const T2 inimg1d, const VID_t tol_sz,
 
   for (VID_t i=0; i < tol_sz; i++) {
     auto check = mask[i];
-    // ground represents the original pixel value wheras 
+    // ground represents the original pixel value wheras
     // check merely indicates how many times a pixel was
     // covered in a pruning pass
     auto ground = inimg1d[i];

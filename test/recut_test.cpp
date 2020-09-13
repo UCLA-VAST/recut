@@ -116,6 +116,28 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
   }
 }
 
+template <typename T>
+void check_parents(T markers) {
+  VID_t counter;
+  for (auto& marker : markers) {
+    auto& parent = marker;
+    counter = 0;
+    //while (!(parent->root())) {
+    // breaks when this marker's parents made it back to a root
+    while (parent->type != 0) {
+      ++counter;
+      if (counter > markers.size()) {
+        break;
+      }
+      // only roots will have a parent == 0
+      // and a root terminates this loop
+      ASSERT_TRUE(parent->parent != 0);
+      parent = parent->parent;
+    }
+    ASSERT_LT(counter, markers.size());
+  }
+}
+
 void check_image_error(uint16_t *inimg1d, uint16_t *baseline, uint16_t *check,
     int grid_size, VID_t selected, double &error_rate) {
   auto tol_sz = grid_size * grid_size * grid_size;
@@ -1065,21 +1087,63 @@ TEST(CompareTree, All) {
   ASSERT_EQ(count_mismatch_negatives, 1);
 }
 
+TEST(CoveredByParent, Full) {
+  int grid_size = 8;
+  int radius = 3;
+  auto root_vid = 219;
+
+  auto args = get_args(grid_size, grid_size, grid_size, 100,
+      5, true);
+
+  auto recut = Recut<uint16_t>(args);
+  auto root_vids = recut.initialize();
+
+  // -3 steps in x y z respect.
+  // +3 steps in x y z respect.
+  std::vector<VID_t> check_trues = {216, 195, 27, 222, 243, 411};
+  std::vector<VID_t> check_falses = {215, 187, 26, 223, 251, 412};
+  auto root = new VertexAttr();
+  root->vid = root_vid;
+  root->radius = radius;
+
+  for (const auto& check : check_trues) {
+    ASSERT_TRUE(is_covered_by_parent(check, root_vid, radius, grid_size));
+    auto current = new VertexAttr();
+    current->vid = check;
+    current->parent = root;
+    ASSERT_TRUE(recut.is_covered_by_parent(current)) << "for vid " << check;
+  }
+
+  for (const auto& check : check_falses) {
+    ASSERT_FALSE(is_covered_by_parent(check, root_vid, radius, grid_size));
+    auto current = new VertexAttr();
+    current->vid = check;
+    current->parent = root;
+    ASSERT_FALSE(recut.is_covered_by_parent(current)) << "for vid " << check;
+  }
+
+}
+
 TEST(Radius, Full) {
   bool print_all = true;
   bool check_xy = false;
   bool print_csv = false;
   bool prune = true;
+  auto expect_exact_radii_match = false;
 
   int max_size = 32;
   //std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
-   //max_size / 2, max_size};
+  //max_size / 2, max_size};
   std::vector<int> grid_sizes = {max_size};
   std::vector<int> interval_sizes = {max_size};
-  std::vector<int> block_sizes = {32}; // max_size / 2, max_size / 4};
+  std::vector<int> block_sizes = {32};
   // tcase 5 is a sphere of radius grid_size / 4 centered
   // in the middle of an image
+  // tcase 7 is a square radius grid_size / 4
   std::vector<int> tcases = {5};
+  // on tcase 5 a sphere accuracy does not produce correct results according
+  // to our definition of hops away, so you'll need to suppress the more
+  // stringent tests in order avoid mistaken errors
   int slt_pct = 100;
   auto tile_thresholds = new TileThresholds<uint16_t>(2, 0, 0);
   std::unique_ptr<uint16_t[]> radii_grid_xy;
@@ -1128,7 +1192,9 @@ TEST(Radius, Full) {
           recut.activate_vids(root_vids, "value", recut.global_fifo);
           recut.update("value", recut.global_fifo);
           if (print_all) {
+            std::cout << "Recut value\n";
             recut.print_grid("value", recut.global_fifo);
+            std::cout << "Recut surface\n";
             recut.print_grid("surface", recut.global_fifo);
             auto total = 0;
             if (false) {
@@ -1145,8 +1211,8 @@ TEST(Radius, Full) {
                   }
                 }
               }
+              cout << "Surface vid total size " << total <<  '\n';
             }
-            cout << "Surface vid total size " << total <<  '\n';
           }
 
           // Get accurate and approximate radii according to APP2
@@ -1167,11 +1233,34 @@ TEST(Radius, Full) {
           }
           ASSERT_EQ(total_visited, selected);
 
+          // Debug by eye
+          if (print_all) {
+            cout << "accuracy_radius\n";
+            print_image_3D(radii_grid.get(), {grid_size, grid_size, grid_size});
+            if (check_xy) {
+              std::cout << "XY radii grid\n";
+              print_image_3D(radii_grid_xy.get(),
+                  {grid_size, grid_size, grid_size});
+            }
+          }
+
           // make sure all surface vertices were identified correctly
           double xy_err, recut_err;
-          ASSERT_NO_FATAL_FAILURE(
-              check_recut_error(recut, radii_grid.get(), grid_size, "surface",
-                recut_err, recut.global_fifo));
+          // for circular test cases app2's accuracy_radius is not correct
+          // in terms of hops to background, it counts 1 as being
+          //still near border regions like
+          // 1 0
+          // 1 1
+          // 1 0
+          // but it should be
+          // 1 0
+          // 2 1
+          // 1 0
+          if (expect_exact_radii_match) {
+            EXPECT_NO_FATAL_FAILURE(
+                check_recut_error(recut, radii_grid.get(), grid_size, "surface",
+                  recut_err, recut.global_fifo));
+          }
 
           recut.setup_radius(recut.global_fifo);
 
@@ -1183,30 +1272,29 @@ TEST(Radius, Full) {
             }
           }
 
-          VID_t interval_num = 0;
-
           // Debug by eye
           if (print_all) {
-            cout << "accuracy_radius\n";
-            print_image_3D(radii_grid.get(), {grid_size, grid_size, grid_size});
-            if (check_xy) {
-              std::cout << "XY radii grid\n";
-              print_image_3D(radii_grid_xy.get(),
-                  {grid_size, grid_size, grid_size});
-            }
             std::cout << "Recut radii\n";
             recut.print_grid("radius", recut.global_fifo);
           }
+
+
+          VID_t interval_num = 0;
 
           if (check_xy) {
             ASSERT_NO_FATAL_FAILURE(check_image_error(
                   recut.generated_image, radii_grid.get(), radii_grid_xy.get(),
                   grid_size, recut.params->selected, xy_err));
           }
-          ASSERT_NO_FATAL_FAILURE(
+          EXPECT_NO_FATAL_FAILURE(
               check_recut_error(recut, radii_grid.get(), grid_size, "radius",
                 recut_err, recut.global_fifo));
-          ASSERT_NEAR(recut_err, 0., .001);
+          //see above comment on app2's accuracy_radius
+          // the error is still recorded and radii are made sure to be
+          // valid in the right locations
+          if (expect_exact_radii_match) {
+            EXPECT_NEAR(recut_err, 0., .001);
+          }
 
           if (print_csv) {
             if (check_xy) {
@@ -1274,11 +1362,11 @@ TEST(Radius, Full) {
             }
 
             auto mask = std::make_unique<uint8_t[]>(tol_sz);
-            create_coverage_mask(recut_output_tree_prune, mask.get(), grid_size, grid_size, grid_size);
+            create_coverage_mask_accurate(recut_output_tree_prune, mask.get(), grid_size, grid_size, grid_size);
             auto results = check_coverage(mask.get(), recut.generated_image, tol_sz, tile_thresholds->bkg_thresh);
 
             auto seq_mask = std::make_unique<uint8_t[]>(tol_sz);
-            create_coverage_mask(sequential_output_tree_prune, seq_mask.get(), grid_size, grid_size, grid_size);
+            create_coverage_mask_accurate(sequential_output_tree_prune, seq_mask.get(), grid_size, grid_size, grid_size);
             auto seq_results = check_coverage(seq_mask.get(), recut.generated_image, tol_sz, tile_thresholds->bkg_thresh);
 
             if (print_all) {
@@ -1325,6 +1413,8 @@ TEST(Radius, Full) {
             //results->match_count + results->false_negatives.size());
             //EXPECT_EQ(recut_output_tree_prune.size(), sequential_output_tree_prune.size());
 
+            //check_parents(recut_output_tree_prune);
+
             EXPECT_EQ(results->false_positives.size(), 0);
             EXPECT_EQ(results->false_negatives.size(), 0);
           }
@@ -1338,7 +1428,7 @@ class RecutPipelineParameterTests
 : public ::testing::TestWithParam<
   std::tuple<int, int, int, int, double, bool, bool>> {};
 
-TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
+TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
   // documents the meaning of each tuple member
   auto grid_size = std::get<0>(GetParam());
@@ -1368,7 +1458,7 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
   args.recut_parameters();
   // uint16_t is image_t here
   TileThresholds<uint16_t> *tile_thresholds;
-  bool print_all = false;
+  bool print_all = true;
 
   auto recut = Recut<uint16_t>(args);
   std::vector<VID_t> root_vids;
@@ -1474,6 +1564,9 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
 
     std::cout << "Recut radii post prune\n";
     recut.print_grid("radius", recut.global_fifo);
+
+    std::cout << "Recut parent post prune\n";
+    recut.print_grid("parent", recut.global_fifo);
 
     recut.finalize(recut_output_tree_prune, accept_band, release_intervals); // this fills args.output_tree
   }
@@ -1592,11 +1685,11 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
       }
 
       auto mask = std::make_unique<uint8_t[]>(tol_sz);
-      create_coverage_mask(recut_output_tree_prune, mask.get(), grid_size, grid_size, grid_size);
+      create_coverage_mask_accurate(recut_output_tree_prune, mask.get(), grid_size, grid_size, grid_size);
       auto results = check_coverage(mask.get(), image.Volume<uint16_t>(0), tol_sz, tile_thresholds->bkg_thresh);
 
       auto seq_mask = std::make_unique<uint8_t[]>(tol_sz);
-      create_coverage_mask(sequential_output_tree_prune, seq_mask.get(), grid_size, grid_size, grid_size);
+      create_coverage_mask_accurate(sequential_output_tree_prune, seq_mask.get(), grid_size, grid_size, grid_size);
       auto seq_results = check_coverage(seq_mask.get(), image.Volume<uint16_t>(0), tol_sz, tile_thresholds->bkg_thresh);
 
       if (print_all) {
@@ -1605,6 +1698,7 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
 
         std::cout << "Seq coverage mask\n";
         print_image_3D(seq_mask.get(), interval_extents);
+
       }
 
       // compare_tree will print to log matches, false positive and negative
@@ -1643,8 +1737,8 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
       //results->match_count + results->false_negatives.size());
       //EXPECT_EQ(sequential_output_tree_prune.size(), recut_output_tree_prune.size());
 
-      EXPECT_EQ(results->false_positives.size(), 0);
-      EXPECT_EQ(results->false_negatives.size(), 0);
+      EXPECT_EQ(results->false_positives.size(), 0) << "In comparison, seq is " << seq_results->false_positives.size();
+      EXPECT_EQ(results->false_negatives.size(), 0) << "In comparison, seq is " << seq_results->false_negatives.size();
     }
   }
 #endif
