@@ -222,6 +222,28 @@ struct VertexAttr {
            || (parent != a.parent);
   }
 
+  void mark_branch_point() {
+    // XXXX XX1X
+    edge_state.set(1);
+    edge_state.unset(0);
+  }
+
+  bool is_branch_point() const {
+    // XXXX XX?X
+    edge_state.test(1);
+  }
+
+  bool has_single_child() const {
+    // XXXX XXX?
+    edge_state.test(0);
+  }
+
+  void mark_has_single_child() {
+    // XXXX XXX1
+    edge_state.set(0);
+    edge_state.unset(1);
+  }
+
   void mark_surface() {
     edge_state.set(5);
   }
