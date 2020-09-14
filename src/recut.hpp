@@ -812,10 +812,39 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
 #ifdef FULL_PRINT
     std::cout << "  added dst " << dst_id << " rad " << +(dst->radius) << '\n';
 #endif
+
+    auto set_parent_non_branch = [](auto& dst, auto& potential_new_parent) {
+      // roots never need to have their parents set
+      // it will always be to themsevles
+      if (!(dst->root())) {
+        while (potential_new_parent->is_branch_point()) {
+          // move up the tree until you find a non
+          // branch point or the root itself
+          if (potential_new_parent->root()) {
+            break;
+          }
+          assertm(potential_new_parent->valid_parent(),
+              "potential_new_parent does not have valid parent");
+          potential_new_parent = potential_new_parent->parent;
+        }
+        assertm(!(potential_new_parent->is_branch_point()), "can not assign child to a vertex with already 2 children unless it is a root");
+        // new parent is guaranteed to not be a branch point now
+        if (potential_new_parent->root()) {
+          dst->set_parent(potential_new_parent);
+        } else if (potential_new_parent->has_single_child()) {
+          potential_new_parent->mark_branch_point();
+          dst->set_parent(potential_new_parent);
+        } else {
+          potential_new_parent->mark_has_single_child();
+          dst->set_parent(potential_new_parent);
+        }
+      }
+    };
+
     if (covered) {
-      dst->set_parent(current->parent);
+      set_parent_non_branch(dst, current->parent);
     } else {
-      dst->set_parent(current);
+      set_parent_non_branch(dst, current);
     }
     dst->prune_visit();
     assertm(dst->valid_vid(), "selected must have a valid vid");
