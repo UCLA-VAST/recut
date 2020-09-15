@@ -65,7 +65,7 @@ struct VertexAttr {
   // size of this map is max 4 since a corner voxel can it at most
   // 3 other blocks ghost zones
   handle_t handle; // same type as VID_t
-  VertexAttr *parent;
+  VID_t parent;
   float value; // distance to source: 4 bytes
   struct bitfield
       edge_state; // most sig. bits (little-endian) refer to state : 1 bytes
@@ -77,13 +77,13 @@ struct VertexAttr {
         vid(numeric_limits<VID_t>::max()),
         handle(numeric_limits<handle_t>::max()),
         radius(numeric_limits<uint8_t>::max()) ,
-        parent(nullptr) {}
+        parent(numeric_limits<VID_t>::max()) {}
 
   VertexAttr(float value)
       : edge_state(192), value(value), vid(numeric_limits<VID_t>::max()),
         handle(numeric_limits<handle_t>::max()),
         radius(numeric_limits<uint8_t>::max()),
-        parent(nullptr) {}
+        parent(numeric_limits<VID_t>::max()) {}
 
   // copy constructor
   VertexAttr(const VertexAttr &a)
@@ -91,7 +91,7 @@ struct VertexAttr {
   }
 
   // emplace back constructor
-  VertexAttr(struct bitfield edge_state, float value, VID_t vid, uint8_t radius, VertexAttr* parent)
+  VertexAttr(struct bitfield edge_state, float value, VID_t vid, uint8_t radius, VID_t parent)
       : edge_state(edge_state), value(value), vid(vid), radius(radius), parent(parent) {}
 
   bool root() const {
@@ -104,8 +104,8 @@ struct VertexAttr {
     descript += '\n';
     descript += "parent vid:";
     auto parent_vid = std::string("-");
-    if (parent) {
-      parent_vid = std::to_string(parent->vid);
+    if (valid_parent()) {
+      parent_vid = std::to_string(parent);
     }
     descript += parent_vid;
     descript += '\n';
@@ -123,7 +123,7 @@ struct VertexAttr {
 
   /* returns whether this vertex has been added to a heap
    */
-  bool valid_parent() const { return parent != nullptr; }
+  bool valid_parent() const { return parent != numeric_limits<VID_t>::max(); }
 
   /* returns whether this vertex has been added to a heap
    */
@@ -164,8 +164,8 @@ struct VertexAttr {
     return edge_state.test(4);
   }
 
-  void set_parent(VertexAttr* v) {
-    this->parent = v;
+  void set_parent(VID_t vid) {
+    this->parent = vid;
   }
 
   // unsets any previous marked connect
@@ -230,12 +230,12 @@ struct VertexAttr {
 
   bool is_branch_point() const {
     // XXXX XX?X
-    edge_state.test(1);
+    return edge_state.test(1);
   }
 
   bool has_single_child() const {
     // XXXX XXX?
-    edge_state.test(0);
+    return edge_state.test(0);
   }
 
   void mark_has_single_child() {

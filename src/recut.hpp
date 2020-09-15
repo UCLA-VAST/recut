@@ -202,7 +202,7 @@ template <class image_t> class Recut {
         VID_t &revisits, int parent_code,
         const TileThresholds<image_t> *tile_thresholds,
         bool &found_background);
-    bool is_covered_by_parent(VertexAttr* current) ;
+    bool is_covered_by_parent(VID_t interval_id, VID_t block_id, VertexAttr* current) ;
     template <class Container>
       void accumulate_prune(VID_t interval_id, VID_t dst_id, VID_t block_id,
           struct VertexAttr *current,
@@ -513,7 +513,7 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
           }
         } else if (stage == "parent") {
           if (v->valid_parent()) {
-            cout << v->parent->vid << " ";
+            cout << v->parent << " ";
           } else {
             cout << "- ";
           }
@@ -778,16 +778,20 @@ void Recut<image_t>::vertex_update(VID_t interval_id, VID_t block_id,
 }
 
 template <typename image_t>
-bool Recut<image_t>::is_covered_by_parent(VertexAttr* current) {
+bool Recut<image_t>::is_covered_by_parent(VID_t interval_id, VID_t block_id, VertexAttr* current) {
   VID_t i,j,k,pi,pj,pk;
   get_img_subscript(current->vid, i, j, k);
-  get_img_subscript(current->parent->vid, pi, pj, pk);
+  get_img_subscript(current->parent, pi, pj, pk);
   auto x = static_cast<double>(i) - pi;
   auto y = static_cast<double>(j) - pj;
   auto z = static_cast<double>(k) - pk;
   auto vdistance = sqrt(x * x + y * y + z * z);
 
-  if (static_cast<double>(current->parent->radius) >= vdistance) {
+  auto parent_interval_id = get_interval_id(current->parent);
+  auto parent_block_id = get_block_id(current->parent);
+  auto parent = get_attr_vid(parent_interval_id, parent_block_id,
+      current->parent, nullptr);
+  if (static_cast<double>(parent->radius) >= vdistance) {
     return true;
   }
   return false;
@@ -813,7 +817,7 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
     std::cout << "  added dst " << dst_id << " rad " << +(dst->radius) << '\n';
 #endif
 
-    auto set_parent_non_branch = [](auto& dst, auto& potential_new_parent) {
+    auto set_parent_non_branch = [this, &interval_id, &block_id](auto& dst, auto& potential_new_parent) {
       // roots never need to have their parents set
       // it will always be to themsevles
       if (!(dst->root())) {
@@ -825,31 +829,33 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
           }
           assertm(potential_new_parent->valid_parent(),
               "potential_new_parent does not have valid parent");
-          potential_new_parent = potential_new_parent->parent;
+          potential_new_parent = get_attr_vid(interval_id, block_id, potential_new_parent->parent, nullptr);
         }
         assertm(!(potential_new_parent->is_branch_point()), "can not assign child to a vertex with already 2 children unless it is a root");
         // new parent is guaranteed to not be a branch point now
         if (potential_new_parent->root()) {
-          dst->set_parent(potential_new_parent);
+          dst->set_parent(potential_new_parent->vid);
         } else if (potential_new_parent->has_single_child()) {
           potential_new_parent->mark_branch_point();
-          dst->set_parent(potential_new_parent);
+          dst->set_parent(potential_new_parent->vid);
         } else {
           potential_new_parent->mark_has_single_child();
-          dst->set_parent(potential_new_parent);
+          dst->set_parent(potential_new_parent->vid);
         }
       }
     };
 
     if (covered) {
-      set_parent_non_branch(dst, current->parent);
+      //auto potential_new_parent = get_attr_vid(interval_id, block_id, current->parent, nullptr);
+      //set_parent_non_branch(dst, potential_new_parent);
+      dst->set_parent(current->parent);
     } else {
-      set_parent_non_branch(dst, current);
+      //set_parent_non_branch(dst, current);
+      dst->set_parent(current->vid);
     }
     dst->prune_visit();
     assertm(dst->valid_vid(), "selected must have a valid vid");
     assertm(dst->valid_radius(), "selected must have a valid radius");
-    assertm(dst->parent->valid_radius(), "dst parent invalid radius");
     fifo.push_back(dst_id);
     check_ghost_update(interval_id, block_id, dst, "prune");
   }
@@ -1000,7 +1006,7 @@ bool Recut<image_t>::accumulate_value(
     }
     // traces a path back to root
     // parent will likely be mutated during prune stage
-    dst->set_parent(current);
+    dst->set_parent(current->vid);
     assertm(dst->valid_vid(), "selected must have a valid vid");
 
     vertex_update(interval_id, block_id, dst, new_field, "value");
@@ -1016,6 +1022,13 @@ bool Recut<image_t>::accumulate_value(
   return false; // no update
 }
 
+/*
+ * this will place necessary updates towards regions in outside blocks
+ * or intervals safely by leveraging the container of copies of the
+ * updated vertices updated_ghost_vec. Vertices themselves act as
+ * messages, which can be redundant or repeated when sent to their
+ * destination domain since updated_ghost_vec acts like a fifo
+ */
 template <class image_t>
 void Recut<image_t>::place_vertex(const VID_t nb_interval_id, const VID_t block_id,
     const VID_t nb_block_id, struct VertexAttr *dst,
@@ -1094,6 +1107,10 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id, const VID_t block_
   if (stage == "prune") {
     assertm(dst->valid_radius(), "selected must have a valid radius");
   }
+  // when nb_interval_id != interval_id, the block_id is technically
+  // incorrect, surprisingly this makes no difference for the correctness
+  // since the block_id origination dimension is merely to prevent
+  // race conditions
   updated_ghost_vec[nb_interval_id][block_id][nb_block_id].emplace_back(
       dst->edge_state, dst->value, dst->vid, dst->radius, dst->parent);
 #endif
@@ -1119,11 +1136,9 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id, const VID_t block_
  * region. dst has already been protected by global padding out of bounds from
  * guard in accumulate. This function determines if dst is in a border region
  * and which neighbor block / interval should be notified of adjacent change
- * Warning: both update_ghost_vec and heap_vec store pointers to the same
- * underlying VertexAttr data, therefore out of order / race condition changes
- * are not protected against, however because only the first two values of
- * edge state can ever be changed by a separate thread this does not cause
- * issues
+ * Warning: heap_vec store pointers to the same
+ * underlying VertexAttr data as in the interval, therefore out of order / race condition changes
+ * are not protected against
  */
 template <class image_t>
 void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
@@ -1660,8 +1675,8 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
       VID_t i, j, k;
       get_img_subscript(current->vid, i, j, k);
       auto parent_vid = std::string{"-"};
-      if (current->parent != nullptr) { // parent set properly
-        parent_vid = std::to_string(current->parent->vid);
+      if (current->valid_parent()) { // parent set properly
+        parent_vid = std::to_string(current->parent);
       }
       if (current->root()) {
         parent_vid = "-1";
@@ -1701,6 +1716,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
         while (!(fifo.empty())) {
           uint64_t vid = fifo.back();
           fifo.pop_back();
+          // current can be in a ghost region of this interval and blocks domain
           VertexAttr *current = get_attr_vid(interval_id, block_id, vid, nullptr);
 
           // radius can't be mutated in value, so this is the opportunity
@@ -1716,8 +1732,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
             const auto nb_interval_id = get_interval_id(current->vid);
             // if this vertex is in a border region
             // other blocks need to know of it via check ghost update
-            if ((block_id == nb_block_id)
-                && (interval_id == nb_interval_id)) {
+            if ((block_id == nb_block_id) && (interval_id == nb_interval_id)) {
               check_ghost_update(interval_id, block_id, current, stage);
             }
           }
@@ -1809,17 +1824,19 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
             current->mark_surface();
             assertm(current->selected() || current->root(),
                 "surface was not selected");
-            if (interval_id != nb_interval_id) {
-              // if multiple blocks
-              assertm(false, "not yet implemented");
-            }
             if ((nb_block_id == block_id) && (nb_interval_id == interval_id)) {
-              //"block of vid doesn't match this block_id
+              // save all surface vertices for the radius stage
+              // each fifo corresponds to a specific interval_id and block_id
+              // so there are no race conditions
               fifo.push_back(current->vid);
+              check_ghost_update(interval_id, block_id, current, stage);
             } else {
-              updated_ghost_vec[interval_id][block_id][nb_block_id].emplace_back(
+              // leverage updated_ghost_vec to avoid race conditions
+              // check_ghost_update never applies to vertices outside
+              // of this block and interval domain
+              updated_ghost_vec[nb_interval_id][block_id][nb_block_id].emplace_back(
                   current->edge_state, current->value, current->vid, current->radius, current->parent);
-              active_neighbors[interval_id][nb_block_id][block_id] = true;
+              active_neighbors[nb_interval_id][nb_block_id][block_id] = true;
             }
           }
         }
@@ -1848,11 +1865,11 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
           // Parent
           // by default current will have a root of itself
           if (current->root()) {
-            current->set_parent(current);
+            current->set_parent(current->vid);
             current->prune_visit();
             covered = false;
           } else {
-            covered = is_covered_by_parent(current);
+            covered = is_covered_by_parent(interval_id, block_id, current);
           }
 
           VID_t revisits;
@@ -3184,9 +3201,9 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
             // different copies have same values other than handle
             //if ((attr->parent == nullptr) && (!(attr->root()))) {
             if (attr->root()) {
-              attr->parent = attr;
+              attr->parent = attr->vid;
             }
-            if (attr->parent == nullptr) {
+            if (!(attr->valid_parent())) {
               std::cout << "could not find a valid connection for non-root node: "
                 << attr->description() << '\n';
               printf("with address of %p\n", (void*) attr);
@@ -3194,7 +3211,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
               assertm(attr->valid_parent() == false, "incorrect valid_parent status");
               assertm(false, "must have a valid connection");
             }
-            auto parent_vid = attr->parent->vid;
+            auto parent_vid = attr->parent;
             auto marker = tmp[attr->vid];      // get the ptr
             auto parent = tmp[parent_vid]; // adjust
             if (marker == parent) {
