@@ -206,7 +206,7 @@ template <class image_t> class Recut {
     template <class Container>
       void accumulate_prune(VID_t interval_id, VID_t dst_id, VID_t block_id,
           struct VertexAttr *current,
-          struct VertexAttr &found_higher_parent, const bool &covered,
+          struct VertexAttr &found_higher_parent, bool &covered,
           const bool dst_outside_domain,
           Container &fifo);
     template <class Container>
@@ -230,6 +230,7 @@ template <class image_t> class Recut {
     template <class Container>
       void integrate_updated_ghost(const VID_t interval_id, const VID_t block_id,
           std::string stage, Container &fifo);
+    bool adjust_parent(VertexAttr* vertex) ;
     template <class Container>
       bool integrate_vertex(const VID_t interval_id, const VID_t block_id,
           struct VertexAttr *updated_attr, bool ignore_KNOWN_NEW,
@@ -274,6 +275,7 @@ template <class image_t> class Recut {
     std::vector<VID_t> process_marker_dir(vector<int> global_image_offsets,
         vector<int> global_image_extents);
     void print_vertex(VertexAttr *current);
+    void set_parent_non_branch(const VID_t interval_id, const VID_t block_id, VertexAttr* dst, VertexAttr* potential_new_parent) ;
     ~Recut<image_t>();
 };
 
@@ -797,15 +799,72 @@ bool Recut<image_t>::is_covered_by_parent(VID_t interval_id, VID_t block_id, Ver
   return false;
 }
 
+template <typename image_t>
+void Recut<image_t>::set_parent_non_branch(const VID_t interval_id,
+    const VID_t block_id, VertexAttr* dst, VertexAttr* potential_new_parent) {
+  // roots never need to have their parents set
+  // it will always be to themsevles
+  if (!(dst->root())) {
+    while (potential_new_parent->is_branch_point()) {
+      // move up the tree until you find a non
+      // branch point or the root itself
+      if (potential_new_parent->root()) {
+        break;
+      }
+      assertm(potential_new_parent->valid_parent(),
+          "potential_new_parent does not have valid parent");
+      potential_new_parent = get_attr_vid(interval_id, block_id, potential_new_parent->parent, nullptr);
+    }
+    assertm(!(potential_new_parent->is_branch_point()), "can not assign child to a vertex with already 2 children unless it is a root");
+    // new parent is guaranteed to not be a branch point now
+    if (potential_new_parent->root()) {
+      dst->set_parent(potential_new_parent->vid);
+    } else if (potential_new_parent->has_single_child()) {
+      potential_new_parent->mark_branch_point();
+      dst->set_parent(potential_new_parent->vid);
+    } else {
+      potential_new_parent->mark_has_single_child();
+      dst->set_parent(potential_new_parent->vid);
+    }
+  }
+}
+
 template <class image_t>
 template <class Container>
 void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
     VID_t block_id,
     struct VertexAttr *current,
     struct VertexAttr &found_higher_parent,
-    const bool &covered, const bool dst_outside_domain, Container &fifo) {
+    bool &covered, const bool dst_outside_domain, Container &fifo) {
 
   auto dst = get_attr_vid(interval_id, block_id, dst_id, nullptr);
+
+  // even if it will be pruned still set it's parent
+  // so the vertex itself it can be used to pass messages
+  // beyond just vid to other blocks / intervals
+  // or keep a contiguous path
+  if (dst->band() || dst->root() ||
+      (dst->unselected() && dst->prune_visited() && dst->valid_radius())) {
+    // or if unselected but radius is valid meaning it's been pruned
+    assertm(dst->valid_vid(), "selected must have a valid vid");
+    assertm(dst->vid == dst_id, "get_attr_vid failed getting correct vertex");
+
+    // dst can only be 1 hop away (adjacent) from current, therefore
+    // all radii greater than 1 imply some redundancy in coverage
+    if (dst->radius >= 1) {
+      covered = true;
+      if (found_higher_parent.radius < (dst->radius - 1)) {
+        found_higher_parent = *dst;
+        //std::cout << "found higher " << dst->description() << '\n';
+      }
+      //end
+#ifdef FULL_PRINT
+      std::cout << "  radius of: " << +(dst->radius) << " at dst " << dst_id
+        << " " << dst->label() << " covers " << +(current->radius)
+        << '\n';
+#endif
+    }
+  }
 
   // even if it will be pruned still set it's parent
   // so the vertex itself it can be used to pass messages
@@ -816,43 +875,7 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
 #ifdef FULL_PRINT
     std::cout << "  added dst " << dst_id << " rad " << +(dst->radius) << '\n';
 #endif
-
-    auto set_parent_non_branch = [this, &interval_id, &block_id](auto& dst, auto& potential_new_parent) {
-      // roots never need to have their parents set
-      // it will always be to themsevles
-      if (!(dst->root())) {
-        while (potential_new_parent->is_branch_point()) {
-          // move up the tree until you find a non
-          // branch point or the root itself
-          if (potential_new_parent->root()) {
-            break;
-          }
-          assertm(potential_new_parent->valid_parent(),
-              "potential_new_parent does not have valid parent");
-          potential_new_parent = get_attr_vid(interval_id, block_id, potential_new_parent->parent, nullptr);
-        }
-        assertm(!(potential_new_parent->is_branch_point()), "can not assign child to a vertex with already 2 children unless it is a root");
-        // new parent is guaranteed to not be a branch point now
-        if (potential_new_parent->root()) {
-          dst->set_parent(potential_new_parent->vid);
-        } else if (potential_new_parent->has_single_child()) {
-          potential_new_parent->mark_branch_point();
-          dst->set_parent(potential_new_parent->vid);
-        } else {
-          potential_new_parent->mark_has_single_child();
-          dst->set_parent(potential_new_parent->vid);
-        }
-      }
-    };
-
-    if (covered) {
-      //auto potential_new_parent = get_attr_vid(interval_id, block_id, current->parent, nullptr);
-      //set_parent_non_branch(dst, potential_new_parent);
-      dst->set_parent(current->parent);
-    } else {
-      //set_parent_non_branch(dst, current);
-      dst->set_parent(current->vid);
-    }
+    dst->set_parent(current->vid);
     dst->prune_visit();
     assertm(dst->valid_vid(), "selected must have a valid vid");
     assertm(dst->valid_radius(), "selected must have a valid radius");
@@ -860,6 +883,7 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
     check_ghost_update(interval_id, block_id, dst, "prune");
   }
 }
+
 
 /**
  * accumulate is the core function of fast marching, it can only operate
@@ -1692,6 +1716,29 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
       }
     }
 
+  template <typename image_t>
+    bool Recut<image_t>::adjust_parent(VertexAttr* vertex) {
+      // if the parent has been pruned then set the current
+      // parent further upstream, since a parent is not allowed to be
+      // unselected once it is printed
+      bool changed = false;
+      //assertm(vertex->parent != nullptr, "parent can't be nullptr");
+      auto original_parent = vertex->parent;
+      //if (vertex->parent->unvisited()) {
+      //assertm(vertex->parent->parent->valid_radius(),
+      //"vertex->parent->parent must have valid_radius");
+      //vertex->set_parent(vertex->parent->parent);
+      //if (vertex->parent  != original_parent) {
+      //changed = true;
+      //}
+      //vertex->prune_visit(); // permanently mark vertex
+      //}
+      //assertm(vertex->parent != nullptr, "parent can't be nullptr");
+      //assertm(vertex->parent->band() || vertex->parent->root(),
+      //"parent must not be unselected");
+      return changed;
+    }
+
   template <class image_t>
     template <class Container>
     void Recut<image_t>::march_narrow_band(
@@ -1862,14 +1909,12 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
 #ifdef LOG_FULL
           visited += 1;
 #endif
+
           // Parent
           // by default current will have a root of itself
           if (current->root()) {
             current->set_parent(current->vid);
             current->prune_visit();
-            covered = false;
-          } else {
-            covered = is_covered_by_parent(interval_id, block_id, current);
           }
 
           VID_t revisits;
@@ -1885,27 +1930,45 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
             // unless it's a surface / leaf, then always keep it
             // roots can never be added back in by accumulate_prune
             // so fifo is safe from infinite loops
-            // never visit again and never print it
-            // all dsts of current, will eventually switch their
-            // parent from current to current->parent once
-            // they are processed
-            current->mark_unvisited();
-            // get radii before adjusting parent is intended to
-            // preserve coverage info as it decreases in range
-            // only pruned / unselected vertices will have their radii mutated
-            // as a form of message passing
-            if (!current_outside_domain) {
-              check_ghost_update(interval_id, block_id, current, stage);
+            if (!((current->root()))) {
+              // never visit again and never print it
+              // all dsts of current, will eventually switch their
+              // parent from current to current->parent once
+              // they are processed
+              current->mark_unvisited();
+              // get radii before adjusting parent is intended to
+              // preserve coverage info as it decreases in range
+              // only pruned / unselected vertices will have their radii mutated
+              // as a form of message passing
+              if (found_higher_parent.vid != current->vid) {
+#ifdef FULL_PRINT
+                std::cout << "  refreshed radius to "
+                  << +(found_higher_parent.radius - 1) << " from vid "
+                  << found_higher_parent.vid << '\n';
+#endif
+                assertm(found_higher_parent.valid_radius(), "higher parent invalid radius");
+                assertm(found_higher_parent.radius != 0, "higher parent can't have a radii of 0");
+                current->radius = found_higher_parent.radius - 1;
+              } else {
+                if (current->radius != 0) {
+                  // why?
+                  current->radius = current->radius - 1;
+                }
+              }
+              if (!current_outside_domain) {
+                check_ghost_update(interval_id, block_id, current, stage);
+              }
+              continue;
             }
-          } else {
+          }
 
-            if (!(current->root())) {
-              current->mark_band();
-            }
-            if (!current_outside_domain) {
-              print_vertex(current);
-              check_ghost_update(interval_id, block_id, current, stage);
-            }
+          if (!(current->root())) {
+            current->mark_band();
+          }
+          if (!current_outside_domain) {
+            safe_push(heap_vec[interval_id][block_id], current,
+                interval_id, block_id, stage);
+            check_ghost_update(interval_id, block_id, current, stage);
           }
         } // end prune while
       } else {
@@ -3199,10 +3262,6 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
           auto attr = get_attr_vid(interval_id, block_id, vid, nullptr);
           if (filter_by_label(attr, accept_band)) {
             // different copies have same values other than handle
-            //if ((attr->parent == nullptr) && (!(attr->root()))) {
-            if (attr->root()) {
-              attr->parent = attr->vid;
-            }
             if (!(attr->valid_parent())) {
               std::cout << "could not find a valid connection for non-root node: "
                 << attr->description() << '\n';
@@ -3213,66 +3272,72 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
             }
             auto parent_vid = attr->parent;
             auto marker = tmp[attr->vid];      // get the ptr
-            auto parent = tmp[parent_vid]; // adjust
-            if (marker == parent) {
+            if (attr->root()) {
               marker->parent = 0;
               cout << "found root at " << attr->vid << '\n';
               printf("with address of %p\n", (void*) attr);
               assertm(attr->root(), "a marker with a parent of 0, must be a root");
+              assertm(marker->type == 0, "a marker with a type of 0, must be a root");
             } else {
+              std::cout << "parent vid " << parent_vid << '\n';
+              std::cout << "attr vid " << attr->vid << '\n';
+              std::cout << "marker vid " << marker->vid(image_length_x, 
+                  image_length_y) << '\n';
+              auto parent = tmp[parent_vid]; // adjust
               marker->parent = parent;
+              assertm(marker->parent != 0, "a non root marker must have a valid parent");
             }
           }
-          }
         }
+      }
 
-        // release both user-space or mmap'd data since info is all in outtree
-        // now
-        for (size_t interval_id = 0; interval_id < grid.GetNIntervals();
-            ++interval_id) {
-          if (release_intervals) {
-            grid.GetInterval(interval_id)->Release();
-          }
+      // release both user-space or mmap'd data since info is all in outtree
+      // now
+      for (size_t interval_id = 0; interval_id < grid.GetNIntervals();
+          ++interval_id) {
+        if (release_intervals) {
+          grid.GetInterval(interval_id)->Release();
         }
+      }
 
 #ifdef LOG
-        cout << "Total marker size before pruning: " << outtree.size() << " nodes"
-          << '\n';
+      cout << "Total marker size before pruning: " << outtree.size() << " nodes"
+        << '\n';
 #endif
 
-        clock_gettime(CLOCK_REALTIME, &time1);
+      clock_gettime(CLOCK_REALTIME, &time1);
 #ifdef FULL_PRINT
-        cout << "Finished generating results within " << diff_time(time0, time1)
-          << " sec." << '\n';
+      cout << "Finished generating results within " << diff_time(time0, time1)
+        << " sec." << '\n';
 #endif
-      }
+    }
 
-      template <class image_t> void Recut<image_t>::run_pipeline() {
-        // create a list of root vids
-        auto root_vids = this->initialize();
+  template <class image_t> void Recut<image_t>::run_pipeline() {
+    // create a list of root vids
+    auto root_vids = this->initialize();
 
-        // starting from the roots
-        // value stage will save all surface vertices into
-        // fifo
-        std::string stage = "value";
-        this->activate_vids(root_vids, stage, global_fifo);
-        this->update(stage, global_fifo);
+    // starting from the roots
+    // value stage will save all surface vertices into
+    // fifo
+    std::string stage = "value";
+    this->activate_vids(root_vids, stage, global_fifo);
+    this->update(stage, global_fifo);
 
-        // radius stage will consume fifo surface vertices
-        stage = "radius";
-        this->setup_radius(global_fifo);
-        this->update(stage, global_fifo);
+    // radius stage will consume fifo surface vertices
+    stage = "radius";
+    this->setup_radius(global_fifo);
+    this->update(stage, global_fifo);
 
-        // starting from roots, prune stage will
-        // create final list of vertices
-        stage = "prune";
-        this->activate_vids(root_vids, stage, global_fifo);
-        this->out.open("out.swc");
-        this->update(stage, global_fifo);
-        this->out.close();
+    // starting from roots, prune stage will
+    // create final list of vertices
+    stage = "prune";
+    this->activate_vids(root_vids, stage, global_fifo);
+    this->out.open("out.swc");
+    this->update(stage, global_fifo);
+    this->out.close();
 
-        // aggregate results
-        auto accept_band = true;
-        auto release_intervals = true;
-        this->finalize(this->args->output_tree, accept_band, release_intervals);
-      }
+    // aggregate results
+    auto accept_band = true;
+    auto release_intervals = true;
+    this->finalize(this->args->output_tree, accept_band, release_intervals);
+  }
