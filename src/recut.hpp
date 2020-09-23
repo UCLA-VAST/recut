@@ -1936,6 +1936,9 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
               // parent from current to current->parent once
               // they are processed
               current->mark_unvisited();
+#ifdef FULL_PRINT
+              std::cout << "  covered vid " << current->vid << '\n';
+#endif
               // get radii before adjusting parent is intended to
               // preserve coverage info as it decreases in range
               // only pruned / unselected vertices will have their radii mutated
@@ -2938,222 +2941,223 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
             interval_block_size, std::deque<uint64_t>()));
     }
 
-  template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
+  template <class image_t>
+    const std::vector<VID_t> Recut<image_t>::initialize() {
 
 #ifdef USE_OMP
-    omp_set_num_threads(params->user_thread_count());
+      omp_set_num_threads(params->user_thread_count());
 #ifdef LOG
-    cout << "User specific thread count " << params->user_thread_count() << '\n';
+      cout << "User specific thread count " << params->user_thread_count() << '\n';
 #endif
 #endif
 
-    struct timespec time0, time1, time2, time3;
-    uint64_t root_64bit;
+      struct timespec time0, time1, time2, time3;
+      uint64_t root_64bit;
 
-    // for generated image runs trust the args->image_extents
-    // to reflect the total global image domain
-    // see get_args() in utils.hpp
-    auto global_image_dims = args->image_extents;
+      // for generated image runs trust the args->image_extents
+      // to reflect the total global image domain
+      // see get_args() in utils.hpp
+      auto global_image_dims = args->image_extents;
 #ifdef USE_MCP3D
-    if (!(this->params->force_regenerate_image)) {
-      // determine the image size
-      mcp3d::MImage global_image;
-      global_image.ReadImageInfo(args->image_root_dir());
-      if (global_image.image_info().empty()) {
-        MCP3D_MESSAGE("no supported image formats found in " +
-            args->image_root_dir() + ", do nothing.")
-          throw;
+      if (!(this->params->force_regenerate_image)) {
+        // determine the image size
+        mcp3d::MImage global_image;
+        global_image.ReadImageInfo(args->image_root_dir());
+        if (global_image.image_info().empty()) {
+          MCP3D_MESSAGE("no supported image formats found in " +
+              args->image_root_dir() + ", do nothing.")
+            throw;
+        }
+        global_image.SaveImageInfo(); // save to __image_info__.json
+        // reflects the total global image domain
+        global_image_dims = global_image.xyz_dims(args->resolution_level());
       }
-      global_image.SaveImageInfo(); // save to __image_info__.json
-      // reflects the total global image domain
-      global_image_dims = global_image.xyz_dims(args->resolution_level());
-    }
 #endif
 
-    // these are in z y x order
-    vector<int> ext;
+      // these are in z y x order
+      vector<int> ext;
 
-    // account for image_offsets and args->image_extents
-    // extents are the length of the domain for each dim
-    for (int i = 0; i < 3; i++) {
-      // default image_offsets is {0, 0, 0}
-      // this enforces the minimum extent to be 1 in each dim
-      assertm(args->image_offsets[i] < global_image_dims[i],
-          "input offset can not exceed dimension of image");
-      // protect faulty out of bounds input if extents goes beyond
-      // domain of full image, note: z, y, x order
-      auto max_extent = global_image_dims[i] - args->image_offsets[i];
-      if (args->image_extents[i]) {
-        args->image_extents[i] = min(args->image_extents[i], max_extent);
+      // account for image_offsets and args->image_extents
+      // extents are the length of the domain for each dim
+      for (int i = 0; i < 3; i++) {
+        // default image_offsets is {0, 0, 0}
+        // this enforces the minimum extent to be 1 in each dim
+        assertm(args->image_offsets[i] < global_image_dims[i],
+            "input offset can not exceed dimension of image");
+        // protect faulty out of bounds input if extents goes beyond
+        // domain of full image, note: z, y, x order
+        auto max_extent = global_image_dims[i] - args->image_offsets[i];
+        if (args->image_extents[i]) {
+          args->image_extents[i] = min(args->image_extents[i], max_extent);
+        } else {
+          // image_extents is set to grid_size for force_regenerate_image option,
+          // otherwise 0,0,0 means use to the end of input image
+          args->image_extents[i] = max_extent;
+          // extents are now sanitized in each dimension
+          // and protected from faulty offset values
+        }
+      }
+
+      // save to globals the actual size of the full image
+      // accounting for the input offsets and extents
+      // these will be used throughout the rest of the program
+      this->image_length_x = args->image_extents[2];
+      this->image_length_y = args->image_extents[1];
+      this->image_length_z = args->image_extents[0];
+      this->image_length_xy = image_length_x * image_length_y;
+      this->image_size = image_length_x * image_length_y * image_length_z;
+
+      // the image size and offsets override the user inputted interval size
+      // continuous id's are the same for current or dst intervals
+      // round up (pad)
+      // Determine the size of each interval in each dim
+      // constrict so less data is allocated especially in z dimension
+      interval_length_x = min((VID_t)params->interval_size(), image_length_x);
+      interval_length_y = min((VID_t)params->interval_size(), image_length_y);
+      interval_length_z = min((VID_t)params->interval_size(), image_length_z);
+
+      // determine the length of intervals in each dim
+      // rounding up (ceil)
+      grid_interval_length_x =
+        (image_length_x + interval_length_x - 1) / interval_length_x;
+      grid_interval_length_y =
+        (image_length_y + interval_length_y - 1) / interval_length_y;
+      grid_interval_length_z =
+        (image_length_z + interval_length_z - 1) / interval_length_z;
+
+      // the resulting interval size override the user inputted block size
+      block_length_x = min(interval_length_x, user_def_block_size);
+      block_length_y = min(interval_length_y, user_def_block_size);
+      block_length_z = min(interval_length_z, user_def_block_size);
+
+      // determine length of blocks that span an interval for each dim
+      // this rounds up
+      interval_block_len_x =
+        (interval_length_x + block_length_x - 1) / block_length_x;
+      interval_block_len_y =
+        (interval_length_y + block_length_y - 1) / block_length_y;
+      interval_block_len_z =
+        (interval_length_z + block_length_z - 1) / block_length_z;
+
+      auto image_x_len_pad = interval_block_len_x * block_length_x;
+      auto image_y_len_pad = interval_block_len_y * block_length_y;
+      auto image_z_len_pad = interval_block_len_z * block_length_z;
+      auto image_xy_len_pad =
+        image_x_len_pad * image_y_len_pad; // saves recomputation occasionally
+
+      const VID_t grid_interval_size =
+        grid_interval_length_x * grid_interval_length_y * grid_interval_length_z;
+      interval_block_size =
+        interval_block_len_x * interval_block_len_y * interval_block_len_z;
+      pad_block_length_x = block_length_x + 2;
+      pad_block_length_y = block_length_y + 2;
+      pad_block_length_z = block_length_z + 2;
+      pad_block_offset =
+        pad_block_length_x * pad_block_length_y * pad_block_length_z;
+      const VID_t grid_vertex_pad_size =
+        pad_block_offset * interval_block_size * grid_interval_size;
+      assertm(pad_block_offset * interval_block_size < MAX_INTERVAL_VERTICES,
+          "Total vertices used by an interval can not exceed "
+          "MAX_INTERVAL_VERTICES specified in vertex_attr.h");
+
+#ifdef LOG
+      cout << "block x, y, z size: " << block_length_x << ", " << block_length_y
+        << ", " << block_length_z << " interval x, y, z size "
+        << interval_length_x << ", " << interval_length_y << ", "
+        << interval_length_z << " intervals: " << grid_interval_size
+        << " blocks per interval: " << interval_block_size << '\n';
+      cout << "image_length_x: " << image_length_x
+        << " image_length_y: " << image_length_y
+        << " image_length_z: " << image_length_z << '\n';
+      cout << "interval_block_len_x: " << interval_block_len_x
+        << " interval_block_len_y: " << interval_block_len_y
+        << " interval_block_len_z: " << interval_block_len_z << '\n';
+      cout << "image_x_len_pad: " << image_x_len_pad
+        << " image_y_len_pad: " << image_y_len_pad
+        << " image_z_len_pad: " << image_z_len_pad << " image_xy_len_pad "
+        << image_xy_len_pad << '\n';
+      // cout<< "image_offsets_x: "<< image_offsets[2] <<" image_offsets_y: "<<
+      // image_offsets[1] <<" image_offsets_z: "<< image_offsets[0] << '\n';
+#endif
+
+      // we cast the interval id and block id to uint16 for use as a key
+      // in the global variables maps, if total intervals or blocks exceed this
+      // there would be overflow
+      if (grid_interval_size > (2 << 16) - 1) {
+        cout << "Number of intervals too high: " << grid_interval_size
+          << " try increasing interval size";
+        assert(false);
+      }
+      if (interval_block_size > (2 << 16) - 1) {
+        cout << "Number of blocks too high: " << interval_block_size
+          << " try increasing block size";
+        assert(false);
+      }
+
+      // if (grid_vertex_pad_size > MAX_INTERVAL_VERTICES) {
+      // cout << "Number of total vertices too high: " << grid_vertex_pad_size
+      //<< " current max at: " << MAX_INTERVAL_VERTICES
+      //<< " try increasing MAX_INTERVAL_BASE and rerunning interval base "
+      //"generation in recut_test.hpp:CreateIntervalBase";
+      // assert(false);
+      //}
+
+      clock_gettime(CLOCK_REALTIME, &time0);
+      grid = Grid(grid_vertex_pad_size, interval_block_size, grid_interval_size,
+          *this, this->mmap_);
+
+      clock_gettime(CLOCK_REALTIME, &time2);
+
+#ifdef LOG
+      cout << "Created super interval in " << diff_time(time0, time2) << " s";
+      cout << " with total intervals: " << grid_interval_size << '\n';
+#endif
+
+      initialize_globals(grid_interval_size, interval_block_size);
+
+      clock_gettime(CLOCK_REALTIME, &time3);
+
+#ifdef LOG
+      cout << "Initialized globals" << diff_time(time2, time3) << '\n';
+#endif
+
+      if (this->params->force_regenerate_image) {
+        // This is where we set image to our desired values
+        this->generated_image = new image_t[this->image_size];
+
+        assertm(this->params->tcase > -1, "Mismatched tcase for generate image");
+        assertm(this->params->slt_pct > -1,
+            "Mismatched slt_pct for generate image");
+        assertm(this->params->selected > 0,
+            "Mismatched selected for generate image");
+        assertm(this->params->root_vid != numeric_limits<uint64_t>::max(),
+            "Root vid uninitialized");
+
+        // create_image take the length of one dimension
+        // of the image, currently assuming all test images
+        // are cubes
+        // sets all to 0 for tcase 4 and 5
+        assertm(this->image_length_y == this->image_length_z,
+            "change create_image implementation to support non-cube images");
+        assertm(this->image_length_x == this->image_length_y,
+            "change create_image implementation to support non-cube images");
+        auto selected = create_image(this->params->tcase, this->generated_image,
+            this->image_length_x, this->params->selected,
+            this->params->root_vid);
+        if (this->params->tcase == 3 || this->params->tcase == 5) {
+          // only tcase 3 and 5 doens't have a total select count not known
+          // ahead of time
+          this->params->selected = selected;
+        }
+
+        // add the single root vid to the root_vids
+        return {this->params->root_vid};
+
       } else {
-        // image_extents is set to grid_size for force_regenerate_image option,
-        // otherwise 0,0,0 means use to the end of input image
-        args->image_extents[i] = max_extent;
-        // extents are now sanitized in each dimension
-        // and protected from faulty offset values
+        // adds all valid markers to root_vids vector and returns
+        return process_marker_dir(args->image_offsets, args->image_extents);
       }
     }
-
-    // save to globals the actual size of the full image
-    // accounting for the input offsets and extents
-    // these will be used throughout the rest of the program
-    this->image_length_x = args->image_extents[2];
-    this->image_length_y = args->image_extents[1];
-    this->image_length_z = args->image_extents[0];
-    this->image_length_xy = image_length_x * image_length_y;
-    this->image_size = image_length_x * image_length_y * image_length_z;
-
-    // the image size and offsets override the user inputted interval size
-    // continuous id's are the same for current or dst intervals
-    // round up (pad)
-    // Determine the size of each interval in each dim
-    // constrict so less data is allocated especially in z dimension
-    interval_length_x = min((VID_t)params->interval_size(), image_length_x);
-    interval_length_y = min((VID_t)params->interval_size(), image_length_y);
-    interval_length_z = min((VID_t)params->interval_size(), image_length_z);
-
-    // determine the length of intervals in each dim
-    // rounding up (ceil)
-    grid_interval_length_x =
-      (image_length_x + interval_length_x - 1) / interval_length_x;
-    grid_interval_length_y =
-      (image_length_y + interval_length_y - 1) / interval_length_y;
-    grid_interval_length_z =
-      (image_length_z + interval_length_z - 1) / interval_length_z;
-
-    // the resulting interval size override the user inputted block size
-    block_length_x = min(interval_length_x, user_def_block_size);
-    block_length_y = min(interval_length_y, user_def_block_size);
-    block_length_z = min(interval_length_z, user_def_block_size);
-
-    // determine length of blocks that span an interval for each dim
-    // this rounds up
-    interval_block_len_x =
-      (interval_length_x + block_length_x - 1) / block_length_x;
-    interval_block_len_y =
-      (interval_length_y + block_length_y - 1) / block_length_y;
-    interval_block_len_z =
-      (interval_length_z + block_length_z - 1) / block_length_z;
-
-    auto image_x_len_pad = interval_block_len_x * block_length_x;
-    auto image_y_len_pad = interval_block_len_y * block_length_y;
-    auto image_z_len_pad = interval_block_len_z * block_length_z;
-    auto image_xy_len_pad =
-      image_x_len_pad * image_y_len_pad; // saves recomputation occasionally
-
-    const VID_t grid_interval_size =
-      grid_interval_length_x * grid_interval_length_y * grid_interval_length_z;
-    interval_block_size =
-      interval_block_len_x * interval_block_len_y * interval_block_len_z;
-    pad_block_length_x = block_length_x + 2;
-    pad_block_length_y = block_length_y + 2;
-    pad_block_length_z = block_length_z + 2;
-    pad_block_offset =
-      pad_block_length_x * pad_block_length_y * pad_block_length_z;
-    const VID_t grid_vertex_pad_size =
-      pad_block_offset * interval_block_size * grid_interval_size;
-    assertm(pad_block_offset * interval_block_size < MAX_INTERVAL_VERTICES,
-        "Total vertices used by an interval can not exceed "
-        "MAX_INTERVAL_VERTICES specified in vertex_attr.h");
-
-#ifdef LOG
-    cout << "block x, y, z size: " << block_length_x << ", " << block_length_y
-      << ", " << block_length_z << " interval x, y, z size "
-      << interval_length_x << ", " << interval_length_y << ", "
-      << interval_length_z << " intervals: " << grid_interval_size
-      << " blocks per interval: " << interval_block_size << '\n';
-    cout << "image_length_x: " << image_length_x
-      << " image_length_y: " << image_length_y
-      << " image_length_z: " << image_length_z << '\n';
-    cout << "interval_block_len_x: " << interval_block_len_x
-      << " interval_block_len_y: " << interval_block_len_y
-      << " interval_block_len_z: " << interval_block_len_z << '\n';
-    cout << "image_x_len_pad: " << image_x_len_pad
-      << " image_y_len_pad: " << image_y_len_pad
-      << " image_z_len_pad: " << image_z_len_pad << " image_xy_len_pad "
-      << image_xy_len_pad << '\n';
-    // cout<< "image_offsets_x: "<< image_offsets[2] <<" image_offsets_y: "<<
-    // image_offsets[1] <<" image_offsets_z: "<< image_offsets[0] << '\n';
-#endif
-
-    // we cast the interval id and block id to uint16 for use as a key
-    // in the global variables maps, if total intervals or blocks exceed this
-    // there would be overflow
-    if (grid_interval_size > (2 << 16) - 1) {
-      cout << "Number of intervals too high: " << grid_interval_size
-        << " try increasing interval size";
-      assert(false);
-    }
-    if (interval_block_size > (2 << 16) - 1) {
-      cout << "Number of blocks too high: " << interval_block_size
-        << " try increasing block size";
-      assert(false);
-    }
-
-    // if (grid_vertex_pad_size > MAX_INTERVAL_VERTICES) {
-    // cout << "Number of total vertices too high: " << grid_vertex_pad_size
-    //<< " current max at: " << MAX_INTERVAL_VERTICES
-    //<< " try increasing MAX_INTERVAL_BASE and rerunning interval base "
-    //"generation in recut_test.hpp:CreateIntervalBase";
-    // assert(false);
-    //}
-
-    clock_gettime(CLOCK_REALTIME, &time0);
-    grid = Grid(grid_vertex_pad_size, interval_block_size, grid_interval_size,
-        *this, this->mmap_);
-
-    clock_gettime(CLOCK_REALTIME, &time2);
-
-#ifdef LOG
-    cout << "Created super interval in " << diff_time(time0, time2) << " s";
-    cout << " with total intervals: " << grid_interval_size << '\n';
-#endif
-
-    initialize_globals(grid_interval_size, interval_block_size);
-
-    clock_gettime(CLOCK_REALTIME, &time3);
-
-#ifdef LOG
-    cout << "Initialized globals" << diff_time(time2, time3) << '\n';
-#endif
-
-    if (this->params->force_regenerate_image) {
-      // This is where we set image to our desired values
-      this->generated_image = new image_t[this->image_size];
-
-      assertm(this->params->tcase > -1, "Mismatched tcase for generate image");
-      assertm(this->params->slt_pct > -1,
-          "Mismatched slt_pct for generate image");
-      assertm(this->params->selected > 0,
-          "Mismatched selected for generate image");
-      assertm(this->params->root_vid != numeric_limits<uint64_t>::max(),
-          "Root vid uninitialized");
-
-      // create_image take the length of one dimension
-      // of the image, currently assuming all test images
-      // are cubes
-      // sets all to 0 for tcase 4 and 5
-      assertm(this->image_length_y == this->image_length_z,
-          "change create_image implementation to support non-cube images");
-      assertm(this->image_length_x == this->image_length_y,
-          "change create_image implementation to support non-cube images");
-      auto selected = create_image(this->params->tcase, this->generated_image,
-          this->image_length_x, this->params->selected,
-          this->params->root_vid);
-      if (this->params->tcase == 3 || this->params->tcase == 5) {
-        // only tcase 3 and 5 doens't have a total select count not known
-        // ahead of time
-        this->params->selected = selected;
-      }
-
-      // add the single root vid to the root_vids
-      return {this->params->root_vid};
-
-    } else {
-      // adds all valid markers to root_vids vector and returns
-      return process_marker_dir(args->image_offsets, args->image_extents);
-    }
-  }
 
   template <class image_t>
     template <typename vertex_t>
@@ -3244,6 +3248,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
               }
               marker->radius = attr->radius;
               tmp[attr->vid] = marker; // save this marker ptr to a map
+              std::cout << "added to temp vid " << attr->vid << '\n';
               outtree.push_back(marker);
             } else {
               // check that all copied across blocks and intervals of a
@@ -3281,7 +3286,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
             } else {
               std::cout << "parent vid " << parent_vid << '\n';
               std::cout << "attr vid " << attr->vid << '\n';
-              std::cout << "marker vid " << marker->vid(image_length_x, 
+              std::cout << "marker vid " << marker->vid(image_length_x,
                   image_length_y) << '\n';
               auto parent = tmp[parent_vid]; // adjust
               marker->parent = parent;
@@ -3301,7 +3306,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
       }
 
 #ifdef LOG
-      cout << "Total marker size before pruning: " << outtree.size() << " nodes"
+      cout << "Total marker size: " << outtree.size() << " nodes"
         << '\n';
 #endif
 
@@ -3332,9 +3337,35 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
     // create final list of vertices
     stage = "prune";
     this->activate_vids(root_vids, stage, global_fifo);
-    this->out.open("out.swc");
+    //this->out.open("out.swc");
     this->update(stage, global_fifo);
-    this->out.close();
+    //this->out.close();
+
+    //// FIXME terrible performance
+    //map<VID_t, MyMarker *> tmp; // hash set
+    //for (int interval_id=0; interval_id < grid.GetNIntervals(); ++interval_id) {
+    //for (int block_id=0; block_id < grid.GetNBlocks(); ++block_id) {
+    //while (!(heap_vec[interval_id][block_id].empty())) {
+    //const auto attr = safe_pop<local_heap, VertexAttr*>(heap_vec[interval_id][block_id], block_id, interval_id, "radius");
+    //VID_t i, j, k; // get original i, j, k
+    //get_img_subscript(attr->vid, i, j, k);
+    //auto marker = new MyMarker(i, j, k);
+    //if (attr->root()) {
+    //marker->type = 0;
+    //}
+    //marker->radius = attr->radius;
+    //tmp[attr->vid] = marker; // save this marker ptr to a map
+    //std::cout << "added to temp vid " << attr->vid << '\n';
+    //}
+    //}
+    //}
+
+    //for (const auto marker : tmp) {
+    //adjust_parent(
+    //}
+
+
+    //adjust parent
 
     // aggregate results
     auto accept_band = true;
