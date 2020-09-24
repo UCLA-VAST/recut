@@ -104,6 +104,9 @@ class Interval {
       }
     }
 
+    // if this interval has been previously saved to disk
+    // the SavedToDisk function will mutate the file name to 
+    // be specific to this interval such that changes persist
     void LoadFromDisk() {
       assert(!in_mem_);
       in_mem_ = true; // count mmap and user-space buffer as in memory
@@ -169,6 +172,13 @@ class Interval {
       }
     }
 
+  void print_state (const std::ofstream& stream) {
+    std::cout << " good()=" << stream.good();
+    std::cout << " eof()=" << stream.eof();
+    std::cout << " fail()=" << stream.fail();
+    std::cout << " bad()=" << stream.bad() << '\n';
+  }
+
     /* changes the default fn_ (originally base_) to a unique
      * binary file in the binaries directory
      * This new binary file will be deleted upon ~Interval
@@ -182,13 +192,16 @@ class Interval {
 #ifdef FULL_PRINT
       cout << "SaveToDisk() fn: " << fn_ << '\n';
 #endif
-      std::ofstream ofile(fn_, ios::out | ios::binary); // read-mode
+      std::ofstream ofile(fn_, ios::out | ios::binary); // write ops
       assert(ofile.is_open());
       assert(ofile.good());
 
       // write struct array to file
       if (mmap_) {
+      print_state(ofile);
+        msync((char *) mmap_ptr_, mmap_length_, MS_SYNC);
         ofile.write((char *)mmap_ptr_, mmap_length_);
+      print_state(ofile);
         assert(unmap_);
 #ifdef USE_HUGE_PAGE
         assert(munmap(mmap_ptr_, hp_mmap_length_) == 0);

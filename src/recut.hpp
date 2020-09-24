@@ -132,13 +132,13 @@ template <class image_t> class Recut {
     vector<vector<vector<bool>>> active_neighbors;
 #endif
 
-    Recut(){};
+    Recut() : mmap_(false) {};
     Recut(RecutCommandLineArgs &args)
       : args(&args), params(&(args.recut_parameters())), global_revisits(0),
       user_def_block_size(args.recut_parameters().block_size()),
       mmap_(false) {
 
-#ifdef MMAP
+#ifdef USE_MMAP
         this->mmap_ = true;
 #endif
         this->restart_bool = params->restart();
@@ -2267,11 +2267,8 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
 
       clock_gettime(CLOCK_REALTIME, &presave_time);
 
-      // this will be zero for mmap'd data
-      // keep in memory for read write strategy as well since update ghost vec has
-      // list of pointers
-      if (!(this->mmap_))
-        grid.GetInterval(interval_id)->SaveToDisk();
+      //if (!(this->mmap_))
+      grid.GetInterval(interval_id)->SaveToDisk();
 
       clock_gettime(CLOCK_REALTIME, &postsave_time);
 

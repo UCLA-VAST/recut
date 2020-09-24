@@ -1135,13 +1135,16 @@ TEST(Radius, Full) {
   bool print_csv = false;
   bool prune = true;
   auto expect_exact_radii_match = false;
+#ifdef USE_MMAP
+  std::cout << " yes mmap is on here\n";
+#endif
 
   int max_size = 8;
   //std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
   //max_size / 2, max_size};
   std::vector<int> grid_sizes = {max_size};
-  std::vector<int> interval_sizes = {max_size};
-  std::vector<int> block_sizes = {8};
+  std::vector<int> interval_sizes = {2};
+  std::vector<int> block_sizes = {2};
   // tcase 5 is a sphere of radius grid_size / 4 centered
   // in the middle of an image
   // tcase 7 is a square radius grid_size / 4
@@ -1867,8 +1870,8 @@ INSTANTIATE_TEST_CASE_P(
 #ifdef USE_OMP_INTERVAL
     testing::Test::RecordProperty("USE_OMP_INTERVAL", 1);
 #endif
-#ifdef MMAP
-    testing::Test::RecordProperty("MMAP", 1);
+#ifdef USE_MMAP
+    testing::Test::RecordProperty("USE_MMAP", 1);
 #endif
 #ifdef NO_RV
     testing::Test::RecordProperty("NO_RV", 1);
