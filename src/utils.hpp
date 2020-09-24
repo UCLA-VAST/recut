@@ -670,8 +670,8 @@ void print_macros() {
   cout << "NO_RV" << '\n';
 #endif
 
-#ifdef MMAP
-  cout << "MMAP" << '\n';
+#ifdef USE_MMAP
+  cout << "USE_MMAP" << '\n';
 #endif
 
 #ifdef ASYNC
