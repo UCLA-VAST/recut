@@ -2267,8 +2267,9 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
 
       clock_gettime(CLOCK_REALTIME, &presave_time);
 
-      //if (!(this->mmap_))
-      grid.GetInterval(interval_id)->SaveToDisk();
+      if (!(this->mmap_)) {
+        grid.GetInterval(interval_id)->SaveToDisk();
+      }
 
       clock_gettime(CLOCK_REALTIME, &postsave_time);
 
@@ -3332,10 +3333,10 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
 
     // starting from roots, prune stage will
     // create final list of vertices
-    stage = "prune";
-    this->activate_vids(root_vids, stage, global_fifo);
-    //this->out.open("out.swc");
-    this->update(stage, global_fifo);
+    //stage = "prune";
+    //this->activate_vids(root_vids, stage, global_fifo);
+    ////this->out.open("out.swc");
+    //this->update(stage, global_fifo);
     //this->out.close();
 
     //// FIXME terrible performance

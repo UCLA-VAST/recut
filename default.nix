@@ -20,7 +20,6 @@ stdenv.mkDerivation {
   buildPhase = "mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug -DUSE_MCP3D=ON && echo; echo; pwd; make -j 56 && make install -j 56";
 
   checkPhase="echo; pwd; cd ../bin && ./recut_test --gtest_output=json:../data/test_detail.json ../data/test_detail.log";
-  /*command=cd bin && ./recut_bench --benchmark_filter=load_tile*/
 
   installPhase = ''
     mkdir -p $out/bin
