@@ -40,9 +40,9 @@ find_package(OpenMP REQUIRED)
 # determine which targets to build
 # a user of Recut in header only mode can ignore
 # building of tests and benchmarks 
-set(RECUT_ENABLE_CL_EXECUTABLE OFF CACHE BOOL "Suppress Recut building its command line executable")
-set(RECUT_ENABLE_TESTING OFF CACHE BOOL "Suppress Recut building its test targets")
-set(RECUT_ENABLE_BENCHMARKING OFF CACHE BOOL "Suppress Recut building its benchmarks targets")
+set(RECUT_ENABLE_CL_EXECUTABLE OFF CACHE BOOL "Enable Recut building its command line executable")
+set(RECUT_ENABLE_TESTING ON CACHE BOOL "Enable Recut building its test targets")
+set(RECUT_ENABLE_BENCHMARKING OFF CACHE BOOL "Enable Recut building its benchmarks targets")
 
 # CMake Preprocessor Defines:
 
