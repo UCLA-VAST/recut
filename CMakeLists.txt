@@ -74,7 +74,7 @@ option(LOG "Overview logging details of the recut run, this suffices for basic t
 option(LOG_FULL "roughly block by block processing granularity" OFF)
 option(FULL_PRINT "Print vertex by vertex behavior. Warning: will significantly slow performance" OFF)
 
-option( USE_MMAP "Determines read speed of vertex info from INTERVAL_BASE" ON)
+option( USE_MMAP "Determines read speed of vertex info from INTERVAL_BASE" OFF)
 option( USE_MCP3D "Use and link external library MCP3D into recut for image reading of TIF and HDF5 (.ims) file types" OFF)
 
 set(MARKERS ${PROJECT_SOURCE_DIR}/src/markers.cpp)

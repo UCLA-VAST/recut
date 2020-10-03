@@ -1133,11 +1133,8 @@ TEST(Radius, Full) {
   bool print_all = true;
   bool check_xy = false;
   bool print_csv = false;
-  bool prune = true;
+  bool prune = false;
   auto expect_exact_radii_match = false;
-#ifdef USE_MMAP
-  std::cout << " yes mmap is on here\n";
-#endif
 
   int max_size = 8;
   //std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
@@ -1455,7 +1452,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   // if you were to set to true tcase 4 would have a mismatch
   // with the loaded image
   bool force_regenerate_image = false;
-  bool prune = true;
+  bool prune = false;
   std::string stage;
 
   // shared params
