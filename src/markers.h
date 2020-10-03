@@ -7,9 +7,6 @@
 
 // modified from vaa3d/vaa3d_tools/released_plugins/v3d_plugins/neurontracing_vn2/app2/my_surf_objs.h mzhu 05/23/2019
 
-#ifndef MCP3D_VAA3D_MARKERS
-#define MCP3D_VAA3D_MARKERS
-
 #include <vector>
 #include <list>
 #include <map>
@@ -17,7 +14,10 @@
 #include <fstream>
 #include <cstdint>
 #include <cassert>
+
+#ifdef USE_MCP3D
 #include "common/mcp3d_macros.hpp"
+#endif
 
 typedef uint64_t VID_t;
 
@@ -168,5 +168,3 @@ double dist(MyMarker a, MyMarker b);
 
 vector<MyMarker*> getLeaf_markers(vector<MyMarker*> & inmarkers);
 vector<MyMarker*> getLeaf_markers(vector<MyMarker*> & inmarkers, map<MyMarker *, int> & childs_num);
-
-#endif  // MCP3D_VAA3D_MARKERS

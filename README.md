@@ -1,10 +1,10 @@
 ### Installation
 ```
+# don't forget --recursive flag otherwise you'll have confusing compilation errors
 git clone --recursive https://github.com/UCLA-VAST/recut-pipeline.git
 cd recut
-mkdir build bin
-cd build
-cmake .. -DCMAKE_BUILD_TYPE=[Debug/Release]
+mkdir bin
+cmake -B build -DCMAKE_BUILD_TYPE=[Debug/Release]
 make 
 make install
 ```
@@ -26,22 +26,10 @@ This program relies on:
   sudo apt-get install libboost-all-dev
 - the google-test and google-benchmark library (included via git
 submodules and auto builds through cmake, see `recut/CMakeLists.txt`)
-- the `mcp3d::image` library (included) 
+- Optionally: `mcp3d::image` library (included) 
 
 ### Usage
 ```
 cd recut/bin
 ./recut --help
 ```
-
-
-# Tools to use to profile and gather data
-1. perf
-2. scripts to make nice plots
-3. maybe - run on gem5?
-
-
-# Aspects to focus gathering data
-1. CPU function time
-2. Memory stuff
-3. Cache stuff
