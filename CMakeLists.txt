@@ -19,12 +19,12 @@ add_subdirectory(extern/benchmark)
 # works for cmake 3.9+
 # https://stackoverflow.com/questions/48825416/missing-openmp-c-flags-openmp-c-lib-names
 if(CMAKE_C_COMPILER_ID MATCHES "Clang")
-    set(OpenMP_C "${CMAKE_C_COMPILER}" CACHE STRING "" FORCE)
-    set(OpenMP_C_FLAGS "-fopenmp=libomp -Wno-unused-command-line-argument" CACHE STRING "" FORCE)
-    set(OpenMP_C_LIB_NAMES "libomp" "libgomp" "libiomp5" CACHE STRING "" FORCE)
-    set(OpenMP_libomp_LIBRARY ${OpenMP_C_LIB_NAMES} CACHE STRING "" FORCE)
-    set(OpenMP_libgomp_LIBRARY ${OpenMP_C_LIB_NAMES} CACHE STRING "" FORCE)
-    set(OpenMP_libiomp5_LIBRARY ${OpenMP_C_LIB_NAMES} CACHE STRING "" FORCE)
+  set(OpenMP_C "${CMAKE_C_COMPILER}" CACHE STRING "" FORCE)
+  set(OpenMP_C_FLAGS "-fopenmp=libomp -Wno-unused-command-line-argument" CACHE STRING "" FORCE)
+  set(OpenMP_C_LIB_NAMES "libomp" "libgomp" "libiomp5" CACHE STRING "" FORCE)
+  set(OpenMP_libomp_LIBRARY ${OpenMP_C_LIB_NAMES} CACHE STRING "" FORCE)
+  set(OpenMP_libgomp_LIBRARY ${OpenMP_C_LIB_NAMES} CACHE STRING "" FORCE)
+  set(OpenMP_libiomp5_LIBRARY ${OpenMP_C_LIB_NAMES} CACHE STRING "" FORCE)
 endif()
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set(OpenMP_CXX "${CMAKE_CXX_COMPILER}" CACHE STRING "" FORCE)
@@ -39,7 +39,7 @@ find_package(OpenMP REQUIRED)
 # Internal defines to Recut
 # determine which targets to build
 # a user of Recut in header only mode can ignore
-# building of tests and benchmarks 
+# building of tests and benchmarks
 set(RECUT_ENABLE_CL_EXECUTABLE OFF CACHE BOOL "Enable Recut building its command line executable")
 set(RECUT_ENABLE_TESTING ON CACHE BOOL "Enable Recut building its test targets")
 set(RECUT_ENABLE_BENCHMARKING OFF CACHE BOOL "Enable Recut building its benchmarks targets")
@@ -134,7 +134,7 @@ endif()
 
 # determine which targets to build
 # a user of Recut in header only mode can ignore
-# building of tests and benchmarks 
+# building of tests and benchmarks
 set(ALL_TARGETS "")
 if (RECUT_ENABLE_CL_EXECUTABLE)
   list(APPEND ALL_TARGETS recut)
@@ -194,26 +194,35 @@ foreach(I ${ALL_TARGETS})
     target_compile_definitions(${I} PRIVATE GIT_HASH)
   endif()
 
-  target_link_libraries(${I} PRIVATE OpenMP::OpenMP_CXX)
   target_compile_features(${I} PRIVATE cxx_std_17)
   # these are the actual flags passed during compilation
   target_compile_options(${I} PRIVATE -fno-omit-frame-pointer -g)
   install(TARGETS ${I} DESTINATION ${PROJECT_SOURCE_DIR}/bin)
-  target_include_directories(${I} PRIVATE ${PROJECT_SOURCE_DIR}/include)
+
+  # dependencies
   target_include_directories(${I} PRIVATE extern/range-v3/include)
-  target_link_libraries(${I} PRIVATE
-    #${PROJECT_SOURCE_DIR}/lib/libboost_filesystem.so.1.65.1
-    ${PROJECT_SOURCE_DIR}/lib/libboost_serialization.so.1.65.1
-    ${PROJECT_SOURCE_DIR}/lib/libboost_system.so.1.65.1
-    ${PROJECT_SOURCE_DIR}/lib/libhdf5.so.100.1.0
-    ${PROJECT_SOURCE_DIR}/lib/libhdf5.so.1.10.1
-    ${PROJECT_SOURCE_DIR}/lib/libmcp3d_algorithm.so
-    ${PROJECT_SOURCE_DIR}/lib/libmcp3d_common.so
-    ${PROJECT_SOURCE_DIR}/lib/libmcp3d_image.so
-    ${PROJECT_SOURCE_DIR}/lib/libmcp3d_project_structure.so
-    ${PROJECT_SOURCE_DIR}/lib/libopencv_imgcodecs.so
-    ${PROJECT_SOURCE_DIR}/lib/libopencv_core.so
-    )
+  if (USE_OMP_INTERVAL OR USE_OMP_BLOCK)
+    target_link_libraries(${I} PRIVATE OpenMP::OpenMP_CXX)
+  endif()
+
+  if (USE_MCP3D)
+    target_include_directories(${I} PRIVATE ${PROJECT_SOURCE_DIR}/include)
+    target_link_libraries(${I} PRIVATE
+      #${PROJECT_SOURCE_DIR}/lib/libboost_filesystem.so.1.65.1
+      ${PROJECT_SOURCE_DIR}/lib/libboost_serialization.so.1.65.1
+      ${PROJECT_SOURCE_DIR}/lib/libboost_system.so.1.65.1
+      ${PROJECT_SOURCE_DIR}/lib/libhdf5.so.100.1.0
+      ${PROJECT_SOURCE_DIR}/lib/libhdf5.so.1.10.1
+      ${PROJECT_SOURCE_DIR}/lib/libmcp3d_algorithm.so
+      ${PROJECT_SOURCE_DIR}/lib/libmcp3d_common.so
+      ${PROJECT_SOURCE_DIR}/lib/libmcp3d_image.so
+      ${PROJECT_SOURCE_DIR}/lib/libmcp3d_project_structure.so
+      ${PROJECT_SOURCE_DIR}/lib/libopencv_imgcodecs.so
+      ${PROJECT_SOURCE_DIR}/lib/libopencv_core.so
+      )
+  endif()
+
+  # make Recut libraries truly relocatable when linking from downstream programs
   set_target_properties(${I} PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
 endforeach()
 
