@@ -57,8 +57,7 @@ template <class image_t> struct TileThresholds {
   }
 
   void get_max_min(const image_t *img, VID_t interval_vertex_size) {
-
-    double elapsed_max_min = omp_get_wtime();
+    auto timer = new high_resolution_timer();
 
     // GI parameter min_int, max_int
     double local_max = 0; // maximum intensity, used in GI
@@ -85,10 +84,8 @@ template <class image_t> struct TileThresholds {
     this->max_int = local_max;
     this->min_int = local_min;
 
-    elapsed_max_min = omp_get_wtime() - elapsed_max_min;
-
 #ifdef LOG
-    printf("Find max min wtime: %.1f s\n", elapsed_max_min);
+    printf("Find max min wtime: %.1f s\n", timer->elapsed());
 #endif
   }
 };

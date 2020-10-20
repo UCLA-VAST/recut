@@ -22,10 +22,6 @@
 #include <taskflow/taskflow.hpp>
 #endif
 
-#ifdef USE_OMP
-#include <omp.h>
-#endif
-
 struct InstrumentedUpdateStatistics {
   int iterations;
   double total_time;
@@ -2084,7 +2080,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
 
         // Count total # of pixels under current thresh
         bkg_count = 0;
-#ifdef USE_OMP
+#if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
 #pragma omp parallel for reduction(+ : bkg_count)
 #endif
         for (VID_t i = 0; i < (VID_t)interval_vertex_size; i++) {
@@ -2942,7 +2938,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
   template <class image_t>
     const std::vector<VID_t> Recut<image_t>::initialize() {
 
-#ifdef USE_OMP
+#if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
       omp_set_num_threads(params->user_thread_count());
 #ifdef LOG
       cout << "User specific thread count " << params->user_thread_count() << '\n';

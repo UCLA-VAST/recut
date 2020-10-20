@@ -6,6 +6,8 @@
 //last change; by PHC 20121127. update the swc and marker saving funcs
 
 // modified from vaa3d/vaa3d_tools/released_plugins/v3d_plugins/neurontracing_vn2/app2/my_surf_objs.h mzhu 05/23/2019
+#ifndef MCP3D_VAA3D_MARKERS
+#define MCP3D_VAA3D_MARKERS
 
 #include <vector>
 #include <list>
@@ -27,38 +29,6 @@ using namespace std;
 #define MARKER_BASE 1.0 // the basic offset of marker is 1.0, the marker coordinate will be converted when read and save
 
 
-struct MyPoint
-{
-	int x;
-	int y;
-	int z;
-	bool operator<(const MyPoint & other) const{
-		if(z > other.z) return false;
-		if(z < other.z) return true;
-		if(y > other.y) return false;
-		if(y < other.y) return true;
-		if(x > other.x) return false;
-		if(x < other.x) return true;
-		return false;
-	}
-	MyPoint()
-	{
-		x = 0;
-		y = 0;
-		z = 0;
-	}
-	MyPoint(int _x, int _y, int _z)
-	{
-		x = _x;
-		y = _y;
-		z = _z;
-	}
-};
-
-struct MYXYZ {
-   double x,y,z;
-};
-
 // root node with parent 0
 struct MyMarker
 {
@@ -77,8 +47,6 @@ struct MyMarker
 	MyMarker(){x=y=z=radius=0.0; type = 3; parent=0;}
 	MyMarker(double _x, double _y, double _z) {x = _x; y = _y; z = _z; radius = 0.0; type = 3; parent = 0;}
 	MyMarker(const MyMarker & v){x=v.x; y=v.y; z=v.z; radius = v.radius; type = v.type; parent = v.parent;}
-	MyMarker(const MyPoint & v){x=v.x; y=v.y; z=v.z; radius = 0.0; type = 3; parent = 0;}
-	MyMarker(const MYXYZ & v){x=v.x; y=v.y; z=v.z; radius = 0.0; type = 3; parent = 0;}
 
 
 	double & operator [] (const int i) {
@@ -116,13 +84,11 @@ struct MyMarker
       return std::to_string(static_cast<int>(x)) + ", " + std::to_string(static_cast<int>(y)) + ", " + std::to_string(static_cast<int>(z)) + " index: " + std::to_string(this->vid(xdim, ydim));
     }
 
-
-
     // offsets is in zyx order
     template <typename T>
     void operator-=(const vector<T> offsets)
     {
-        MCP3D_ASSERT(offsets.size() == 3l)
+        assert(offsets.size() == 3);
         z -= (double)offsets[0];
         y -= (double)offsets[1];
         x -= (double)offsets[2];
@@ -168,3 +134,5 @@ double dist(MyMarker a, MyMarker b);
 
 vector<MyMarker*> getLeaf_markers(vector<MyMarker*> & inmarkers);
 vector<MyMarker*> getLeaf_markers(vector<MyMarker*> & inmarkers, map<MyMarker *, int> & childs_num);
+
+#endif // MCP3D_VAA3D_MARKERS

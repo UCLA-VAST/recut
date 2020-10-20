@@ -8,6 +8,10 @@
 #include <sstream>
 #include <vector>
 
+#if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
+#include <omp.h>
+#endif
+
 class RecutParameters {
   public:
     RecutParameters() {

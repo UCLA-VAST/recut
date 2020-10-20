@@ -572,7 +572,10 @@ RecutCommandLineArgs get_args(int grid_size, int interval_size,
   params.slt_pct = slt_pct;
   params.selected = img_vox_num * (slt_pct / (float)100);
   params.root_vid = get_central_vid(grid_size);
+  params.set_user_thread_count(1);
+#if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
   params.set_user_thread_count(omp_get_max_threads());
+#endif
   std::vector<int> extents = {grid_size, grid_size, grid_size};
   args.set_image_extents(extents);
 
@@ -690,9 +693,14 @@ void print_macros() {
   cout << "USE_HUGE_PAGE" << '\n';
 #endif
 
-#ifdef USE_OMP
-  cout << "USE_OMP" << '\n';
+#ifdef USE_OMP_BLOCK
+  cout << "USE_OMP_BLOCK" << '\n';
 #endif
+
+#ifdef USE_OMP_INTERVAL
+  cout << "USE_OMP_INTERVAL" << '\n';
+#endif
+
 }
 
 // this is not thread safe if concurrent threads

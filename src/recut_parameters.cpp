@@ -2,7 +2,6 @@
 #include "image/mcp3d_image_utils.hpp"
 #endif
 #include "recut_parameters.hpp"
-#include <omp.h>
 
 using std::cout;
 using std::endl;
@@ -215,7 +214,10 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
         ++i;
       } else if (strcmp(argv[i], "-parallel") == 0 ||
                  strcmp(argv[i], "-pl") == 0) {
-        int max_threads = omp_get_max_threads();
+        int max_threads = 1;
+#if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
+        max_threads = omp_get_max_threads();
+#endif
         int current_threads = max_threads;
         cout << "max threads available to CPU = " << max_threads << endl;
         ++i;
@@ -226,7 +228,9 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
           args.recut_parameters().set_parallel_num(max_threads);
         }
         cout << "using total threads = " << current_threads << endl;
+#if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
         omp_set_num_threads(current_threads);
+#endif
       } else if (strcmp(argv[i], "-interval_size") == 0 ||
                  strcmp(argv[i], "-is") == 0) {
         // if (i + 1 >= argc || argv[i + 1][0] == '-')
