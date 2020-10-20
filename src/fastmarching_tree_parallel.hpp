@@ -41,7 +41,7 @@ bool fastmarching_tree_parallel(vector<vertex_t> roots, T *inimg1d,
   VID_t nvid = (VID_t)sz0 * sz1 * sz2;
   VID_t szs[] = {(VID_t)sz0, (VID_t)sz1, (VID_t)sz2};
 
-  double elapsed_max_min = omp_get_wtime();
+  auto timer = new high_resolution_timer();
 
   // GI parameter min_int, max_int, li
   double max_int = 0; // maximum intensity, used in GI
@@ -59,13 +59,12 @@ bool fastmarching_tree_parallel(vector<vertex_t> roots, T *inimg1d,
   assert(max_int > min_int);
   max_int -= min_int;
 
-  elapsed_max_min = omp_get_wtime() - elapsed_max_min;
 #ifdef DEBUG
   cout << "max_int: " << (int)max_int << " min_int: " << (int)min_int << endl;
 #endif
 
 #ifdef LOG
-  printf("Find max min wtime: %.1f s\n", elapsed_max_min);
+  printf("Find max min wtime: %.1f s\n", timer->elapsed());
 #endif
 
   cout << " restart " << restart << endl;
