@@ -5,7 +5,7 @@ in
 { pkgs ? import <nixpkgs> {} }:
 with pkgs; mkShell {
   buildInputs = [ openssl boost libtiff 
-    plotly python38Packages.matplotlib unstable.cmake
+    python38Packages.matplotlib unstable.cmake
     unstable.mpich];
 }
 
