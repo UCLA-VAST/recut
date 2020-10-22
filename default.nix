@@ -13,7 +13,7 @@ stdenv.mkDerivation {
     && baseNameOf path != "bin"
     && baseNameOf path != "data") ./.;
 
-  nativeBuildInputs = [ unstable.cmake ];
+  nativeBuildInputs = [ cmake ];
   buildInputs = [ openssl boost libtiff unstable.mpich 
     python38Packages.matplotlib clang_10 llvmPackages.openmp ];
 

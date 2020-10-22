@@ -1,11 +1,13 @@
-# https://discourse.nixos.org/t/how-do-i-build-a-nix-shell-which-depends-on-some-unstable-packages/928/2
-let
-  unstable = import (fetchTarball https://nixos.org/channels/nixos-unstable/nixexprs.tar.xz) { };
-in
-{ pkgs ? import <nixpkgs> {} }:
-with pkgs; mkShell {
-  buildInputs = [ openssl boost libtiff 
-    python38Packages.matplotlib unstable.cmake
-    unstable.mpich];
+{ pkgs ? import (builtins.fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-20.03.tar.gz") {} }:
+
+pkgs.mkShell {
+  buildInputs = [
+    pkgs.openssl
+    pkgs.boost
+    pkgs.python38Packages.matplotlib 
+    pkgs.cmake
+    #pkgs.libtiff
+    #pkgs.mpich
+  ];
 }
 
