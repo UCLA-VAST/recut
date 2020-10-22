@@ -3,8 +3,9 @@
 # don't forget --recursive flag otherwise you'll have confusing compilation errors
 git clone --recursive https://github.com/UCLA-VAST/recut-pipeline.git
 cd recut
-cmake -B build 
+mkdir build
 cd build
+cmake ..
 make 
 make install
 ```
