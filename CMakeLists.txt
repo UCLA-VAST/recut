@@ -1,10 +1,10 @@
 enable_testing()
-# note this is set to 3.9 because of
+# note we recommend at least 3.9 because of
 # cpp 17 features that don't work
 # on older version during linking
 # we strongly suggest upgrading to this version
 # or higher to build this code from source
-cmake_minimum_required(VERSION 3.9)
+cmake_minimum_required(VERSION 3.8)
 
 project(recut)
 
