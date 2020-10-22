@@ -8,14 +8,6 @@ cmake_minimum_required(VERSION 3.9)
 
 project(recut)
 
-# build tests (targets: gtest, gtest_main)
-add_subdirectory(extern/googletest/googletest)
-# build google benchmark (target: benchmark)
-# do not build tests of benchmarking lib
-set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "Suppressing benchmark's tests" FORCE)
-set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "Don't install benchmark" FORCE)
-add_subdirectory(extern/benchmark)
-
 # works for cmake 3.9+
 # https://stackoverflow.com/questions/48825416/missing-openmp-c-flags-openmp-c-lib-names
 if(CMAKE_C_COMPILER_ID MATCHES "Clang")
@@ -37,15 +29,28 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 find_package(OpenMP REQUIRED)
 
-# Internal defines to Recut
+# CMake Preprocessor Defines:
 # determine which targets to build
 # a user of Recut in header only mode can ignore
 # building of tests and benchmarks
+# although CreateIntervalBase will need to be run at least once
+# from the recut_test.hpp file
 set(RECUT_ENABLE_CL_EXECUTABLE OFF CACHE BOOL "Enable Recut building its command line executable")
 set(RECUT_ENABLE_TESTING ON CACHE BOOL "Enable Recut building its test targets")
 set(RECUT_ENABLE_BENCHMARKING OFF CACHE BOOL "Enable Recut building its benchmarks targets")
 
-# CMake Preprocessor Defines:
+if (RECUT_ENABLE_TESTING)
+  # build tests (targets: gtest, gtest_main)
+  add_subdirectory(extern/googletest/googletest)
+endif()
+
+if (RECUT_ENABLE_BENCHMARKING)
+  # build google benchmark (target: benchmark)
+  # do not build tests of benchmarking lib
+  set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "Suppressing benchmark's tests" FORCE)
+  set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "Don't install benchmark" FORCE)
+  add_subdirectory(extern/benchmark)
+endif()
 
 #  this creates tests that match the benchmarks
 #  to check their validity, warning this invokes
@@ -53,6 +58,7 @@ set(RECUT_ENABLE_BENCHMARKING OFF CACHE BOOL "Enable Recut building its benchmar
 #  take a long time to complete
 #  during normal development this should be off
 #  and all tests should run in under 2s
+# ignored if RECUT_ENABLE_TESTING is false
 option(TEST_ALL_BENCHMARKS
   "Conduct full run of tests which can be used for results or benchmarks"
   OFF)
