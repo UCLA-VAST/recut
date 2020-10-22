@@ -588,8 +588,9 @@ TEST(Interval, GetAttrVidMultiInterval) {
 /*
  * Create the desired markers (seed locations) and images to be used by other
  * gtest functions below, this can be skipped once it has been run on a new
- * system for all the necessary configurations of grid_sizes, tcases and
+ * directory or system for all the necessary configurations of grid_sizes, tcases and
  * selected percents
+ * install files into data/
  */
 TEST(Install, DISABLED_CreateImagesMarkers) {
   // change these to desired params
@@ -635,16 +636,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
           continue;
 
         std::string base(get_data_dir());
-        auto fn = base + "/test_images/";
-        fn = fn + std::to_string(grid_size);
-        fn = fn + "/tcase";
-        fn = fn + std::to_string(tcase);
         std::string delim("/");
-        fn = fn + delim;
-        fn = fn + "slt_pct";
-        fn = fn + std::to_string((int)slt_pct);
-        fn = fn + delim;
-
         std::string fn_marker(base);
         fn_marker = fn_marker + "/test_markers/";
         fn_marker = fn_marker + std::to_string(grid_size);
@@ -654,18 +646,28 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         fn_marker = fn_marker + "slt_pct";
         fn_marker = fn_marker + std::to_string((int)slt_pct);
         fn_marker = fn_marker + delim;
+        // record the root
+        write_marker(x, y, z, fn_marker);
 
 #ifdef USE_MCP3D
+        auto fn = base + "/test_images/";
+        fn = fn + std::to_string(grid_size);
+        fn = fn + "/tcase";
+        fn = fn + std::to_string(tcase);
+        fn = fn + delim;
+        fn = fn + "slt_pct";
+        fn = fn + std::to_string((int)slt_pct);
+        fn = fn + delim;
+
         VID_t selected = tol_sz * (slt_pct / (float)100); // for tcase 4
         // always select at least the root
-        if (selected == 0)
+        if (selected == 0) {
           selected = 1;
+        }
         uint16_t *inimg1d = new uint16_t[tol_sz];
         // sets all to 0 for tcase 4
         create_image(tcase, inimg1d, grid_size, selected, root_vid);
-        // if (tcase == 5) { // deprecated
-        // selected = lattice_grid(root->vid, inimg1d, line_per_dim, grid_size);
-        //}
+
         float actual_slt_pct = (selected / (float)tol_sz) * 100;
         cout << "    Actual num selected including root auto selection: "
           << selected << endl;
@@ -683,9 +685,6 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         write_tiff(inimg1d, fn, grid_size);
         delete[] inimg1d;
 #endif
-
-        // record the root
-        write_marker(x, y, z, fn_marker);
       }
     }
   }
