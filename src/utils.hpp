@@ -327,6 +327,7 @@ VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
 
   // need to count total selected for tcase 3 and 5
   VID_t count_selected_pixels = 0;
+  assertm(selected > 0, "must select at least 1 pixel: the root");
 
   // for tcase 5 sphere grid
   auto radius = grid_size / 4;
@@ -349,6 +350,7 @@ VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
   double dh = 1 / grid_size;
   double x, y, z;
   double w = 1 / 24;
+  bool found_barrier_region;
   for (int xi = 0; xi < grid_size; xi++) {
     for (int yi = 0; yi < grid_size; yi++) {
       for (int zi = 0; zi < grid_size; zi++) {
@@ -368,7 +370,7 @@ VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
         } else if (tcase == 3) {
           double r = sqrt(x * x + y * y);
           double R = sqrt(x * x + y * y + z * z);
-          inimg1d[index] = 1;
+          found_barrier_region = false;
           std::vector<double> Rvecs = {.15, .25, .35, .45};
           for (int ri = 0; ri < Rvecs.size(); ri++) {
             double Rvec = Rvecs[ri];
@@ -394,15 +396,16 @@ VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
                 }
               }
             }
-            // if (r < .1) {
-            // inimg1d = 0;
-            // cout << "0";
-            //}
             if (!condition0 != !condition1) { // xor / set difference
-              inimg1d[index] = 0;
-            } else {
-              count_selected_pixels++;
+              found_barrier_region = true;
+              break;
             }
+          }
+          if (found_barrier_region) {
+            inimg1d[index] = 0;
+          } else {
+            inimg1d[index] = 1;
+            count_selected_pixels++;
           }
         } else if (tcase == 4) { // 4 start with zero grid, and select in
           // function trace_mesh_image
@@ -416,7 +419,7 @@ VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
             inimg1d[index] = 0;
           }
         } else if (tcase == 7) {
-        // make a square centered around root
+          // make a square centered around root
           inimg1d[index] = 0;
           if ((xi >= xmin) && (xi <= xmax)) {
             if ((yi >= ymin) && (yi <= ymax)) {
@@ -439,6 +442,9 @@ VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
   if (tcase < 3) {
     return grid_size * grid_size * grid_size;
   } else if ((tcase == 3) || (tcase == 5)) {
+    // the root is always marked as selected at run time by recut
+    // therefore there will always be at least 1 selected
+    count_selected_pixels = count_selected_pixels == 0 ? 1 : count_selected_pixels;
     // need to count total selected for tcase 3 and 5
     return count_selected_pixels;
   } else if (tcase == 4) {

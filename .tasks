@@ -4,11 +4,12 @@
 # jobs leveraging asynctasks.vim and asyncrun.vim
 
 [project-init]
-command=rm -rf build && cmake -H . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DRECUT_ENABLE_BENCHMARKING=ON -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc -DUSE_MMAP=ON -DUSE_OMP_BLOCK=ON 
+command= rm -rf build && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug 
+# command=rm -rf build && cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DRECUT_ENABLE_BENCHMARKING=ON -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc -DUSE_MMAP=ON -DUSE_OMP_BLOCK=ON 
 #-DUSE_MCP3D=ON 
 #-DTEST_ALL_BENCHMARKS=ON
 #-DLOG=ON -DLOG_FULL=ON -DFULL_PRINT=ON 
-#-DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Debug 
+#-DCMAKE_CXX_COMPILER=clang++ 
 cwd=<root>
 
 [project-build]
@@ -16,7 +17,7 @@ command=cd build && make -j 56 && make install -j 56
 cwd=<root>
 
 [project-test]
-command=cd bin && ./recut_test --gtest_output=json:../data/test_detail.json --gtest_filter=Radius.Full
+command=cd bin && ./recut_test --gtest_output=json:../data/test_detail.json  --gtest_also_run_disabled_tests
 #--gtest_filter=*.ChecksIfFinalVerticesCorrect/11 | tee ../data/test_detail.log
 cwd=<root>
 

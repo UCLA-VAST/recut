@@ -6,8 +6,8 @@ cd recut
 mkdir build
 cd build
 cmake ..
-make 
-make install
+make [-j 8]
+make install [-j 8]
 ```
 
 If you are not on CDSC's n1 host, you will need to generate an
