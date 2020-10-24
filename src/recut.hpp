@@ -449,16 +449,26 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
     Container &fifo) {
   auto interval = grid.GetInterval(interval_id);
 
-#ifdef LOG
   if (interval->IsInMemory()) {
+#ifdef LOG
     cout << "Print recut interval " << interval_id << " stage: " << stage
       << '\n';
-  } else {
-    cout << "Recut interval " << interval_id << " stage: " << stage
-      << " never loaded returning without print\n";
-    return;
-  }
 #endif
+  } else {
+    if (this->mmap_) {
+#ifdef LOG
+      cout << "Recut interval " << interval_id << " stage: " << stage
+      << " never loaded during run, skipping...\n";
+#endif
+      return;
+    }
+    assertm(!(interval->IsInMemory()), "can't reload into memory");
+    interval->LoadFromDisk();
+#ifdef LOG
+    cout << "Recut interval " << interval_id << " stage: " << stage
+      << " loaded during print\n";
+#endif
+  }
 
   // these looping vars below are over the non-padded lengths of each interval
   VID_t i, j, k, xadjust, yadjust, zadjust;

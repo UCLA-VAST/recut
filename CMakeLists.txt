@@ -8,6 +8,11 @@ cmake_minimum_required(VERSION 3.8)
 
 project(recut)
 
+if(NOT DEFINED CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+
 # works for cmake 3.9+
 # https://stackoverflow.com/questions/48825416/missing-openmp-c-flags-openmp-c-lib-names
 if(CMAKE_C_COMPILER_ID MATCHES "Clang")

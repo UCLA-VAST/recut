@@ -59,9 +59,10 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
         v = nullptr;
         // if the entire interval not in memory make every possible
         // selected vertex with ground truth is also not valid
-        if (interval->IsInMemory()) {
-          v = recut.get_attr_vid(interval_id, block_id, vid, nullptr);
+        if (!(interval->IsInMemory())) {
+          interval->LoadFromDisk();
         }
+        v = recut.get_attr_vid(interval_id, block_id, vid, nullptr);
         // cout << i << endl << v.description() << " ";
         if (stage == "value") {
           if (recut.generated_image[vid]) {
@@ -597,12 +598,9 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
   // Note this will delete anything in the
   // same directory before writing
   // tcase 5 is deprecated
-  // std::vector<int> grid_sizes = {2, 4, 8, 16, 32, 64, 128, 256, 512};
-  // std::vector<int> testcases = {4, 3, 2, 1, 0};
-  // std::vector<double> selected_percents = {1, 10, 50, 100};
-  std::vector<int> grid_sizes = {512, 1024};
-  std::vector<int> testcases = {0};
-  std::vector<double> selected_percents = {100};
+  std::vector<int> grid_sizes = {2, 4, 8, 16, 32, 64, 128, 256, 512};
+  std::vector<int> testcases = {4, 3, 2, 1, 0};
+  std::vector<double> selected_percents = {1, 10, 50, 100};
 
   for (auto &grid_size : grid_sizes) {
     cout << "Create grids of " << grid_size << endl;
@@ -705,6 +703,10 @@ TEST(Image, ReadWrite) {
   vector<int> image_extents = {grid_size, grid_size, grid_size};
 
   VID_t selected = tol_sz * (slt_pct / 100); // for tcase 4
+  // always select at least the root
+  if (selected == 0) {
+    selected = 1;
+  }
   // cout << endl << "Select: " << selected << " (" << slt_pct << "%)" << endl;
   uint16_t *inimg1d = new uint16_t[tol_sz];
   create_image(tcase, inimg1d, grid_size, selected, get_central_vid(grid_size));
@@ -1450,7 +1452,10 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   // regenerating image is random and done at run time
   // if you were to set to true tcase 4 would have a mismatch
   // with the loaded image
-  bool force_regenerate_image = false;
+  bool force_regenerate_image = true;
+#ifdef USE_MCP3D
+  force_regenerate_image = false;
+#endif
   bool prune = false;
   std::string stage;
 
