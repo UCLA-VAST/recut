@@ -22,16 +22,24 @@ these files above can be generated via:
 ```
 cd ../bin
 ./recut_test --gtest_filter=Install."*"
+# Optionally run the entire test suite
+./recut_test
 ```
+
+If all test passed the installation is successful
 
 ### Dependencies
 This program relies on: 
-- currently the boost development environment:
-  sudo apt-get install libboost-all-dev
-- the google-test and google-benchmark library (included via git
-submodules and auto builds through cmake, see `recut/CMakeLists.txt`)
-- Optionally: `mcp3d::image` library (included) 
+- Cmake (version 3.17 or newer)
+  brings all necessary c++17 features
+- google-test and google-benchmark library submodules (already included via `git
+  --recursive ...`, auto built/linked through cmake, see
+  `recut/CMakeLists.txt` for details)
+- Optionally: `mcp3d::image` an image reading library for Tiff, Imaris file types see below 
+- Optionally: python3.8 matplotlib, gdb, clang-tools, linux-perf
+- Note: to increase reproducibility and dependencies issues we recommend developing within the Nix package environment (see the Troubleshooting section)
 
+#### Image reading with MCP3D library
 If you need image reading and writing capabilities rerun cmake and install
 like so:
 ```
@@ -48,6 +56,12 @@ cd ../bin
 cmake -B build -D USE_MCP3D=ON -D TEST_ALL_BENCHMARKS=ON
 ```
 
+##### MCP3D dependencies
+- Boost development environment:
+  e.g. `sudo apt-get install libboost-all-dev`
+- openssl
+- libtiff
+- mpich (optional)
 
 #### Troubleshooting
 Some of Recut's dependencies require latest releases then you may have installed on your system, for example cmake.
@@ -65,10 +79,10 @@ Now if you run:
 nix-shell
 `
 
-from Recut's base directory you should enter the nix-shell where an isolated development environment is downloaded and loaded for you
+from Recut's base directory you should enter the nix-shell where an isolated development environment is downloaded and loaded for you which includes cmake and all other dependencies needed for development.
 
 ### Usage
 ```
 cd recut/bin
-./recut --help
+./recut_test 
 ```
