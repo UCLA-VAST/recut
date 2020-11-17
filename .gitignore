@@ -4,6 +4,5 @@ build*/
 tags
 include
 *.ipynb_checkpoints
-data/*
 .clangd
 compile_commands.json
