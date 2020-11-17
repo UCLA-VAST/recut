@@ -10,19 +10,12 @@ make [-j 8]
 make install [-j 8]
 ```
 
-If you are not on CDSC's n1 host, you will need to generate an
-"IntervalBase" file.  For performance reasons, Recut relies on this
-pregenerated file, created in `/tmp/`, at runtime. 
-
-Additionally, if image reading capabilities are turned on via the Cmake
-USE_MCP3D variable, then for testing purposes a set of sample `test_images/`
-and `test_markers/` will be pregenerated before running any other tests. All of
-these files above can be generated via:
+If you have *any* errors in the above steps see the Troubleshooting section below. We recommend a tested version of cmake and all other dependencies, as opposed to installing a version on your system by hand, as also explained in the Troubleshooting section.
 
 ```
 cd ../bin
 ./recut_test --gtest_filter=Install."*"
-# Optionally run the entire test suite
+# Check installation by running the test suite
 ./recut_test
 ```
 
@@ -64,15 +57,27 @@ cmake -B build -D USE_MCP3D=ON -D TEST_ALL_BENCHMARKS=ON
 - mpich (optional)
 
 #### Troubleshooting
-Some of Recut's dependencies require latest releases then you may have installed on your system, for example cmake.
-In these scenarios, or if you're running into compile time issues we recommend running a pinned version of software via
-the Nix package manager. You can install Nix on any Linux distribution, MacOS and Windows (via WSL) via the recommended multi-user installation:
+Some of Recut's dependencies require later releases then you may have
+installed on your system, for example cmake.  In these scenarios, or if you're
+running into compile time issues we recommend running a pinned version of
+software via the Nix package manager. To our knowledge, Nix is the state of the art 
+in terms of software reproducibility, package and dependency management, and solving
+versioning issues in multi-language repositories.
 
-`
+You can install Nix on any Linux
+distribution, MacOS and Windows (via WSL) with:
+
+```
+# just for your user
+curl -L https://nixos.org/nix/install | sh
+# or for a multi-user installation, instead run
 sh <(curl -L https://nixos.org/nix/install) --daemon
+
 # check installation
 nix-shell --version
-`
+```
+
+The library employs some system features that have not been fully tested in containers / Docker. As such we recommend installing with the Nix package manager on a bear bones linux, MacOS, WSL machine or similar VM for now.
 
 Now if you run:
 `
@@ -86,3 +91,14 @@ from Recut's base directory you should enter the nix-shell where an isolated dev
 cd recut/bin
 ./recut_test 
 ```
+
+Note the binary file for image reading is currently turned off in CMakeLists by default.
+
+### Internal notes
+If you are on CDSC's n1 host, you will need to change the name of the generated file specified by
+`#define INTERVAL_BASE ...` to something new by changing it in `src/config.hpp`.  For performance reasons, Recut creates this pregenerated file with name defined by `INTERVAL_BASE`, in the `/tmp/` directory in your temporary filesystem. After installation, recut will use this file at runtime. 
+
+Additionally, if image reading capabilities are turned on via the Cmake
+USE_MCP3D variable, then for testing purposes a set of sample `test_images/`
+will be pregenerated before running any other tests, see the Image reading with MCP3D section for details.
+
