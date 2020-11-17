@@ -21,7 +21,7 @@ these files above can be generated via:
 
 ```
 cd ../bin
-./recut_test --gtest_filter=Install.CreateIntervalBase
+./recut_test --gtest_filter=Install."*"
 ```
 
 ### Dependencies
@@ -42,7 +42,7 @@ make
 make install
 cd ../bin
 # install the test images like so:
-./recut_test --gtest_filter=Install.* --gtest_also_run_disabled_tests
+./recut_test --gtest_filter=Install."*" 
 
 # you may also want to run the full set of test benchmarks by instead defining
 cmake -B build -D USE_MCP3D=ON -D TEST_ALL_BENCHMARKS=ON
