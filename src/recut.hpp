@@ -1852,6 +1852,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
             assertm(current->valid_vid(), "must recover a valid_vid vertex");
             // 0000 0000, selected no parent, all zeros
             current->mark_root(dummy_min->vid);
+            assertm(current->root(), "root value not set properly");
             assertm(current->value == 0, "root value not set properly");
           }
 
@@ -3271,11 +3272,12 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
           auto attr = get_attr_vid(interval_id, block_id, vid, nullptr);
           if (filter_by_label(attr, accept_band)) {
             // different copies have same values other than handle
-            if (!(attr->valid_parent())) {
+            if (!(attr->valid_parent()) && ! (attr->root())) {
               std::cout << "could not find a valid connection for non-root node: "
                 << attr->description() << '\n';
               printf("with address of %p\n", (void*) attr);
               std::cout << "in interval " << interval_id << '\n';
+              assertm(! ( attr->root() ), "incorrect valid_parent status");
               assertm(attr->valid_parent() == false, "incorrect valid_parent status");
               assertm(false, "must have a valid connection");
             }

@@ -11,13 +11,13 @@ make install [-j 8]
 ```
 
 If you are not on CDSC's n1 host, you will need to generate an
-"IntervalBase" file which takes about 10 minutes.  For performance reasons, Recut relies on this
+"IntervalBase" file.  For performance reasons, Recut relies on this
 pregenerated file, created in `/tmp/`, at runtime. 
 
-If image reading capabilities are turned on via the Cmake USE_MCP3D variable, then for testing
-purposes a set of sample `test_images/` and `test_markers/`
-will be pregenerated before running any other tests. All of these
-files above can be generated via:
+Additionally, if image reading capabilities are turned on via the Cmake
+USE_MCP3D variable, then for testing purposes a set of sample `test_images/`
+and `test_markers/` will be pregenerated before running any other tests. All of
+these files above can be generated via:
 
 ```
 cd ../bin
