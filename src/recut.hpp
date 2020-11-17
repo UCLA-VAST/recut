@@ -11,7 +11,6 @@
 #include <future>
 #include <iostream>
 #include <map>
-#include <openssl/ssl.h>
 #include <set>
 #include <type_traits>
 #include <unistd.h>
@@ -20,6 +19,10 @@
 // taskflow significantly increases load times, avoid loading it if possible
 #ifdef TF
 #include <taskflow/taskflow.hpp>
+#endif
+
+#ifdef USE_MCP3D
+#include <openssl/ssl.h>
 #endif
 
 struct InstrumentedUpdateStatistics {
