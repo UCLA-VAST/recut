@@ -593,7 +593,7 @@ TEST(Interval, GetAttrVidMultiInterval) {
  * selected percents
  * install files into data/
  */
-TEST(Install, DISABLED_CreateImagesMarkers) {
+TEST(Install, CreateImagesMarkers) {
   // change these to desired params
   // Note this will delete anything in the
   // same directory before writing
