@@ -21,7 +21,7 @@ these files above can be generated via:
 
 ```
 cd ../bin
-./recut_test --gtest_filter=Install.*
+./recut_test --gtest_filter=Install.CreateIntervalBase
 ```
 
 ### Dependencies
