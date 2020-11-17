@@ -983,28 +983,6 @@ TEST(VertexAttr, CopyOp) {
   ASSERT_NE(v1, v2); // make sure they not just the same obj
 }
 
-TEST(RecutPipeline, DISABLED_PrintDefaultInfo) {
-  auto v1 = new VertexAttr();
-  auto ps = sysconf(_SC_PAGESIZE);
-  auto vs = sizeof(VertexAttr);
-  cout << "sizeof vidt " << sizeof(VID_t) << " bytes" << std::scientific
-    << endl;
-  cout << "sizeof float " << sizeof(float) << " bytes" << endl;
-  cout << "sizeof bitfield " << sizeof(bitfield) << " bytes" << endl;
-  cout << "sizeof vertex " << vs << " bytes" << endl;
-  cout << "sizeof 1024^3 interval " << sizeof(VertexAttr) << " GB" << endl;
-  cout << "page size " << ps << " B" << endl;
-  cout << "VertexAttr vertices per page " << ps / vs << endl;
-  cout << "cube root of vertices per page " << (int)cbrt(ps / vs) << endl;
-  cout << "AvailMem " << GetAvailMem() / (1024 * 1024 * 1024) << " GB" << endl;
-  cout << "MAX_INTERVAL_VERTICES " << MAX_INTERVAL_VERTICES << std::scientific
-    << endl;
-  cout << "Vertices needed for a 1024^3 interval block size 4 : "
-    << get_used_vertex_size(1024, 4) << std::scientific << endl;
-  cout << "Vertices needed for a 2048^3 interval block size 4 : "
-    << get_used_vertex_size(2048, 4) << std::scientific << endl;
-}
-
 TEST(CompareTree, All) {
   std::vector<MyMarker *> truth;
   std::vector<MyMarker *> check;
@@ -1854,6 +1832,28 @@ INSTANTIATE_TEST_CASE_P(
 #endif
 #endif
   ));
+
+TEST(RecutPipeline, PrintDefaultInfo) {
+  auto v1 = new VertexAttr();
+  auto ps = sysconf(_SC_PAGESIZE);
+  auto vs = sizeof(VertexAttr);
+  cout << "sizeof vidt " << sizeof(VID_t) << " bytes" << std::scientific
+    << endl;
+  cout << "sizeof float " << sizeof(float) << " bytes" << endl;
+  cout << "sizeof bitfield " << sizeof(bitfield) << " bytes" << endl;
+  cout << "sizeof vertex " << vs << " bytes" << endl;
+  cout << "sizeof 1024^3 interval " << sizeof(VertexAttr) << " GB" << endl;
+  cout << "page size " << ps << " B" << endl;
+  cout << "VertexAttr vertices per page " << ps / vs << endl;
+  cout << "cube root of vertices per page " << (int)cbrt(ps / vs) << endl;
+  cout << "AvailMem " << GetAvailMem() / (1024 * 1024 * 1024) << " GB" << endl;
+  cout << "MAX_INTERVAL_VERTICES " << MAX_INTERVAL_VERTICES << std::scientific
+    << endl;
+  cout << "Vertices needed for a 1024^3 interval block size 4 : "
+    << get_used_vertex_size(1024, 4) << std::scientific << endl;
+  cout << "Vertices needed for a 2048^3 interval block size 4 : "
+    << get_used_vertex_size(2048, 4) << std::scientific << endl;
+}
 
   int main(int argc, char **argv) {
     testing::InitGoogleTest(&argc, argv);
