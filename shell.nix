@@ -6,6 +6,8 @@ pkgs.mkShell {
     pkgs.boost
     pkgs.python38Packages.matplotlib 
     pkgs.cmake
+    pkgs.gdb
+    pkgs.clang-tools
     #pkgs.libtiff
     #pkgs.mpich
   ];

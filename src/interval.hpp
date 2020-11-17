@@ -113,7 +113,7 @@ class Interval {
       if (mmap_) {
         int fd;
 #ifdef FULL_PRINT
-        cout << "mmap() fn: " << fn_ << '\n';
+        cout << "mmap() fn: " << fn_ << " for interval: " << interval_id_ << '\n';
 #endif
         assert((fd = open(fn_.c_str(), O_RDWR)) != -1);
 #ifdef USE_HUGE_PAGE
@@ -131,7 +131,7 @@ class Interval {
       } else {
         inmem_ptr0_ = (VertexAttr *)malloc(mmap_length_);
 #ifdef FULL_PRINT
-        cout << "LoadFromDisk() fn: " << fn_ << '\n';
+        cout << "LoadFromDisk() fn: " << fn_ << " for interval: " << interval_id_ << '\n';
 #endif
         assert(fs::exists(fn_));
         std::ifstream ifile(
@@ -190,7 +190,7 @@ class Interval {
       // output is now specific to the interval
       fn_ = get_data_dir() + "/interval" + std::to_string(interval_id_) + ".bin";
 #ifdef FULL_PRINT
-      cout << "SaveToDisk() fn: " << fn_ << '\n';
+      cout << "SaveToDisk() fn: " << fn_ <<  " for interval: " << interval_id_ <<'\n';
 #endif
       std::ofstream ofile(fn_, ios::out | ios::binary); // write ops
       assert(ofile.is_open());

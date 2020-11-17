@@ -16,7 +16,7 @@ typedef uint64_t VID_t; // for multi-interval runs
 // block_size 4 including padding (ghost cells) WARNING: if you change this
 // number you need to rerun CreateIntervalBase function in recut_tests.cpp to
 // save an interval at least that size at /tmp/
-const VID_t MAX_INTERVAL_VERTICES = 3700000000;
+const VID_t MAX_INTERVAL_VERTICES = 128 * 128 * 128;
 
 // equivalent max allows up to interval actual size of 256, 256, 256 with
 // block_size 4 including padding (ghost cells) Note this is ~786 MB, for
