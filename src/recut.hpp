@@ -2696,6 +2696,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
       // failed
       assertm(false, "Does not currently support diagonal connections or any ghost "
           "regions greater that 1");
+      return 0; // for compiler
     }
 
   /*

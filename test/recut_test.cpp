@@ -522,30 +522,21 @@ TEST(Install, CreateIntervalBase) {
   ASSERT_NO_FATAL_FAILURE(interval_base_immutable(2));
 }
 
-TEST(Interval, LoadSaveIntervalMmap) {
-  bool mmap_ = true;
-  ASSERT_NO_FATAL_FAILURE(load_save(mmap_));
-}
-
 TEST(Interval, LoadSaveInterval) {
+#ifdef USE_MMAP
+  bool mmap_ = true;
+#else
   bool mmap_ = false;
+#endif
   ASSERT_NO_FATAL_FAILURE(load_save(mmap_));
 }
 
 TEST(Interval, GetAttrVid) {
-  bool mmap_ = false;
-  VID_t grid_size = 4;
-  VID_t nvid = grid_size * grid_size * grid_size;
-
-  ASSERT_NO_FATAL_FAILURE(
-      test_get_attr_vid(mmap_, grid_size, grid_size, grid_size));
-  // make sure base interval is implemented in a read-only manner
-  ASSERT_NO_FATAL_FAILURE(
-      interval_base_immutable(get_used_vertex_size(grid_size, grid_size)));
-}
-
-TEST(Interval, GetAttrVidMmap) {
+#ifdef USE_MMAP
   bool mmap_ = true;
+#else
+  bool mmap_ = false;
+#endif
   VID_t grid_size = 4;
   VID_t nvid = grid_size * grid_size * grid_size;
 
@@ -557,6 +548,11 @@ TEST(Interval, GetAttrVidMmap) {
 }
 
 TEST(Interval, GetAttrVidMultiBlock) {
+#ifdef USE_MMAP
+  bool mmap_ = true;
+#else
+  bool mmap_ = false;
+#endif
   VID_t grid_size = 8;
   VID_t block_size = grid_size / 2;
   // this is the total vertices that will be used including ghost cells
@@ -564,7 +560,6 @@ TEST(Interval, GetAttrVidMultiBlock) {
   // this is the domain size not counting ghost cells
   VID_t nvid = grid_size * grid_size * grid_size;
 
-  bool mmap_ = true;
   // single interval
   ASSERT_NO_FATAL_FAILURE(
       test_get_attr_vid(mmap_, grid_size, grid_size, grid_size / 2));
@@ -573,18 +568,24 @@ TEST(Interval, GetAttrVidMultiBlock) {
 }
 
 TEST(Interval, GetAttrVidMultiInterval) {
+#ifdef USE_MMAP
+  bool mmap_ = true;
+#else
+  bool mmap_ = false;
+#endif
+
   VID_t grid_size = 8;
   auto interval_size = grid_size / 2;
   VID_t nvid = grid_size * grid_size * grid_size;
   auto interval_vert_num = get_used_vertex_size(grid_size, interval_size);
 
-  bool mmap_ = true;
   // single block per interval
   ASSERT_NO_FATAL_FAILURE(
       test_get_attr_vid(mmap_, grid_size, interval_size, interval_size));
 
   ASSERT_NO_FATAL_FAILURE(interval_base_immutable(interval_vert_num));
 }
+
 
 /*
  * Create the desired markers (seed locations) and images to be used by other

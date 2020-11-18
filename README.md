@@ -1,4 +1,8 @@
-### Installation
+[![built with
+nix](https://builtwithnix.org/badge.svg)](https://builtwithnix.org)
+![Nix](https://github.com/UCLA-VAST/recut-pipeline/workflows/Nix/badge.svg)
+
+## Installation
 ```
 # don't forget --recursive flag otherwise you'll have confusing compilation errors
 git clone --recursive https://github.com/UCLA-VAST/recut-pipeline.git
@@ -86,15 +90,7 @@ nix-shell
 
 from Recut's base directory you should enter the nix-shell where an isolated development environment is downloaded and loaded for you which includes cmake and all other dependencies needed for development.
 
-### Usage
-```
-cd recut/bin
-./recut_test 
-```
-
-Note the binary file for image reading is currently turned off in CMakeLists by default.
-
-### Internal notes
+#### Internal notes
 If you are on CDSC's n1 host, you will need to change the name of the generated file specified by
 `#define INTERVAL_BASE ...` to something new by changing it in `src/config.hpp`.  For performance reasons, Recut creates this pregenerated file with name defined by `INTERVAL_BASE`, in the `/tmp/` directory in your temporary filesystem. After installation, recut will use this file at runtime. 
 
@@ -102,3 +98,16 @@ Additionally, if image reading capabilities are turned on via the Cmake
 USE_MCP3D variable, then for testing purposes a set of sample `test_images/`
 will be pregenerated before running any other tests, see the Image reading with MCP3D section for details.
 
+## Usage
+```
+cd recut/bin
+./recut_test 
+```
+
+Note the binary file for image reading is currently turned off in CMakeLists by default.
+
+## Documentation
+This repository began as a fork of the out-of-memory graph processing framework detailed [here](https://vast.cs.ucla.edu/~chiyuze/pub/icde16.pdf)
+
+The execution pattern and partitioning strategy much more strongly resembles this [paper]( https://arxiv.org/abs/1811.00009), however no public implementation for it was provided.
+Reading this second paper is a fast way to understand the overall design and execution pattern of Recut.
