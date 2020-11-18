@@ -1,5 +1,7 @@
-{ pkgs ? import (builtins.fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-20.03.tar.gz") {} }:
-
+let
+  sources = import ./nix/sources.nix;
+  pkgs = import sources.nixpkgs {};
+in
 pkgs.mkShell {
   buildInputs = [
     pkgs.openssl
