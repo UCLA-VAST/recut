@@ -1,6 +1,6 @@
 [![built with
 nix](https://builtwithnix.org/badge.svg)](https://builtwithnix.org)
-![Nix](https://github.com/UCLA-VAST/recut-pipeline/workflows/Nix/badge.svg)
+![Nix](https://github.com/UCLA-VAST/recut-pipeline/workflows/mintest/badge.svg?event=push)
 
 ## Installation
 ```
