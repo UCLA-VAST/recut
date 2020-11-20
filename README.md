@@ -99,6 +99,7 @@ USE_MCP3D variable, then for testing purposes a set of sample `test_images/`
 will be pregenerated before running any other tests, see the Image reading with MCP3D section for details.
 
 ## Usage
+
 ```
 cd recut/bin
 ./recut_test 
