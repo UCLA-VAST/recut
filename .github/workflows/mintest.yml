@@ -10,6 +10,6 @@ jobs:
     - uses: cachix/install-nix-action@v12
     - run: nix-build
     - run: nix-shell --run "echo OK"
-    - run: nix-instantiate --eval -E '(import <nixpkgs> {}).lib.version'
+    - run: nix-instantiate --eval -E '(import <nixpkgs-unstable> {}).lib.version'
 
 
