@@ -10,8 +10,12 @@ typedef uint64_t VID_t; // for multi-interval runs
 // pre-generated array of vertices initialized wth desired default values,
 // useful for mmap
 // must match the VID_t bit length type
+// on remote servers with mounted filesystems it is 
+// recommended to place the interval in /tmp/ to avoid mmap issues
 //#define INTERVAL_BASE "/tmp/interval_base_32.bin";
-#define INTERVAL_BASE "/tmp/interval_base_64bit.bin"
+//#define INTERVAL_BASE "/tmp/interval_base_64bit.bin"
+#define INTERVAL_BASE "../data/interval_base_64bit.bin"
+
 // equivalent max allows up to interval actual size of 1024, 1024, 1024 with
 // block_size 4 including padding (ghost cells) WARNING: if you change this
 // number you need to rerun CreateIntervalBase function in recut_tests.cpp to

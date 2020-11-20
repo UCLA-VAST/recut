@@ -1,8 +1,8 @@
 logs/
-bin*/
 build*/
 tags
 include
 *.ipynb_checkpoints
 .clangd
 compile_commands.json
+result

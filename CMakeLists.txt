@@ -44,12 +44,20 @@ set(RECUT_ENABLE_CL_EXECUTABLE OFF CACHE BOOL "Enable Recut building its command
 set(RECUT_ENABLE_TESTING ON CACHE BOOL "Enable Recut building its test targets")
 set(RECUT_ENABLE_BENCHMARKING OFF CACHE BOOL "Enable Recut building its benchmarks targets")
 
-if (RECUT_ENABLE_TESTING)
+# NIX-BUILD overrides some dependencies
+option( FROM_NIX_BUILD OFF)
+if (FROM_NIX_BUILD)
+  message(STATUS " FROM_NIX_BUILD ON")
+endif()
+
+# nix-build handles gtest and gbenchmark libraries independently from submodules
+# they are automatically added to the include path
+if (RECUT_ENABLE_TESTING AND NOT FROM_NIX_BUILD)
   # build tests (targets: gtest, gtest_main)
   add_subdirectory(extern/googletest/googletest)
 endif()
 
-if (RECUT_ENABLE_BENCHMARKING)
+if (RECUT_ENABLE_BENCHMARKING AND NOT FROM_NIX_BUILD)
   # build google benchmark (target: benchmark)
   # do not build tests of benchmarking lib
   set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "Suppressing benchmark's tests" FORCE)
@@ -137,10 +145,10 @@ include_directories(src)
 include_directories(/nix/store/1z56r6kx097b9j07r26kwhngdwjr03k1-openmp-7.1.0/include)
 
 # variable and target dependent links
-if (RECUT_ENABLE_TESTING)
+if (RECUT_ENABLE_TESTING )
   target_link_libraries(recut_test PRIVATE gtest)
 endif()
-if (RECUT_ENABLE_BENCHMARKING)
+if (RECUT_ENABLE_BENCHMARKING AND NOT FROM_NIX_BUILD)
   target_link_libraries(recut_bench PRIVATE benchmark)
 endif()
 
@@ -211,8 +219,11 @@ foreach(I ${ALL_TARGETS})
   target_compile_options(${I} PRIVATE -fno-omit-frame-pointer -g)
   install(TARGETS ${I} DESTINATION ${PROJECT_SOURCE_DIR}/bin)
 
-  # dependencies
-  target_include_directories(${I} PRIVATE extern/range-v3/include)
+  # other dependencies
+  if (NOT FROM_NIX_BUILD) 
+    target_include_directories(${I} PRIVATE extern/range-v3/include)
+  endif()
+
   if (USE_OMP_INTERVAL OR USE_OMP_BLOCK)
     target_link_libraries(${I} PRIVATE OpenMP::OpenMP_CXX)
   endif()
