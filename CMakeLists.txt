@@ -219,8 +219,11 @@ foreach(I ${ALL_TARGETS})
   target_compile_options(${I} PRIVATE -fno-omit-frame-pointer -g)
   install(TARGETS ${I} DESTINATION ${PROJECT_SOURCE_DIR}/bin)
 
-  # dependencies
-  target_include_directories(${I} PRIVATE extern/range-v3/include)
+  # other dependencies
+  if (NOT FROM_NIX_BUILD) 
+    target_include_directories(${I} PRIVATE extern/range-v3/include)
+  endif()
+
   if (USE_OMP_INTERVAL OR USE_OMP_BLOCK)
     target_link_libraries(${I} PRIVATE OpenMP::OpenMP_CXX)
   endif()
