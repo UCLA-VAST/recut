@@ -12,15 +12,22 @@ pkgs.stdenv.mkDerivation {
     && baseNameOf path != "bin/*"
     && baseNameOf path != "data/*") ./.;
 
+  cmakeFlags = ["-DFROM_NIX_BUILD=ON"];
   nativeBuildInputs = [ pkgs.cmake ];
 
   # used for automated github testing 
   # see .github/workflows/*.yaml
   doCheck = true;
+  enableParallelBuilding = true;
 
   buildInputs = [ 
-    pkgs.breakpointHook
     pkgs.python38Packages.matplotlib 
+    pkgs.gtest
+    pkgs.gbenchmark
+    # warning leaving breakpointHook on 
+    # can create many sleeping processes on your system
+    # it will cause github actions to hang, if there are any failures
+    #pkgs.breakpointHook
     #openssl 
     #boost 
     #libtiff 
