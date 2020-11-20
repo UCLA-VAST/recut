@@ -24,6 +24,7 @@ pkgs.stdenv.mkDerivation {
     pkgs.python38Packages.matplotlib 
     pkgs.gtest
     pkgs.gbenchmark
+    pkgs.range-v3
     # warning leaving breakpointHook on 
     # can create many sleeping processes on your system
     # it will cause github actions to hang, if there are any failures
