@@ -36,8 +36,8 @@ stdenv.mkDerivation {
   # are in the data directory before running any other tests
   checkPhase="./recut_test --gtest_filter=Install.\"*\"; ./recut_test --gtest_output=json:../data/test_detail.json | tee ../data/test_detail.log";
 
-  installPhase = ''
-    mkdir -p $out/bin
-    cp /build/recut-pipeline/build/recut_test $out/bin/recut_test
-  '';
+  #installPhase = ''
+    #mkdir -p $out/bin
+    #cp /build/recut-pipeline/build/recut_test $out/bin/recut_test
+  #'';
 }
