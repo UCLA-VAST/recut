@@ -27,8 +27,7 @@ stdenv.mkDerivation {
     gbenchmark
     range-v3
     # warning leaving breakpointHook on 
-    # can create many sleeping processes on your system
-    # it will cause github actions to hang, if there are any failures
+    # will cause github actions to hang, if there are any failures
     # always comment it out before pushing
     # breakpointHook
   ];
