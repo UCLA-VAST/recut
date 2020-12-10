@@ -25,28 +25,39 @@ def test_ratios(ratios, r_ratios):
             assert (ratio == check_ratio),"ratio did not match"
 
 def rplot(xiter, xlabel, yiter, ylabel, title, args, lineprops=['k-x', 'r-o', 'g-d', 'b->', 'm-s'],
-        legends=[''], legend_metric=''):
-    categories = False
-    if len(xiter) != len(yiter):
-        print('plotting categories')
-        xiter == list(range(len(yiter)))
-        categories = True
+        legends=[''], legend_metric='', yiter_secondary=[], bar=False):
+    xiter == list(range(len(yiter)))
     assert(len(xiter) == len(yiter))
 
-    if legends[0] != '':
-        assert(len(yiter) == len(legends))
+    # if legends[0] != '':
+        # assert(len(yiter) == len(legends))
     lineprops = lineprops[:len(legends)]
     title = title.replace('_', '-')
 
-    for x, y, lineprop, legend in zip(xiter, yiter, lineprops, legends):
-        plt.plot(x, y, lineprop, label=str(legend) + legend_metric)
+    if bar:
+        width = .25
+        halfbar = width / 2
+        # Get some pastel shades for the colors
+        colors = plt.cm.BuPu([0.25, .5])
+        x = [i - halfbar for i in range(len(xiter))]  
+        x1 = [i - halfbar for i in range(len(xiter))]  
+        x2 = [i + halfbar for i in range(len(xiter))] 
+        plt.bar(x, yiter, width, label=legends[0], 
+                color=colors[0])
+        if len(yiter_secondary) != 0:
+            plt.bar(x2, yiter_secondary, width, label=legends[1], color=colors[1])
+    else:
+        for x, y, lineprop, legend in zip(xiter, yiter, lineprops, legends):
+            plt.plot(x, y, lineprop, label=str(legend) + legend_metric)
     plt.xlabel(xlabel)
     # take the first one even though they should all match
     plt.ylabel(ylabel)
     if len(xiter) > 1:
         plt.legend()
-    if not categories:
-        plt.xticks(xiter[0], rotation=75)
+    if bar:
+        plt.xticks(x, labels=xiter, rotation=75)
+    else:
+        plt.xticks(xiter, rotation=75)
     plt.title(title)
     plt.tight_layout()
     fig_output_path = f'{args.output}{title}.{args.type}'.replace(' ', '_').replace('$', '').replace('\\', '')
@@ -134,20 +145,24 @@ def radius(args):
 def stages(args):
     ''' Show runtime comparison of stages'''
     stage_names = ['value', 'radius', 'prune', 'qc', 'g-cut']
-    runtimes = [7.4, 8.1, 9.7, 1.2, 16]
+    runtimes =     [7.4, 8.1, 9.7, 1.2, 16]
+    seq_runtimes = [126.4, 72.9, 31.0, 0, 0]
     if args.save or args.show:
         field = r'Recut speedup factor %'
         ylabel = r'Runtime (mins)'
-        title = r'Runtime comparison of stages'
+        title = r'Stage Runtime Comparison'
         # xargs = (list(range(len(stage_names))), r'Stages')
         xargs = (stage_names, r'Stages')
         yargs = (runtimes, ylabel)
+        legends = (r'Recut', r'APP2')
 
         rplot(*xargs,
                 *yargs,
                 title,
-                args,
-                )
+                args, 
+                legends=legends,
+                yiter_secondary=seq_runtimes, 
+                bar=True)
 
 def value(args):
     ''' Fastmarching Performance '''
