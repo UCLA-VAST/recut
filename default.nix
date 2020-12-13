@@ -39,9 +39,11 @@ stdenv.mkDerivation {
   installPhase = ''
     mkdir -p $out/data
     pwd
-    ls
-    ls /build/recut-pipeline/data/*.json
-    cp /build/recut-pipeline/data/*.json $out/data/
+    ls ../data
+    #ls /build/recut-pipeline/data/*.json
+    #cp /build/recut-pipeline/data/*.json $out/data/
+    ls ../data/*.json
+    cp ../data/*.json $out/data/
     ls $out/data/
   '';
   #installPhase = ''
