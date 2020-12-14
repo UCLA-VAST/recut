@@ -602,9 +602,14 @@ TEST(Install, CreateImagesMarkers) {
   std::vector<int> grid_sizes = {2, 4, 8, 16, 32, 64, 128, 256, 512};
   std::vector<int> testcases = {4, 3, 2, 1, 0};
   std::vector<double> selected_percents = {1, 10, 50, 100};
+  auto print = false;
+#ifdef LOG
+  print = true;
+#endif
 
   for (auto &grid_size : grid_sizes) {
-    cout << "Create grids of " << grid_size << endl;
+    if (print)
+      cout << "Create grids of " << grid_size << endl;
     auto root_vid = get_central_vid(grid_size);
     // FIXME save root marker vid
     long sz0 = (long)grid_size;
@@ -620,11 +625,14 @@ TEST(Install, CreateImagesMarkers) {
     VertexAttr *root = new VertexAttr();
     root->vid = (VID_t)z * sz0 * sz1 + y * sz0 + x;
     ASSERT_EQ(root->vid, root_vid);
-    cout << "x " << x << "y " << y << "z " << z << endl;
-    cout << "root vid " << root->vid << endl;
+    if (print) {
+      cout << "x " << x << "y " << y << "z " << z << endl;
+      cout << "root vid " << root->vid << endl;
+    }
 
     for (auto &tcase : testcases) {
-      cout << "  tcase " << tcase << endl;
+      if (print)
+        cout << "  tcase " << tcase << endl;
       for (auto &slt_pct : selected_percents) {
         if ((tcase != 4) && (slt_pct != 100))
           continue;
@@ -904,7 +912,10 @@ TEST(TileThresholds, AllTcases) {
   auto grid_size = 4;
   auto slt_pct = 50;
   auto grid_vertex_size = grid_size * grid_size * grid_size;
-  auto print_image = true;
+  auto print_image = false;
+#ifdef FULL_PRINT
+  print_image = true;
+#endif
   std::vector<int> tcases = {1, 2, 3, 4, 5, 6};
   for (const auto &tcase : tcases) {
     auto args =
@@ -928,23 +939,29 @@ TEST(TileThresholds, AllTcases) {
           grid_vertex_size, slt_pct / 100.);
       tile_thresholds->get_max_min(image.Volume<uint16_t>(0), grid_vertex_size);
 
-      cout << "tcase " << tcase << " bkg_thresh " << bkg_thresh << "\nmax "
-        << tile_thresholds->max_int << " min " << tile_thresholds->min_int
-        << '\n';
+      if (print_image) {
+        cout << "tcase " << tcase << " bkg_thresh " << bkg_thresh << "\nmax "
+          << tile_thresholds->max_int << " min " << tile_thresholds->min_int
+          << '\n';
+      }
     }
 #endif
 
     if (tcase <= 5) {
       create_image(tcase, inimg1d.get(), grid_size, selected,
           get_central_vid(grid_size));
-      print_image_3D(inimg1d.get(), {grid_size, grid_size, grid_size});
+      if (print_image) {
+        print_image_3D(inimg1d.get(), {grid_size, grid_size, grid_size});
+      }
       bkg_thresh = recut.get_bkg_threshold(inimg1d.get(), grid_vertex_size,
           slt_pct / 100.);
       tile_thresholds->get_max_min(inimg1d.get(), grid_vertex_size);
 
-      cout << "tcase " << tcase << " bkg_thresh " << bkg_thresh << "\nmax "
-        << tile_thresholds->max_int << " min " << tile_thresholds->min_int
-        << '\n';
+      if (print_image) {
+        cout << "tcase " << tcase << " bkg_thresh " << bkg_thresh << "\nmax "
+          << tile_thresholds->max_int << " min " << tile_thresholds->min_int
+          << '\n';
+      }
     }
   }
 }
@@ -1110,9 +1127,12 @@ TEST(CoveredByParent, Full) {
 }
 
 TEST(Radius, Full) {
-  bool print_all = true;
-  bool check_xy = false;
+  bool print_all = false;
   bool print_csv = false;
+#ifdef LOG
+  print_all = true;
+#endif
+  bool check_xy = false;
   bool prune = false;
   auto expect_exact_radii_match = false;
 
@@ -1295,9 +1315,11 @@ TEST(Radius, Full) {
           RecordProperty(xy_stream.str(), xy_err);
           RecordProperty(recut_stream.str(), recut_err);
 
-          std::cout << "roots:\n";
-          rng::for_each(root_vids, [](auto i) { std::cout << i << ", "; });
-          std::cout << '\n';
+          if (print_all) {
+            std::cout << "roots:\n";
+            rng::for_each(root_vids, [](auto i) { std::cout << i << ", "; });
+            std::cout << '\n';
+          }
 
           recut.finalize(args.output_tree, false, false);
 
@@ -1445,7 +1467,10 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   args.recut_parameters();
   // uint16_t is image_t here
   TileThresholds<uint16_t> *tile_thresholds;
-  bool print_all = true;
+  bool print_all = false;
+#ifdef LOG
+  print_all = true;
+#endif 
 
   auto recut = Recut<uint16_t>(args);
   std::vector<VID_t> root_vids;
@@ -1477,7 +1502,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     // thus they will only be replaced if we're reading a real image
     tile_thresholds = new TileThresholds<uint16_t>(2, 0, 0);
   }
-  std::cout << "Using bkg_thresh: " << tile_thresholds->bkg_thresh << '\n';
+  //std::cout << "Using bkg_thresh: " << tile_thresholds->bkg_thresh << '\n';
   RecordProperty("bkg_thresh", tile_thresholds->bkg_thresh);
   RecordProperty("max_int", tile_thresholds->max_int);
   RecordProperty("min_int", tile_thresholds->min_int);
@@ -1498,7 +1523,9 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     std::ostringstream cat;
     std::copy(interval_open_count.begin(), interval_open_count.end(),
         std::ostream_iterator<int>(cat, ", "));
-    std::cout << "interval reopens: " << cat.str() << '\n';
+#ifdef LOG
+    std::cout << "Interval reopens" << cat.str() << '\n';
+#endif
 
     auto [mean, sum, std_dev] =
       iter_stats(value_update_stats->interval_open_counts);
@@ -1560,8 +1587,10 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
   double actual_slt_pct =
     (100. * args.output_tree.size()) / tol_sz;
+#ifdef LOG
   cout << "Selected " << actual_slt_pct
     << "% of pixels, total count: " << args.output_tree.size() << '\n';
+#endif
   RecordProperty("Foreground (%)", actual_slt_pct);
   RecordProperty("Foreground count (pixels)", args.output_tree.size());
 

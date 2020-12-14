@@ -597,8 +597,14 @@ RecutCommandLineArgs get_args(int grid_size, int interval_size,
 }
 
 void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
+  auto print = false;
+#ifdef LOG
+  print = true;
+#endif
+
   fs::remove_all(fn); // make sure it's an overwrite
-  cout << "      Delete old: " << fn << '\n';
+  if (print) 
+    cout << "      Delete old: " << fn << '\n';
   fs::create_directories(fn);
   fn = fn + "marker";
   std::ofstream mf;
@@ -606,13 +612,20 @@ void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
   mf << "# x,y,z\n";
   mf << x << "," << y << "," << z;
   mf.close();
-  cout << "      Wrote marker: " << fn << '\n';
+  if (print) 
+    cout << "      Wrote marker: " << fn << '\n';
 }
 
 #ifdef USE_MCP3D
 void write_tiff(uint16_t *inimg1d, std::string base, int grid_size) {
+  auto print = false;
+#ifdef LOG
+  print = true;
+#endif
+
   fs::remove_all(base); // make sure it's an overwrite
-  cout << "      Delete old: " << base << '\n';
+  if (print)
+    cout << "      Delete old: " << base << '\n';
   fs::create_directories(base);
   // print_image(inimg1d, grid_size * grid_size * grid_size);
   for (int zi = 0; zi < grid_size; zi++) {
@@ -636,7 +649,8 @@ void write_tiff(uint16_t *inimg1d, std::string base, int grid_size) {
     // std::vector<int> dims = {grid_size, grid_size, grid_size};
     // mcp3d::image::MImage mimg(dims); // defaults to uint16 format
   }
-  cout << "      Wrote test images at: " << base << '\n';
+  if (print)
+    cout << "      Wrote test images at: " << base << '\n';
 }
 
 void read_tiff(std::string fn, std::vector<int> image_offsets,
@@ -777,7 +791,13 @@ auto get_vids_sorted = [](auto tree, auto xdim, auto ydim) {
 template <typename T, typename T2, typename T3>
 auto compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3& recut) {
 
-  std::cout << "compare tree\n";
+  bool print = false;
+#ifdef LOG
+  print = true;
+#endif
+
+  if (print)
+    std::cout << "compare tree\n";
   // duplicate_count will be asserted to == 0 at caller
   VID_t duplicate_count = 0;
   duplicate_count += truth_tree.size() - unique_count(truth_tree);
@@ -786,10 +806,12 @@ auto compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3& recut) {
   auto truth_vids = get_vids_sorted(truth_tree, xdim, ydim);
   auto check_vids = get_vids_sorted(check_tree, xdim, ydim);
 
-  //std::cout << "truth_vids\n";
-  //print(truth_vids);
-  //std::cout << "check_vids\n";
-  //print(check_vids);
+  if (print) {
+    //std::cout << "truth_vids\n";
+    //print(truth_vids);
+    //std::cout << "check_vids\n";
+    //print(check_vids);
+  }
 
   auto matches = rng::views::set_intersection( truth_vids, check_vids);
 
@@ -799,14 +821,16 @@ auto compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3& recut) {
   //}
 
   VID_t match_count = rng::distance(matches);
-  std::cout <<  "match count: "<< match_count<< '\n';
+  if (print)
+    std::cout <<  "match count: "<< match_count<< '\n';
 
   // move all this logic into the function body of tests
   auto get_negatives = [&](auto& tree, auto& matches, auto specifier) {
     return rng::views::set_difference( tree, matches)
       | rng::views::transform([&](auto vid) {
           const auto block = recut.get_block_id(vid);
-          std::cout << "false " << specifier << " at: " << vid <<" block: " << block <<  '\n';
+          if (print) 
+            std::cout << "false " << specifier << " at: " << vid <<" block: " << block <<  '\n';
           return std::make_pair(vid, block);
           })
     | rng::to_vector ;

@@ -2598,9 +2598,9 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
       cout << " revisits: " << global_revisits << " vertices" << '\n';
 #endif
 
-#ifdef LOG
       auto total_update_time = diff_time(update_start_time, update_finish_time);
       auto io_time = total_update_time - computation_time;
+#ifdef LOG
       cout << "Finished stage: " << stage << '\n';
       cout << "Finished total updating within " << total_update_time << " sec \n";
       cout << "Finished computation (no I/O) within " << computation_time
@@ -3257,7 +3257,6 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
               }
               marker->radius = attr->radius;
               tmp[attr->vid] = marker; // save this marker ptr to a map
-              std::cout << "added to temp vid " << attr->vid << '\n';
               outtree.push_back(marker);
             } else {
               // check that all copied across blocks and intervals of a
@@ -3289,15 +3288,19 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
             auto marker = tmp[attr->vid];      // get the ptr
             if (attr->root()) {
               marker->parent = 0;
+#ifdef FULL_PRINT
               cout << "found root at " << attr->vid << '\n';
               printf("with address of %p\n", (void*) attr);
+#endif
               assertm(attr->root(), "a marker with a parent of 0, must be a root");
               assertm(marker->type == 0, "a marker with a type of 0, must be a root");
             } else {
+#ifdef FULL_PRINT
               std::cout << "parent vid " << parent_vid << '\n';
               std::cout << "attr vid " << attr->vid << '\n';
               std::cout << "marker vid " << marker->vid(image_length_x,
                   image_length_y) << '\n';
+#endif
               auto parent = tmp[parent_vid]; // adjust
               marker->parent = parent;
               assertm(marker->parent != 0, "a non root marker must have a valid parent");

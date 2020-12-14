@@ -76,7 +76,9 @@ template <class image_t> struct TileThresholds {
       }
     }
     if (local_min == local_max) {
+#ifdef LOG
       cout << "Warning: max: " << local_max << "= min: " << local_min << '\n';
+#endif
     } else if (local_min > local_max) {
       cout << "Error: max: " << local_max << "< min: " << local_min << '\n';
       throw;

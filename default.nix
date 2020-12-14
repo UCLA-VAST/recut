@@ -13,7 +13,7 @@ stdenv.mkDerivation {
     && baseNameOf path != "bin/*"
     && baseNameOf path != "data/*") ./.;
 
-  cmakeFlags = ["-DFROM_NIX_BUILD=ON"];
+  cmakeFlags = ["-DFROM_NIX_BUILD=ON -DLOG=OFF"];
   nativeBuildInputs = [ cmake ];
 
   # used for automated github testing 
@@ -38,16 +38,10 @@ stdenv.mkDerivation {
 
   installPhase = ''
     mkdir -p $out/data
-    pwd
-    ls ../data
-    #ls /build/recut-pipeline/data/*.json
-    #cp /build/recut-pipeline/data/*.json $out/data/
-    ls ../data/*.json
+    mkdir -p $out/bin
     cp ../data/*.json $out/data/
+    cp ../data/*.bin $out/data/
+    cp recut_test $out/bin/recut_test
     ls $out/data/
   '';
-  #installPhase = ''
-    #mkdir -p $out/bin
-    #cp /build/recut-pipeline/build/recut_test $out/bin/recut_test
-  #'';
 }
