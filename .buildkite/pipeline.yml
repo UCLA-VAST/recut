@@ -9,4 +9,4 @@ steps:
       - ls data
     
     artifact_paths:
-      - test_detail.json
+      - "data/test_detail.json"
