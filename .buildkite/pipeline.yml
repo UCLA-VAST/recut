@@ -4,6 +4,8 @@ steps:
       - nix-build
       - nix-shell --run "echo OK"
       - nix-instantiate --eval -E '(import <nixpkgs> {}).lib.version'
+      - echo $OUT_PATHS
+      - nix-shell --run "echo $OUT_PATHS"
     
     artifact_paths:
       - "data/test_detail.json"
