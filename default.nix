@@ -40,7 +40,8 @@ stdenv.mkDerivation {
     mkdir -p $out/data
     mkdir -p $out/bin
     cp ../data/*.json $out/data/
-    cp ../data/*.bin $out/data/
+    # test data not included by default, recut_test run by users won't run
+    # cp ../data/*.bin $out/data/
     cp recut_test $out/bin/recut_test
     ls $out/data/
   '';
