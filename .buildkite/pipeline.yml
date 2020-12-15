@@ -2,10 +2,10 @@ steps:
   - label: Build
     command:
       - nix-build
-      - nix-shell --run "echo OK"
-      - nix-instantiate --eval -E '(import <nixpkgs> {}).lib.version'
-    agents:
-      private: "true"
+#       - nix-shell --run "echo OK"
+#       - nix-instantiate --eval -E '(import <nixpkgs> {}).lib.version'
+#     agents:
+#       private: "true"
 #     artifact_paths:
 #       - *.json
 #       - */*.json
