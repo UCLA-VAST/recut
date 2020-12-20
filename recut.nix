@@ -1,12 +1,7 @@
 # { benchmark ? false }:
 # let profilingArg = if benchmark then "-DBENCHMARK" else "";
 
-#let
-  #sources = import ./nix/sources.nix;
-  #pkgs = import sources.nixpkgs { system = "x86_64-linux"; };
-#in
-  #with pkgs;
-{ nixpkgs, ... }:
+{ nixpkgs, mcp3d_path, ... }:
 let
   pkgs = import nixpkgs { system = "x86_64-linux"; };
 in
@@ -21,7 +16,11 @@ stdenv.mkDerivation {
     && baseNameOf path != "bin/*"
     && baseNameOf path != "data/*") ./.;
 
-  cmakeFlags = ["-DFROM_NIX_BUILD=ON -DLOG=OFF"];
+    cmakeFlags = if mcp3d_path != "ignore" then
+      ["-DFROM_NIX_BUILD=ON -DLOG=OFF -DUSE_MCP3D=ON -DMCP3D_PATH=${mcp3d_path}"]
+    else 
+      ["-DFROM_NIX_BUILD=ON -DLOG=OFF"];
+
   nativeBuildInputs = [ cmake ];
 
   # used for automated github testing 

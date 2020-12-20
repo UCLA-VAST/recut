@@ -97,6 +97,16 @@ option(FULL_PRINT "Print vertex by vertex behavior. Warning: will significantly 
 option( USE_MMAP "Determines read speed of vertex info from INTERVAL_BASE" OFF)
 option( USE_MCP3D "Use and link external library MCP3D into recut for image reading of TIF and HDF5 (.ims) file types" OFF)
 
+if (USE_MCP3D) 
+  message(STATUS "USE_MCP3D ON")
+
+  set(MCP3D_SOURCE_DIR ${MCP3D_PATH}/src)
+  message(STATUS "Using MCP3D_SOURCE_DIR: ${MCP3D_SOURCE_DIR}")
+
+  set(MCP3D_LIB_DIR ${MCP3D_PATH}/lib)
+  message(STATUS "Using MCP3D_LIB_DIR: ${MCP3D_LIB_DIR}")
+endif()
+
 set(MARKERS ${PROJECT_SOURCE_DIR}/src/markers.cpp)
 set(PARAMS ${PROJECT_SOURCE_DIR}/src/recut_parameters.cpp)
 set(APP2 ${PROJECT_SOURCE_DIR}/test/app2_helpers.hpp)
@@ -123,10 +133,11 @@ set(HEADER
   ${PROJECT_SOURCE_DIR}/src/markers.h # TODO remove this
   )
 
+# Uncomment if changing recut to export as a library
 # must be defined before the executable or library
 # is defined, otherwise it is ignored
 # adding ../lib makes any executables truly relocatable
-# without it if they are make install, RPATH
+# without it if `make install`: then RPATH
 # will not link shared dependencies properly
 #set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
 
@@ -140,7 +151,7 @@ if (RECUT_ENABLE_BENCHMARKING)
   add_executable(recut_bench bench/recut_bench.cpp ${HEADER} ${MARKERS} ${PARAMS} ${APP2})
 endif()
 
-include_directories(include)
+# all recut headers and source go in ./src/
 include_directories(src)
 
 # variable and target dependent links
@@ -228,29 +239,25 @@ foreach(I ${ALL_TARGETS})
   endif()
 
   if (USE_MCP3D)
-    target_include_directories(${I} PRIVATE ${PROJECT_SOURCE_DIR}/include)
+    target_include_directories(${I} PRIVATE ${MCP3D_SOURCE_DIR})
     target_link_libraries(${I} PRIVATE
-      #${PROJECT_SOURCE_DIR}/lib/libboost_filesystem.so.1.65.1
-      ${PROJECT_SOURCE_DIR}/lib/libboost_serialization.so.1.65.1
-      ${PROJECT_SOURCE_DIR}/lib/libboost_system.so.1.65.1
-      ${PROJECT_SOURCE_DIR}/lib/libhdf5.so.100.1.0
-      ${PROJECT_SOURCE_DIR}/lib/libhdf5.so.1.10.1
-      ${PROJECT_SOURCE_DIR}/lib/libmcp3d_algorithm.so
-      ${PROJECT_SOURCE_DIR}/lib/libmcp3d_common.so
-      ${PROJECT_SOURCE_DIR}/lib/libmcp3d_image.so
-      ${PROJECT_SOURCE_DIR}/lib/libmcp3d_project_structure.so
-      ${PROJECT_SOURCE_DIR}/lib/libopencv_imgcodecs.so
-      ${PROJECT_SOURCE_DIR}/lib/libopencv_core.so
+      #${MCP3D_LIB_DIR}/libboost_filesystem.so.1.65.1
+      ${MCP3D_LIB_DIR}/libboost_serialization.so.1.65.1
+      ${MCP3D_LIB_DIR}/libboost_system.so.1.65.1
+      ${MCP3D_LIB_DIR}/libhdf5.so.100.1.0
+      ${MCP3D_LIB_DIR}/libhdf5.so.1.10.1
+      ${MCP3D_LIB_DIR}/libmcp3d_algorithm.so
+      ${MCP3D_LIB_DIR}/libmcp3d_common.so
+      ${MCP3D_LIB_DIR}/libmcp3d_image.so
+      ${MCP3D_LIB_DIR}/libmcp3d_project_structure.so
+      ${MCP3D_LIB_DIR}/libopencv_imgcodecs.so
+      ${MCP3D_LIB_DIR}/libopencv_core.so
       )
   endif()
 
   # make Recut libraries truly relocatable when linking from downstream programs
   set_target_properties(${I} PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
 endforeach()
-
-if (USE_MCP3D)
-  message(STATUS "USE_MCP3D ON")
-endif()
 
 # test specific
 if (RECUT_ENABLE_TESTING)
