@@ -142,7 +142,6 @@ endif()
 
 include_directories(include)
 include_directories(src)
-include_directories(/nix/store/1z56r6kx097b9j07r26kwhngdwjr03k1-openmp-7.1.0/include)
 
 # variable and target dependent links
 if (RECUT_ENABLE_TESTING )

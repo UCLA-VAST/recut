@@ -1,0 +1,40 @@
+{
+  "nodes": {
+    "mcp3d": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-bFhRBwS1dRQqn324AExMaWH8r9y42kXizyl1MknTI/w=",
+        "path": "/home/kdmarrett/mcp3d",
+        "type": "path"
+      },
+      "original": {
+        "path": "/home/kdmarrett/mcp3d",
+        "type": "path"
+      }
+    },
+    "root": {
+      "inputs": {
+        "mcp3d": "mcp3d",
+        "unstable": "unstable"
+      }
+    },
+    "unstable": {
+      "locked": {
+        "lastModified": 1607522989,
+        "narHash": "sha256-o/jWhOSAlaK7y2M57OIriRt6whuVVocS/T0mG7fd1TI=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "e9158eca70ae59e73fae23be5d13d3fa0cfc78b4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}
