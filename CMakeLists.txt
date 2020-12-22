@@ -239,7 +239,7 @@ foreach(I ${ALL_TARGETS})
   endif()
 
   if (USE_MCP3D)
-    target_include_directories(${I} PRIVATE ${MCP3D_SOURCE_DIR})
+    #target_include_directories(${I} PRIVATE ${MCP3D_SOURCE_DIR})
     target_link_libraries(${I} PRIVATE
       #${MCP3D_LIB_DIR}/libboost_filesystem.so.1.65.1
       ${MCP3D_LIB_DIR}/libboost_serialization.so.1.65.1

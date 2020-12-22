@@ -1,9 +1,8 @@
-# { benchmark ? false }:
-# let profilingArg = if benchmark then "-DBENCHMARK" else "";
-
-{ nixpkgs, mcp3d_path, ... }:
+{ nixpkgs, mcp3d, ... }:
 let
   pkgs = import nixpkgs { system = "x86_64-linux"; };
+  #mcp3d_path = ""; 
+  mcp3d_path = "/home/kdmarrett/mcp3d"; 
 in
   with pkgs;
 stdenv.mkDerivation {
@@ -16,10 +15,10 @@ stdenv.mkDerivation {
     && baseNameOf path != "bin/*"
     && baseNameOf path != "data/*") ./.;
 
-    cmakeFlags = if mcp3d_path != "ignore" then
-      ["-DFROM_NIX_BUILD=ON -DLOG=OFF -DUSE_MCP3D=ON -DMCP3D_PATH=${mcp3d_path}"]
-    else 
-      ["-DFROM_NIX_BUILD=ON -DLOG=OFF"];
+  cmakeFlags = if mcp3d_path != "" then
+    ["-DFROM_NIX_BUILD=ON -DLOG=OFF -DUSE_MCP3D=ON -DMCP3D_PATH=${mcp3d_path}"]
+  else 
+    ["-DFROM_NIX_BUILD=ON -DLOG=OFF"];
 
   nativeBuildInputs = [ cmake ];
 
@@ -33,6 +32,7 @@ stdenv.mkDerivation {
     gtest
     gbenchmark
     range-v3
+    mcp3d.defaultPackage.x86_64-linux
     # warning leaving breakpointHook on 
     # will cause github actions to hang, if there are any failures
     # always comment it out before pushing

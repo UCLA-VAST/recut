@@ -1,9 +1,11 @@
 {
   "nodes": {
     "mcp3d": {
-      "flake": false,
+      "inputs": {
+        "unstable": "unstable"
+      },
       "locked": {
-        "narHash": "sha256-bFhRBwS1dRQqn324AExMaWH8r9y42kXizyl1MknTI/w=",
+        "narHash": "sha256-p1BkiiWRRasr5i+0MWDF9iVUyV3FAo9dWR/XyO0Sb3w=",
         "path": "/home/kdmarrett/mcp3d",
         "type": "path"
       },
@@ -15,10 +17,26 @@
     "root": {
       "inputs": {
         "mcp3d": "mcp3d",
-        "unstable": "unstable"
+        "unstable": "unstable_2"
       }
     },
     "unstable": {
+      "locked": {
+        "lastModified": 1607522989,
+        "narHash": "sha256-o/jWhOSAlaK7y2M57OIriRt6whuVVocS/T0mG7fd1TI=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "e9158eca70ae59e73fae23be5d13d3fa0cfc78b4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "unstable_2": {
       "locked": {
         "lastModified": 1607522989,
         "narHash": "sha256-o/jWhOSAlaK7y2M57OIriRt6whuVVocS/T0mG7fd1TI=",
