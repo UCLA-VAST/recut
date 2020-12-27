@@ -5,12 +5,12 @@
         "unstable": "unstable"
       },
       "locked": {
-        "narHash": "sha256-p1BkiiWRRasr5i+0MWDF9iVUyV3FAo9dWR/XyO0Sb3w=",
-        "path": "/home/kdmarrett/mcp3d",
+        "narHash": "sha256-nPOIKvRzdReTZp0J4JmC+TacA8HGxNTDcd3lBxvp0AY=",
+        "path": "/curr/kdmarrett/mcp3d",
         "type": "path"
       },
       "original": {
-        "path": "/home/kdmarrett/mcp3d",
+        "path": "/curr/kdmarrett/mcp3d",
         "type": "path"
       }
     },

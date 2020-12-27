@@ -2,7 +2,8 @@
   description = "recut-pipeline";
   inputs = { 
     unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
-    mcp3d.url = "git+ssh://git@muyezhu/mcp3d#kdm-dev";
+    # mcp3d.url = "git+ssh://git@muyezhu/mcp3d#kdm-dev";
+    mcp3d.url = "/curr/kdmarrett/mcp3d";
   };
 
   outputs = inputs: {
