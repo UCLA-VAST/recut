@@ -6,3 +6,5 @@ include
 .clangd
 compile_commands.json
 result
+.envrc
+~/

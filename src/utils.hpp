@@ -16,11 +16,11 @@ namespace fs = std::filesystem;
 namespace rng = ranges;
 
 #ifdef USE_MCP3D
-#include "common/mcp3d_common.hpp"
-#include "common/mcp3d_utility.hpp" // PadNumStr
-#include "image/mcp3d_image.hpp"
-#include "image/mcp3d_voxel_types.hpp" // convert to CV type
-#include "image/mcp3d_voxel_types.hpp"
+#include <common/mcp3d_common.hpp>
+#include <common/mcp3d_utility.hpp> // PadNumStr
+#include <image/mcp3d_image.hpp>
+#include <image/mcp3d_voxel_types.hpp> // convert to CV type
+#include <image/mcp3d_voxel_types.hpp>
 #include <opencv2/opencv.hpp> // imwrite
 #endif
 
@@ -223,14 +223,14 @@ template <typename T> void print_image(T *inimg1d, VID_t size) {
 // the domain, thus it's an extremely hard test to pass
 // not even original fastmarching can
 // recover all of the original pixels
-void trace_mesh_image(VID_t id, uint16_t *inimg1d, const VID_t selected, int grid_size) {
+VID_t trace_mesh_image(VID_t id, uint16_t *inimg1d, const VID_t desired_selected, int grid_size) {
   VID_t i, j, k, ic, jc, kc;
   i = j = k = ic = kc = jc = 0;
   // set root to 1
   inimg1d[id] = 1;
   VID_t actual = 1; // count root
   srand(time(NULL));
-  while (actual < selected) {
+  while (actual < desired_selected) {
     // calc i, j, k subs
     i = id % grid_size;
     j = (id / grid_size) % grid_size;
@@ -292,11 +292,13 @@ void trace_mesh_image(VID_t id, uint16_t *inimg1d, const VID_t selected, int gri
     assert(ic == i);
     assert(jc == j);
     assert(kc == k);
+    // already selected doesn't count 
     if (inimg1d[id] != 1) {
       inimg1d[id] = 1;
       actual++;
     }
   }
+  return actual;
 }
 
 bool is_covered_by_parent(VID_t index, VID_t root_vid, int radius, VID_t grid_size) {
@@ -316,18 +318,20 @@ bool is_covered_by_parent(VID_t index, VID_t root_vid, int radius, VID_t grid_si
 
 /*
  * sets all to 1 for tcase 0
- * sets all to 0 for tcase > 3
- * tcase5 = Sphere grid
+ * tcase4 : trace_mesh_image
+ * tcase5 : sphere grid
+ * tcase6 : reserved for real images throws error if passed
+ * tcase7 : cube of selected centered at root, side length grid_size /2
  * takes an empty binarized inimg1d (all zeros)
  * and creates a central sphere of specified
  * radius directly in the center of the grid
  */
 VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
-    const VID_t selected, VID_t root_vid) {
+    const VID_t desired_selected, VID_t root_vid) {
 
   // need to count total selected for tcase 3 and 5
   VID_t count_selected_pixels = 0;
-  assertm(selected > 0, "must select at least 1 pixel: the root");
+  assertm(desired_selected > 0, "must select at least 1 pixel: the root");
 
   // for tcase 5 sphere grid
   auto radius = grid_size / 4;
@@ -429,31 +433,39 @@ VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
               }
             }
           }
-          // tcase 6 means real image so it's not valid
-        } else {
-          assertm(false, "tcase specified not recognized for generate "
-              "synthetic image (0-5)");
         }
       }
     }
   }
 
+  // root will always be selected
+  // therefore there will always be at least 1 selected
+  // tcase 4 will also select root in a special way
+  // in the trace_mesh_image method
+  // note root is always marked as selected at run time by recut
+  // since it is the seed location
+  if (tcase != 4) {
+    if (inimg1d[root_vid] == 0) {
+      inimg1d[root_vid] = 1;
+      count_selected_pixels++;
+    }
+  }
+
   // return number of pixels selected
+  // must count total selected for all tcase 4 and above since it may not match desired
   if (tcase < 3) {
     return grid_size * grid_size * grid_size;
   } else if ((tcase == 3) || (tcase == 5)) {
-    // the root is always marked as selected at run time by recut
-    // therefore there will always be at least 1 selected
-    count_selected_pixels = count_selected_pixels == 0 ? 1 : count_selected_pixels;
-    // need to count total selected for tcase 3 and 5
     return count_selected_pixels;
   } else if (tcase == 4) {
-    trace_mesh_image(root_vid, inimg1d, selected, grid_size);
-    return selected;
-  } else if (tcase > 7) {
-    assertm(false, "tcase not recognized for creating image tcase 6 is for reading real images");
+    return trace_mesh_image(root_vid, inimg1d, desired_selected, grid_size);
+  } else if (tcase == 7) { 
+    return count_selected_pixels;
   }
-  return selected; // never reached
+
+  // tcase 6 means real image so it's not valid
+  assertm(false, "tcase not recognized: tcase 6 is reserved for reading real images\n tcase higher than 7 not specified");
+  return 0; // never reached
 }
 
 /**
@@ -552,7 +564,13 @@ RecutCommandLineArgs get_args(int grid_size, int interval_size,
     // zyx
     args.set_image_offsets({110, 229, 57});
     args.set_image_extents({grid_size, grid_size, grid_size});
-    args.set_image_root_dir("../../data/filled/");
+    const char* env_p = std::getenv("TEST_IMAGE");
+    if (env_p) {
+      std::cout << "Using $TEST_IMAGE environment variable: " << env_p << '\n';
+    } else {
+      assertm(false, "run: export TEST_IMAGE=\"abs/path/to/image\" to set the environment variable");
+    }
+    args.set_image_root_dir(std::string(env_p));
     params.set_marker_file_path("../../data/marker_files");
     // foreground_percent is always double between .0 and 1.
     params.set_foreground_percent(static_cast<double>(slt_pct) / 100.);
@@ -566,7 +584,7 @@ RecutCommandLineArgs get_args(int grid_size, int interval_size,
     params.force_regenerate_image = force_regenerate_image;
     args.set_image_root_dir(
         str_path + "/test_images/" + std::to_string(grid_size) + "/tcase" +
-        std::to_string(tcase) + "/slt_pct" + std::to_string(slt_pct) + "/");
+        std::to_string(tcase) + "/slt_pct" + std::to_string(slt_pct));
   }
 
   // the total number of blocks allows more parallelism
@@ -640,7 +658,7 @@ void write_tiff(uint16_t *inimg1d, std::string base, int grid_size) {
     // print_image(&(inimg1d[start]), grid_size * grid_size);
 
     { // cv write
-      int cv_type = mcp3d::VoxelTypeToCVTypes(mcp3d::VoxelType::M16U, 1);
+      int cv_type = mcp3d::VoxelTypeToCVType(mcp3d::VoxelType::M16U, 1);
       cv::Mat m(grid_size, grid_size, cv_type, &(inimg1d[start]));
       cv::imwrite(fn, m);
     }
@@ -667,8 +685,8 @@ void read_tiff(std::string fn, std::vector<int> image_offsets,
   // auto testfn = fn + "img_0000.tif";
   // cv::Mat test2 = cv::imread(testfn, cv::IMREAD_ANYDEPTH);
 
-  // read data
-  image.ReadImageInfo(fn);
+  // read data from channel 0
+  image.ReadImageInfo(0);
   try {
     // use unit strides only
     mcp3d::MImageBlock block(image_offsets, image_extents);

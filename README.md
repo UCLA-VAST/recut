@@ -72,16 +72,16 @@ You can install Nix on any Linux
 distribution, MacOS and Windows (via WSL) with:
 
 ```
-# just for your user
+# just for your user (recommended)
 curl -L https://nixos.org/nix/install | sh
-# or for a multi-user installation, instead run
+# if you need to share packages between users on a system via a multi-user installation, instead run
 sh <(curl -L https://nixos.org/nix/install) --daemon
 
 # check installation
 nix-shell --version
 ```
 
-The library employs some system features that have not been fully tested in containers / Docker. As such we recommend installing with the Nix package manager on a bear bones linux, MacOS, WSL machine or similar VM for now.
+The library employs some system features that have not been fully tested in containers / Docker. As such we recommend installing with the Nix package manager on a bear bones linux, MacOS, WSL machine or similar container / VM for now.
 
 Now if you run:
 `

@@ -48,6 +48,7 @@ set(RECUT_ENABLE_BENCHMARKING OFF CACHE BOOL "Enable Recut building its benchmar
 option( FROM_NIX_BUILD OFF)
 if (FROM_NIX_BUILD)
   message(STATUS " FROM_NIX_BUILD ON")
+  message(STATUS " NIX_CFLAGS_COMPILE: $ENV{NIX_CFLAGS_COMPILE}")
 endif()
 
 # nix-build handles gtest and gbenchmark libraries independently from submodules
@@ -240,18 +241,32 @@ foreach(I ${ALL_TARGETS})
 
   if (USE_MCP3D)
     #target_include_directories(${I} PRIVATE ${MCP3D_SOURCE_DIR})
+    find_package(Eigen3 REQUIRED)
+    message(STATUS "EIGEN3_INCLUDE_DIR: ${EIGEN3_INCLUDE_DIR}")
+    target_include_directories(${I} PRIVATE ${EIGEN3_INCLUDE_DIR})
+
+    find_package(OpenCV REQUIRED core imgcodecs imgproc)
+    message(STATUS "OPENCV_INCLUDE_DIR: ${OpenCV_INCLUDE_DIRS}")
+    message(STATUS "OPENCV_LIBRARYS: ${OpenCV_LIBS}")
+    target_include_directories(${I} PRIVATE ${OpenCV_INCLUDE_DIRS})
+    target_link_libraries(${I} PRIVATE ${OpenCV_LIBS})
+
     target_link_libraries(${I} PRIVATE
-      #${MCP3D_LIB_DIR}/libboost_filesystem.so.1.65.1
-      ${MCP3D_LIB_DIR}/libboost_serialization.so.1.65.1
-      ${MCP3D_LIB_DIR}/libboost_system.so.1.65.1
-      ${MCP3D_LIB_DIR}/libhdf5.so.100.1.0
-      ${MCP3D_LIB_DIR}/libhdf5.so.1.10.1
-      ${MCP3D_LIB_DIR}/libmcp3d_algorithm.so
-      ${MCP3D_LIB_DIR}/libmcp3d_common.so
-      ${MCP3D_LIB_DIR}/libmcp3d_image.so
-      ${MCP3D_LIB_DIR}/libmcp3d_project_structure.so
-      ${MCP3D_LIB_DIR}/libopencv_imgcodecs.so
-      ${MCP3D_LIB_DIR}/libopencv_core.so
+      ##${MCP3D_LIB_DIR}/libboost_filesystem.so.1.65.1
+      #${MCP3D_LIB_DIR}/libboost_serialization.so.1.65.1
+      #${MCP3D_LIB_DIR}/libboost_system.so.1.65.1
+      #${MCP3D_LIB_DIR}/libhdf5.so.100.1.0
+      #${MCP3D_LIB_DIR}/libhdf5.so.1.10.1
+      libmcp3d_algorithm.so
+      libmcp3d_image.so
+      libmcp3d_common.so
+      libmcp3d_project_structure.so
+      #${MCP3D_LIB_DIR}/libmcp3d_algorithm.so
+      #${MCP3D_LIB_DIR}/libmcp3d_common.so
+      #${MCP3D_LIB_DIR}/libmcp3d_image.so
+      #${MCP3D_LIB_DIR}/libmcp3d_project_structure.so
+      #${MCP3D_LIB_DIR}/libopencv_imgcodecs.so
+      #${MCP3D_LIB_DIR}/libopencv_core.so
       )
   endif()
 

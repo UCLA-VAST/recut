@@ -33,10 +33,12 @@ stdenv.mkDerivation {
     gbenchmark
     range-v3
     mcp3d.defaultPackage.x86_64-linux
+    #opencv2
+    #boost
     # warning leaving breakpointHook on 
     # will cause github actions to hang, if there are any failures
     # always comment it out before pushing
-    # breakpointHook
+    breakpointHook
   ];
 
   # You have to run the install step first such that the relevant files used at runtime
