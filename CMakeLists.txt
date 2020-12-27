@@ -100,12 +100,6 @@ option( USE_MCP3D "Use and link external library MCP3D into recut for image read
 
 if (USE_MCP3D) 
   message(STATUS "USE_MCP3D ON")
-
-  set(MCP3D_SOURCE_DIR ${MCP3D_PATH}/src)
-  message(STATUS "Using MCP3D_SOURCE_DIR: ${MCP3D_SOURCE_DIR}")
-
-  set(MCP3D_LIB_DIR ${MCP3D_PATH}/lib)
-  message(STATUS "Using MCP3D_LIB_DIR: ${MCP3D_LIB_DIR}")
 endif()
 
 set(MARKERS ${PROJECT_SOURCE_DIR}/src/markers.cpp)
@@ -240,7 +234,6 @@ foreach(I ${ALL_TARGETS})
   endif()
 
   if (USE_MCP3D)
-    #target_include_directories(${I} PRIVATE ${MCP3D_SOURCE_DIR})
     find_package(Eigen3 REQUIRED)
     message(STATUS "EIGEN3_INCLUDE_DIR: ${EIGEN3_INCLUDE_DIR}")
     target_include_directories(${I} PRIVATE ${EIGEN3_INCLUDE_DIR})
@@ -252,21 +245,10 @@ foreach(I ${ALL_TARGETS})
     target_link_libraries(${I} PRIVATE ${OpenCV_LIBS})
 
     target_link_libraries(${I} PRIVATE
-      ##${MCP3D_LIB_DIR}/libboost_filesystem.so.1.65.1
-      #${MCP3D_LIB_DIR}/libboost_serialization.so.1.65.1
-      #${MCP3D_LIB_DIR}/libboost_system.so.1.65.1
-      #${MCP3D_LIB_DIR}/libhdf5.so.100.1.0
-      #${MCP3D_LIB_DIR}/libhdf5.so.1.10.1
       libmcp3d_algorithm.so
       libmcp3d_image.so
       libmcp3d_common.so
       libmcp3d_project_structure.so
-      #${MCP3D_LIB_DIR}/libmcp3d_algorithm.so
-      #${MCP3D_LIB_DIR}/libmcp3d_common.so
-      #${MCP3D_LIB_DIR}/libmcp3d_image.so
-      #${MCP3D_LIB_DIR}/libmcp3d_project_structure.so
-      #${MCP3D_LIB_DIR}/libopencv_imgcodecs.so
-      #${MCP3D_LIB_DIR}/libopencv_core.so
       )
   endif()
 

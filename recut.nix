@@ -1,7 +1,6 @@
 { nixpkgs, mcp3d, ... }:
 let
   pkgs = import nixpkgs { system = "x86_64-linux"; };
-  #mcp3d_path = ""; 
   mcp3d_path = "/home/kdmarrett/mcp3d"; 
 in
   with pkgs;
@@ -16,14 +15,13 @@ stdenv.mkDerivation {
     && baseNameOf path != "data/*") ./.;
 
   cmakeFlags = if mcp3d_path != "" then
-    ["-DFROM_NIX_BUILD=ON -DLOG=OFF -DUSE_MCP3D=ON -DMCP3D_PATH=${mcp3d_path}"]
+    ["-DFROM_NIX_BUILD=ON -DLOG=OFF -DUSE_MCP3D=ON"]
   else 
     ["-DFROM_NIX_BUILD=ON -DLOG=OFF"];
 
   nativeBuildInputs = [ cmake ];
 
-  # used for automated github testing 
-  # see .github/workflows/*.yaml
+  # used for automated testing 
   doCheck = true;
   enableParallelBuilding = true;
 
@@ -38,7 +36,7 @@ stdenv.mkDerivation {
     # warning leaving breakpointHook on 
     # will cause github actions to hang, if there are any failures
     # always comment it out before pushing
-    breakpointHook
+    #breakpointHook
   ];
 
   # You have to run the install step first such that the relevant files used at runtime
