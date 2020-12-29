@@ -13,6 +13,10 @@ if(NOT DEFINED CMAKE_BUILD_TYPE)
 endif()
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
+if (NOT DEFINED CMAKE_INSTALL_BINDIR)
+  set(CMAKE_INSTALL_BINDIR ${PROJECT_SOURCE_DIR}/bin)
+endif()
+
 # works for cmake 3.9+
 # https://stackoverflow.com/questions/48825416/missing-openmp-c-flags-openmp-c-lib-names
 if(CMAKE_C_COMPILER_ID MATCHES "Clang")
@@ -48,7 +52,7 @@ set(RECUT_ENABLE_BENCHMARKING OFF CACHE BOOL "Enable Recut building its benchmar
 option( FROM_NIX_BUILD OFF)
 if (FROM_NIX_BUILD)
   message(STATUS " FROM_NIX_BUILD ON")
-  message(STATUS " NIX_CFLAGS_COMPILE: $ENV{NIX_CFLAGS_COMPILE}")
+  # message(STATUS " NIX_CFLAGS_COMPILE: $ENV{NIX_CFLAGS_COMPILE}")
 endif()
 
 # nix-build handles gtest and gbenchmark libraries independently from submodules
@@ -222,7 +226,7 @@ foreach(I ${ALL_TARGETS})
   target_compile_features(${I} PRIVATE cxx_std_17)
   # these are the actual flags passed during compilation
   target_compile_options(${I} PRIVATE -fno-omit-frame-pointer -g)
-  install(TARGETS ${I} DESTINATION ${PROJECT_SOURCE_DIR}/bin)
+  install(TARGETS ${I} DESTINATION ${CMAKE_INSTALL_BINDIR})
 
   # other dependencies
   if (NOT FROM_NIX_BUILD) 
@@ -263,5 +267,5 @@ if (RECUT_ENABLE_TESTING)
     target_compile_definitions(recut_test PRIVATE TEST_ALL_BENCHMARKS)
   endif()
 
-  add_test(NAME recut_test COMMAND ${PROJECT_SOURCE_DIR}/bin/recut_test)
+  add_test(NAME recut_test COMMAND ${CMAKE_INSTALL_BINDIR}/recut_test)
 endif()

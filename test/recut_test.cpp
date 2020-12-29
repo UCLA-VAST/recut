@@ -184,7 +184,7 @@ void interval_base_immutable(VID_t nvid) {
 
 void load_save(bool mmap_) {
   auto nvid = 64;
-  auto fn = get_data_dir() + "/interval0.bin";
+  auto fn = "/tmp/interval0.bin";
   auto base = INTERVAL_BASE;
   fs::remove(fn); // for safety, but done automatically via ~Interval
   ASSERT_FALSE(fs::exists(fn));
@@ -870,7 +870,7 @@ TEST(VertexAttr, ReadWriteInterval) {
   auto fn = base + "interval0.bin";
   // fs::remove_all(fn); // make sure it's an overwrite
   fs::create_directories(base);
-  // cout << "fn: " << fn << endl;
+  cout << "fn: " << fn << endl;
 
   // open output
   std::ofstream ofile(fn, ios::out | ios::binary); // read-mode
@@ -1470,9 +1470,12 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   std::string stage;
 
   // shared params
+  // generate image so that you can read it below
+  // first make sure it can pass
   auto args = get_args(
       grid_size, interval_size, block_size, slt_pct, tcase,
-      force_regenerate_image); // generate image so that you can read it below
+      force_regenerate_image); 
+  cout << "args.image_root_dir() " << args.image_root_dir() << '\n';
   args.recut_parameters();
   // uint16_t is image_t here
   TileThresholds<uint16_t> *tile_thresholds;
@@ -1773,11 +1776,12 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
 // ... check_against_selected, check_against_sequential
 INSTANTIATE_TEST_CASE_P(
-    RecutPipelineTests, RecutPipelineParameterTests,
+    DISABLED_RecutPipelineTests, RecutPipelineParameterTests,
     ::testing::Values(
       std::make_tuple(4, 4, 4, 0, 100., true, false), // 0
       std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
-      std::make_tuple(4, 4, 4, 2, 100., true, false) // 2
+      std::make_tuple(4, 4, 4, 2, 100., true, false), // 2
+      std::make_tuple(4, 2, 2, 2, 100., true, false) // 3
 #ifdef USE_MCP3D
       ,
       // check_against_sequential (final boolean below) currently uses MCP3D's
@@ -1793,7 +1797,7 @@ INSTANTIATE_TEST_CASE_P(
 #ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for
       ,
       // make sure if bkg_thresh is 0, all vertices are selected for real
-      std::make_tuple(4, 4, 4, 6, 100., true, true), // 7
+      std::make_tuple(4, 4, 4, 6, 100., false, true), // 7
       // make sure fastmarching_tree and recut produce exact match for real
       std::make_tuple(8, 8, 8, 6, 100., false, true), // 8
       // real data multi-block
@@ -1893,6 +1897,8 @@ TEST(RecutPipeline, PrintDefaultInfo) {
     << get_used_vertex_size(2048, 4) << std::scientific << endl;
   cout << "Vertices needed for a 8^3 interval block size 2 : "
     << get_used_vertex_size(8, 2) << std::scientific << endl;
+  cout << "Print parent directory to this binary " << get_parent_dir() << '\n';
+  cout << "Print data directory to this binary " << get_data_dir() << '\n';
 }
 
   int main(int argc, char **argv) {

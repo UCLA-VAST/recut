@@ -2327,7 +2327,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
           "must be set "
           "to False");
       // read data from channel 
-      mcp3d_tile.ReadImageInfo(args->resolution_level());
+      mcp3d_tile.ReadImageInfo(args->resolution_level(), true);
       // read data
       try {
         get_interval_offsets(interval_id, interval_offsets, interval_extents);
@@ -2969,7 +2969,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
         // determine the image size
         mcp3d::MImage global_image(args->image_root_dir());
         // read data from channel 
-        global_image.ReadImageInfo(args->resolution_level());
+        global_image.ReadImageInfo(args->resolution_level(), true);
         if (global_image.image_info().empty()) {
           MCP3D_MESSAGE("no supported image formats found in " +
               args->image_root_dir() + ", do nothing.")

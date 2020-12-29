@@ -72,14 +72,12 @@ struct high_resolution_timer {
   std::uint64_t start_time_;
 };
 
-std::string get_curr() {
-  fs::path full_path(fs::current_path());
-  return fs::canonical(full_path).string();
-}
-
+// Note: this is linux specific, other cross platform solutions available:
+//     https://stackoverflow.com/questions/1528298/get-path-of-executable
 std::string get_parent_dir() {
-  fs::path full_path(fs::current_path());
-  return fs::canonical(full_path.parent_path()).string();
+  // fs::path full_path(fs::current_path());
+  fs::path full_path(fs::canonical("/proc/self/exe"));
+  return fs::canonical(full_path.parent_path().parent_path()).string();
 }
 
 std::string get_data_dir() {
@@ -564,14 +562,21 @@ RecutCommandLineArgs get_args(int grid_size, int interval_size,
     // zyx
     args.set_image_offsets({110, 229, 57});
     args.set_image_extents({grid_size, grid_size, grid_size});
-    const char* env_p = std::getenv("TEST_IMAGE");
-    if (env_p) {
+
+    if (const char* env_p = std::getenv("TEST_IMAGE")) {
       std::cout << "Using $TEST_IMAGE environment variable: " << env_p << '\n';
+      args.set_image_root_dir(std::string(env_p));
     } else {
-      assertm(false, "run: export TEST_IMAGE=\"abs/path/to/image\" to set the environment variable");
+      std::cout << "Warning likely fatal: must run: export TEST_IMAGE=\"abs/path/to/image\" to set the environment variable\n\n";
     }
-    args.set_image_root_dir(std::string(env_p));
-    params.set_marker_file_path("../../data/marker_files");
+
+    if (const char* env_p = std::getenv("TEST_MARKER")) {
+      std::cout << "Using $TEST_MARKER environment variable: " << env_p << '\n';
+      params.set_marker_file_path(std::string(env_p));
+    } else {
+      std::cout << "Warning likely fatal must run: export TEST_MARKER=\"abs/path/to/marker\" to set the environment variable\n\n";
+    }
+
     // foreground_percent is always double between .0 and 1.
     params.set_foreground_percent(static_cast<double>(slt_pct) / 100.);
     // pre-determined and hardcoded thresholds for the file above
@@ -674,19 +679,8 @@ void write_tiff(uint16_t *inimg1d, std::string base, int grid_size) {
 void read_tiff(std::string fn, std::vector<int> image_offsets,
     std::vector<int> image_extents, mcp3d::MImage& image) {
   cout << "Read: " << fn << '\n';
-
-  // auto full_img = cv::imread(fn, cv::IMREAD_ANYDEPTH | cv::IMREAD_GRAYSCALE);
-  //// buffer for whole image
-  // uint16_t* full_img_ptr = full_img.ptr<uint16_t>() ;
-  // return full_img_ptr;
-
-  // Mat test1(1000, 1000, CV_16U, Scalar(400));
-  // imwrite("test.tiff", test1);
-  // auto testfn = fn + "img_0000.tif";
-  // cv::Mat test2 = cv::imread(testfn, cv::IMREAD_ANYDEPTH);
-
   // read data from channel 0
-  image.ReadImageInfo(0);
+  image.ReadImageInfo(0, true);
   try {
     // use unit strides only
     mcp3d::MImageBlock block(image_offsets, image_extents);
