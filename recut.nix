@@ -41,7 +41,7 @@ stdenv.mkDerivation {
 
   # You have to run the install step first such that the relevant files used at runtime
   # are in the data directory before running any other tests
-  checkPhase="./recut_test --gtest_filter=Install.\"*\"; ./recut_test --gtest_output=json:../data/test_detail.json | tee ../data/test_detail.log";
+  checkPhase="./recut_test --gtest_also_run_disabled_tests --gtest_filter=Install.\"*\"; ./recut_test --gtest_output=json:../data/test_detail.json | tee ../data/test_detail.log";
 
   installPhase = ''
     mkdir -p $out/bin

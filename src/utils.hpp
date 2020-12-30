@@ -290,7 +290,7 @@ VID_t trace_mesh_image(VID_t id, uint16_t *inimg1d, const VID_t desired_selected
     assert(ic == i);
     assert(jc == j);
     assert(kc == k);
-    // already selected doesn't count 
+    // already selected doesn't count
     if (inimg1d[id] != 1) {
       inimg1d[id] = 1;
       actual++;
@@ -457,7 +457,7 @@ VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
     return count_selected_pixels;
   } else if (tcase == 4) {
     return trace_mesh_image(root_vid, inimg1d, desired_selected, grid_size);
-  } else if (tcase == 7) { 
+  } else if (tcase == 7) {
     return count_selected_pixels;
   }
 
@@ -625,18 +625,21 @@ void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
   print = true;
 #endif
 
-  fs::remove_all(fn); // make sure it's an overwrite
-  if (print) 
-    cout << "      Delete old: " << fn << '\n';
-  fs::create_directories(fn);
-  fn = fn + "marker";
-  std::ofstream mf;
-  mf.open(fn);
-  mf << "# x,y,z\n";
-  mf << x << "," << y << "," << z;
-  mf.close();
-  if (print) 
-    cout << "      Wrote marker: " << fn << '\n';
+  bool rerun = false;
+  if (!fs::exists(fn) || rerun) {
+    fs::remove_all(fn); // make sure it's an overwrite
+    if (print)
+      cout << "      Delete old: " << fn << '\n';
+    fs::create_directories(fn);
+    fn = fn + "marker";
+    std::ofstream mf;
+    mf.open(fn);
+    mf << "# x,y,z\n";
+    mf << x << "," << y << "," << z;
+    mf.close();
+    if (print)
+      cout << "      Wrote marker: " << fn << '\n';
+  }
 }
 
 #ifdef USE_MCP3D
@@ -646,34 +649,37 @@ void write_tiff(uint16_t *inimg1d, std::string base, int grid_size) {
   print = true;
 #endif
 
-  fs::remove_all(base); // make sure it's an overwrite
-  if (print)
-    cout << "      Delete old: " << base << '\n';
-  fs::create_directories(base);
-  // print_image(inimg1d, grid_size * grid_size * grid_size);
-  for (int zi = 0; zi < grid_size; zi++) {
-    std::string fn = base;
-    fn = fn + "img_";
-    // fn = fn + mcp3d::PadNumStr(zi, 9999); // pad to 4 digits
-    fn = fn + std::to_string(zi); // pad to 4 digits
-    std::string suff = ".tif";
-    fn = fn + suff;
-    VID_t start = zi * grid_size * grid_size;
-    // cout << "fn: " << fn << " start: " << start << '\n';
-    // print_image(&(inimg1d[start]), grid_size * grid_size);
+  bool rerun = false;
+  if (!fs::exists(base) || rerun) {
+    fs::remove_all(base); // make sure it's an overwrite
+    if (print)
+      cout << "      Delete old: " << base << '\n';
+    fs::create_directories(base);
+    // print_image(inimg1d, grid_size * grid_size * grid_size);
+    for (int zi = 0; zi < grid_size; zi++) {
+      std::string fn = base;
+      fn = fn + "img_";
+      // fn = fn + mcp3d::PadNumStr(zi, 9999); // pad to 4 digits
+      fn = fn + std::to_string(zi); // pad to 4 digits
+      std::string suff = ".tif";
+      fn = fn + suff;
+      VID_t start = zi * grid_size * grid_size;
+      // cout << "fn: " << fn << " start: " << start << '\n';
+      // print_image(&(inimg1d[start]), grid_size * grid_size);
 
-    { // cv write
-      int cv_type = mcp3d::VoxelTypeToCVType(mcp3d::VoxelType::M16U, 1);
-      cv::Mat m(grid_size, grid_size, cv_type, &(inimg1d[start]));
-      cv::imwrite(fn, m);
+      { // cv write
+        int cv_type = mcp3d::VoxelTypeToCVType(mcp3d::VoxelType::M16U, 1);
+        cv::Mat m(grid_size, grid_size, cv_type, &(inimg1d[start]));
+        cv::imwrite(fn, m);
+      }
+
+      // uint8_t* ptr = Plane(z, c, t);
+      // std::vector<int> dims = {grid_size, grid_size, grid_size};
+      // mcp3d::image::MImage mimg(dims); // defaults to uint16 format
     }
-
-    // uint8_t* ptr = Plane(z, c, t);
-    // std::vector<int> dims = {grid_size, grid_size, grid_size};
-    // mcp3d::image::MImage mimg(dims); // defaults to uint16 format
+    if (print)
+      cout << "      Wrote test images at: " << base << '\n';
   }
-  if (print)
-    cout << "      Wrote test images at: " << base << '\n';
 }
 
 void read_tiff(std::string fn, std::vector<int> image_offsets,
@@ -841,8 +847,8 @@ auto compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3& recut) {
     return rng::views::set_difference( tree, matches)
       | rng::views::transform([&](auto vid) {
           const auto block = recut.get_block_id(vid);
-          if (print) 
-            std::cout << "false " << specifier << " at: " << vid <<" block: " << block <<  '\n';
+          if (print)
+          std::cout << "false " << specifier << " at: " << vid <<" block: " << block <<  '\n';
           return std::make_pair(vid, block);
           })
     | rng::to_vector ;

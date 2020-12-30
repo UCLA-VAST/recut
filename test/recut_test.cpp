@@ -448,7 +448,7 @@ TEST(Heap, PushUpdate) {
  * that may be requested/read
  * takes ~11 minutes for 3.7e9 (padded ~ 1024^3) vertices
  */
-TEST(Install, CreateIntervalBase) {
+TEST(Install, DISABLED_CreateIntervalBase) {
   bool rerun = false; // change to true if MAX_INTERVAL_VERTICES or the vertex
   // struct has been changed in vertex_attr.h
   auto fn = INTERVAL_BASE;
@@ -592,7 +592,7 @@ TEST(Interval, GetAttrVidMultiInterval) {
  * selected percents
  * install files into data/
  */
-TEST(Install, CreateImagesMarkers) {
+TEST(Install, DISABLED_CreateImagesMarkers) {
   // change these to desired params
   // Note this will delete anything in the
   // same directory before writing
@@ -861,7 +861,7 @@ TEST(Helpers, DISABLED_ConcurrentMap) {
 }
 #endif
 
-TEST(VertexAttr, ReadWriteInterval) {
+TEST(Install, DISABLED_ReadWriteInterval) {
   auto nvid = 4;
   auto ptr = new VertexAttr[nvid];
   size_t size = sizeof(VertexAttr) * nvid;

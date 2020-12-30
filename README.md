@@ -18,7 +18,7 @@ If you have *any* errors in the above steps see the Troubleshooting section belo
 
 ```
 cd ../bin
-./recut_test --gtest_filter=Install."*"
+./recut_test --gtest_also_run_disabled_tests --gtest_filter=Install."*"
 # Check installation by running the test suite
 ./recut_test
 ```
@@ -47,7 +47,7 @@ make
 make install
 cd ../bin
 # install the test images like so:
-./recut_test --gtest_filter=Install."*" 
+./recut_test --gtest_also_run_disabled_tests --gtest_filter=Install."*" 
 
 # you may also want to run the full set of test benchmarks by instead defining
 cmake -B build -D USE_MCP3D=ON -D TEST_ALL_BENCHMARKS=ON
