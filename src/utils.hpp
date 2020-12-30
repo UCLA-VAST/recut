@@ -860,6 +860,26 @@ auto compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3& recut) {
       duplicate_count, match_count);
 }
 
+// assigns all of the intervals within the super interval
+// a unique vid even in padded regions. This is especially
+// useful for testing get_attr_vid is returning the correct
+// vid
+void assign_grid(Recut recut) {
+  // test that get_attr_vid returns the right match in various scenarios
+  // assign all vids for testing purposes
+  VID_t index = 0;
+  for (int i=0; i < recut.grid.GetNIntervals(); i++) {
+    auto interval = recut.grid.GetInterval(i);
+    auto attr = interval->GetData();
+    for (int j=0; j < interval->GetNVertices(); j++) {
+      auto current = attr + index; // get the appropriate vertex
+      current->vid = index;
+      index ++;
+    }
+  }
+}
+
+
 /* returns available memory to system in bytes
 */
 inline size_t GetAvailMem() {

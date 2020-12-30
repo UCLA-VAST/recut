@@ -227,25 +227,6 @@ void load_save(bool mmap_) {
   ASSERT_NO_FATAL_FAILURE(interval_base_immutable(nvid));
 }
 
-//// assigns all of the intervals within the super interval
-//// a unique vid even in padded regions. This is especially
-//// useful for testing get_attr_vid is returning the correct
-//// vid
-// void assign_grid(Recut recut) {
-//// test that get_attr_vid returns the right match in various scenarios
-//// assign all vids for testing purposes
-// VID_t index = 0;
-// for (int i=0; i < recut.grid.GetNIntervals(); i++) {
-// auto interval = recut.grid.GetInterval(i);
-// auto attr = interval->GetData();
-// for (int j=0; j < interval->GetNVertices(); j++) {
-// auto current = attr + index; // get the appropriate vertex
-// current->vid = index;
-// index ++;
-//}
-//}
-//}
-
 void test_get_attr_vid(bool mmap, int grid_size, int interval_size,
     int block_size) {
   auto nvid = grid_size * grid_size * grid_size;
@@ -706,7 +687,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
 }
 
 #ifdef USE_MCP3D
-TEST(Image, ReadWrite) {
+TEST(Install, DISABLED_ImageReadWrite) {
   auto grid_size = 2;
   auto tcase = 4;
   double slt_pct = 50;
@@ -1795,6 +1776,7 @@ INSTANTIATE_TEST_CASE_P(
       // multi-block small
       std::make_tuple(4, 4, 2, 4, 50., true, true) // 6
 #ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for
+      // these must have TEST_IMAGE and TEST_MARKER environment variables set
       ,
       // make sure if bkg_thresh is 0, all vertices are selected for real
       std::make_tuple(4, 4, 4, 6, 100., false, true), // 7

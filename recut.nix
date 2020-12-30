@@ -24,8 +24,8 @@ stdenv.mkDerivation {
   # used for automated testing 
   doCheck = true;
   enableParallelBuilding = true;
-  TEST_IMAGE = "/curr/kdmarrett/data/filled";
-  TEST_MARKER = "/curr/kdmarrett/data/test_markers";
+  TEST_IMAGE = "/curr/kdmarrett/data/tcase6_image";
+  TEST_MARKER = "/curr/kdmarrett/data/tcase6_marker_files";
 
   buildInputs = [ 
     python38Packages.matplotlib 

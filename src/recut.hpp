@@ -318,6 +318,7 @@ Recut<image_t>::process_marker_dir(vector<int> global_image_offsets,
   if (params->marker_file_path().back() != '/')
     params->set_marker_file_path(params->marker_file_path().append("/"));
 
+  cout << "marker dir path: " << params->marker_file_path() << '\n';
   vector<MyMarker> inmarkers;
   vector<VID_t> root_vids;
   for (const auto &marker_file :
