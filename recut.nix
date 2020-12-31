@@ -1,11 +1,11 @@
 { nixpkgs, mcp3d, ... }:
 let
   pkgs = import nixpkgs { system = "x86_64-linux"; };
-  mcp3d_path = "/home/kdmarrett/mcp3d"; 
 in
   with pkgs;
 stdenv.mkDerivation {
   name = "recut";
+  version = "0.9.0";
 
   # https://nixos.org/nix/manual/#builtin-filterSource
   src = builtins.filterSource 
@@ -14,18 +14,13 @@ stdenv.mkDerivation {
     && baseNameOf path != "bin/*"
     && baseNameOf path != "data/*") ./.;
 
-  cmakeFlags = if mcp3d_path != "" then
-    ["-DFROM_NIX_BUILD=ON -DLOG=ON -DFULL_PRINT=ON -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Debug"]
-  else 
-    ["-DFROM_NIX_BUILD=ON -DLOG=OFF"];
-
-  nativeBuildInputs = [ cmake ];
-
   # used for automated testing 
   doCheck = true;
   enableParallelBuilding = true;
-  TEST_IMAGE = "/curr/kdmarrett/data/tcase6_image";
-  TEST_MARKER = "/curr/kdmarrett/data/tcase6_marker_files";
+
+  cmakeFlags = ["-DFROM_NIX_BUILD=ON -DRECUT_ENABLE_EXECUTABLE=ON -DLOG=OFF -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Debug"];
+
+  nativeBuildInputs = [ cmake ];
 
   buildInputs = [ 
     python38Packages.matplotlib 
@@ -46,6 +41,7 @@ stdenv.mkDerivation {
   installPhase = ''
     mkdir -p $out/bin
     cp recut_test $out/bin/recut_test
+    cp recut $out/bin/recut
     # test data included by default, so recut_test can be run by users 
     mkdir -p $out/data;
     cp -ra ../data/* $out/data;

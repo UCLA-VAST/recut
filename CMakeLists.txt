@@ -38,13 +38,16 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 find_package(OpenMP REQUIRED)
 
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+
 # CMake Preprocessor Defines:
 # determine which targets to build
 # a user of Recut in header only mode can ignore
 # building of tests and benchmarks
 # although CreateIntervalBase will need to be run at least once
 # from the recut_test.hpp file
-set(RECUT_ENABLE_CL_EXECUTABLE OFF CACHE BOOL "Enable Recut building its command line executable")
+set(RECUT_ENABLE_EXECUTABLE OFF CACHE BOOL "Enable Recut building its command line executable")
 set(RECUT_ENABLE_TESTING ON CACHE BOOL "Enable Recut building its test targets")
 set(RECUT_ENABLE_BENCHMARKING OFF CACHE BOOL "Enable Recut building its benchmarks targets")
 
@@ -140,7 +143,7 @@ set(HEADER
 # will not link shared dependencies properly
 #set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
 
-if (RECUT_ENABLE_CL_EXECUTABLE)
+if (RECUT_ENABLE_EXECUTABLE)
   add_executable(recut ${SRC} ${HEADER} ${PARAMS})
 endif()
 if (RECUT_ENABLE_TESTING)
@@ -165,7 +168,7 @@ endif()
 # a user of Recut in header only mode can ignore
 # building of tests and benchmarks
 set(ALL_TARGETS "")
-if (RECUT_ENABLE_CL_EXECUTABLE)
+if (RECUT_ENABLE_EXECUTABLE)
   list(APPEND ALL_TARGETS recut)
 endif()
 if (RECUT_ENABLE_TESTING)
@@ -236,6 +239,8 @@ foreach(I ${ALL_TARGETS})
   if (USE_OMP_INTERVAL OR USE_OMP_BLOCK)
     target_link_libraries(${I} PRIVATE OpenMP::OpenMP_CXX)
   endif()
+
+  target_link_libraries(${I} PRIVATE Threads::Threads)
 
   if (USE_MCP3D)
     find_package(Eigen3 REQUIRED)
