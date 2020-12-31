@@ -2,6 +2,19 @@
 nix](https://builtwithnix.org/badge.svg)](https://builtwithnix.org)
 ![Nix](https://github.com/UCLA-VAST/recut-pipeline/workflows/build/badge.svg)
 
+## Quick Install (strongly recommended)
+On linux command line run:
+```
+curl -L https://nixos.org/nix/install | sh
+git clone https://github.com/UCLA-VAST/recut-pipeline.git
+cd recut-pipeline
+nix-env -f . -i
+```
+test your installation by running:
+```
+recut
+```
+
 ## Installation
 ```
 # don't forget --recursive flag otherwise you'll have confusing compilation errors
