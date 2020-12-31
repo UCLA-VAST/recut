@@ -1,17 +1,4 @@
-let
-  sources = import ./nix/sources.nix;
-  pkgs = import sources.nixpkgs {};
-in
-pkgs.mkShell {
-  buildInputs = [
-    pkgs.openssl
-    pkgs.boost
-    pkgs.python38Packages.matplotlib 
-    pkgs.cmake
-    pkgs.gdb
-    pkgs.clang-tools
-    #pkgs.libtiff
-    #pkgs.mpich
-  ];
-}
-
+(import (fetchTarball
+  "https://github.com/edolstra/flake-compat/archive/master.tar.gz") {
+    src = builtins.fetchGit ./.;
+  }).shellNix
