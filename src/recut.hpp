@@ -21,10 +21,6 @@
 #include <taskflow/taskflow.hpp>
 #endif
 
-#ifdef USE_MCP3D
-#include <openssl/ssl.h>
-#endif
-
 struct InstrumentedUpdateStatistics {
   int iterations;
   double total_time;
@@ -322,6 +318,7 @@ Recut<image_t>::process_marker_dir(vector<int> global_image_offsets,
   if (params->marker_file_path().back() != '/')
     params->set_marker_file_path(params->marker_file_path().append("/"));
 
+  cout << "marker dir path: " << params->marker_file_path() << '\n';
   vector<MyMarker> inmarkers;
   vector<VID_t> root_vids;
   for (const auto &marker_file :
@@ -2330,7 +2327,8 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
           "If USE_MCP3D macro is set, this->params->force_regenerate_image "
           "must be set "
           "to False");
-      mcp3d_tile.ReadImageInfo(args->image_root_dir());
+      // read data from channel 
+      mcp3d_tile.ReadImageInfo(args->resolution_level(), true);
       // read data
       try {
         get_interval_offsets(interval_id, interval_offsets, interval_extents);
@@ -2367,7 +2365,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
 
       auto tile_thresholds = new TileThresholds<image_t>();
 
-      vector<int> interval_dims = mcp3d_tile.loaded_view().view_xyz_dims();
+      vector<int> interval_dims = mcp3d_tile.loaded_view().xyz_dims(args->resolution_level());
       VID_t interval_vertex_size = static_cast<VID_t>(interval_dims[0]) *
         interval_dims[1] * interval_dims[2];
 
@@ -2558,7 +2556,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
 
 #ifdef USE_MCP3D
             mcp3d::MImage
-              mcp3d_tile; // prevent destruction before calling process_interval
+              mcp3d_tile(args->image_root_dir()); // prevent destruction before calling process_interval
             // tile is only needed for the value stage
             if (stage == "value") {
               if (!(this->params->force_regenerate_image)) {
@@ -2598,9 +2596,9 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
       cout << " revisits: " << global_revisits << " vertices" << '\n';
 #endif
 
-#ifdef LOG
       auto total_update_time = diff_time(update_start_time, update_finish_time);
       auto io_time = total_update_time - computation_time;
+#ifdef LOG
       cout << "Finished stage: " << stage << '\n';
       cout << "Finished total updating within " << total_update_time << " sec \n";
       cout << "Finished computation (no I/O) within " << computation_time
@@ -2970,8 +2968,9 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
 #ifdef USE_MCP3D
       if (!(this->params->force_regenerate_image)) {
         // determine the image size
-        mcp3d::MImage global_image;
-        global_image.ReadImageInfo(args->image_root_dir());
+        mcp3d::MImage global_image(args->image_root_dir());
+        // read data from channel 
+        global_image.ReadImageInfo(args->resolution_level(), true);
         if (global_image.image_info().empty()) {
           MCP3D_MESSAGE("no supported image formats found in " +
               args->image_root_dir() + ", do nothing.")
@@ -3257,7 +3256,6 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
               }
               marker->radius = attr->radius;
               tmp[attr->vid] = marker; // save this marker ptr to a map
-              std::cout << "added to temp vid " << attr->vid << '\n';
               outtree.push_back(marker);
             } else {
               // check that all copied across blocks and intervals of a
@@ -3289,15 +3287,19 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
             auto marker = tmp[attr->vid];      // get the ptr
             if (attr->root()) {
               marker->parent = 0;
+#ifdef FULL_PRINT
               cout << "found root at " << attr->vid << '\n';
               printf("with address of %p\n", (void*) attr);
+#endif
               assertm(attr->root(), "a marker with a parent of 0, must be a root");
               assertm(marker->type == 0, "a marker with a type of 0, must be a root");
             } else {
+#ifdef FULL_PRINT
               std::cout << "parent vid " << parent_vid << '\n';
               std::cout << "attr vid " << attr->vid << '\n';
               std::cout << "marker vid " << marker->vid(image_length_x,
                   image_length_y) << '\n';
+#endif
               auto parent = tmp[parent_vid]; // adjust
               marker->parent = parent;
               assertm(marker->parent != 0, "a non root marker must have a valid parent");

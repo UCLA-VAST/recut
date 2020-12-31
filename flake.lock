@@ -1,0 +1,49 @@
+{
+  "nodes": {
+    "mcp3d": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1609379776,
+        "narHash": "sha256-4ZW2Gj+QYi9Tnv+W+cvB1ciaPsTLXflgyWuhKX9tiAg=",
+        "ref": "kdm-dev",
+        "rev": "8c3dbaed2ff0d7f8099e4642f6af8666016fc940",
+        "revCount": 365,
+        "type": "git",
+        "url": "ssh://git@github.com/muyezhu/mcp3d"
+      },
+      "original": {
+        "ref": "kdm-dev",
+        "type": "git",
+        "url": "ssh://git@github.com/muyezhu/mcp3d"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1609254719,
+        "narHash": "sha256-XB3391z8r81Bt8NfQzB+tYdTWoraY0QVdXM21JhfW+Y=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "733e537a8ad76fd355b6f501127f7d0eb8861775",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "733e537a8ad76fd355b6f501127f7d0eb8861775",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "mcp3d": "mcp3d",
+        "nixpkgs": "nixpkgs"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

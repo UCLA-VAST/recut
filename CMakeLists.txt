@@ -13,6 +13,10 @@ if(NOT DEFINED CMAKE_BUILD_TYPE)
 endif()
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
+if (NOT DEFINED CMAKE_INSTALL_BINDIR)
+  set(CMAKE_INSTALL_BINDIR ${PROJECT_SOURCE_DIR}/bin)
+endif()
+
 # works for cmake 3.9+
 # https://stackoverflow.com/questions/48825416/missing-openmp-c-flags-openmp-c-lib-names
 if(CMAKE_C_COMPILER_ID MATCHES "Clang")
@@ -34,13 +38,16 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 find_package(OpenMP REQUIRED)
 
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+
 # CMake Preprocessor Defines:
 # determine which targets to build
 # a user of Recut in header only mode can ignore
 # building of tests and benchmarks
 # although CreateIntervalBase will need to be run at least once
 # from the recut_test.hpp file
-set(RECUT_ENABLE_CL_EXECUTABLE OFF CACHE BOOL "Enable Recut building its command line executable")
+set(RECUT_ENABLE_EXECUTABLE OFF CACHE BOOL "Enable Recut building its command line executable")
 set(RECUT_ENABLE_TESTING ON CACHE BOOL "Enable Recut building its test targets")
 set(RECUT_ENABLE_BENCHMARKING OFF CACHE BOOL "Enable Recut building its benchmarks targets")
 
@@ -48,6 +55,7 @@ set(RECUT_ENABLE_BENCHMARKING OFF CACHE BOOL "Enable Recut building its benchmar
 option( FROM_NIX_BUILD OFF)
 if (FROM_NIX_BUILD)
   message(STATUS " FROM_NIX_BUILD ON")
+  # message(STATUS " NIX_CFLAGS_COMPILE: $ENV{NIX_CFLAGS_COMPILE}")
 endif()
 
 # nix-build handles gtest and gbenchmark libraries independently from submodules
@@ -97,6 +105,10 @@ option(FULL_PRINT "Print vertex by vertex behavior. Warning: will significantly 
 option( USE_MMAP "Determines read speed of vertex info from INTERVAL_BASE" OFF)
 option( USE_MCP3D "Use and link external library MCP3D into recut for image reading of TIF and HDF5 (.ims) file types" OFF)
 
+if (USE_MCP3D) 
+  message(STATUS "USE_MCP3D ON")
+endif()
+
 set(MARKERS ${PROJECT_SOURCE_DIR}/src/markers.cpp)
 set(PARAMS ${PROJECT_SOURCE_DIR}/src/recut_parameters.cpp)
 set(APP2 ${PROJECT_SOURCE_DIR}/test/app2_helpers.hpp)
@@ -123,14 +135,15 @@ set(HEADER
   ${PROJECT_SOURCE_DIR}/src/markers.h # TODO remove this
   )
 
+# Uncomment if changing recut to export as a library
 # must be defined before the executable or library
 # is defined, otherwise it is ignored
 # adding ../lib makes any executables truly relocatable
-# without it if they are make install, RPATH
+# without it if `make install`: then RPATH
 # will not link shared dependencies properly
 #set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
 
-if (RECUT_ENABLE_CL_EXECUTABLE)
+if (RECUT_ENABLE_EXECUTABLE)
   add_executable(recut ${SRC} ${HEADER} ${PARAMS})
 endif()
 if (RECUT_ENABLE_TESTING)
@@ -140,9 +153,8 @@ if (RECUT_ENABLE_BENCHMARKING)
   add_executable(recut_bench bench/recut_bench.cpp ${HEADER} ${MARKERS} ${PARAMS} ${APP2})
 endif()
 
-include_directories(include)
+# all recut headers and source go in ./src/
 include_directories(src)
-include_directories(/nix/store/1z56r6kx097b9j07r26kwhngdwjr03k1-openmp-7.1.0/include)
 
 # variable and target dependent links
 if (RECUT_ENABLE_TESTING )
@@ -156,7 +168,7 @@ endif()
 # a user of Recut in header only mode can ignore
 # building of tests and benchmarks
 set(ALL_TARGETS "")
-if (RECUT_ENABLE_CL_EXECUTABLE)
+if (RECUT_ENABLE_EXECUTABLE)
   list(APPEND ALL_TARGETS recut)
 endif()
 if (RECUT_ENABLE_TESTING)
@@ -217,7 +229,7 @@ foreach(I ${ALL_TARGETS})
   target_compile_features(${I} PRIVATE cxx_std_17)
   # these are the actual flags passed during compilation
   target_compile_options(${I} PRIVATE -fno-omit-frame-pointer -g)
-  install(TARGETS ${I} DESTINATION ${PROJECT_SOURCE_DIR}/bin)
+  install(TARGETS ${I} DESTINATION ${CMAKE_INSTALL_BINDIR})
 
   # other dependencies
   if (NOT FROM_NIX_BUILD) 
@@ -228,30 +240,30 @@ foreach(I ${ALL_TARGETS})
     target_link_libraries(${I} PRIVATE OpenMP::OpenMP_CXX)
   endif()
 
+  target_link_libraries(${I} PRIVATE Threads::Threads)
+
   if (USE_MCP3D)
-    target_include_directories(${I} PRIVATE ${PROJECT_SOURCE_DIR}/include)
+    find_package(Eigen3 REQUIRED)
+    message(STATUS "EIGEN3_INCLUDE_DIR: ${EIGEN3_INCLUDE_DIR}")
+    target_include_directories(${I} PRIVATE ${EIGEN3_INCLUDE_DIR})
+
+    find_package(OpenCV REQUIRED core imgcodecs imgproc)
+    message(STATUS "OPENCV_INCLUDE_DIR: ${OpenCV_INCLUDE_DIRS}")
+    message(STATUS "OPENCV_LIBRARYS: ${OpenCV_LIBS}")
+    target_include_directories(${I} PRIVATE ${OpenCV_INCLUDE_DIRS})
+    target_link_libraries(${I} PRIVATE ${OpenCV_LIBS})
+
     target_link_libraries(${I} PRIVATE
-      #${PROJECT_SOURCE_DIR}/lib/libboost_filesystem.so.1.65.1
-      ${PROJECT_SOURCE_DIR}/lib/libboost_serialization.so.1.65.1
-      ${PROJECT_SOURCE_DIR}/lib/libboost_system.so.1.65.1
-      ${PROJECT_SOURCE_DIR}/lib/libhdf5.so.100.1.0
-      ${PROJECT_SOURCE_DIR}/lib/libhdf5.so.1.10.1
-      ${PROJECT_SOURCE_DIR}/lib/libmcp3d_algorithm.so
-      ${PROJECT_SOURCE_DIR}/lib/libmcp3d_common.so
-      ${PROJECT_SOURCE_DIR}/lib/libmcp3d_image.so
-      ${PROJECT_SOURCE_DIR}/lib/libmcp3d_project_structure.so
-      ${PROJECT_SOURCE_DIR}/lib/libopencv_imgcodecs.so
-      ${PROJECT_SOURCE_DIR}/lib/libopencv_core.so
+      libmcp3d_algorithm.so
+      libmcp3d_image.so
+      libmcp3d_common.so
+      libmcp3d_project_structure.so
       )
   endif()
 
   # make Recut libraries truly relocatable when linking from downstream programs
   set_target_properties(${I} PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
 endforeach()
-
-if (USE_MCP3D)
-  message(STATUS "USE_MCP3D ON")
-endif()
 
 # test specific
 if (RECUT_ENABLE_TESTING)
@@ -260,5 +272,5 @@ if (RECUT_ENABLE_TESTING)
     target_compile_definitions(recut_test PRIVATE TEST_ALL_BENCHMARKS)
   endif()
 
-  add_test(NAME recut_test COMMAND ${PROJECT_SOURCE_DIR}/bin/recut_test)
+  add_test(NAME recut_test COMMAND ${CMAKE_INSTALL_BINDIR}/recut_test)
 endif()

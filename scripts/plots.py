@@ -25,20 +25,39 @@ def test_ratios(ratios, r_ratios):
             assert (ratio == check_ratio),"ratio did not match"
 
 def rplot(xiter, xlabel, yiter, ylabel, title, args, lineprops=['k-x', 'r-o', 'g-d', 'b->', 'm-s'],
-        legends=[''], legend_metric=''):
+        legends=[''], legend_metric='', yiter_secondary=[], bar=False):
+    xiter == list(range(len(yiter)))
     assert(len(xiter) == len(yiter))
-    assert(len(yiter) == len(legends))
+
+    # if legends[0] != '':
+        # assert(len(yiter) == len(legends))
     lineprops = lineprops[:len(legends)]
     title = title.replace('_', '-')
 
-    for x, y, lineprop, legend in zip(xiter, yiter, lineprops, legends):
-        plt.plot(x, y, lineprop, label=str(legend) + legend_metric)
+    if bar:
+        width = .25
+        halfbar = width / 2
+        # Get some pastel shades for the colors
+        colors = plt.cm.BuPu([0.25, .5])
+        x = [i - halfbar for i in range(len(xiter))]  
+        x1 = [i - halfbar for i in range(len(xiter))]  
+        x2 = [i + halfbar for i in range(len(xiter))] 
+        plt.bar(x, yiter, width, label=legends[0], 
+                color=colors[0])
+        if len(yiter_secondary) != 0:
+            plt.bar(x2, yiter_secondary, width, label=legends[1], color=colors[1])
+    else:
+        for x, y, lineprop, legend in zip(xiter, yiter, lineprops, legends):
+            plt.plot(x, y, lineprop, label=str(legend) + legend_metric)
     plt.xlabel(xlabel)
     # take the first one even though they should all match
-    plt.xticks(xiter[0], rotation=75)
     plt.ylabel(ylabel)
     if len(xiter) > 1:
         plt.legend()
+    if bar:
+        plt.xticks(x, labels=xiter, rotation=75)
+    else:
+        plt.xticks(xiter, rotation=75)
     plt.title(title)
     plt.tight_layout()
     fig_output_path = f'{args.output}{title}.{args.type}'.replace(' ', '_').replace('$', '').replace('\\', '')
@@ -123,9 +142,30 @@ def radius(args):
         rplot((radius_sizes, radius_sizes, radius_sizes), r'Radius size (pixels)', real_times,
                 r'Elapsed time (%s)' % time_unit, r'Calculate Radius Performance Sequential', args, legends=legends)
 
+def stages(args):
+    ''' Show runtime comparison of stages'''
+    stage_names = ['value', 'radius', 'prune', 'qc', 'g-cut']
+    runtimes =     [7.4, 8.1, 9.7, 1.2, 16]
+    seq_runtimes = [126.4, 72.9, 31.0, 0, 0]
+    if args.save or args.show:
+        field = r'Recut speedup factor %'
+        ylabel = r'Runtime (mins)'
+        title = r'Stage Runtime Comparison'
+        # xargs = (list(range(len(stage_names))), r'Stages')
+        xargs = (stage_names, r'Stages')
+        yargs = (runtimes, ylabel)
+        legends = (r'Recut', r'APP2')
 
-        def value(args):
-            ''' Fastmarching Performance '''
+        rplot(*xargs,
+                *yargs,
+                title,
+                args, 
+                legends=legends,
+                yiter_secondary=seq_runtimes, 
+                bar=True)
+
+def value(args):
+    ''' Fastmarching Performance '''
     cross_compile_flags=['NO_SCHEDULE', 'NO_INTERVAL_RV', 'SCHEDULE_INTERVAL_RV']
     baseline_flags = ['TEST_ALL_BENCHMARKS', 'USE_OMP_BLOCK']
     # desired_test_runs = [11, 12, 18, 19, 25, 26, 32, 33]
@@ -310,9 +350,9 @@ def scalability(args):
                     )
 
 
-            def rerun(desired_tests, test=False, benchmark=False, benchmark_fn='', benchmark_regex=''):
-                if benchmark:
-                    benchmark_cmd = f'{args.binary}./recut_bench --benchmark_filter=load* --benchmark_out_format=json --benchmark_out={benchmark_fn}.json'
+def rerun(desired_tests, test=False, benchmark=False, benchmark_fn='', benchmark_regex=''):
+    if benchmark:
+        benchmark_cmd = f'{args.binary}./recut_bench --benchmark_filter=load* --benchmark_out_format=json --benchmark_out={benchmark_fn}.json'
         run_with_log(benchmark_fn, benchmark_cmd)
 
     if test:
@@ -408,11 +448,13 @@ def read(args):
                     legends=('Sequential computation', 'Exact tile read', 'Tile in large image read')
                     )
 
-            def main(args):
-                if args.all:
-                    radius(args)
+def main(args):
+
+    if args.all:
+        radius(args)
         value(args)
         read(args)
+        stages(args)
         return
 
     if args.case == 'radius':
@@ -423,6 +465,8 @@ def read(args):
         read(args)
     if args.case == 'scalability':
         scalability(args)
+    if args.case == 'stages':
+        stages(args)
 
 
 if __name__ == '__main__':
@@ -432,7 +476,7 @@ if __name__ == '__main__':
     group.add_argument('-a', '--all', help="Use all known cases",
             action="store_true")
     group.add_argument('-c', '--case', help="Specify which case to use",
-            choices=['radius', 'scalability', 'value', 'read'])
+            choices=['stages', 'radius', 'scalability', 'value', 'read'])
 
     parser.add_argument('-r', '--rerun', help="Rerun all to generate new test data", action="store_true")
     parser.add_argument('-w', '--save', help="save all plots to file", action="store_true")

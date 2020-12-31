@@ -8,7 +8,6 @@
 #include <fcntl.h>
 #include <fstream>
 #include <iostream>
-//#include <nlohmann/json.hpp>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -19,11 +18,9 @@
 // stop after first test failure
 #define GTEST_FAIL_FAST 1
 
-// using json = nlohmann::json;
-
 #ifdef USE_MCP3D
-#include "common/mcp3d_utility.hpp"    // PadNumStr
-#include "image/mcp3d_voxel_types.hpp" // convert to CV type
+#include <common/mcp3d_utility.hpp>    // PadNumStr
+#include <image/mcp3d_voxel_types.hpp> // convert to CV type
 #include <opencv2/opencv.hpp>          // imwrite
 #endif
 
@@ -187,7 +184,7 @@ void interval_base_immutable(VID_t nvid) {
 
 void load_save(bool mmap_) {
   auto nvid = 64;
-  auto fn = get_data_dir() + "/interval0.bin";
+  auto fn = "/tmp/interval0.bin";
   auto base = INTERVAL_BASE;
   fs::remove(fn); // for safety, but done automatically via ~Interval
   ASSERT_FALSE(fs::exists(fn));
@@ -229,25 +226,6 @@ void load_save(bool mmap_) {
 
   ASSERT_NO_FATAL_FAILURE(interval_base_immutable(nvid));
 }
-
-//// assigns all of the intervals within the super interval
-//// a unique vid even in padded regions. This is especially
-//// useful for testing get_attr_vid is returning the correct
-//// vid
-// void assign_grid(Recut recut) {
-//// test that get_attr_vid returns the right match in various scenarios
-//// assign all vids for testing purposes
-// VID_t index = 0;
-// for (int i=0; i < recut.grid.GetNIntervals(); i++) {
-// auto interval = recut.grid.GetInterval(i);
-// auto attr = interval->GetData();
-// for (int j=0; j < interval->GetNVertices(); j++) {
-// auto current = attr + index; // get the appropriate vertex
-// current->vid = index;
-// index ++;
-//}
-//}
-//}
 
 void test_get_attr_vid(bool mmap, int grid_size, int interval_size,
     int block_size) {
@@ -451,7 +429,7 @@ TEST(Heap, PushUpdate) {
  * that may be requested/read
  * takes ~11 minutes for 3.7e9 (padded ~ 1024^3) vertices
  */
-TEST(Install, CreateIntervalBase) {
+TEST(Install, DISABLED_CreateIntervalBase) {
   bool rerun = false; // change to true if MAX_INTERVAL_VERTICES or the vertex
   // struct has been changed in vertex_attr.h
   auto fn = INTERVAL_BASE;
@@ -577,6 +555,7 @@ TEST(Interval, GetAttrVidMultiInterval) {
   VID_t grid_size = 8;
   auto interval_size = grid_size / 2;
   VID_t nvid = grid_size * grid_size * grid_size;
+  // must account for ghost regions
   auto interval_vert_num = get_used_vertex_size(grid_size, interval_size);
 
   // single block per interval
@@ -594,17 +573,27 @@ TEST(Interval, GetAttrVidMultiInterval) {
  * selected percents
  * install files into data/
  */
-TEST(Install, CreateImagesMarkers) {
+TEST(Install, DISABLED_CreateImagesMarkers) {
   // change these to desired params
   // Note this will delete anything in the
   // same directory before writing
   // tcase 5 is deprecated
-  std::vector<int> grid_sizes = {2, 4, 8, 16, 32, 64, 128, 256, 512};
+  std::vector<int> grid_sizes = {2, 4, 8};
+
+//#ifdef TEST_ALL_BENCHMARKS
+  //grid_sizes = {2, 4, 8, 16, 32, 64, 128, 256, 512};
+//#endif
+
   std::vector<int> testcases = {4, 3, 2, 1, 0};
   std::vector<double> selected_percents = {1, 10, 50, 100};
+  auto print = false;
+#ifdef LOG
+  print = true;
+#endif
 
   for (auto &grid_size : grid_sizes) {
-    cout << "Create grids of " << grid_size << endl;
+    if (print)
+      cout << "Create grids of " << grid_size << endl;
     auto root_vid = get_central_vid(grid_size);
     // FIXME save root marker vid
     long sz0 = (long)grid_size;
@@ -620,11 +609,14 @@ TEST(Install, CreateImagesMarkers) {
     VertexAttr *root = new VertexAttr();
     root->vid = (VID_t)z * sz0 * sz1 + y * sz0 + x;
     ASSERT_EQ(root->vid, root_vid);
-    cout << "x " << x << "y " << y << "z " << z << endl;
-    cout << "root vid " << root->vid << endl;
+    if (print) {
+      cout << "x " << x << "y " << y << "z " << z << endl;
+      cout << "root vid " << root->vid << endl;
+    }
 
     for (auto &tcase : testcases) {
-      cout << "  tcase " << tcase << endl;
+      if (print)
+        cout << "  tcase " << tcase << endl;
       for (auto &slt_pct : selected_percents) {
         if ((tcase != 4) && (slt_pct != 100))
           continue;
@@ -658,28 +650,33 @@ TEST(Install, CreateImagesMarkers) {
         fn = fn + std::to_string((int)slt_pct);
         fn = fn + delim;
 
-        VID_t selected = tol_sz * (slt_pct / (float)100); // for tcase 4
+        VID_t desired_selected;
+        desired_selected = tol_sz * (slt_pct / (float)100); // for tcase 4
         // always select at least the root
-        if (selected == 0) {
-          selected = 1;
+        if (desired_selected == 0) {
+          desired_selected = 1;
         }
         uint16_t *inimg1d = new uint16_t[tol_sz];
-        // sets all to 0 for tcase 4
-        create_image(tcase, inimg1d, grid_size, selected, root_vid);
+        VID_t actual_selected = create_image(tcase, inimg1d, grid_size, desired_selected, root_vid);
 
-        float actual_slt_pct = (selected / (float)tol_sz) * 100;
-        cout << "    Actual num selected including root auto selection: "
-          << selected << endl;
-        cout << "    actual slt_pct: " << actual_slt_pct << "%" << endl;
-        cout << "    for attempted slt_pct: " << slt_pct << "%" << endl;
+        float actual_slt_pct = (actual_selected / (float)tol_sz) * 100;
+        if (print) {
+          cout << "    Actual num selected including root auto selection: "
+            << actual_selected << endl;
+          cout << "    actual slt_pct: " << actual_slt_pct << "%" << endl;
+          cout << "    for attempted slt_pct: " << slt_pct << "%" << endl;
+        }
 
-        ASSERT_NE(inimg1d[root->vid], 0);
-        ASSERT_NE(selected, 0);
+        //print_image_3D(inimg1d, {grid_size, grid_size, grid_size});
+        ASSERT_NE(inimg1d[root->vid], 0) << " tcase " << tcase;
+        ASSERT_NE(actual_selected, 0);
 
         // check percent lines up
         // if the tcase can't pass this then raise the size or
         // slt pct to prevent dangerous usage
-        ASSERT_NEAR(actual_slt_pct, slt_pct, 100 * EXP_DEV_LOW);
+        if (tcase == 4) {
+          ASSERT_NEAR(actual_slt_pct, slt_pct, 100 * EXP_DEV_LOW);
+        }
 
         write_tiff(inimg1d, fn, grid_size);
         delete[] inimg1d;
@@ -690,7 +687,7 @@ TEST(Install, CreateImagesMarkers) {
 }
 
 #ifdef USE_MCP3D
-TEST(Image, ReadWrite) {
+TEST(Install, DISABLED_ImageReadWrite) {
   auto grid_size = 2;
   auto tcase = 4;
   double slt_pct = 50;
@@ -712,7 +709,7 @@ TEST(Image, ReadWrite) {
   uint16_t *inimg1d = new uint16_t[tol_sz];
   create_image(tcase, inimg1d, grid_size, selected, get_central_vid(grid_size));
   write_tiff(inimg1d, fn, grid_size);
-  mcp3d::MImage check, check3;
+  mcp3d::MImage check(fn), check3(fn);
   read_tiff(fn, image_offsets, image_extents, check);
   // print_image(check, grid_size * grid_size * grid_size);
   ASSERT_NO_FATAL_FAILURE(
@@ -845,7 +842,7 @@ TEST(Helpers, DISABLED_ConcurrentMap) {
 }
 #endif
 
-TEST(VertexAttr, ReadWriteInterval) {
+TEST(Install, DISABLED_ReadWriteInterval) {
   auto nvid = 4;
   auto ptr = new VertexAttr[nvid];
   size_t size = sizeof(VertexAttr) * nvid;
@@ -854,7 +851,7 @@ TEST(VertexAttr, ReadWriteInterval) {
   auto fn = base + "interval0.bin";
   // fs::remove_all(fn); // make sure it's an overwrite
   fs::create_directories(base);
-  // cout << "fn: " << fn << endl;
+  cout << "fn: " << fn << endl;
 
   // open output
   std::ofstream ofile(fn, ios::out | ios::binary); // read-mode
@@ -904,8 +901,12 @@ TEST(TileThresholds, AllTcases) {
   auto grid_size = 4;
   auto slt_pct = 50;
   auto grid_vertex_size = grid_size * grid_size * grid_size;
-  auto print_image = true;
-  std::vector<int> tcases = {1, 2, 3, 4, 5, 6};
+  auto print_image = false;
+#ifdef FULL_PRINT
+  print_image = true;
+#endif
+  // doesn't include real images tcase 6
+  std::vector<int> tcases = {1, 2, 3, 4, 5};
   for (const auto &tcase : tcases) {
     auto args =
       get_args(grid_size, grid_size, grid_size, slt_pct, tcase, false);
@@ -916,7 +917,7 @@ TEST(TileThresholds, AllTcases) {
     uint16_t bkg_thresh;
 
 #ifdef USE_MCP3D
-    mcp3d::MImage image;
+    mcp3d::MImage image(args.image_root_dir());
     if (tcase == 6) {
       read_tiff(args.image_root_dir(), args.image_offsets, args.image_extents,
           image);
@@ -928,23 +929,29 @@ TEST(TileThresholds, AllTcases) {
           grid_vertex_size, slt_pct / 100.);
       tile_thresholds->get_max_min(image.Volume<uint16_t>(0), grid_vertex_size);
 
-      cout << "tcase " << tcase << " bkg_thresh " << bkg_thresh << "\nmax "
-        << tile_thresholds->max_int << " min " << tile_thresholds->min_int
-        << '\n';
+      if (print_image) {
+        cout << "tcase " << tcase << " bkg_thresh " << bkg_thresh << "\nmax "
+          << tile_thresholds->max_int << " min " << tile_thresholds->min_int
+          << '\n';
+      }
     }
 #endif
 
     if (tcase <= 5) {
       create_image(tcase, inimg1d.get(), grid_size, selected,
           get_central_vid(grid_size));
-      print_image_3D(inimg1d.get(), {grid_size, grid_size, grid_size});
+      if (print_image) {
+        print_image_3D(inimg1d.get(), {grid_size, grid_size, grid_size});
+      }
       bkg_thresh = recut.get_bkg_threshold(inimg1d.get(), grid_vertex_size,
           slt_pct / 100.);
       tile_thresholds->get_max_min(inimg1d.get(), grid_vertex_size);
 
-      cout << "tcase " << tcase << " bkg_thresh " << bkg_thresh << "\nmax "
-        << tile_thresholds->max_int << " min " << tile_thresholds->min_int
-        << '\n';
+      if (print_image) {
+        cout << "tcase " << tcase << " bkg_thresh " << bkg_thresh << "\nmax "
+          << tile_thresholds->max_int << " min " << tile_thresholds->min_int
+          << '\n';
+      }
     }
   }
 }
@@ -1110,9 +1117,12 @@ TEST(CoveredByParent, Full) {
 }
 
 TEST(Radius, Full) {
-  bool print_all = true;
-  bool check_xy = false;
+  bool print_all = false;
   bool print_csv = false;
+#ifdef LOG
+  print_all = true;
+#endif
+  bool check_xy = false;
   bool prune = false;
   auto expect_exact_radii_match = false;
 
@@ -1295,9 +1305,11 @@ TEST(Radius, Full) {
           RecordProperty(xy_stream.str(), xy_err);
           RecordProperty(recut_stream.str(), recut_err);
 
-          std::cout << "roots:\n";
-          rng::for_each(root_vids, [](auto i) { std::cout << i << ", "; });
-          std::cout << '\n';
+          if (print_all) {
+            std::cout << "roots:\n";
+            rng::for_each(root_vids, [](auto i) { std::cout << i << ", "; });
+            std::cout << '\n';
+          }
 
           recut.finalize(args.output_tree, false, false);
 
@@ -1439,13 +1451,19 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   std::string stage;
 
   // shared params
+  // generate image so that you can read it below
+  // first make sure it can pass
   auto args = get_args(
       grid_size, interval_size, block_size, slt_pct, tcase,
-      force_regenerate_image); // generate image so that you can read it below
+      force_regenerate_image); 
+  cout << "args.image_root_dir() " << args.image_root_dir() << '\n';
   args.recut_parameters();
   // uint16_t is image_t here
   TileThresholds<uint16_t> *tile_thresholds;
-  bool print_all = true;
+  bool print_all = false;
+#ifdef LOG
+  print_all = true;
+#endif 
 
   auto recut = Recut<uint16_t>(args);
   std::vector<VID_t> root_vids;
@@ -1453,7 +1471,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   recut.activate_vids(root_vids, "value", recut.global_fifo);
 
 #ifdef USE_MCP3D
-  mcp3d::MImage image;
+  mcp3d::MImage image(args.image_root_dir());
   if (check_against_sequential) {
     read_tiff(args.image_root_dir(), args.image_offsets, args.image_extents,
         image);
@@ -1477,7 +1495,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     // thus they will only be replaced if we're reading a real image
     tile_thresholds = new TileThresholds<uint16_t>(2, 0, 0);
   }
-  std::cout << "Using bkg_thresh: " << tile_thresholds->bkg_thresh << '\n';
+  //std::cout << "Using bkg_thresh: " << tile_thresholds->bkg_thresh << '\n';
   RecordProperty("bkg_thresh", tile_thresholds->bkg_thresh);
   RecordProperty("max_int", tile_thresholds->max_int);
   RecordProperty("min_int", tile_thresholds->min_int);
@@ -1498,7 +1516,9 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     std::ostringstream cat;
     std::copy(interval_open_count.begin(), interval_open_count.end(),
         std::ostream_iterator<int>(cat, ", "));
-    std::cout << "interval reopens: " << cat.str() << '\n';
+#ifdef LOG
+    std::cout << "Interval reopens" << cat.str() << '\n';
+#endif
 
     auto [mean, sum, std_dev] =
       iter_stats(value_update_stats->interval_open_counts);
@@ -1560,8 +1580,10 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
   double actual_slt_pct =
     (100. * args.output_tree.size()) / tol_sz;
+#ifdef LOG
   cout << "Selected " << actual_slt_pct
     << "% of pixels, total count: " << args.output_tree.size() << '\n';
+#endif
   RecordProperty("Foreground (%)", actual_slt_pct);
   RecordProperty("Foreground count (pixels)", args.output_tree.size());
 
@@ -1735,12 +1757,12 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
 // ... check_against_selected, check_against_sequential
 INSTANTIATE_TEST_CASE_P(
-    RecutPipelineTests, RecutPipelineParameterTests,
+    DISABLED_RecutPipelineTests, RecutPipelineParameterTests,
     ::testing::Values(
       std::make_tuple(4, 4, 4, 0, 100., true, false), // 0
       std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
       std::make_tuple(4, 4, 4, 2, 100., true, false), // 2
-      std::make_tuple(4, 4, 4, 3, 100., true, false)  // 3
+      std::make_tuple(4, 2, 2, 2, 100., true, false) // 3
 #ifdef USE_MCP3D
       ,
       // check_against_sequential (final boolean below) currently uses MCP3D's
@@ -1752,17 +1774,18 @@ INSTANTIATE_TEST_CASE_P(
       // multi-interval small
       std::make_tuple(4, 2, 2, 4, 50., true, true), // 5
       // multi-block small
-      std::make_tuple(4, 4, 2, 4, 50., true, true), // 6
+      std::make_tuple(4, 4, 2, 4, 50., true, true) // 6
+#ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for
+      // these must have TEST_IMAGE and TEST_MARKER environment variables set
+      ,
       // make sure if bkg_thresh is 0, all vertices are selected for real
-      std::make_tuple(4, 4, 4, 6, 100., true, true), // 7
+      std::make_tuple(4, 4, 4, 6, 100., false, true), // 7
       // make sure fastmarching_tree and recut produce exact match for real
       std::make_tuple(8, 8, 8, 6, 100., false, true), // 8
       // real data multi-block
       std::make_tuple(8, 8, 4, 6, 100., false, true), // 9
       // real data multi-interval
-      std::make_tuple(8, 4, 4, 6, 100., false, true) // 10
-#ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for
-  ,
+      std::make_tuple(8, 4, 4, 6, 100., false, true), // 10
   // interval grid ratio tests
   std::make_tuple(128, 64, 64, 6, 1, false, true),    // 11
   std::make_tuple(256, 128, 128, 6, 1, false, true),  // 12
@@ -1770,8 +1793,8 @@ INSTANTIATE_TEST_CASE_P(
   std::make_tuple(1024, 512, 512, 6, 1, false, true), // 14
   std::make_tuple(2048, 1024, 1024, 6, 1, false,
       false), // out of memory for fastmarching_tree
-  std::make_tuple(4096, 2048, 2048, 6, 1, false, false), // 16
-  std::make_tuple(8192, 4096, 4096, 6, 1, false, false), // 17
+  //std::make_tuple(4096, 2048, 2048, 6, 1, false, false), // 16
+  //std::make_tuple(8192, 4096, 4096, 6, 1, false, false), // 17
 
   std::make_tuple(128, 32, 32, 6, 1, false, true), // 18
   std::make_tuple(256, 64, 64, 6, 1, false, true),
@@ -1779,7 +1802,7 @@ INSTANTIATE_TEST_CASE_P(
   std::make_tuple(1024, 256, 256, 6, 1, false, true),
   std::make_tuple(2048, 512, 512, 6, 1, false, false),
   std::make_tuple(4096, 1024, 1024, 6, 1, false, false),
-  std::make_tuple(8192, 2048, 2048, 6, 1, false, false), // 24
+  //std::make_tuple(8192, 2048, 2048, 6, 1, false, false), // 24
 
   std::make_tuple(128, 16, 16, 6, 1, false, true), // 25
   std::make_tuple(256, 32, 32, 6, 1, false, true),
@@ -1854,6 +1877,10 @@ TEST(RecutPipeline, PrintDefaultInfo) {
     << get_used_vertex_size(1024, 4) << std::scientific << endl;
   cout << "Vertices needed for a 2048^3 interval block size 4 : "
     << get_used_vertex_size(2048, 4) << std::scientific << endl;
+  cout << "Vertices needed for a 8^3 interval block size 2 : "
+    << get_used_vertex_size(8, 2) << std::scientific << endl;
+  cout << "Print parent directory to this binary " << get_parent_dir() << '\n';
+  cout << "Print data directory to this binary " << get_data_dir() << '\n';
 }
 
   int main(int argc, char **argv) {
