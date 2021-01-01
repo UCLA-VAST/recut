@@ -36,7 +36,7 @@ class Interval {
             << "\ncurrent max at: " << MAX_INTERVAL_VERTICES
             << "\nIncrease MAX_INTERVAL_BASE in src/config.hpp and rerunning interval base "
             "generation in recut_test.hpp:CreateIntervalBase\n";
-          exit(1);
+          assert(false);
         }
         mmap_length_ = sizeof(VertexAttr) * interval_vertex_pad_size_;
 

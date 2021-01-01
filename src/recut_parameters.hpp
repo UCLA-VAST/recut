@@ -33,7 +33,7 @@ class RecutParameters {
       brightfield_ = false;
       marker_file_path_ = std::string();
       parallel_num_ = 1; // default is the max hardware concurrency when not set
-      block_size_ = 32;
+      block_size_ = 64;
       interval_size_ = 1024;
       max_intensity_ = -1;
       min_intensity_ = -1;
@@ -115,9 +115,6 @@ class RecutParameters {
     void set_interval_size(int interval_size) { interval_size_ = interval_size; }
     void set_marker_file_path(const std::string &marker_file_path) {
       marker_file_path_ = marker_file_path;
-      // if (mcp3d::IsDir(marker_file_path))
-      // else
-      // MCP3D_MESSAGE(marker_file_path + " is not a folder")
     }
     void set_max_intensity(double max_intensity) {
       max_intensity_ = max_intensity;
@@ -164,39 +161,27 @@ class RecutCommandLineArgs {
       recut_parameters_ = params;
     }
     void set_image_root_dir(const std::string &image_root_dir) {
-      // if (!mcp3d::IsDir(image_root_dir))
-      // MCP3D_INVALID_ARGUMENT(image_root_dir + " is not a directory")
       image_root_dir_ = image_root_dir;
     }
 
     void set_swc_path(const std::string &swc_path) { swc_path_ = swc_path; }
 
     void set_channel(int channel) {
-      // if (channel < 0)
-      // MCP3D_INVALID_ARGUMENT("channel number must be non negative, received " +
-      // std::to_string(channel))
       channel_ = channel;
     }
 
     void set_resolution_level(int resolution_level) {
-      // if (resolution_level < 0)
-      // MCP3D_INVALID_ARGUMENT("resolution_level must be non negative, received "
-      // + std::to_string(resolution_level))
       resolution_level_ = resolution_level;
     }
 
     void set_image_offsets(const std::vector<int> &image_offsets) {
       for (size_t i = 0; i < std::min((size_t)3, image_offsets.size()); ++i) {
-        // if (image_offsets[i] < 0)
-        // MCP3D_INVALID_ARGUMENT("offsets values must be non negative")
         this->image_offsets[i] = image_offsets[i];
       }
     }
 
     void set_image_extents(const std::vector<int> &image_extents) {
       for (size_t i = 0; i < std::min((size_t)3, image_extents.size()); ++i) {
-        // if (image_extents[i] < 0)
-        // MCP3D_INVALID_ARGUMENT("offsets values must be non negative")
         this->image_extents[i] = image_extents[i];
       }
     }

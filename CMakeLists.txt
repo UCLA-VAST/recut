@@ -240,6 +240,10 @@ foreach(I ${ALL_TARGETS})
     target_link_libraries(${I} PRIVATE OpenMP::OpenMP_CXX)
   endif()
 
+  if (TEST_ALL_BENCHMARKS)
+    target_compile_definitions(${I} PRIVATE TEST_ALL_BENCHMARKS)
+  endif()
+
   target_link_libraries(${I} PRIVATE Threads::Threads)
 
   if (USE_MCP3D)
@@ -267,10 +271,5 @@ endforeach()
 
 # test specific
 if (RECUT_ENABLE_TESTING)
-  if (TEST_ALL_BENCHMARKS)
-    message(STATUS " TEST_ALL_BENCHMARKS ON")
-    target_compile_definitions(recut_test PRIVATE TEST_ALL_BENCHMARKS)
-  endif()
-
   add_test(NAME recut_test COMMAND ${CMAKE_INSTALL_BINDIR}/recut_test)
 endif()
