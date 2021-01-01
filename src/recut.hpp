@@ -3064,9 +3064,6 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
         pad_block_length_x * pad_block_length_y * pad_block_length_z;
       const VID_t grid_vertex_pad_size =
         pad_block_offset * interval_block_size * grid_interval_size;
-      assertm(pad_block_offset * interval_block_size < MAX_INTERVAL_VERTICES,
-          "Total vertices used by an interval can not exceed "
-          "MAX_INTERVAL_VERTICES specified in vertex_attr.h");
 
 #ifdef LOG
       cout << "block x, y, z size: " << block_length_x << ", " << block_length_y
@@ -3094,21 +3091,13 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id, const VID_
       if (grid_interval_size > (2 << 16) - 1) {
         cout << "Number of intervals too high: " << grid_interval_size
           << " try increasing interval size";
-        assert(false);
+        //assert(false);
       }
       if (interval_block_size > (2 << 16) - 1) {
         cout << "Number of blocks too high: " << interval_block_size
           << " try increasing block size";
-        assert(false);
+        //assert(false);
       }
-
-      // if (grid_vertex_pad_size > MAX_INTERVAL_VERTICES) {
-      // cout << "Number of total vertices too high: " << grid_vertex_pad_size
-      //<< " current max at: " << MAX_INTERVAL_VERTICES
-      //<< " try increasing MAX_INTERVAL_BASE and rerunning interval base "
-      //"generation in recut_test.hpp:CreateIntervalBase";
-      // assert(false);
-      //}
 
       clock_gettime(CLOCK_REALTIME, &time0);
       grid = Grid(grid_vertex_pad_size, interval_block_size, grid_interval_size,

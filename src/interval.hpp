@@ -31,7 +31,13 @@ class Interval {
       base_(base), fn_(base),
       interval_vertex_pad_size_(interval_vertex_pad_size),
       interval_id_(interval_id), mmap_(mmap_) {
-        assert(interval_vertex_pad_size <= MAX_INTERVAL_VERTICES);
+        if (interval_vertex_pad_size > MAX_INTERVAL_VERTICES) {
+          cout << "Number of total interval vertices too high: " << interval_vertex_pad_size
+            << "\ncurrent max at: " << MAX_INTERVAL_VERTICES
+            << "\nIncrease MAX_INTERVAL_BASE in src/config.hpp and rerunning interval base "
+            "generation in recut_test.hpp:CreateIntervalBase\n";
+          exit(1);
+        }
         mmap_length_ = sizeof(VertexAttr) * interval_vertex_pad_size_;
 
 #ifdef USE_HUGE_PAGE
@@ -105,7 +111,7 @@ class Interval {
     }
 
     // if this interval has been previously saved to disk
-    // the SavedToDisk function will mutate the file name to 
+    // the SavedToDisk function will mutate the file name to
     // be specific to this interval such that changes persist
     void LoadFromDisk() {
       assert(!in_mem_);
@@ -172,12 +178,12 @@ class Interval {
       }
     }
 
-  void print_state (const std::ofstream& stream) {
-    std::cout << " good()=" << stream.good();
-    std::cout << " eof()=" << stream.eof();
-    std::cout << " fail()=" << stream.fail();
-    std::cout << " bad()=" << stream.bad() << '\n';
-  }
+    void print_state (const std::ofstream& stream) {
+      std::cout << " good()=" << stream.good();
+      std::cout << " eof()=" << stream.eof();
+      std::cout << " fail()=" << stream.fail();
+      std::cout << " bad()=" << stream.bad() << '\n';
+    }
 
     /* changes the default fn_ (originally base_) to a unique
      * binary file in the binaries directory
@@ -199,10 +205,10 @@ class Interval {
 
       // write struct array to file
       if (mmap_) {
-      print_state(ofile);
+        print_state(ofile);
         msync((char *) mmap_ptr_, mmap_length_, MS_SYNC);
         ofile.write((char *)mmap_ptr_, mmap_length_);
-      print_state(ofile);
+        print_state(ofile);
         assert(unmap_);
 #ifdef USE_HUGE_PAGE
         assert(munmap(mmap_ptr_, hp_mmap_length_) == 0);

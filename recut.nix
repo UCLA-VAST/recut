@@ -18,7 +18,7 @@ stdenv.mkDerivation {
   doCheck = true;
   enableParallelBuilding = true;
 
-  cmakeFlags = ["-DFROM_NIX_BUILD=ON -DRECUT_ENABLE_EXECUTABLE=ON -DLOG=OFF -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Debug"];
+  cmakeFlags = ["-DFROM_NIX_BUILD=ON -DRECUT_ENABLE_EXECUTABLE=ON -DLOG=ON -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Debug"];
 
   nativeBuildInputs = [ cmake ];
 

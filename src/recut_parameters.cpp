@@ -34,7 +34,7 @@ string RecutParameters::MetaString() {
 }
 
 void RecutCommandLineArgs::PrintUsage() {
-  cout << "Usage : ./recut <image_root_dir> <channel> [-inmarker <marker_dir>] "
+  cout << "Usage : recut <image_root_dir> <channel> [-inmarker <marker_dir>] "
           "[-outswc <swc_file>] "
           "[-resolution-level <int>] [-image-offsets <int> [<int>] [<int>]] "
           "[-image-extents <int> [<int>] [<int>]]"

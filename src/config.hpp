@@ -1,4 +1,4 @@
-// Define stable preprocessor macros, templates and types to be used for
+// Define preprocessor macros, templates and types to be used for
 // configuration and compile time behavior
 // Note it is preferred to pass this macros to `cmake ..
 // -DMACRO=ON` and add them to the root CMakelists.txt
@@ -14,7 +14,6 @@ typedef uint64_t VID_t; // for multi-interval runs
 // recommended to place the interval in /tmp/ to avoid mmap issues
 //#define INTERVAL_BASE "/tmp/interval_base_32.bin";
 #define INTERVAL_BASE "/tmp/interval_base_64bit.bin"
-//#define INTERVAL_BASE "../data/interval_base_64bit.bin"
 
 // equivalent max allows up to interval actual size shown with
 // block_size 4 including padding (ghost cells) WARNING: if you change this
@@ -28,8 +27,7 @@ typedef uint64_t VID_t; // for multi-interval runs
 // Vertices needed for a 2048^3 interval block size 4 : 28991029248
 // Vertices needed for a 8^3 interval block size 2 : 4096
 #ifdef TEST_ALL_BENCHMARKS
-// const VID_t MAX_INTERVAL_VERTICES =  3623878656; 
-  const VID_t MAX_INTERVAL_VERTICES = 4096;
+ const VID_t MAX_INTERVAL_VERTICES =  3623878656; 
 #else
   const VID_t MAX_INTERVAL_VERTICES = 4096;
 #endif
