@@ -18,8 +18,8 @@ string RecutParameters::MetaString() {
   meta_stream << "# min_int = " << min_intensity_ << '\n';
   meta_stream << "# restart = " << restart_ << '\n';
   meta_stream << "# parallel = " << parallel_num_ << '\n';
-  meta_stream << "# interval_size = " << interval_size << '\n';
-  meta_stream << "# block_size = " << block_size << '\n';
+  meta_stream << "# interval_size = " << interval_size_ << '\n';
+  meta_stream << "# block_size = " << block_size_ << '\n';
   meta_stream << "# marker_file_path = "
               << (marker_file_path_.empty() ? "none" : marker_file_path_)
               << '\n';
@@ -27,14 +27,17 @@ string RecutParameters::MetaString() {
 }
 
 void RecutCommandLineArgs::PrintUsage() {
-  cout << "Usage : recut <image_root_dir> <channel> [--inmarker <marker_dir>] "
+  cout << "Usage : recut <image_root_dir> <marker_dir> [--channel <int>] "
           "[--outswc <swc_file>] "
           "[--resolution-level <int>] [--image-offsets <int> [<int>] [<int>]] "
           "[--image-extents <int> [<int>] [<int>]]"
           "[--bkg-thresh <int>] [--fg-percent <double>] [--gsdt] [--cnn-type "
           "<int>] [--length-thresh <double>] [--allow_gap] [--pl [<int>]]\n\n";
-  cout << "--inmarker           [-im] input marker file directory all marker "
-          "files represent known soma locations\n";
+
+  cout << "<image_root_dir>     directory for input image\n";
+  cout << "<marker_dir>         directory containing all marker "
+          "files which represent known soma locations\n";
+  cout << "--channel            [-c] channel number of image\n";
   cout << "--outswc             [-os] output tracing result, default is "
           "<imagename>_tracing.swc\n";
   cout << "--resolution-level   [-rl] resolution level to perform tracing at. "
@@ -93,7 +96,7 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
   try {
     // global volume and channel selection
     args.set_image_root_dir(argv[1]);
-    args.set_channel(atoi(argv[2]));
+    args.recut_parameters().set_marker_file_path(argv[2]);
     // if the switch is given, parameter(s) corresponding to the switch is
     // expected
     for (int i = 3; i < argc; ++i) {
@@ -124,9 +127,9 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
                  strcmp(argv[i], "-os") == 0) {
         args.set_swc_path(argv[i + 1]);
         ++i;
-      } else if (strcmp(argv[i], "--inmarker") == 0 ||
-                 strcmp(argv[i], "-im") == 0) {
-        args.recut_parameters().set_marker_file_path(argv[i + 1]);
+      } else if (strcmp(argv[i], "--channel") == 0 ||
+                 strcmp(argv[i], "-c") == 0) {
+        args.set_channel(atoi(argv[i + 1]));
         ++i;
       } else if (strcmp(argv[i], "--bg-thresh") == 0 ||
                  strcmp(argv[i], "-bt") == 0) {
@@ -203,7 +206,8 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
                  strcmp(argv[i], "--ag") == 0) {
         args.recut_parameters().set_allow_gap(true);
       } else {
-        cout << "unknown option " << argv[i] << '\n';
+        cout << "unknown option \"" << argv[i] << "\"  ...exiting\n\n";
+        RecutCommandLineArgs::PrintUsage();
         exit(1);
       }
     }
