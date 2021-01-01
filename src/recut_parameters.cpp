@@ -16,7 +16,7 @@ string RecutParameters::MetaString() {
   meta_stream << "# background_thresh = " << background_thresh_ << '\n';
   meta_stream << "# max_int = " << max_intensity_ << '\n';
   meta_stream << "# min_int = " << min_intensity_ << '\n';
-  meta_stream << "# restart = " << restart_ << '\n';
+  //meta_stream << "# restart = " << restart_ << '\n';
   meta_stream << "# parallel = " << parallel_num_ << '\n';
   meta_stream << "# interval_size = " << interval_size_ << '\n';
   meta_stream << "# block_size = " << block_size_ << '\n';
@@ -27,52 +27,40 @@ string RecutParameters::MetaString() {
 }
 
 void RecutCommandLineArgs::PrintUsage() {
-  cout << "Usage : recut <image_root_dir> <marker_dir> [--channel <int>] "
+  cout << "Basic usage : recut <image_root_dir> <marker_dir> [--channel <int>] "
           "[--outswc <swc_file>] "
           "[--resolution-level <int>] [--image-offsets <int> [<int>] [<int>]] "
-          "[--image-extents <int> [<int>] [<int>]]"
-          "[--bkg-thresh <int>] [--fg-percent <double>] [--gsdt] [--cnn-type "
-          "<int>] [--length-thresh <double>] [--allow_gap] [--pl [<int>]]\n\n";
+          "[--image-extents <int> [<int>] [<int>]] "
+          "[--bkg-thresh <int>] [--fg-percent <double>]\n\n";
 
   cout << "<image_root_dir>     directory for input image\n";
   cout << "<marker_dir>         directory containing all marker "
           "files which represent known soma locations\n";
-  cout << "--channel            [-c] channel number of image\n";
-  cout << "--outswc             [-os] output tracing result, default is "
+  cout << "--max                set max image voxel raw value allowed, "
+          "computed automatically when --bg_thresh or --fg-percent are specified\n";
+  cout << "--min                set min image voxel raw value allowed, "
+          "computed automatically when --bg_thresh or --fg-percent are specified\n";
+  cout << "--channel            [-c] channel number of image default 0\n";
+  cout << "--outswc             [-os] output tracing result default is "
           "<imagename>_tracing.swc\n";
   cout << "--resolution-level   [-rl] resolution level to perform tracing at. "
           "default is 0, ie original resolution\n";
-  cout << "--image-offsets      [-io] offsets of subvolume, in zyx order. each "
-          "axis has default offset value 0 if not provided\n";
-  cout << "--image-extents      [-ie] extents of subvolume, in zyx order. each "
-          "axis has extent from offset to axis maximum range if not provided\n";
-  cout << "--bg-thresh          [-bt] background threshold value used in GSDT "
-          "and tree construction when no target marker\n";
-  cout << "--max                      set the max voxel value manually such "
-          "that no extra traversal of image is done\n";
-  cout << "--min                      set the min voxel value manually such "
-          "that no extra traversal of image is done\n";
+  cout << "--image-offsets      [-io] offsets of subvolume, in z y x order default 0 0 0\n";
+  cout << "--image-extents      [-ie] extents of subvolume, in z y x order defaults"
+          " to max range from offset start to max length in each axis\n";
+  cout << "--bg-thresh          [-bt] background threshold value desired\n";
   cout << "--fg-percent         [-fp] default 0.01, percent of voxels to be "
           "considered foreground. overrides --bg-thresh\n";
-  cout << "--length-thresh      [-lt] default 1.0, the length threshold value "
-          "for hierarchy pruning(hp)\n";
-  cout << "--sr-ratio           [-sr] default 1/3, signal/redundancy ratio "
-          "threshold\n";
-  cout << "--gsdt               [-gs] perform GSDT for original image\n";
-  cout << "--cnn-type           [-ct] default 2. connection type 1 for 6 "
-          "neighbors, 2 for 18 neighbors, 3 for 26 neighbors\n";
-  cout << "--allow-gap          [-ag] accept one background point between "
-          "foreground during tree construction when only one marker\n";
   cout << "--prune              [-pr] prune 0 false, 1 true; defaults to 1 "
           "(automatically prunes)\n";
-  cout << "--parallel           [-pl] parallelize with specified # of threads; "
-          "defaults to max threads, otherwise -pl THREAD-NUM is used\n";
-  cout << "--interval-size      [-is] interval size for in memory size to "
-          "parallelize ; defaults to interval cubes of edge length 1024\n";
-  cout << "--block-size         [-bs] block size for thread level parallelize "
-          "option; defaults to cubes of edge length 64\n";
-  cout << "--restart            [-rs] enforce parallel restarts; default is "
-          "false, if true with no number passed restart factor defaults to 4\n\n";
+  cout << "--parallel           [-pl] thread count "
+          "defaults to max hardware threads\n";
+  cout << "--interval-size      [-is] interval size length "
+          "defaults to interval cubes of edge length 1024\n";
+  cout << "--block-size         [-bs] block size length "
+          "defaults to block cubes of edge length 64\n";
+  //cout << "--restart            [-rs] enforce parallel restarts default: "
+          //"false, if true with no number passed restart factor defaults to 4\n\n";
 }
 
 string RecutCommandLineArgs::MetaString() {
@@ -188,18 +176,18 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
                  strcmp(argv[i], "-bs") == 0) {
         args.recut_parameters().set_block_size(atoi(argv[i + 1]));
         ++i;
-      } else if (strcmp(argv[i], "--restart") == 0 ||
-                 strcmp(argv[i], "-rs") == 0) {
-        args.recut_parameters().set_restart(true);
-        args.recut_parameters().set_restart_factor(4.0);
-        if (!(i + 1 >= argc || argv[i + 1][0] == '-')) {
-          args.recut_parameters().set_restart_factor(atof(argv[i + 1]));
-          if (atof(argv[i + 1]) <=
-              0.00000001) { // parse double has issues with 0
-            args.recut_parameters().set_restart(false);
-          }
-          ++i;
-        }
+      //} else if (strcmp(argv[i], "--restart") == 0 ||
+                 //strcmp(argv[i], "-rs") == 0) {
+        //args.recut_parameters().set_restart(true);
+        //args.recut_parameters().set_restart_factor(4.0);
+        //if (!(i + 1 >= argc || argv[i + 1][0] == '-')) {
+          //args.recut_parameters().set_restart_factor(atof(argv[i + 1]));
+          //if (atof(argv[i + 1]) <=
+              //0.00000001) { // parse double has issues with 0
+            //args.recut_parameters().set_restart(false);
+          //}
+          //++i;
+        //}
       } else if (strcmp(argv[i], "--gsdt") == 0 || strcmp(argv[i], "-gs") == 0) {
         args.recut_parameters().set_gsdt(true);
       } else if (strcmp(argv[i], "--allow-gap") == 0 ||
