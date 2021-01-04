@@ -18,7 +18,7 @@ stdenv.mkDerivation {
   doCheck = true;
   enableParallelBuilding = true;
 
-  cmakeFlags = ["-DFROM_NIX_BUILD=ON -DRECUT_ENABLE_EXECUTABLE=ON -DLOG=ON -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Debug"];
+  cmakeFlags = ["-DFROM_NIX_BUILD=ON -DRECUT_ENABLE_EXECUTABLE=ON -DLOG=ON -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=OFF -DCMAKE_BUILD_TYPE=Debug"];
 
   nativeBuildInputs = [ cmake ];
 
@@ -46,6 +46,7 @@ stdenv.mkDerivation {
     mkdir -p $out/data;
     cp -ra ../data/* $out/data;
     cp ../data/*.json $out/data/
+    ls $out/data
     ## if storing interval_base in nix dir permanently uncomment below
     # cp ../data/*.bin $out/data/
   '';
