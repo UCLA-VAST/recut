@@ -6,7 +6,12 @@ enable_testing()
 # or higher to build this code from source
 cmake_minimum_required(VERSION 3.8)
 
-project(recut)
+project("Recut" VERSION 0.9.0
+             DESCRIPTION "A c++ library for parallel graph kernels"
+             HOMEPAGE_URL "https://github.com/UCLA-VAST/recut-pipeline")
+
+# get platforms paths for general, non-nix installs
+include(GNUInstallDirs)
 
 if(NOT DEFINED CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
@@ -16,6 +21,16 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 if (NOT DEFINED CMAKE_INSTALL_BINDIR)
   set(CMAKE_INSTALL_BINDIR ${PROJECT_SOURCE_DIR}/bin)
 endif()
+message(STATUS "CMAKE_INSTALL_BINDIR: ${CMAKE_INSTALL_BINDIR}")
+
+if (DEFINED FROM_NIX_BUILD)
+  set(CMAKE_INSTALL_DATADIR ${CMAKE_INSTALL_PREFIX}/data)
+else()
+  set(CMAKE_INSTALL_DATADIR ${PROJECT_SOURCE_DIR}/data)
+endif()
+message(STATUS "CMAKE_INSTALL_DATADIR: ${CMAKE_INSTALL_DATADIR}")
+
+set(INTERVAL_BASE "${CMAKE_INSTALL_DATADIR}/interval_base_64bit.bin")
 
 # works for cmake 3.9+
 # https://stackoverflow.com/questions/48825416/missing-openmp-c-flags-openmp-c-lib-names
@@ -47,7 +62,7 @@ find_package(Threads REQUIRED)
 # building of tests and benchmarks
 # although CreateIntervalBase will need to be run at least once
 # from the recut_test.hpp file
-set(RECUT_ENABLE_EXECUTABLE OFF CACHE BOOL "Enable Recut building its command line executable")
+set(RECUT_ENABLE_EXECUTABLE ON CACHE BOOL "Enable Recut building its command line executable")
 set(RECUT_ENABLE_TESTING ON CACHE BOOL "Enable Recut building its test targets")
 set(RECUT_ENABLE_BENCHMARKING OFF CACHE BOOL "Enable Recut building its benchmarks targets")
 
@@ -225,6 +240,8 @@ foreach(I ${ALL_TARGETS})
   if (GIT_HASH)
     target_compile_definitions(${I} PRIVATE GIT_HASH)
   endif()
+  target_compile_definitions(${I} PRIVATE "INTERVAL_BASE=\"${INTERVAL_BASE}\"")
+  target_compile_definitions(${I} PRIVATE "CMAKE_INSTALL_DATADIR=\"${CMAKE_INSTALL_DATADIR}\"")
 
   target_compile_features(${I} PRIVATE cxx_std_17)
   # these are the actual flags passed during compilation
@@ -266,10 +283,12 @@ foreach(I ${ALL_TARGETS})
   endif()
 
   # make Recut libraries truly relocatable when linking from downstream programs
-  set_target_properties(${I} PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
+  set_target_properties(${I} PROPERTIES INSTALL_RPATH "$ORIGIN/../bin")
 endforeach()
 
-# test specific
 if (RECUT_ENABLE_TESTING)
-  add_test(NAME recut_test COMMAND ${CMAKE_INSTALL_BINDIR}/recut_test)
+  # You have to run installcheck such that the relevant files used at runtime
+  # are in the data directory before running any other tests
+  add_custom_target(installcheck COMMAND recut_test --gtest_also_run_disabled_tests --gtest_filter=Install.*)
+  add_test(NAME TestAll COMMAND recut_test)
 endif()

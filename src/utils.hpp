@@ -81,7 +81,7 @@ std::string get_parent_dir() {
 }
 
 std::string get_data_dir() {
-  return get_parent_dir() + "/data";
+  return CMAKE_INSTALL_DATADIR;
 }
 
 VID_t get_central_sub(int grid_size) {

@@ -5,9 +5,12 @@ nix](https://builtwithnix.org/badge.svg)](https://builtwithnix.org)
 ## Quick Install (strongly recommended)
 On linux command line run:
 ```
+# install nix package manager, <10 minutes
 curl -L https://nixos.org/nix/install | sh
 git clone https://github.com/UCLA-VAST/recut-pipeline.git
 cd recut-pipeline
+# build and install recut and its dependencies 
+# takes up to 2 hours, no other input required
 nix-env -f . -i
 ```
 test your installation by running:
@@ -15,69 +18,60 @@ test your installation by running:
 recut
 ```
 
-## Installation
+## CMake Only Installation
+The following are the commands are required for a CMake and git based installation
 ```
-# don't forget --recursive flag otherwise you'll have confusing compilation errors
-git clone --recursive https://github.com/UCLA-VAST/recut-pipeline.git
-cd recut
+# don't forget --recursive flag for git submodules in ./extern/...
+git clone --recursive git@github.com:UCLA-VAST/recut-pipeline
+cd recut-pipeline
 mkdir build
 cd build
 cmake ..
 make [-j 8]
 make install [-j 8]
+# required to generate test and interval data
+make installcheck
+# Optionally, run all tests by running the test suite
+make test
 ```
 
-If you have *any* errors in the above steps see the Troubleshooting section below. We recommend a tested version of cmake and all other dependencies, as opposed to installing a version on your system by hand, as also explained in the Troubleshooting section.
+If all test passed the installation is successful. If you have *any* errors in the above steps see the Troubleshooting section below. We recommend a tested version of cmake and all other dependencies, as opposed to installing a version on your system by hand, as also explained in the Troubleshooting section.
 
-```
-cd ../bin
-./recut_test --gtest_also_run_disabled_tests --gtest_filter=Install."*"
-# Check installation by running the test suite
-./recut_test
-```
-
-If all test passed the installation is successful
 
 ### Dependencies
 This program relies on: 
 - Cmake (version 3.17 or newer)
-  brings all necessary c++17 features
-- google-test and google-benchmark library submodules (already included via `git
+  for proper gcc support of all necessary c++17 features
+- Optionally: google-test and google-benchmark library submodules (already included via `git
   --recursive ...`, auto built/linked through cmake, see
   `recut/CMakeLists.txt` for details)
-- Optionally: `mcp3d::image` an image reading library for Tiff, Imaris file types see below 
+- Optionally: `mcp3d` an image reading library for Tiff, Imaris/HDF5 file types see below 
 - Optionally: python3.8 matplotlib, gdb, clang-tools, linux-perf
 - Note: to increase reproducibility and dependencies issues we recommend developing within the Nix package environment (see the Troubleshooting section)
 
 #### Image reading with MCP3D library
-If you need image reading and writing capabilities rerun cmake and install
-like so:
+If you need image reading and writing capabilities rerun cmake with the `-D USE_MCP3D=ON`
+flag like so
 ```
 rm -rf build
 cmake -B build -D USE_MCP3D=ON
+# you may also want to run the full set of test benchmarks by instead defining
+cmake -B build -D USE_MCP3D=ON -D TEST_ALL_BENCHMARKS=ON
 cd build
 make 
 make install
-cd ../bin
 # install the test images like so:
-./recut_test --gtest_also_run_disabled_tests --gtest_filter=Install."*" 
-
-# you may also want to run the full set of test benchmarks by instead defining
-cmake -B build -D USE_MCP3D=ON -D TEST_ALL_BENCHMARKS=ON
+make installcheck
+cd ../bin
+# run all tests
+./recut_test 
 ```
-
-##### MCP3D dependencies
-- Boost development environment:
-  e.g. `sudo apt-get install libboost-all-dev`
-- openssl
-- libtiff
-- mpich (optional)
 
 #### Troubleshooting
 Some of Recut's dependencies require later releases then you may have
-installed on your system, for example cmake.  In these scenarios, or if you're
+installed on your system, for example CMake. In these scenarios, or if you're
 running into compile time issues we recommend running a pinned version of
-software via the Nix package manager. To our knowledge, Nix is the state of the art 
+all software via the Nix package manager. To our knowledge, Nix is the state of the art 
 in terms of software reproducibility, package and dependency management, and solving
 versioning issues in multi-language repositories.
 
@@ -85,7 +79,7 @@ You can install Nix on any Linux
 distribution, MacOS and Windows (via WSL) with:
 
 ```
-# just for your user (recommended)
+# just for your user 
 curl -L https://nixos.org/nix/install | sh
 # if you need to share packages between users on a system via a multi-user installation, instead run
 sh <(curl -L https://nixos.org/nix/install) --daemon
@@ -103,25 +97,20 @@ nix-shell
 
 from Recut's base directory you should enter the nix-shell where an isolated development environment is downloaded and loaded for you which includes cmake and all other dependencies needed for development.
 
-#### Internal notes
-
-If you are on CDSC's n1 host, you will need to change the name of the generated file specified by
-`#define INTERVAL_BASE ...` to something new by changing it in `src/config.hpp`.  For performance reasons, Recut creates this pregenerated file with name defined by `INTERVAL_BASE`, in the `/tmp/` directory in your temporary filesystem. After installation, recut will use this file at runtime. 
-
-Additionally, if image reading capabilities are turned on via the Cmake
-USE_MCP3D variable, then for testing purposes a set of sample `test_images/`
-will be pregenerated before running any other tests, see the Image reading with MCP3D section for details.
-
-Note the binary file for image reading is currently turned off in CMakeLists by default.
-
 ## Usage
-
+Once recut is installed you can see example usage by running:
 ```
-cd recut/bin
+recut
+```
+If you installed via CMake you can find the executables by:
+```
+cd bin
+./recut
+# or for tests
 ./recut_test 
 ```
 
-If you have nix installed (recommended) you can also run `./recut_test` and check the CI system with:
+If you have nix installed (recommended) you can also run the same CI tests with:
 `nix-build`
 
 All pushes will run `nix-build` via github-actions, so you should run this anyway locally before pushing

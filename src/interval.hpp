@@ -121,7 +121,8 @@ class Interval {
 #ifdef FULL_PRINT
         cout << "mmap() fn: " << fn_ << " for interval: " << interval_id_ << '\n';
 #endif
-        assert((fd = open(fn_.c_str(), O_RDWR)) != -1);
+        assertm(fs::exists(fn_), "fn_ doesn't exist");
+        assert((fd = open(fn_.c_str(), O_RDONLY)) != -1);
 #ifdef USE_HUGE_PAGE
         assert((mmap_ptr_ = mmap(nullptr, mmap_length_, PROT_READ | PROT_WRITE,
                 MAP_ANONYMOUS | MAP_PRIVATE | MAP_HUGETLB, -1,
@@ -139,7 +140,7 @@ class Interval {
 #ifdef FULL_PRINT
         cout << "LoadFromDisk() fn: " << fn_ << " for interval: " << interval_id_ << '\n';
 #endif
-        assert(fs::exists(fn_));
+        assertm(fs::exists(fn_), "fn_ doesn't exist");
         std::ifstream ifile(
             fn_, ios::in | ios::binary); // ifstream is default read only mode
         // open input

@@ -19,10 +19,11 @@ jobs:
         # Configure Nix to enable flakes
         extra_nix_config: |
           experimental-features = nix-command flakes
-    # Run the general flake checks
-    #- run: nix flake check
-    - run: nix build -L
-    # Verify that the main program builds
-    - run: nix shell -c echo OK
     # Verify nixpkgs version number
     - run: nix-instantiate --eval -E '(import <nixpkgs> {}).lib.version'
+    # Verify that the main program builds
+    #- run: nix build -L
+    - run: nix-env -f . -i
+    - run: nix shell -c echo OK
+    - run: recut_test
+    - run: recut

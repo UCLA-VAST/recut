@@ -187,8 +187,10 @@ void load_save(bool mmap_) {
   auto fn = "/tmp/interval0.bin";
   auto base = INTERVAL_BASE;
   fs::remove(fn); // for safety, but done automatically via ~Interval
-  ASSERT_FALSE(fs::exists(fn));
-  ASSERT_TRUE(fs::exists(base));
+  cout << "fn: " << fn << '\n';
+  cout << "base: " << base << '\n';
+  ASSERT_FALSE(fs::exists(fn)) << " fn: " << fn;
+  ASSERT_TRUE(fs::exists(base)) << " base: " << base;
 
   // create
   auto interval = new Interval(nvid, 0, base, mmap_);
@@ -203,7 +205,7 @@ void load_save(bool mmap_) {
   interval->SaveToDisk();
   ASSERT_EQ(interval->GetFn(), fn);
   ASSERT_FALSE(interval->IsInMemory());
-  ASSERT_TRUE(fs::exists(fn));
+  ASSERT_TRUE(fs::exists(fn)) << " fn: " << fn;;
 
   // load and check
   interval->LoadFromDisk();
@@ -213,7 +215,7 @@ void load_save(bool mmap_) {
   ASSERT_EQ(interval->GetData()[1].vid, 1);
   ASSERT_TRUE(interval->GetData()->unvisited());
   delete interval;
-  ASSERT_FALSE(fs::exists(fn));
+  ASSERT_FALSE(fs::exists(fn)) << " fn: " << fn;
 
   // check interval can't delete interval_base_64bit.bin
   // create
@@ -221,8 +223,8 @@ void load_save(bool mmap_) {
   interval2->LoadFromDisk();
   delete interval2;
 
-  ASSERT_FALSE(fs::exists(fn));
-  ASSERT_TRUE(fs::exists(base));
+  ASSERT_FALSE(fs::exists(fn)) << " fn " << fn;
+  ASSERT_TRUE(fs::exists(base)) << " base " << base;
 
   ASSERT_NO_FATAL_FAILURE(interval_base_immutable(nvid));
 }
@@ -1879,7 +1881,7 @@ TEST(RecutPipeline, PrintDefaultInfo) {
     << get_used_vertex_size(2048, 4) << std::scientific << endl;
   cout << "Vertices needed for a 8^3 interval block size 2 : "
     << get_used_vertex_size(8, 2) << std::scientific << endl;
-  cout << "Print parent directory to this binary " << get_parent_dir() << '\n';
+  //cout << "Print parent directory to this binary " << get_parent_dir() << '\n';
   cout << "Print data directory to this binary " << get_data_dir() << '\n';
 }
 
