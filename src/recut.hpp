@@ -202,8 +202,9 @@ public:
   template <class Container>
   void accumulate_prune(VID_t interval_id, VID_t dst_id, VID_t block_id,
                         struct VertexAttr *current,
-                        struct VertexAttr &found_higher_parent, bool &covered, bool enqueue_dsts,
-                        const bool dst_outside_domain, Container &fifo);
+                        struct VertexAttr &found_higher_parent, bool &covered,
+                        bool enqueue_dsts, const bool dst_outside_domain,
+                        Container &fifo);
   template <class Container>
   void accumulate_radius(VID_t interval_id, VID_t dst_id, VID_t block_id,
                          struct VertexAttr *current, VID_t &revisits,
@@ -1444,8 +1445,8 @@ void Recut<image_t>::update_neighbors(
                             same_radius_adjacent, stride, pad_stride, fifo);
         } else if (stage == "prune") {
           accumulate_prune(interval_id, dst_id, block_id, current,
-                           found_higher_parent, covered, enqueue_dsts, dst_outside_domain,
-                           fifo);
+                           found_higher_parent, covered, enqueue_dsts,
+                           dst_outside_domain, fifo);
         }
       }
     }
@@ -1920,8 +1921,8 @@ void Recut<image_t>::march_narrow_band(
     }
   } else if (stage == "prune") {
     VertexAttr *current;
-    //assertm(heap_vec[interval_id][block_id].empty(),
-            //"Prune stage must start with completely empty heap vec");
+    // assertm(heap_vec[interval_id][block_id].empty(),
+    //"Prune stage must start with completely empty heap vec");
     while (!(fifo.empty())) {
       auto covered = false;
       // fifo only starts with roots
@@ -1956,14 +1957,20 @@ void Recut<image_t>::march_narrow_band(
       bool found_adjacent_invalid;
       VertexAttr found_higher_parent = *current;
       VertexAttr *same_radius_adjacent = nullptr;
-      // check if covered
-      bool enqueue_dsts = false;
-      update_neighbors(nullptr, interval_id, block_id, current, revisits,
-                       "prune", nullptr, found_adjacent_invalid,
-                       found_higher_parent, same_radius_adjacent, fifo, covered,
-                       current_outside_domain, enqueue_dsts);
 
-      // if covered sets dsts parents to be current->parent 
+      bool enqueue_dsts = false;
+      // if current has already been pruned you already know it's covered
+      if (current->unvisited()) {
+        covered = true;
+      } else {
+        // check if covered
+        update_neighbors(nullptr, interval_id, block_id, current, revisits,
+                         "prune", nullptr, found_adjacent_invalid,
+                         found_higher_parent, same_radius_adjacent, fifo,
+                         covered, current_outside_domain, enqueue_dsts);
+      }
+
+      // if covered sets dsts parents to be current->parent
       enqueue_dsts = true;
       update_neighbors(nullptr, interval_id, block_id, current, revisits,
                        "prune", nullptr, found_adjacent_invalid,
@@ -3382,11 +3389,11 @@ template <class image_t> void Recut<image_t>::run_pipeline() {
 
   // starting from roots, prune stage will
   // create final list of vertices
-  // stage = "prune";
-  // this->activate_vids(root_vids, stage, global_fifo);
-  ////this->out.open("out.swc");
-  // this->update(stage, global_fifo);
-  // this->out.close();
+  stage = "prune";
+  this->activate_vids(root_vids, stage, global_fifo);
+  // this->out.open("out.swc");
+  this->update(stage, global_fifo);
+  this->out.close();
 
   // aggregate results
   auto accept_band = true;
