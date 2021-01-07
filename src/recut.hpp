@@ -892,7 +892,7 @@ void Recut<image_t>::accumulate_prune(
       std::cout << "  added dst " << dst_id << " rad " << +(dst->radius)
                 << '\n';
 #endif
-      if (covered) {
+      if (covered || current->unvisited()) {
         dst->set_parent(current->parent);
       } else {
         dst->set_parent(current->vid);
@@ -1920,8 +1920,8 @@ void Recut<image_t>::march_narrow_band(
     }
   } else if (stage == "prune") {
     VertexAttr *current;
-    assertm(heap_vec[interval_id][block_id].empty(),
-            "Prune stage must start with completely empty heap vec");
+    //assertm(heap_vec[interval_id][block_id].empty(),
+            //"Prune stage must start with completely empty heap vec");
     while (!(fifo.empty())) {
       auto covered = false;
       // fifo only starts with roots
@@ -3326,7 +3326,7 @@ void Recut<image_t>::finalize(vector<vertex_t> &outtree, bool accept_band,
                   "a marker with a type of 0, must be a root");
         } else {
           //#ifdef FULL_PRINT
-          std::cout << "parent vid " << parent_vid << '\n';
+          std::cout << "\nparent vid " << parent_vid << '\n';
           std::cout << "attr vid " << attr->vid << '\n';
           std::cout << "interval vid " << interval_id << '\n';
           std::cout << "block vid " << block_id << '\n';

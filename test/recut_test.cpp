@@ -1133,8 +1133,8 @@ TEST(Radius, Full) {
   // std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
   // max_size / 2, max_size};
   std::vector<int> grid_sizes = {max_size};
-  std::vector<int> interval_sizes = {8};
-  std::vector<int> block_sizes = {8};
+  std::vector<int> interval_sizes = {2};
+  std::vector<int> block_sizes = {2};
   // tcase 5 is a sphere of radius grid_size / 4 centered
   // in the middle of an image
   // tcase 7 is a square radius grid_size / 4
