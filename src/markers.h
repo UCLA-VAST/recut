@@ -80,6 +80,7 @@ struct MyMarker
 		return static_cast<VID_t>( x ) + static_cast<VID_t>( y ) * xdim + static_cast<VID_t>( z ) * xdim * ydim;
 	}
 
+    // usage: std::cout << marker->description << '\n';
     std::string description(VID_t xdim, VID_t ydim) const {
       return std::to_string(static_cast<int>(x)) + ", " + std::to_string(static_cast<int>(y)) + ", " + std::to_string(static_cast<int>(z)) + " index: " + std::to_string(this->vid(xdim, ydim));
     }

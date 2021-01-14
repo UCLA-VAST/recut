@@ -16,7 +16,11 @@ stdenv.mkDerivation {
 
   enableParallelBuilding = true;
 
-  cmakeFlags = ["-DFROM_NIX_BUILD=ON -DLOG=ON -DFULL_PRINT=ON -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=OFF -DCMAKE_BUILD_TYPE=Debug -DUSE_MMAP=ON"];
+  # if test all benchmarks on, you can define these for benchmarks
+  TEST_IMAGE = "/curr/kdmarrett/data/tcase6_image";
+  TEST_MARKER = "/curr/kdmarrett/data/tcase6_marker";
+
+  cmakeFlags = ["-DFROM_NIX_BUILD=ON -DLOG=ON -DFULL_PRINT=OFF -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Debug -DUSE_MMAP=ON"];
 
   nativeBuildInputs = [ cmake ];
 
@@ -39,6 +43,7 @@ stdenv.mkDerivation {
     mkdir $out/data;
     make installcheck;
     ./recut_test;
+    ./recut_test --gtest_also_run_disabled_tests --gtest_filter='*'.'*ChecksIf*';
     '';
 
 }

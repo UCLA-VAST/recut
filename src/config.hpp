@@ -27,7 +27,8 @@ typedef uint64_t VID_t; // for multi-interval runs
 // Vertices needed for a 2048^3 interval block size 4 : 28991029248
 // Vertices needed for a 8^3 interval block size 2 : 4096
 #ifdef TEST_ALL_BENCHMARKS
- const VID_t MAX_INTERVAL_VERTICES =  3623878656; 
+ //const VID_t MAX_INTERVAL_VERTICES =  3623878656; 
+  const VID_t MAX_INTERVAL_VERTICES = 4096;
 #else
   const VID_t MAX_INTERVAL_VERTICES = 4096;
 #endif
@@ -50,3 +51,17 @@ typedef uint64_t VID_t; // for multi-interval runs
 #ifdef TF
 #define ASYNC
 #endif
+
+// depending on your prune semantics a radius of 1 may cover its neighbor
+// therefore account for this by subtracting 1 from all radii values
+// open accumulate_prune function, if a neighbor has a radius of 1 or greater
+// is the current considered pruned
+// if only radii 2 or greater cover a neighbor then the erosion factor would
+// be 1. While a high erosion factor creates prevents redundant coverage of
+// radii, it means the effective coverage may be lower
+// keep in mind this is merely a heuristic statistic to judge pruning methods
+// you should refer to the actual pruning method semantics
+// when checking 1 hop away (adjacent) from current, 
+// all radii greater than 1 imply some redundancy in coverage
+// but this may be desired with DILATION_FACTORS higher than 1
+#define DILATION_FACTOR 1

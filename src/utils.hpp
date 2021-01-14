@@ -921,6 +921,7 @@ auto get_img_vid = [](const VID_t i, const VID_t j,
   return k * image_length_xy + j * image_length_x + i;
 };
 
+// see DILATION_FACTOR definition or accumulate_prune() implementation
 template <typename T, typename T2>
 void create_coverage_mask_accurate(std::vector<MyMarker*>& markers, T* mask,
     T2 sz0, T2 sz1, T2 sz2) {
@@ -934,10 +935,7 @@ void create_coverage_mask_accurate(std::vector<MyMarker*>& markers, T* mask,
     // check all marker to see if their radius covers it
     for (const auto& marker : markers) {
       assertm(marker->radius > 0, "Markers must have a radius > 0");
-      // by definition a radius of 1 doess not cover it's neighbor
-      // a radius of 2 or greater would cover a neighbor
-      // therefore account for this by subtracting 1 from all radii values
-      if (is_covered_by_parent(index, marker->vid(sz0, sz1), marker->radius - 1, sz0)) {
+      if (is_covered_by_parent(index, marker->vid(sz0, sz1), marker->radius - (DILATION_FACTOR - 1), sz0)) {
         mask[index] = 1;
         count_selected_pixels++;
         break;
@@ -953,10 +951,7 @@ void create_coverage_mask(std::vector<MyMarker*>& markers, T* mask,
   for (const auto& marker : markers) {
     int32_t r = marker->radius;
     assertm(marker->radius > 0, "Markers must have a radius > 0");
-    // by definition a radius of 1 doess not cover it's neighbor
-    // a radius of 2 or greater would cover a neighbor
-    // therefore account for this by subtracting 1 from all radii values
-    r -= 1;
+    r -= (DILATION_FACTOR - 1);
     auto x = static_cast<int32_t>(marker->x);
     auto y = static_cast<int32_t>(marker->y);
     auto z = static_cast<int32_t>(marker->z);

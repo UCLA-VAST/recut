@@ -282,8 +282,9 @@ template <class image_t> Recut<image_t>::~Recut<image_t>() { // FIXME
   if (this->params->force_regenerate_image) {
     // when initialize has been run
     // generated_image is no longer nullptr
-    if (this->generated_image)
+    if (this->generated_image) {
       delete[] this->generated_image;
+    }
   }
 }
 
@@ -855,18 +856,22 @@ void Recut<image_t>::accumulate_prune(
 
   auto dst = get_attr_vid(interval_id, block_id, dst_id, nullptr);
 
+  // or if unselected but radius is valid meaning it's been pruned
+  if (dst->unselected() && dst->prune_visited()) {
+    assertm(dst->valid_radius(), "should always have a valid radius?");
+  }
   if (dst->band()    // in the FIFO queue awaiting visit
       || dst->root() // a root already processed
       // or a previously pruned vertex which transmits transitive
       // coverage info from it's covered:
       || (dst->unselected() && dst->prune_visited() && dst->valid_radius())) {
-    // or if unselected but radius is valid meaning it's been pruned
     assertm(dst->valid_vid(), "selected must have a valid vid");
     assertm(dst->vid == dst_id, "get_attr_vid failed getting correct vertex");
 
     // dst can only be 1 hop away (adjacent) from current, therefore
     // all radii greater than 1 imply some redundancy in coverage
-    if (dst->radius >= 1) {
+    // but this may be desired with DILATION_FACTOR higher than 1
+    if (dst->radius >= DILATION_FACTOR) {
       covered = true;
       if (found_higher_parent.radius < (dst->radius - 1)) {
         found_higher_parent = *dst;
@@ -1970,8 +1975,8 @@ void Recut<image_t>::march_narrow_band(
                          covered, current_outside_domain, enqueue_dsts);
       }
 
-      // if covered sets dsts parents to be current->parent
       enqueue_dsts = true;
+      // if current is covered second pass here sets all dst->parent to current->parent
       update_neighbors(nullptr, interval_id, block_id, current, revisits,
                        "prune", nullptr, found_adjacent_invalid,
                        found_higher_parent, same_radius_adjacent, fifo, covered,
@@ -1982,9 +1987,6 @@ void Recut<image_t>::march_narrow_band(
         // so fifo is safe from infinite loops
         if (!((current->root()))) {
           // never visit again and never print it
-          // all dsts of current, will eventually switch their
-          // parent from current to current->parent once
-          // they are processed in a future iteration
           current->mark_unvisited();
 #ifdef FULL_PRINT
           std::cout << "  covered vid " << current->vid << '\n';
@@ -1992,7 +1994,8 @@ void Recut<image_t>::march_narrow_band(
           // get radii before adjusting parent is intended to
           // preserve coverage info as it decreases in range
           // only pruned / unselected vertices will have their radii mutated
-          // as a form of message passing
+          // to transitively pass coverage info across blocks 
+          // using only vertices
           if (found_higher_parent.vid != current->vid) {
 #ifdef FULL_PRINT
             std::cout << "  refreshed radius to "
@@ -2006,7 +2009,12 @@ void Recut<image_t>::march_narrow_band(
             current->radius = found_higher_parent.radius - 1;
           } else {
             if (current->radius != 0) {
-              // why?
+              // if an adjacent (dst) is covering current and that adjacent is
+              // not higher than current, respect dsts radius as truth and
+              // do not refresh the transitive radius coverage
+              // this has advantage of a radius always covering only its
+              // hops disadvantage is that equal or lower values can not "refresh"
+              // the coverage
               current->radius = current->radius - 1;
             }
           }
@@ -3328,24 +3336,22 @@ void Recut<image_t>::finalize(vector<vertex_t> &outtree, bool accept_band,
           cout << "found root at " << attr->vid << '\n';
           printf("with address of %p\n", (void *)attr);
 #endif
-          assertm(attr->root(), "a marker with a parent of 0, must be a root");
+          assertm(marker->parent == 0, "a marker with a parent of 0, must be a root");
           assertm(marker->type == 0,
                   "a marker with a type of 0, must be a root");
         } else {
-          //#ifdef FULL_PRINT
-          std::cout << "\nparent vid " << parent_vid << '\n';
-          std::cout << "attr vid " << attr->vid << '\n';
-          std::cout << "interval vid " << interval_id << '\n';
-          std::cout << "block vid " << block_id << '\n';
-          std::cout << "marker vid "
-                    << marker->vid(image_length_x, image_length_y) << '\n';
-          // TODO remove
-          print_vertex(attr);
-          //#endif
           auto parent = tmp[parent_vid]; // adjust
           marker->parent = parent;
-          assertm(marker->parent != 0,
-                  "a non root marker must have a valid parent");
+          if (marker->parent == 0) {
+            // failure condition
+            std::cout << "\ninterval vid " << interval_id << '\n';
+            std::cout << "block vid " << block_id << '\n';
+            print_vertex(attr);
+            assertm(marker->parent != 0,
+                    "a non root marker must have a valid parent");
+          }
+          assertm(marker->type != 0,
+                  "a marker with a type of 0, must be a root");
         }
       }
     }
