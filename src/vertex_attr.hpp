@@ -72,6 +72,7 @@ struct VertexAttr {
   uint8_t radius = std::numeric_limits<uint8_t>::max();
 
   // constructors
+  // defaults as 192 i.e. 1100 0000 unvisited with no connections
   VertexAttr()
       : edge_state(192), value(numeric_limits<float>::max()),
         vid(numeric_limits<VID_t>::max()),
@@ -98,6 +99,7 @@ struct VertexAttr {
     return (!edge_state.test(7) && !edge_state.test(6)); // 00XX XXXX ROOT
   }
 
+  // you can pipe the output directly to std::cout
   std::string description() const {
     std::cout << vid << '\n';
     std::string descript = "vid:" + std::to_string(vid);
@@ -272,8 +274,10 @@ struct VertexAttr {
   }
 
   void mark_root(VID_t set_vid) {
-    // all zeros
-    edge_state.reset();
+    // no connections is already default
+    // roots can also be surface
+    edge_state.unset(7);
+    edge_state.unset(6);
     vid = set_vid;
   }
 

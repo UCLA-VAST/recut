@@ -13,7 +13,8 @@ command= rm -rf build && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=
 cwd=<root>
 
 [project-build]
-command=cd build && make -j 56 && make install -j 56
+command=nix-env -f . -i
+# command=cd build && make -j 56 && make install -j 56
 cwd=<root>
 
 [project-test]

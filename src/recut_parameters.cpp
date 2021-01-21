@@ -42,7 +42,7 @@ void RecutCommandLineArgs::PrintUsage() {
           "computed automatically when --bg_thresh or --fg-percent are specified\n";
   cout << "--channel            [-c] channel number of image default 0\n";
   cout << "--outswc             [-os] output tracing result default is "
-          "<imagename>_tracing.swc\n";
+          "out.swc\n";
   cout << "--resolution-level   [-rl] resolution level to perform tracing at. "
           "default is 0, ie original resolution\n";
   cout << "--image-offsets      [-io] offsets of subvolume, in z y x order default 0 0 0\n";

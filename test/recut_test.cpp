@@ -1332,7 +1332,7 @@ TEST(Radius, Full) {
             std::cout << '\n';
           }
 
-          recut.finalize(args.output_tree, false, false);
+          recut.finalize(args.output_tree, false);
 
           if (prune) {
             std::vector<MyMarker *> sequential_output_tree;
@@ -1396,7 +1396,8 @@ TEST(Radius, Full) {
             // recut.out.open("out.swc");
             // recut.out.close();
 
-            recut.finalize(recut_output_tree_prune, true, false);
+            recut.adjust_parent(false);
+            recut.finalize(recut_output_tree_prune, true);
 
             if (print_all) {
               std::cout << "Recut prune\n";
@@ -1627,9 +1628,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   // save the output_tree early before it is pruned to compare
   // to sequential
   bool accept_band = false;
-  bool release_intervals = false;
-  recut.finalize(args.output_tree, accept_band,
-                 release_intervals); // this fills args.output_tree
+  recut.finalize(args.output_tree, accept_band); // this fills args.output_tree
 
   // PRUNE
   auto recut_output_tree_prune = std::vector<MyMarker *>();
@@ -1652,8 +1651,8 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     std::cout << "Recut parent post prune\n";
     recut.print_grid("parent", recut.global_fifo);
 
-    recut.finalize(recut_output_tree_prune, accept_band,
-                   release_intervals); // this fills args.output_tree
+    recut.adjust_parent(false);
+    recut.finalize(recut_output_tree_prune, accept_band); // this fills args.output_tree
   }
 
   double actual_slt_pct = (100. * args.output_tree.size()) / tol_sz;

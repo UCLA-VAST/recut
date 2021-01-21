@@ -141,7 +141,7 @@ class RecutCommandLineArgs {
   public:
     RecutCommandLineArgs()
       : recut_parameters_(RecutParameters{}), image_root_dir_(std::string()),
-      swc_path_(std::string()), channel_(0), resolution_level_(0),
+      swc_path_("out.swc"), channel_(0), resolution_level_(0),
       image_offsets({0, 0, 0}), image_extents({0, 0, 0}) {}
     static void PrintUsage();
     std::string MetaString();
