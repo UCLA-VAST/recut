@@ -52,6 +52,8 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
         VID_t vid = recut.get_img_vid(xi, yi, zi);
         auto interval_id = recut.get_interval_id(vid);
         auto block_id = recut.get_block_id(vid);
+
+#ifdef DENSE
         auto interval = recut.grid.GetInterval(interval_id);
         v = nullptr;
         // if the entire interval not in memory make every possible
@@ -60,7 +62,10 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
           interval->LoadFromDisk();
         }
         v = recut.get_attr_vid(interval_id, block_id, vid, nullptr);
-        // cout << i << endl << v.description() << " ";
+#else
+        v = recut.get_active_vertex(interval_id, block_id, vid);
+#endif
+
         if (stage == "value") {
           if (recut.generated_image[vid]) {
             ASSERT_NE(v, nullptr);
@@ -530,6 +535,8 @@ TEST(Interval, LoadSaveInterval) {
   ASSERT_NO_FATAL_FAILURE(load_save(mmap_));
 }
 
+#ifdef DENSE
+
 TEST(Interval, GetAttrVid) {
 #ifdef USE_MMAP
   bool mmap_ = true;
@@ -585,6 +592,7 @@ TEST(Interval, GetAttrVidMultiInterval) {
 
   ASSERT_NO_FATAL_FAILURE(interval_base_immutable(interval_vert_num));
 }
+#endif
 
 /*
  * Create the desired markers (seed locations) and images to be used by other
@@ -1332,7 +1340,7 @@ TEST(Radius, Full) {
             std::cout << '\n';
           }
 
-          recut.finalize(args.output_tree, false);
+          recut.convert_to_markers(args.output_tree, false);
 
           if (prune) {
             std::vector<MyMarker *> sequential_output_tree;
@@ -1397,7 +1405,7 @@ TEST(Radius, Full) {
             // recut.out.close();
 
             recut.adjust_parent(false);
-            recut.finalize(recut_output_tree_prune, true);
+            recut.convert_to_markers(recut_output_tree_prune, true);
 
             if (print_all) {
               std::cout << "Recut prune\n";
@@ -1628,7 +1636,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   // save the output_tree early before it is pruned to compare
   // to sequential
   bool accept_band = false;
-  recut.finalize(args.output_tree, accept_band); // this fills args.output_tree
+  recut.convert_to_markers(args.output_tree, accept_band); // this fills args.output_tree
 
   // PRUNE
   auto recut_output_tree_prune = std::vector<MyMarker *>();
@@ -1640,7 +1648,6 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     assertm(args.output_tree.size() != 0, "Can not have 0 selected output");
     recut_output_tree_prune.reserve(args.output_tree.size() / 100);
     accept_band = true;
-    release_intervals = true;
 
     std::cout << "Recut prune\n";
     recut.print_grid("label", recut.global_fifo);
@@ -1652,7 +1659,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     recut.print_grid("parent", recut.global_fifo);
 
     recut.adjust_parent(false);
-    recut.finalize(recut_output_tree_prune, accept_band); // this fills args.output_tree
+    recut.convert_to_markers(recut_output_tree_prune, accept_band); // this fills args.output_tree
   }
 
   double actual_slt_pct = (100. * args.output_tree.size()) / tol_sz;

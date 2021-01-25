@@ -283,7 +283,7 @@ public:
          TileThresholds<image_t> *tile_thresholds = nullptr);
   const std::vector<VID_t> initialize();
   template <typename vertex_t>
-  void finalize(vector<vertex_t> &outtree, bool accept_band = false);
+  void convert_to_markers(vector<vertex_t> &outtree, bool accept_band = false);
   template <typename vertex_t>
   void brute_force_extract(vector<vertex_t> &outtree, bool accept_band = false,
                            bool release_intervals = true);
@@ -455,7 +455,12 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
       // assertm(dummy_attr->valid_radius(),
       //"activate vids didn't find valid radius");
 
+#ifdef DENSE
+      dummy_attr = get_attr_vid(interval_id, block_id, vid, nullptr);
+#else
       dummy_attr = get_active_vertex(interval_id, block_id, vid);
+#endif
+
       cout << "root radius " << +(dummy_attr->radius) << ' ' << interval_id
            << ' ' << block_id << ' ' << dummy_attr->vid << '\n';
       assertm(dummy_attr != nullptr, "get_active_vertex yielded nullptr");
@@ -488,6 +493,7 @@ template <class image_t>
 template <class Container>
 void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
                                     Container &fifo) {
+#ifdef DENSE
   auto interval = grid.GetInterval(interval_id);
 
   if (interval->IsInMemory()) {
@@ -510,6 +516,7 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
          << " loaded during print\n";
 #endif
   }
+#endif // DENSE
 
   // these looping vars below are over the non-padded lengths of each interval
   VID_t i, j, k, xadjust, yadjust, zadjust;
@@ -542,7 +549,13 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
         // xi
         // << " yi " << yi << " zi " << zi << '\n';
 #endif
+
+#ifdef DENSE
         auto v = get_attr_vid(interval_id, block_id, vid, nullptr);
+#else
+        auto v = get_active_vertex(interval_id, block_id, vid);
+#endif
+
         if (v->root()) {
           assertm(v->value == 0., "root value must be 0.");
           assertm(v->valid_value(), "root must have valid value");
@@ -841,8 +854,15 @@ bool Recut<image_t>::is_covered_by_parent(VID_t interval_id, VID_t block_id,
 
   auto parent_interval_id = get_interval_id(current->parent);
   auto parent_block_id = get_block_id(current->parent);
+
+#ifdef DENSE
   auto parent = get_attr_vid(parent_interval_id, parent_block_id,
                              current->parent, nullptr);
+#else
+  auto parent =
+      get_active_vertex(parent_interval_id, parent_block_id, current->parent);
+#endif
+
   if (static_cast<double>(parent->radius) >= vdistance) {
     return true;
   }
@@ -865,8 +885,13 @@ void Recut<image_t>::set_parent_non_branch(const VID_t interval_id,
       }
       assertm(potential_new_parent->valid_parent(),
               "potential_new_parent does not have valid parent");
+#ifdef DENSE
       potential_new_parent = get_attr_vid(
           interval_id, block_id, potential_new_parent->parent, nullptr);
+#else
+      potential_new_parent = get_active_vertex(interval_id, block_id,
+                                               potential_new_parent->parent);
+#endif
     }
     assertm(!(potential_new_parent->is_branch_point()),
             "can not assign child to a vertex with already 2 children unless "
@@ -891,7 +916,11 @@ void Recut<image_t>::accumulate_prune(
     struct VertexAttr &found_higher_parent, bool &covered, bool enqueue_dsts,
     const bool dst_outside_domain, Container &fifo) {
 
+#ifdef DENSE
+  auto dst = get_attr_vid(interval_id, block_id, dst_id, nullptr);
+#else
   auto dst = get_active_vertex(interval_id, block_id, dst_id);
+#endif
   if (dst == nullptr) { // never selected
     return;
   }
@@ -982,7 +1011,12 @@ void Recut<image_t>::accumulate_radius(
   // current vertex is not always within this block and interval
   // and each block, interval have a ghost region
   // after filter in update_neighbors this pointer arithmetic is always valid
+#ifdef DENSE
+  auto dst = get_attr_vid(interval_id, block_id, dst_id, nullptr);
+#else
   auto dst = get_active_vertex(interval_id, block_id, dst_id);
+#endif
+
   if (dst == nullptr) {
 #ifdef FULL_PRINT
     cout << "\tunselected neighbor was found" << '\n';
@@ -1010,7 +1044,12 @@ void Recut<image_t>::accumulate_radius(
       // OR an update from another block / interval
       // creates new lower updates
       dst->radius = updated_radius;
+#ifdef DENSE
+      auto test = get_attr_vid(interval_id, block_id, dst_id, nullptr);
+#else
       auto test = get_active_vertex(interval_id, block_id, dst_id);
+#endif
+
       assertm(test->valid_radius(), "radius not properly assigned");
 #ifdef FULL_PRINT
       cout << "\tAdjacent higher dst->vid " << dst->vid << " radius "
@@ -1055,7 +1094,11 @@ bool Recut<image_t>::accumulate_value(
     const TileThresholds<image_t> *tile_thresholds, bool &found_background) {
 
   // dsts are always within this domain
+#ifdef DENSE
+  auto dst = get_attr_vid(interval_id, block_id, dst_id, nullptr);
+#else
   auto dst = get_active_vertex(interval_id, block_id, dst_id);
+#endif
   if (dst == nullptr) {
     // this->active_vertices[interval_id][block_id].emplace_back(dst_id);
     // dst = &(this->active_vertices[interval_id][block_id].back());
@@ -1523,7 +1566,11 @@ bool Recut<image_t>::integrate_vertex(const VID_t interval_id,
                                       Container &fifo) {
   // get attr
   assert(updated_attr != nullptr);
+#ifdef DENSE
+  auto dst = get_attr_vid(interval_id, block_id, updated_attr->vid, nullptr);
+#else
   auto dst = get_active_vertex(interval_id, block_id, updated_attr->vid);
+#endif
   if (dst == nullptr) {
     // this->active_vertices[interval_id][block_id].emplace_back(updated_attr->vid);
     // dst = &(this->active_vertices[interval_id][block_id].back());
@@ -1849,7 +1896,11 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
     // to prevent having to load the full intervals into memory at that time
     // this retrieves the actual ptr to the vid of the root dummy min
     // values so that they can be properly initialized
+#ifdef DENSE
+    current = get_attr_vid(interval_id, block_id, dummy_min->vid, nullptr);
+#else
     current = get_active_vertex(interval_id, block_id, dummy_min->vid);
+#endif
     if (current == nullptr) {
       current = new VertexAttr(dummy_min->vid);
     }
@@ -1891,7 +1942,11 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
       // roots would be added twice since they are never added back to the
       // heap to prevent redundant other vertices set NO_RV to on
       this->active_vertices[interval_id][block_id].push_back(*current);
+#ifdef DENSE
+    current = get_attr_vid(interval_id, block_id, current->vid, nullptr);
+#else
       current = get_active_vertex(interval_id, block_id, current->vid);
+#endif
       assertm(current != nullptr, "no current in value_tile");
     }
 
@@ -1911,17 +1966,10 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
       assertm(current->selected() || current->root(),
               "surface was not selected");
       if (in_domain) {
-        // TODO remove this
-        auto test = get_active_vertex(interval_id, block_id, current->vid);
-        assertm(test->surface(), "surface not set properly in value_tile");
-
         // save all surface vertices for the radius stage
         // each fifo corresponds to a specific interval_id and block_id
         // so there are no race conditions
         fifo.push_back(current->vid);
-        auto check = get_active_vertex(interval_id, block_id, current->vid);
-        assertm(check != nullptr, "surface vertex not in active vertices");
-        assertm(check->surface(), "surface vertex never marked as surface");
         check_ghost_update(interval_id, block_id, current, stage);
       } else {
         // leverage updated_ghost_vec to avoid race conditions
@@ -2006,7 +2054,11 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
     uint64_t vid = fifo.front();
     fifo.pop_front();
 
+#ifdef DENSE
     current = get_active_vertex(interval_id, block_id, vid);
+#else
+    current = get_attr_vid(interval_id, block_id, vid, nullptr);
+#endif
     assertm(current != nullptr, "get_active_vertex yielded nullptr");
     const auto current_interval_id = get_interval_id(current->vid);
     const auto current_block_id = get_block_id(current->vid);
@@ -2125,7 +2177,12 @@ void Recut<image_t>::prune_tile_assign_parent(
     uint64_t vid = fifo.front();
     fifo.pop_front();
 
+#ifdef DENSE
+    current = get_attr_vid(interval_id, block_id, vid, nullptr);
+#else
     current = get_active_vertex(interval_id, block_id, vid);
+#endif
+
     assertm(current != nullptr, "get_active_vertex yielded nullptr");
     const auto current_interval_id = get_interval_id(current->vid);
     const auto current_block_id = get_block_id(current->vid);
@@ -3452,6 +3509,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   }
 }
 
+// note this function is only valid ifdef DENSE
 template <class image_t>
 template <typename vertex_t>
 void Recut<image_t>::brute_force_extract(vector<vertex_t> &outtree,
@@ -3579,20 +3637,24 @@ void Recut<image_t>::brute_force_extract(vector<vertex_t> &outtree,
 }
 
 template <class image_t> void Recut<image_t>::adjust_parent(bool print) {
+#ifdef LOG
+  cout << "Start stage adjust_parent\n";
+#endif
+
   if (print)
     this->out.open(this->args->swc_path());
 
   for (auto interval_id = 0; interval_id < grid_interval_size; ++interval_id) {
     for (auto block_id = 0; block_id < interval_block_size; ++block_id) {
       for (auto &v : this->active_vertices[interval_id][block_id]) {
-        adjust_parent(&v);
+        adjust_vertex_parent(&v);
         if (print)
           print_vertex(&v);
       }
     }
   }
 
-  if (print)
+  if (this->out.is_open())
     this->out.close();
 }
 
@@ -3643,7 +3705,8 @@ bool Recut<image_t>::filter_by_label(VertexAttr *v, bool accept_band) {
 // accept_band is a way to see pruned vertices still in active_vertex
 template <class image_t>
 template <typename vertex_t>
-void Recut<image_t>::finalize(vector<vertex_t> &outtree, bool accept_band) {
+void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
+                                        bool accept_band) {
 
   struct timespec time0, time1;
 #ifdef FULL_PRINT
@@ -3651,10 +3714,14 @@ void Recut<image_t>::finalize(vector<vertex_t> &outtree, bool accept_band) {
 #endif
   clock_gettime(CLOCK_REALTIME, &time0);
 
+  // get a mapping to stable address pointers in outtree such that a markers
+  // parent is valid pointer when returning just outtree
   map<VID_t, MyMarker *> tmp;
+
+  // iterate all active vertices
   for (auto interval_id = 0; interval_id < grid_interval_size; ++interval_id) {
     for (auto block_id = 0; block_id < interval_block_size; ++block_id) {
-      for (const auto &v : this->active_vertices[interval_id][block_id]) {
+      for (auto &v : this->active_vertices[interval_id][block_id]) {
         auto attr = &v;
 #ifdef FULL_PRINT
         print_vertex(attr);
@@ -3665,59 +3732,64 @@ void Recut<image_t>::finalize(vector<vertex_t> &outtree, bool accept_band) {
         // create all valid new marker objects
         if (filter_by_label(attr, accept_band)) {
           // don't create redundant copies of same vid
-          if (tmp.find(attr->vid) == tmp.end()) { // check not already added
+          // check that all copied across blocks and intervals of a
+          // single vertex all match same values other than handle
+          // FIXME this needs to be moved to recut_test.cpp
+          // auto previous_match = tmp[attr->vid];
+          // assert(*previous_match == *attr);
+          assertm(tmp.find(attr->vid) == tmp.end(),
+                  "Can't have two matching vids");
 #ifdef FULL_PRINT
-            // cout << "\tadding attr " << attr->vid << '\n';
+          // cout << "\tadding attr " << attr->vid << '\n';
 #endif
-            VID_t i, j, k;
-            i = j = k = 0;
-            // get original i, j, k
-            get_img_subscript(attr->vid, i, j, k);
-            auto marker = new MyMarker(i, j, k);
-            if (attr->root()) {
-              marker->type = 0;
-            }
-            marker->radius = attr->radius;
-            tmp[attr->vid] = marker; // save this marker ptr to a map
-            outtree.push_back(marker);
-          } else {
-            // check that all copied across blocks and intervals of a
-            // single vertex all match same values other than handle
-            // FIXME this needs to be moved to recut_test.cpp
-            // auto previous_match = tmp[attr->vid];
-            // assert(*previous_match == *attr);
-            assertm(false, "Can't have two matching vids");
+          VID_t i, j, k;
+          i = j = k = 0;
+          // get original i, j, k
+          get_img_subscript(attr->vid, i, j, k);
+          auto marker = new MyMarker(i, j, k);
+          if (attr->root()) {
+            marker->type = 0;
           }
+          marker->radius = attr->radius;
+          tmp[attr->vid] = marker; // save this marker ptr to a map
+          outtree.push_back(marker);
         }
       }
     }
   }
 
-  for (auto marker : outtree) {
-    auto attr = get_active_vertex(interval_id, block_id, marker->vid);
-    auto parent_vid = attr->parent;
-    auto marker = tmp[attr->vid]; // get the ptr
-    if (attr->root()) {
-      marker->parent = 0;
-#ifdef FULL_PRINT
-      cout << "found root at " << attr->vid << '\n';
-      printf("with address of %p\n", (void *)attr);
-#endif
-      assertm(marker->parent == 0,
-              "a marker with a parent of 0, must be a root");
-      assertm(marker->type == 0, "a marker with a type of 0, must be a root");
-    } else {
-      auto parent = tmp[parent_vid]; // adjust
-      marker->parent = parent;
-      if (marker->parent == 0) {
-        // failure condition
-        std::cout << "\ninterval vid " << interval_id << '\n';
-        std::cout << "block vid " << block_id << '\n';
-        print_vertex(attr);
-        assertm(marker->parent != 0,
-                "a non root marker must have a valid parent");
+  // iterate all active vertices
+  for (auto interval_id = 0; interval_id < grid_interval_size; ++interval_id) {
+    for (auto block_id = 0; block_id < interval_block_size; ++block_id) {
+      for (auto &v : this->active_vertices[interval_id][block_id]) {
+        auto attr = &v;
+        auto parent_vid = attr->parent;
+        auto marker = tmp[attr->vid]; // get the ptr
+        if (attr->root()) {
+          marker->parent = 0;
+          //#ifdef FULL_PRINT
+          // cout << "found root at " << attr->vid << '\n';
+          // printf("with address of %p\n", (void *)attr);
+          //#endif
+          assertm(marker->parent == 0,
+                  "a marker with a parent of 0, must be a root");
+          assertm(marker->type == 0,
+                  "a marker with a type of 0, must be a root");
+        } else {
+          auto parent = tmp[parent_vid]; // adjust
+          marker->parent = parent;
+          if (marker->parent == 0) {
+            // failure condition
+            std::cout << "interval vid " << interval_id << '\n';
+            std::cout << "block vid " << block_id << '\n';
+            print_vertex(attr);
+            assertm(marker->parent != 0,
+                    "a non root marker must have a valid parent");
+          }
+          assertm(marker->type != 0,
+                  "a marker with a type of 0, must be a root");
+        }
       }
-      assertm(marker->type != 0, "a marker with a type of 0, must be a root");
     }
   }
 
@@ -3754,9 +3826,10 @@ template <class image_t> void Recut<image_t>::run_pipeline() {
   this->activate_vids(root_vids, stage, global_fifo);
   this->update(stage, global_fifo);
 
+#ifndef DENSE
   // aggregate results, adjust pruned parent if necessary
-  adjust_parent(true);
+  auto print = true;
+  adjust_parent(print);
+#endif
 
-  // auto accept_band = true;
-  // this->finalize(this->args->output_tree, accept_band);
 }
