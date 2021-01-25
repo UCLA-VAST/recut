@@ -1,19 +1,16 @@
-#include <iostream>
-#include <vector>
 #include "recut.hpp"
 
-int main(int argc, char * argv[])
-{
+int main(int argc, char *argv[]) {
 
-    RecutCommandLineArgs args;
-    // if command line arguments invalid, do not execute further
-    if (!ParseRecutArgs(argc, argv, args))
-        return 1;
+  RecutCommandLineArgs args;
+  // if command line arguments invalid, do not execute further
+  if (!ParseRecutArgs(argc, argv, args))
+    return 1;
 
-	args.PrintParameters();
+  args.PrintParameters();
 
-    auto recut = Recut<uint16_t>(args);
-    recut();
+  auto recut = Recut<uint16_t>(args);
+  recut();
 
-	return 0;
+  return 0;
 }

@@ -1,6 +1,12 @@
 #pragma once
 
+#ifdef DENSE
 #include "grid.hpp"
+class Grid;
+#else
+#include "vertex_attr.hpp"
+#endif
+
 #include "recut_parameters.hpp"
 #include "tile_thresholds.hpp"
 #include <algorithm>
@@ -57,7 +63,6 @@ struct InstrumentedUpdateStatistics {
   }
 };
 
-class Grid;
 template <class image_t> class Recut {
 public:
   // Member Naming Conventions
@@ -93,7 +98,6 @@ public:
       interval_length_z, grid_interval_length_x, grid_interval_length_y,
       grid_interval_length_z, grid_interval_size, interval_block_size;
 
-  Grid grid;
   std::ofstream out;
   image_t *generated_image = nullptr;
   bool mmap_;
@@ -110,22 +114,17 @@ public:
   std::vector<std::vector<std::deque<uint64_t>>> global_fifo;
   std::vector<std::vector<std::vector<VertexAttr>>> active_vertices;
 
-#ifdef CONCURRENT_MAP
   // interval specific global data structures
+  vector<bool> active_intervals;
   vector<vector<atomwrapper<bool>>> active_blocks;
   vector<vector<atomwrapper<bool>>> processing_blocks;
   vector<vector<local_heap>> heap_vec;
+  vector<vector<vector<bool>>> active_neighbors;
+#ifdef CONCURRENT_MAP
   // runtime global data structures
   std::unique_ptr<ConcurrentMap64> updated_ghost_vec;
-  vector<vector<vector<bool>>> active_neighbors;
 #else
-  // interval specific global data structures
-  vector<vector<atomwrapper<bool>>> active_blocks;
-  vector<vector<atomwrapper<bool>>> processing_blocks;
-  vector<vector<local_heap>> heap_vec;
-  // runtime global data structures
   vector<vector<vector<vector<struct VertexAttr>>>> updated_ghost_vec;
-  vector<vector<vector<bool>>> active_neighbors;
 #endif
 
   Recut() : mmap_(false){};
@@ -149,7 +148,15 @@ public:
   // so that it doesn't affect the next run
   // the vertices must be unmapped
   // done via `release()`
+#ifdef DENSE
+  Grid grid;
   inline void release() { grid.Release(); }
+  inline VertexAttr *get_attr_vid(VID_t interval_id, VID_t block_id, VID_t vid,
+                                  VID_t *output_offset);
+  template <typename vertex_t>
+  void brute_force_extract(vector<vertex_t> &outtree, bool accept_band = false,
+                           bool release_intervals = true);
+#endif
   void initialize_globals(const VID_t &grid_interval_size,
                           const VID_t &interval_block_size);
 
@@ -176,8 +183,6 @@ public:
                         const double foreground_percent);
   inline VertexAttr *get_active_vertex(VID_t interval_id, VID_t block_id,
                                        VID_t vid);
-  inline VertexAttr *get_attr_vid(VID_t interval_id, VID_t block_id, VID_t vid,
-                                  VID_t *output_offset);
   void place_vertex(const VID_t nb_interval_id, VID_t block_id, VID_t nb,
                     struct VertexAttr *dst, std::string stage);
   bool check_blocks_finish(VID_t interval_id);
@@ -284,9 +289,6 @@ public:
   const std::vector<VID_t> initialize();
   template <typename vertex_t>
   void convert_to_markers(vector<vertex_t> &outtree, bool accept_band = false);
-  template <typename vertex_t>
-  void brute_force_extract(vector<vertex_t> &outtree, bool accept_band = false,
-                           bool release_intervals = true);
   VID_t parentToVID(struct VertexAttr *attr);
   inline VID_t get_block_id(VID_t iblock, VID_t jblock, VID_t kblock);
   template <class Container>
@@ -305,8 +307,7 @@ public:
   ~Recut<image_t>();
 };
 
-template <class image_t> Recut<image_t>::~Recut<image_t>() { // FIXME
-  // delete &grid;
+template <class image_t> Recut<image_t>::~Recut<image_t>() { 
   if (this->params->force_regenerate_image) {
     // when initialize has been run
     // generated_image is no longer nullptr
@@ -393,12 +394,11 @@ Recut<image_t>::process_marker_dir(vector<int> global_image_offsets,
 template <class image_t>
 template <class Container>
 void Recut<image_t>::setup_radius(Container &fifo) {
-  for (size_t interval_id = 0; interval_id < grid.GetNIntervals();
+  for (size_t interval_id = 0; interval_id < grid_interval_size;
        ++interval_id) {
-    for (size_t block_id = 0; block_id < grid.GetNBlocks(); ++block_id) {
+    for (size_t block_id = 0; block_id < interval_block_size; ++block_id) {
       if (!(fifo[interval_id][block_id].empty())) {
-        Interval *interval = grid.GetInterval(interval_id);
-        interval->SetActive(true);
+        active_intervals[interval_id] = true;
         active_blocks[interval_id][block_id].store(true);
 #ifdef LOG
         cout << "Set interval " << interval_id << " block " << block_id
@@ -420,7 +420,6 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
   for (const auto &vid : root_vids) {
     auto interval_id = get_interval_id(vid);
     auto block_id = get_block_id(vid);
-    Interval *interval = grid.GetInterval(interval_id);
 
 #ifdef FULL_PRINT
     cout << "activate_vids(): setting interval " << interval_id << " block "
@@ -428,7 +427,7 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
     cout << "for marker vid " << vid << '\n';
 #endif
 
-    interval->SetActive(true);
+    active_intervals[interval_id] = true;
     active_blocks[interval_id][block_id].store(true);
 
     VertexAttr *dummy_attr;
@@ -442,18 +441,6 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
                 block_id, stage);
 
     } else if (stage == "prune") {
-
-      // auto radius = numeric_limits<uint8_t>::max();
-      // while (!heap_vec[interval_id][block_id].empty()) {
-      // const auto v = safe_pop<local_heap, VertexAttr *>(
-      // heap_vec[interval_id][block_id], block_id, interval_id, "radius");
-      // if (v->radius < radius) {
-      // radius = v->radius;
-      //}
-      //}
-      // dummy_attr->radius = radius;
-      // assertm(dummy_attr->valid_radius(),
-      //"activate vids didn't find valid radius");
 
 #ifdef DENSE
       dummy_attr = get_attr_vid(interval_id, block_id, vid, nullptr);
@@ -483,7 +470,7 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
 template <class image_t>
 template <class Container>
 void Recut<image_t>::print_grid(std::string stage, Container &fifo) {
-  for (size_t interval_id = 0; interval_id < grid.GetNIntervals();
+  for (size_t interval_id = 0; interval_id < grid_interval_size;
        ++interval_id) {
     print_interval(interval_id, stage, fifo[interval_id]);
   }
@@ -664,7 +651,7 @@ VID_t Recut<image_t>::get_sub_to_interval_id(VID_t i, VID_t j, VID_t k) {
       k_interval * grid_interval_length_x * grid_interval_length_y;
   // cout << "i_interval " << i_interval << " j_interval " << j_interval
   //<< " k_interval " << k_interval << '\n';
-  assert(interval_id < grid.GetNIntervals());
+  assert(interval_id < grid_interval_size);
   return interval_id;
 }
 
@@ -1190,10 +1177,14 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
   // potentially modify a neighbors heap
   // if neighbors heap is modified it will cause an async launch of a thread
   // during the processing of the current thread
-  if (grid.GetInterval(nb_interval_id)
-          ->IsInMemory() // mmap counts all intervals as in memory
+#ifdef DENSE
+  // mmap counts all intervals as in memory
+  if (grid.GetInterval(nb_interval_id)->IsInMemory() 
       && processing_blocks[nb_interval_id][nb_block_id].compare_exchange_strong(
              false, true)) {
+#else
+  if (true) {
+#endif
     // will check if below band in march narrow
     // use processing blocks to make sure no other neighbor of nb_block_id is
     // modifying nb_block_id heap
@@ -1202,7 +1193,7 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
     if (dst_update_success) { // only update if it's true, allows for
       // remaining true
       active_blocks[nb_interval_id][nb_block_id].store(dst_update_success);
-      grid.GetInterval(nb_interval_id)->SetActive(true);
+      active_intervals[nb_interval_id] = true;
 #ifdef FULL_PRINT
       cout << "\t\t\tasync activate interval " << nb_interval_id << " block "
            << nb_block_id << '\n';
@@ -1231,7 +1222,7 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
   // interval it will be added to the same set as block_id updates from that
   // interval, this is because there is no need to separate updates based on
   // interval saving overhead
-  grid.GetInterval(nb_interval_id)->SetActive(true);
+  active_intervals[nb_interval_id] = true;
 #ifdef CONCURRENT_MAP
   auto key = triple_pack_key(nb_interval_id, block_id, nb_block_id);
   auto mutator = updated_ghost_vec->insertOrFind(key);
@@ -1302,8 +1293,6 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
   jjj = j % interval_length_y;
   kkk = k % interval_length_z;
 
-  VID_t tot_blocks = grid.GetNBlocks();
-
   // check all 6 directions for possible ghost updates
   VID_t nb; // determine neighbor block
   VID_t nb_interval_id;
@@ -1326,7 +1315,7 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
         // Convert block subscripts into linear index row-ordered
         nb = get_block_id(interval_block_len_x - 1, jblock, kblock);
       }
-      if ((nb >= 0) && (nb < tot_blocks)) // within valid block bounds
+      if ((nb >= 0) && (nb < interval_block_size)) // within valid block bounds
         place_vertex(nb_interval_id, block_id, nb, dst, stage);
     }
   }
@@ -1338,7 +1327,7 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
         nb_interval_id = interval_id - grid_interval_length_x;
         nb = get_block_id(iblock, interval_block_len_y - 1, kblock);
       }
-      if ((nb >= 0) && (nb < tot_blocks)) // within valid block bounds
+      if ((nb >= 0) && (nb < interval_block_size)) // within valid block bounds
         place_vertex(nb_interval_id, block_id, nb, dst, stage);
     }
   }
@@ -1351,7 +1340,7 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
             interval_id - grid_interval_length_x * grid_interval_length_y;
         nb = get_block_id(iblock, jblock, interval_block_len_z - 1);
       }
-      if ((nb >= 0) && (nb < tot_blocks)) // within valid block bounds
+      if ((nb >= 0) && (nb < interval_block_size)) // within valid block bounds
         place_vertex(nb_interval_id, block_id, nb, dst, stage);
     }
   }
@@ -1365,7 +1354,7 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
             interval_id + grid_interval_length_x * grid_interval_length_y;
         nb = get_block_id(iblock, jblock, 0);
       }
-      if ((nb >= 0) && (nb < tot_blocks)) // within valid block bounds
+      if ((nb >= 0) && (nb < interval_block_size)) // within valid block bounds
         place_vertex(nb_interval_id, block_id, nb, dst, stage);
     }
   }
@@ -1377,7 +1366,7 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
         nb_interval_id = interval_id + grid_interval_length_x;
         nb = get_block_id(iblock, 0, kblock);
       }
-      if ((nb >= 0) && (nb < tot_blocks)) // within valid block bounds
+      if ((nb >= 0) && (nb < interval_block_size)) // within valid block bounds
         place_vertex(nb_interval_id, block_id, nb, dst, stage);
     }
   }
@@ -1389,7 +1378,7 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
         nb_interval_id = interval_id + 1;
         nb = get_block_id(0, jblock, kblock);
       }
-      if ((nb >= 0) && (nb < tot_blocks)) // within valid block bounds
+      if ((nb >= 0) && (nb < interval_block_size)) // within valid block bounds
         place_vertex(nb_interval_id, block_id, nb, dst, stage);
     }
   }
@@ -1677,8 +1666,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id,
                                              const VID_t block_id,
                                              std::string stage,
                                              Container &fifo) {
-  VID_t tot_blocks = grid.GetNBlocks();
-  for (VID_t nb = 0; nb < tot_blocks; nb++) {
+  for (VID_t nb = 0; nb < interval_block_size; nb++) {
     // active_neighbors[x][a][b] in domain of b, in ghost of block a
     if (active_neighbors[interval_id][block_id][nb]) {
       // updated ghost cleared in march_narrow_band
@@ -1769,9 +1757,9 @@ template <class image_t> bool Recut<image_t>::are_intervals_finished() {
 #ifdef LOG_FULL
   cout << "Intervals active: ";
 #endif
-  for (auto interval_id = 0; interval_id < grid.GetNIntervals();
+  for (auto interval_id = 0; interval_id < grid_interval_size;
        ++interval_id) {
-    if (grid.GetInterval(interval_id)->IsActive()) {
+    if (active_intervals[interval_id]) {
       tot_active++;
 #ifdef LOG_FULL
       cout << interval_id << ", ";
@@ -1798,7 +1786,7 @@ bool Recut<image_t>::check_blocks_finish(VID_t interval_id) {
 #ifdef LOG_FULL
   cout << "Blocks active: ";
 #endif
-  for (auto block_id = 0; block_id < grid.GetNBlocks(); ++block_id) {
+  for (auto block_id = 0; block_id < interval_block_size; ++block_id) {
     if (active_blocks[interval_id][block_id].load()) {
       tot_active++;
 #ifdef LOG_FULL
@@ -2055,9 +2043,9 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
     fifo.pop_front();
 
 #ifdef DENSE
-    current = get_active_vertex(interval_id, block_id, vid);
-#else
     current = get_attr_vid(interval_id, block_id, vid, nullptr);
+#else
+    current = get_active_vertex(interval_id, block_id, vid);
 #endif
     assertm(current != nullptr, "get_active_vertex yielded nullptr");
     const auto current_interval_id = get_interval_id(current->vid);
@@ -2466,15 +2454,16 @@ std::atomic<double> Recut<image_t>::process_interval(
 
   struct timespec presave_time, postmarch_time, iter_start,
       start_iter_loop_time, end_iter_time, postsave_time;
-  VID_t interval_block_size = grid.GetNBlocks();
   double no_io_time;
   no_io_time = 0.0;
 
+#ifdef DENSE
   // only load the intervals that are not already mapped or have been read
   // already calling load when already present will throw
   if (!(grid.GetInterval(interval_id)->IsInMemory())) {
     grid.GetInterval(interval_id)->LoadFromDisk();
   }
+#endif
 
   // setup any border regions from activate_vids or setup functions
 #ifdef USE_OMP_BLOCK
@@ -2602,9 +2591,11 @@ std::atomic<double> Recut<image_t>::process_interval(
 
   clock_gettime(CLOCK_REALTIME, &presave_time);
 
+#ifdef DENSE
   if (!(this->mmap_)) {
     grid.GetInterval(interval_id)->SaveToDisk();
   }
+#endif
 
   clock_gettime(CLOCK_REALTIME, &postsave_time);
 
@@ -2618,7 +2609,7 @@ std::atomic<double> Recut<image_t>::process_interval(
          << diff_time(presave_time, postsave_time) << " sec." << '\n';
 #endif
 
-  grid.GetInterval(interval_id)->SetActive(false);
+  active_intervals[interval_id] = false;
   return no_io_time;
 }
 
@@ -2776,8 +2767,6 @@ template <class Container>
 std::unique_ptr<InstrumentedUpdateStatistics>
 Recut<image_t>::update(std::string stage, Container &fifo,
                        TileThresholds<image_t> *tile_thresholds) {
-  VID_t grid_interval_size = grid.GetNIntervals();
-  VID_t interval_block_size = grid.GetNBlocks();
 
   // init all timers
   struct timespec update_start_time, update_finish_time;
@@ -2810,15 +2799,15 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #ifdef USE_OMP_INTERVAL
 #pragma omp parallel for
 #endif
-    for (int interval_id = 0; interval_id < grid.GetNIntervals();
+    for (int interval_id = 0; interval_id < grid_interval_size;
          interval_id++) {
       // only start intervals that have active processing to do
-      if (grid.GetInterval(interval_id)->IsActive()) {
+      if (active_intervals[interval_id]) {
 
 #ifdef NO_INTERVAL_RV
         // forbid all re-opening tile/interval to check performance
         if (visited_intervals[interval_id]) {
-          grid.GetInterval(interval_id)->SetActive(false);
+          active_intervals[interval_id] = false;
           continue;
         } else {
           visited_intervals[interval_id] = true;
@@ -2830,7 +2819,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
         // interval can do a final set of processing
         auto scheduling_iteration_delay = 2;
         if (locked_intervals[interval_id]) {
-          grid.GetInterval(interval_id)->SetActive(false);
+          active_intervals[interval_id] = false;
           continue;
         }
         // only visited_intervals need to be explicitly
@@ -3043,6 +3032,307 @@ inline VertexAttr *Recut<image_t>::get_active_vertex(const VID_t interval_id,
   return nullptr;
 }
 
+template <class image_t>
+void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
+                                        const VID_t &interval_block_size) {
+
+  this->heap_vec.reserve(grid_interval_size);
+  for (int i = 0; i < grid_interval_size; i++) {
+    vector<local_heap> inner_vec;
+    this->heap_vec.reserve(interval_block_size);
+    for (int j = 0; j < interval_block_size; j++) {
+      local_heap test;
+      inner_vec.push_back(test);
+    }
+    this->heap_vec.push_back(inner_vec);
+  }
+
+#ifdef LOG_FULL
+  cout << "Created global heap_vec" << '\n';
+#endif
+
+  // active boolean for in interval domain in block_id ghost region, in
+  // domain of block
+  this->active_neighbors = vector<vector<vector<bool>>>(
+      grid_interval_size,
+      vector<vector<bool>>(interval_block_size,
+                           vector<bool>(interval_block_size)));
+
+#ifdef LOG_FULL
+  cout << "Created active neighbors" << '\n';
+#endif
+
+#ifdef CONCURRENT_MAP
+  updated_ghost_vec = std::make_unique<ConcurrentMap64>();
+#else
+  updated_ghost_vec = vector<vector<vector<vector<struct VertexAttr>>>>(
+      grid_interval_size,
+      vector<vector<vector<struct VertexAttr>>>(
+          interval_block_size,
+          vector<vector<struct VertexAttr>>(interval_block_size,
+                                            vector<struct VertexAttr>())));
+#endif
+
+#ifdef LOG_FULL
+  cout << "Created updated ghost vec" << '\n';
+#endif
+
+  // Initialize.
+  vector<vector<atomwrapper<bool>>> temp(
+      grid_interval_size, vector<atomwrapper<bool>>(interval_block_size));
+  for (auto interval = 0; interval < grid_interval_size; ++interval) {
+    vector<atomwrapper<bool>> inner(interval_block_size);
+    for (auto &e : inner) {
+      e.store(false, memory_order_relaxed);
+    }
+    temp[interval] = inner;
+  }
+  this->active_blocks = temp;
+
+  this->active_intervals = vector(grid_interval_size, false);
+
+#ifdef LOG_FULL
+  cout << "Created active blocks" << '\n';
+#endif
+
+  // Initialize.
+  vector<vector<atomwrapper<bool>>> temp2(
+      grid_interval_size, vector<atomwrapper<bool>>(interval_block_size));
+  for (auto interval = 0; interval < grid_interval_size; ++interval) {
+    vector<atomwrapper<bool>> inner(interval_block_size);
+    for (auto &e : inner) {
+      e.store(false, memory_order_relaxed);
+    }
+    temp2[interval] = inner;
+  }
+  this->processing_blocks = temp2;
+
+#ifdef LOG_FULL
+  cout << "Created processing blocks" << '\n';
+#endif
+
+  // fifo is a queue representing the vids left to
+  // process at each stage
+  this->global_fifo = std::vector<std::vector<std::deque<uint64_t>>>(
+      grid_interval_size, std::vector<std::deque<uint64_t>>(
+                              interval_block_size, std::deque<uint64_t>()));
+
+  // global active vertex list
+  this->active_vertices = std::vector<std::vector<std::vector<VertexAttr>>>(
+      grid_interval_size, std::vector<std::vector<VertexAttr>>(
+                              interval_block_size, std::vector<VertexAttr>()));
+}
+
+template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
+
+#if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
+  omp_set_num_threads(params->user_thread_count());
+#ifdef LOG
+  cout << "User specific thread count " << params->user_thread_count() << '\n';
+#endif
+#endif
+
+  struct timespec time0, time1, time2, time3;
+  uint64_t root_64bit;
+
+  // for generated image runs trust the args->image_extents
+  // to reflect the total global image domain
+  // see get_args() in utils.hpp
+  auto global_image_dims = args->image_extents;
+#ifdef USE_MCP3D
+  if (!(this->params->force_regenerate_image)) {
+    // determine the image size
+    mcp3d::MImage global_image(args->image_root_dir());
+    // read data from channel
+    global_image.ReadImageInfo(args->resolution_level(), true);
+    if (global_image.image_info().empty()) {
+      MCP3D_MESSAGE("no supported image formats found in " +
+                    args->image_root_dir() + ", do nothing.")
+      throw;
+    }
+    global_image.SaveImageInfo(); // save to __image_info__.json
+    // reflects the total global image domain
+    global_image_dims = global_image.xyz_dims(args->resolution_level());
+  }
+#endif
+
+  // these are in z y x order
+  vector<int> ext;
+
+  // account for image_offsets and args->image_extents
+  // extents are the length of the domain for each dim
+  for (int i = 0; i < 3; i++) {
+    // default image_offsets is {0, 0, 0}
+    // this enforces the minimum extent to be 1 in each dim
+    assertm(args->image_offsets[i] < global_image_dims[i],
+            "input offset can not exceed dimension of image");
+    // protect faulty out of bounds input if extents goes beyond
+    // domain of full image, note: z, y, x order
+    auto max_extent = global_image_dims[i] - args->image_offsets[i];
+    if (args->image_extents[i]) {
+      args->image_extents[i] = min(args->image_extents[i], max_extent);
+    } else {
+      // image_extents is set to grid_size for force_regenerate_image option,
+      // otherwise 0,0,0 means use to the end of input image
+      args->image_extents[i] = max_extent;
+      // extents are now sanitized in each dimension
+      // and protected from faulty offset values
+    }
+  }
+
+  // save to globals the actual size of the full image
+  // accounting for the input offsets and extents
+  // these will be used throughout the rest of the program
+  this->image_length_x = args->image_extents[2];
+  this->image_length_y = args->image_extents[1];
+  this->image_length_z = args->image_extents[0];
+  this->image_length_xy = image_length_x * image_length_y;
+  this->image_size = image_length_x * image_length_y * image_length_z;
+
+  // the image size and offsets override the user inputted interval size
+  // continuous id's are the same for current or dst intervals
+  // round up (pad)
+  // Determine the size of each interval in each dim
+  // constrict so less data is allocated especially in z dimension
+  interval_length_x = min((VID_t)params->interval_size(), image_length_x);
+  interval_length_y = min((VID_t)params->interval_size(), image_length_y);
+  interval_length_z = min((VID_t)params->interval_size(), image_length_z);
+
+  // determine the length of intervals in each dim
+  // rounding up (ceil)
+  grid_interval_length_x =
+      (image_length_x + interval_length_x - 1) / interval_length_x;
+  grid_interval_length_y =
+      (image_length_y + interval_length_y - 1) / interval_length_y;
+  grid_interval_length_z =
+      (image_length_z + interval_length_z - 1) / interval_length_z;
+
+  // the resulting interval size override the user inputted block size
+  block_length_x = min(interval_length_x, user_def_block_size);
+  block_length_y = min(interval_length_y, user_def_block_size);
+  block_length_z = min(interval_length_z, user_def_block_size);
+
+  // determine length of blocks that span an interval for each dim
+  // this rounds up
+  interval_block_len_x =
+      (interval_length_x + block_length_x - 1) / block_length_x;
+  interval_block_len_y =
+      (interval_length_y + block_length_y - 1) / block_length_y;
+  interval_block_len_z =
+      (interval_length_z + block_length_z - 1) / block_length_z;
+
+  auto image_x_len_pad = interval_block_len_x * block_length_x;
+  auto image_y_len_pad = interval_block_len_y * block_length_y;
+  auto image_z_len_pad = interval_block_len_z * block_length_z;
+  auto image_xy_len_pad =
+      image_x_len_pad * image_y_len_pad; // saves recomputation occasionally
+
+  this->grid_interval_size =
+      grid_interval_length_x * grid_interval_length_y * grid_interval_length_z;
+  this->interval_block_size =
+      interval_block_len_x * interval_block_len_y * interval_block_len_z;
+  pad_block_length_x = block_length_x + 2;
+  pad_block_length_y = block_length_y + 2;
+  pad_block_length_z = block_length_z + 2;
+  pad_block_offset =
+      pad_block_length_x * pad_block_length_y * pad_block_length_z;
+  const VID_t grid_vertex_pad_size =
+      pad_block_offset * interval_block_size * grid_interval_size;
+
+#ifdef LOG
+  cout << "block x, y, z size: " << block_length_x << ", " << block_length_y
+       << ", " << block_length_z << " interval x, y, z size "
+       << interval_length_x << ", " << interval_length_y << ", "
+       << interval_length_z << " intervals: " << grid_interval_size
+       << " blocks per interval: " << interval_block_size << '\n';
+  cout << "image_length_x: " << image_length_x
+       << " image_length_y: " << image_length_y
+       << " image_length_z: " << image_length_z << '\n';
+  cout << "interval_block_len_x: " << interval_block_len_x
+       << " interval_block_len_y: " << interval_block_len_y
+       << " interval_block_len_z: " << interval_block_len_z << '\n';
+  cout << "image_x_len_pad: " << image_x_len_pad
+       << " image_y_len_pad: " << image_y_len_pad
+       << " image_z_len_pad: " << image_z_len_pad << " image_xy_len_pad "
+       << image_xy_len_pad << '\n';
+  // cout<< "image_offsets_x: "<< image_offsets[2] <<" image_offsets_y: "<<
+  // image_offsets[1] <<" image_offsets_z: "<< image_offsets[0] << '\n';
+#endif
+
+#ifdef DENSE
+  // we cast the interval id and block id to uint16 for use as a key
+  // in the global variables maps, if total intervals or blocks exceed this
+  // there would be overflow
+  if (grid_interval_size > (2 << 16) - 1) {
+    cout << "Number of intervals too high: " << grid_interval_size
+         << " try increasing interval size";
+    // assert(false);
+  }
+  if (interval_block_size > (2 << 16) - 1) {
+    cout << "Number of blocks too high: " << interval_block_size
+         << " try increasing block size";
+    // assert(false);
+  }
+
+  clock_gettime(CLOCK_REALTIME, &time0);
+  grid = Grid(grid_vertex_pad_size, interval_block_size, grid_interval_size,
+              *this, this->mmap_);
+
+  clock_gettime(CLOCK_REALTIME, &time2);
+#endif // DENSE
+
+#ifdef LOG
+  cout << "Created super interval in " << diff_time(time0, time2) << " s";
+  cout << " with total intervals: " << grid_interval_size << '\n';
+#endif
+
+  initialize_globals(grid_interval_size, interval_block_size);
+
+  clock_gettime(CLOCK_REALTIME, &time3);
+
+#ifdef LOG
+  cout << "Initialized globals" << diff_time(time2, time3) << '\n';
+#endif
+
+  if (this->params->force_regenerate_image) {
+    // This is where we set image to our desired values
+    this->generated_image = new image_t[this->image_size];
+
+    assertm(this->params->tcase > -1, "Mismatched tcase for generate image");
+    assertm(this->params->slt_pct > -1,
+            "Mismatched slt_pct for generate image");
+    assertm(this->params->selected > 0,
+            "Mismatched selected for generate image");
+    assertm(this->params->root_vid != numeric_limits<uint64_t>::max(),
+            "Root vid uninitialized");
+
+    // create_image take the length of one dimension
+    // of the image, currently assuming all test images
+    // are cubes
+    // sets all to 0 for tcase 4 and 5
+    assertm(this->image_length_y == this->image_length_z,
+            "change create_image implementation to support non-cube images");
+    assertm(this->image_length_x == this->image_length_y,
+            "change create_image implementation to support non-cube images");
+    auto selected = create_image(this->params->tcase, this->generated_image,
+                                 this->image_length_x, this->params->selected,
+                                 this->params->root_vid);
+    if (this->params->tcase == 3 || this->params->tcase == 5) {
+      // only tcase 3 and 5 doens't have a total select count not known
+      // ahead of time
+      this->params->selected = selected;
+    }
+
+    // add the single root vid to the root_vids
+    return {this->params->root_vid};
+
+  } else {
+    // adds all valid markers to root_vids vector and returns
+    return process_marker_dir(args->image_offsets, args->image_extents);
+  }
+}
+
+#ifdef DENSE
 /*
  * Returns a pointer to the VertexAttr within interval_id,
  * block_id, and img_vid (vid with respect to global image)
@@ -3213,301 +3503,6 @@ Recut<image_t>::get_attr_vid(const VID_t interval_id, const VID_t block_id,
   return match;
 }
 
-template <class image_t>
-void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
-                                        const VID_t &interval_block_size) {
-
-  this->heap_vec.reserve(grid_interval_size);
-  for (int i = 0; i < grid_interval_size; i++) {
-    vector<local_heap> inner_vec;
-    this->heap_vec.reserve(interval_block_size);
-    for (int j = 0; j < interval_block_size; j++) {
-      local_heap test;
-      inner_vec.push_back(test);
-    }
-    this->heap_vec.push_back(inner_vec);
-  }
-
-#ifdef LOG_FULL
-  cout << "Created global heap_vec" << '\n';
-#endif
-
-  // active boolean for in interval domain in block_id ghost region, in
-  // domain of block
-  this->active_neighbors = vector<vector<vector<bool>>>(
-      grid_interval_size,
-      vector<vector<bool>>(interval_block_size,
-                           vector<bool>(interval_block_size)));
-
-#ifdef LOG_FULL
-  cout << "Created active neighbors" << '\n';
-#endif
-
-#ifdef CONCURRENT_MAP
-  updated_ghost_vec = std::make_unique<ConcurrentMap64>();
-#else
-  updated_ghost_vec = vector<vector<vector<vector<struct VertexAttr>>>>(
-      grid_interval_size,
-      vector<vector<vector<struct VertexAttr>>>(
-          interval_block_size,
-          vector<vector<struct VertexAttr>>(interval_block_size,
-                                            vector<struct VertexAttr>())));
-#endif
-
-#ifdef LOG_FULL
-  cout << "Created updated ghost vec" << '\n';
-#endif
-
-  // Initialize.
-  vector<vector<atomwrapper<bool>>> temp(
-      grid_interval_size, vector<atomwrapper<bool>>(interval_block_size));
-  for (auto interval = 0; interval < grid_interval_size; ++interval) {
-    vector<atomwrapper<bool>> inner(interval_block_size);
-    for (auto &e : inner) {
-      e.store(false, memory_order_relaxed);
-    }
-    temp[interval] = inner;
-  }
-  this->active_blocks = temp;
-
-#ifdef LOG_FULL
-  cout << "Created active blocks" << '\n';
-#endif
-
-  // Initialize.
-  vector<vector<atomwrapper<bool>>> temp2(
-      grid_interval_size, vector<atomwrapper<bool>>(interval_block_size));
-  for (auto interval = 0; interval < grid_interval_size; ++interval) {
-    vector<atomwrapper<bool>> inner(interval_block_size);
-    for (auto &e : inner) {
-      e.store(false, memory_order_relaxed);
-    }
-    temp2[interval] = inner;
-  }
-  this->processing_blocks = temp2;
-
-#ifdef LOG_FULL
-  cout << "Created processing blocks" << '\n';
-#endif
-
-  // fifo is a queue representing the vids left to
-  // process at each stage
-  this->global_fifo = std::vector<std::vector<std::deque<uint64_t>>>(
-      grid_interval_size, std::vector<std::deque<uint64_t>>(
-                              interval_block_size, std::deque<uint64_t>()));
-
-  // global active vertex list
-  this->active_vertices = std::vector<std::vector<std::vector<VertexAttr>>>(
-      grid_interval_size, std::vector<std::vector<VertexAttr>>(
-                              interval_block_size, std::vector<VertexAttr>()));
-}
-
-template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
-
-#if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
-  omp_set_num_threads(params->user_thread_count());
-#ifdef LOG
-  cout << "User specific thread count " << params->user_thread_count() << '\n';
-#endif
-#endif
-
-  struct timespec time0, time1, time2, time3;
-  uint64_t root_64bit;
-
-  // for generated image runs trust the args->image_extents
-  // to reflect the total global image domain
-  // see get_args() in utils.hpp
-  auto global_image_dims = args->image_extents;
-#ifdef USE_MCP3D
-  if (!(this->params->force_regenerate_image)) {
-    // determine the image size
-    mcp3d::MImage global_image(args->image_root_dir());
-    // read data from channel
-    global_image.ReadImageInfo(args->resolution_level(), true);
-    if (global_image.image_info().empty()) {
-      MCP3D_MESSAGE("no supported image formats found in " +
-                    args->image_root_dir() + ", do nothing.")
-      throw;
-    }
-    global_image.SaveImageInfo(); // save to __image_info__.json
-    // reflects the total global image domain
-    global_image_dims = global_image.xyz_dims(args->resolution_level());
-  }
-#endif
-
-  // these are in z y x order
-  vector<int> ext;
-
-  // account for image_offsets and args->image_extents
-  // extents are the length of the domain for each dim
-  for (int i = 0; i < 3; i++) {
-    // default image_offsets is {0, 0, 0}
-    // this enforces the minimum extent to be 1 in each dim
-    assertm(args->image_offsets[i] < global_image_dims[i],
-            "input offset can not exceed dimension of image");
-    // protect faulty out of bounds input if extents goes beyond
-    // domain of full image, note: z, y, x order
-    auto max_extent = global_image_dims[i] - args->image_offsets[i];
-    if (args->image_extents[i]) {
-      args->image_extents[i] = min(args->image_extents[i], max_extent);
-    } else {
-      // image_extents is set to grid_size for force_regenerate_image option,
-      // otherwise 0,0,0 means use to the end of input image
-      args->image_extents[i] = max_extent;
-      // extents are now sanitized in each dimension
-      // and protected from faulty offset values
-    }
-  }
-
-  // save to globals the actual size of the full image
-  // accounting for the input offsets and extents
-  // these will be used throughout the rest of the program
-  this->image_length_x = args->image_extents[2];
-  this->image_length_y = args->image_extents[1];
-  this->image_length_z = args->image_extents[0];
-  this->image_length_xy = image_length_x * image_length_y;
-  this->image_size = image_length_x * image_length_y * image_length_z;
-
-  // the image size and offsets override the user inputted interval size
-  // continuous id's are the same for current or dst intervals
-  // round up (pad)
-  // Determine the size of each interval in each dim
-  // constrict so less data is allocated especially in z dimension
-  interval_length_x = min((VID_t)params->interval_size(), image_length_x);
-  interval_length_y = min((VID_t)params->interval_size(), image_length_y);
-  interval_length_z = min((VID_t)params->interval_size(), image_length_z);
-
-  // determine the length of intervals in each dim
-  // rounding up (ceil)
-  grid_interval_length_x =
-      (image_length_x + interval_length_x - 1) / interval_length_x;
-  grid_interval_length_y =
-      (image_length_y + interval_length_y - 1) / interval_length_y;
-  grid_interval_length_z =
-      (image_length_z + interval_length_z - 1) / interval_length_z;
-
-  // the resulting interval size override the user inputted block size
-  block_length_x = min(interval_length_x, user_def_block_size);
-  block_length_y = min(interval_length_y, user_def_block_size);
-  block_length_z = min(interval_length_z, user_def_block_size);
-
-  // determine length of blocks that span an interval for each dim
-  // this rounds up
-  interval_block_len_x =
-      (interval_length_x + block_length_x - 1) / block_length_x;
-  interval_block_len_y =
-      (interval_length_y + block_length_y - 1) / block_length_y;
-  interval_block_len_z =
-      (interval_length_z + block_length_z - 1) / block_length_z;
-
-  auto image_x_len_pad = interval_block_len_x * block_length_x;
-  auto image_y_len_pad = interval_block_len_y * block_length_y;
-  auto image_z_len_pad = interval_block_len_z * block_length_z;
-  auto image_xy_len_pad =
-      image_x_len_pad * image_y_len_pad; // saves recomputation occasionally
-
-  this->grid_interval_size =
-      grid_interval_length_x * grid_interval_length_y * grid_interval_length_z;
-  interval_block_size =
-      interval_block_len_x * interval_block_len_y * interval_block_len_z;
-  pad_block_length_x = block_length_x + 2;
-  pad_block_length_y = block_length_y + 2;
-  pad_block_length_z = block_length_z + 2;
-  pad_block_offset =
-      pad_block_length_x * pad_block_length_y * pad_block_length_z;
-  const VID_t grid_vertex_pad_size =
-      pad_block_offset * interval_block_size * grid_interval_size;
-
-#ifdef LOG
-  cout << "block x, y, z size: " << block_length_x << ", " << block_length_y
-       << ", " << block_length_z << " interval x, y, z size "
-       << interval_length_x << ", " << interval_length_y << ", "
-       << interval_length_z << " intervals: " << grid_interval_size
-       << " blocks per interval: " << interval_block_size << '\n';
-  cout << "image_length_x: " << image_length_x
-       << " image_length_y: " << image_length_y
-       << " image_length_z: " << image_length_z << '\n';
-  cout << "interval_block_len_x: " << interval_block_len_x
-       << " interval_block_len_y: " << interval_block_len_y
-       << " interval_block_len_z: " << interval_block_len_z << '\n';
-  cout << "image_x_len_pad: " << image_x_len_pad
-       << " image_y_len_pad: " << image_y_len_pad
-       << " image_z_len_pad: " << image_z_len_pad << " image_xy_len_pad "
-       << image_xy_len_pad << '\n';
-  // cout<< "image_offsets_x: "<< image_offsets[2] <<" image_offsets_y: "<<
-  // image_offsets[1] <<" image_offsets_z: "<< image_offsets[0] << '\n';
-#endif
-
-  // we cast the interval id and block id to uint16 for use as a key
-  // in the global variables maps, if total intervals or blocks exceed this
-  // there would be overflow
-  if (grid_interval_size > (2 << 16) - 1) {
-    cout << "Number of intervals too high: " << grid_interval_size
-         << " try increasing interval size";
-    // assert(false);
-  }
-  if (interval_block_size > (2 << 16) - 1) {
-    cout << "Number of blocks too high: " << interval_block_size
-         << " try increasing block size";
-    // assert(false);
-  }
-
-  clock_gettime(CLOCK_REALTIME, &time0);
-  grid = Grid(grid_vertex_pad_size, interval_block_size, grid_interval_size,
-              *this, this->mmap_);
-
-  clock_gettime(CLOCK_REALTIME, &time2);
-
-#ifdef LOG
-  cout << "Created super interval in " << diff_time(time0, time2) << " s";
-  cout << " with total intervals: " << grid_interval_size << '\n';
-#endif
-
-  initialize_globals(grid_interval_size, interval_block_size);
-
-  clock_gettime(CLOCK_REALTIME, &time3);
-
-#ifdef LOG
-  cout << "Initialized globals" << diff_time(time2, time3) << '\n';
-#endif
-
-  if (this->params->force_regenerate_image) {
-    // This is where we set image to our desired values
-    this->generated_image = new image_t[this->image_size];
-
-    assertm(this->params->tcase > -1, "Mismatched tcase for generate image");
-    assertm(this->params->slt_pct > -1,
-            "Mismatched slt_pct for generate image");
-    assertm(this->params->selected > 0,
-            "Mismatched selected for generate image");
-    assertm(this->params->root_vid != numeric_limits<uint64_t>::max(),
-            "Root vid uninitialized");
-
-    // create_image take the length of one dimension
-    // of the image, currently assuming all test images
-    // are cubes
-    // sets all to 0 for tcase 4 and 5
-    assertm(this->image_length_y == this->image_length_z,
-            "change create_image implementation to support non-cube images");
-    assertm(this->image_length_x == this->image_length_y,
-            "change create_image implementation to support non-cube images");
-    auto selected = create_image(this->params->tcase, this->generated_image,
-                                 this->image_length_x, this->params->selected,
-                                 this->params->root_vid);
-    if (this->params->tcase == 3 || this->params->tcase == 5) {
-      // only tcase 3 and 5 doens't have a total select count not known
-      // ahead of time
-      this->params->selected = selected;
-    }
-
-    // add the single root vid to the root_vids
-    return {this->params->root_vid};
-
-  } else {
-    // adds all valid markers to root_vids vector and returns
-    return process_marker_dir(args->image_offsets, args->image_extents);
-  }
-}
 
 // note this function is only valid ifdef DENSE
 template <class image_t>
@@ -3618,7 +3613,7 @@ void Recut<image_t>::brute_force_extract(vector<vertex_t> &outtree,
 
   // release both user-space or mmap'd data since info is all in outtree
   // now
-  for (size_t interval_id = 0; interval_id < grid.GetNIntervals();
+  for (size_t interval_id = 0; interval_id < grid_interval_size;
        ++interval_id) {
     if (release_intervals) {
       grid.GetInterval(interval_id)->Release();
@@ -3635,6 +3630,8 @@ void Recut<image_t>::brute_force_extract(vector<vertex_t> &outtree,
        << " sec." << '\n';
 #endif
 }
+
+#endif // DENSE
 
 template <class image_t> void Recut<image_t>::adjust_parent(bool print) {
 #ifdef LOG
@@ -3662,16 +3659,18 @@ template <class image_t>
 bool Recut<image_t>::filter_by_vid(VID_t vid, VID_t find_interval_id,
                                    VID_t find_block_id) {
   find_interval_id = get_interval_id(vid);
-  if (find_interval_id >= grid.GetNIntervals()) {
+  if (find_interval_id >= grid_interval_size) {
     return false;
   }
   find_block_id = get_block_id(vid);
   if (find_block_id >= interval_block_size) {
     return false;
   }
+#ifdef DENSE
   if (!(grid.GetInterval(find_interval_id)->IsInMemory())) {
     grid.GetInterval(find_interval_id)->LoadFromDisk();
   }
+#endif
   return true;
 };
 

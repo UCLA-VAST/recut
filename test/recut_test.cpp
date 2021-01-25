@@ -190,6 +190,8 @@ void check_image_equality(uint16_t *inimg1d, uint16_t *check, int grid_size) {
   }
 }
 
+#ifdef DENSE
+
 // make sure base interval is implemented in a read-only manner
 void interval_base_immutable(VID_t nvid) {
   ASSERT_LE(nvid, MAX_INTERVAL_VERTICES);
@@ -365,89 +367,6 @@ void test_get_attr_vid(bool mmap, int grid_size, int interval_size,
   }
 }
 
-TEST(Heap, PushUpdate) {
-  VID_t N = 1 << 10;
-  bool update_values = true;
-
-  std::vector<std::string> stages = {"value", "radius"};
-  // float mval = std::numeric_limits<float>::max();
-  float mval = 255;
-  srand(time(0));
-  std::vector<uint8_t> vr;
-  std::vector<float> vv;
-  for (auto &stage : stages) {
-    NeighborHeap<VertexAttr> heap;
-    uint8_t radius;
-    float value;
-    uint8_t updated_radius;
-    float updated_value;
-    for (VID_t i = 0; i < N; i++) {
-      auto vert = new VertexAttr;
-      ASSERT_FALSE(vert->valid_handle());
-      if (stage == "radius") {
-        radius = (uint8_t)rand() % std::numeric_limits<uint8_t>::max();
-        updated_radius = (uint8_t)rand() % std::numeric_limits<uint8_t>::max();
-        vert->radius = radius;
-        vr.push_back(radius);
-        ASSERT_EQ(vert->radius, radius);
-      } else if (stage == "value") {
-        value =
-            static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / mval));
-        updated_value =
-            static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / mval));
-        vert->value = value;
-        vv.push_back(value);
-      }
-      heap.push(vert, 0, stage);
-      ASSERT_TRUE(vert->valid_handle());
-
-      /* for even element, update it with some random number
-       * to make sure the update can still retain proper
-       * ordering
-       */
-      if (update_values && (i % 2)) {
-        // cout << "elems pre-update: " << " i " << i << endl;
-        // heap.print(stage);
-
-        if (stage == "radius") {
-          // vert->radius = updated_radius;
-          vr.pop_back();
-          vr.push_back(updated_radius);
-          heap.update(vert, 0, updated_radius, stage);
-        } else {
-          // vert->value = updated_value;
-          vv.pop_back();
-          vv.push_back(updated_value);
-          heap.update(vert, 0, updated_value, stage);
-        }
-      }
-
-      // cout << "elems: " << endl;
-      // heap.print(stage);
-    }
-
-    // make sure all in heap are popped in
-    // non-increasing order
-    if (stage == "radius") {
-      sort(vr.begin(), vr.end());
-      for (auto &val : vr) {
-        auto min_attr = heap.pop(0, stage);
-        ASSERT_FALSE(min_attr->valid_handle());
-        auto hval = min_attr->radius;
-        ASSERT_EQ(val, hval) << "hval " << +hval << " val " << +val;
-      }
-    } else {
-      sort(vv.begin(), vv.end());
-      for (auto &val : vv) {
-        auto min_attr = heap.pop(0, stage);
-        ASSERT_FALSE(min_attr->valid_handle());
-        auto hval = min_attr->value;
-        ASSERT_EQ(val, hval) << "hval " << +hval << " val " << +val;
-      }
-    }
-  }
-}
-
 /*
  * This test suite creates the basic initialized set of
  * VertexAttr for each new Interval to read from
@@ -535,8 +454,6 @@ TEST(Interval, LoadSaveInterval) {
   ASSERT_NO_FATAL_FAILURE(load_save(mmap_));
 }
 
-#ifdef DENSE
-
 TEST(Interval, GetAttrVid) {
 #ifdef USE_MMAP
   bool mmap_ = true;
@@ -592,7 +509,8 @@ TEST(Interval, GetAttrVidMultiInterval) {
 
   ASSERT_NO_FATAL_FAILURE(interval_base_immutable(interval_vert_num));
 }
-#endif
+
+#endif // DENSE
 
 /*
  * Create the desired markers (seed locations) and images to be used by other
@@ -758,6 +676,89 @@ TEST(Install, DISABLED_ImageReadWrite) {
 }
 
 #endif
+
+TEST(Heap, PushUpdate) {
+  VID_t N = 1 << 10;
+  bool update_values = true;
+
+  std::vector<std::string> stages = {"value", "radius"};
+  // float mval = std::numeric_limits<float>::max();
+  float mval = 255;
+  srand(time(0));
+  std::vector<uint8_t> vr;
+  std::vector<float> vv;
+  for (auto &stage : stages) {
+    NeighborHeap<VertexAttr> heap;
+    uint8_t radius;
+    float value;
+    uint8_t updated_radius;
+    float updated_value;
+    for (VID_t i = 0; i < N; i++) {
+      auto vert = new VertexAttr;
+      ASSERT_FALSE(vert->valid_handle());
+      if (stage == "radius") {
+        radius = (uint8_t)rand() % std::numeric_limits<uint8_t>::max();
+        updated_radius = (uint8_t)rand() % std::numeric_limits<uint8_t>::max();
+        vert->radius = radius;
+        vr.push_back(radius);
+        ASSERT_EQ(vert->radius, radius);
+      } else if (stage == "value") {
+        value =
+            static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / mval));
+        updated_value =
+            static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / mval));
+        vert->value = value;
+        vv.push_back(value);
+      }
+      heap.push(vert, 0, stage);
+      ASSERT_TRUE(vert->valid_handle());
+
+      /* for even element, update it with some random number
+       * to make sure the update can still retain proper
+       * ordering
+       */
+      if (update_values && (i % 2)) {
+        // cout << "elems pre-update: " << " i " << i << endl;
+        // heap.print(stage);
+
+        if (stage == "radius") {
+          // vert->radius = updated_radius;
+          vr.pop_back();
+          vr.push_back(updated_radius);
+          heap.update(vert, 0, updated_radius, stage);
+        } else {
+          // vert->value = updated_value;
+          vv.pop_back();
+          vv.push_back(updated_value);
+          heap.update(vert, 0, updated_value, stage);
+        }
+      }
+
+      // cout << "elems: " << endl;
+      // heap.print(stage);
+    }
+
+    // make sure all in heap are popped in
+    // non-increasing order
+    if (stage == "radius") {
+      sort(vr.begin(), vr.end());
+      for (auto &val : vr) {
+        auto min_attr = heap.pop(0, stage);
+        ASSERT_FALSE(min_attr->valid_handle());
+        auto hval = min_attr->radius;
+        ASSERT_EQ(val, hval) << "hval " << +hval << " val " << +val;
+      }
+    } else {
+      sort(vv.begin(), vv.end());
+      for (auto &val : vv) {
+        auto min_attr = heap.pop(0, stage);
+        ASSERT_FALSE(min_attr->valid_handle());
+        auto hval = min_attr->value;
+        ASSERT_EQ(val, hval) << "hval " << +hval << " val " << +val;
+      }
+    }
+  }
+}
 
 TEST(Helpers, DISABLED_DoublePackKey) {
   {
