@@ -23,7 +23,7 @@ command=cd bin && ./recut_test --gtest_output=json:../data/test_detail.json  --g
 cwd=<root>
 
 # rebuild and run test
-[project-change]
+[project-run]
 command=cd build && ninja install && cd ../bin && ./recut_test --gtest_output=json:../data/test_detail.json --gtest_filter=*.ChecksIfFinalVerticesCorrect/11
 cwd=<root>
 

@@ -307,7 +307,7 @@ public:
   ~Recut<image_t>();
 };
 
-template <class image_t> Recut<image_t>::~Recut<image_t>() { 
+template <class image_t> Recut<image_t>::~Recut<image_t>() {
   if (this->params->force_regenerate_image) {
     // when initialize has been run
     // generated_image is no longer nullptr
@@ -541,6 +541,10 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
         auto v = get_attr_vid(interval_id, block_id, vid, nullptr);
 #else
         auto v = get_active_vertex(interval_id, block_id, vid);
+        if (v == nullptr) {
+          cout << "- ";
+          continue;
+        }
 #endif
 
         if (v->root()) {
@@ -1086,18 +1090,13 @@ bool Recut<image_t>::accumulate_value(
 #else
   auto dst = get_active_vertex(interval_id, block_id, dst_id);
 #endif
-  if (dst == nullptr) {
-    // this->active_vertices[interval_id][block_id].emplace_back(dst_id);
-    // dst = &(this->active_vertices[interval_id][block_id].back());
-    dst = new VertexAttr(dst_id);
-  }
 
   auto dst_vox = get_img_val(tile, dst_id);
 
 #ifdef FULL_PRINT
   cout << "\tcheck dst vid: " << dst_id;
-  cout << " addr: " << static_cast<void *>(dst);
-  cout << " val " << dst->value;
+  //cout << " addr: " << static_cast<void *>(dst);
+  //cout << " val " << dst->value;
   cout << " pixel " << dst_vox;
   cout << " bkg_thresh " << +(tile_thresholds->bkg_thresh) << '\n';
 #endif
@@ -1121,6 +1120,12 @@ bool Recut<image_t>::accumulate_value(
        tile_thresholds->calc_weight(dst_vox)) *
           0.5);
 
+  if (dst == nullptr) {
+    // this->active_vertices[interval_id][block_id].emplace_back(dst_id);
+    // dst = &(this->active_vertices[interval_id][block_id].back());
+    dst = new VertexAttr(dst_id);
+  }
+
   // this automatically excludes any root vertex since they have a
   // value of 0.
   if (dst->value > new_field) {
@@ -1143,6 +1148,8 @@ bool Recut<image_t>::accumulate_value(
     vertex_update(interval_id, block_id, dst, new_field, "value");
     assertm(dst->value == new_field,
             "Accumulate value did not properly set it's updated field");
+    // all dsts are guaranteed within this domain
+    this->active_vertices[interval_id][block_id].push_back(*dst);
     return true;
   } else {
 #ifdef FULL_PRINT
@@ -1179,9 +1186,9 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
   // during the processing of the current thread
 #ifdef DENSE
   // mmap counts all intervals as in memory
-  if (grid.GetInterval(nb_interval_id)->IsInMemory() 
-      && processing_blocks[nb_interval_id][nb_block_id].compare_exchange_strong(
-             false, true)) {
+  if (grid.GetInterval(nb_interval_id)->IsInMemory() &&
+      processing_blocks[nb_interval_id][nb_block_id].compare_exchange_strong(
+          false, true)) {
 #else
   if (true) {
 #endif
@@ -1757,8 +1764,7 @@ template <class image_t> bool Recut<image_t>::are_intervals_finished() {
 #ifdef LOG_FULL
   cout << "Intervals active: ";
 #endif
-  for (auto interval_id = 0; interval_id < grid_interval_size;
-       ++interval_id) {
+  for (auto interval_id = 0; interval_id < grid_interval_size; ++interval_id) {
     if (active_intervals[interval_id]) {
       tot_active++;
 #ifdef LOG_FULL
@@ -1931,7 +1937,7 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
       // heap to prevent redundant other vertices set NO_RV to on
       this->active_vertices[interval_id][block_id].push_back(*current);
 #ifdef DENSE
-    current = get_attr_vid(interval_id, block_id, current->vid, nullptr);
+      current = get_attr_vid(interval_id, block_id, current->vid, nullptr);
 #else
       current = get_active_vertex(interval_id, block_id, current->vid);
 #endif
@@ -2799,8 +2805,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #ifdef USE_OMP_INTERVAL
 #pragma omp parallel for
 #endif
-    for (int interval_id = 0; interval_id < grid_interval_size;
-         interval_id++) {
+    for (int interval_id = 0; interval_id < grid_interval_size; interval_id++) {
       // only start intervals that have active processing to do
       if (active_intervals[interval_id]) {
 
@@ -3503,7 +3508,6 @@ Recut<image_t>::get_attr_vid(const VID_t interval_id, const VID_t block_id,
   return match;
 }
 
-
 // note this function is only valid ifdef DENSE
 template <class image_t>
 template <typename vertex_t>
@@ -3830,5 +3834,4 @@ template <class image_t> void Recut<image_t>::run_pipeline() {
   auto print = true;
   adjust_parent(print);
 #endif
-
 }
