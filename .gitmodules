@@ -1,9 +1,0 @@
-[submodule "extern/benchmark"]
-	path = extern/benchmark
-	url = git@github.com:google/benchmark.git
-[submodule "extern/googletest"]
-	path = extern/googletest
-	url = git@github.com:google/googletest.git
-[submodule "extern/range-v3"]
-	path = extern/range-v3
-	url = git@github.com:ericniebler/range-v3.git
