@@ -1,17 +1,17 @@
 #pragma once
 
 #include "config.hpp"
-#include <atomic>
-#include <numeric>
 #include "markers.h"
+#include "range/v3/all.hpp"
 #include "recut_parameters.hpp"
 #include <algorithm> //min
+#include <atomic>
 #include <chrono>
 #include <cstdlib> //rand srand
 #include <ctime>   // for srand
 #include <filesystem>
 #include <math.h>
-#include "range/v3/all.hpp"
+#include <numeric>
 
 namespace fs = std::filesystem;
 namespace rng = ranges;
@@ -32,20 +32,22 @@ namespace rng = ranges;
 #define STR(x) #x
 
 // the MyMarker operator< provided by library doesn't work
-static const auto lt = [](const MyMarker* lhs, const MyMarker* rhs) {
+static const auto lt = [](const MyMarker *lhs, const MyMarker *rhs) {
   return std::tie(lhs->z, lhs->y, lhs->x) < std::tie(rhs->z, rhs->y, rhs->x);
 };
 
-static const auto eq = [](const MyMarker* lhs, const MyMarker* rhs) {
-  //return *lhs == *rhs;
-  //std::cout << "eq lhs " << lhs->description(2,2) << " rhs " << rhs->description(2,2) << '\n';
+static const auto eq = [](const MyMarker *lhs, const MyMarker *rhs) {
+  // return *lhs == *rhs;
+  // std::cout << "eq lhs " << lhs->description(2,2) << " rhs " <<
+  // rhs->description(2,2) << '\n';
   return lhs->x == rhs->x && lhs->y == rhs->y && lhs->z == rhs->z;
 };
 
 // composing with pipe '|' is possible with actions and views
 // passing a container to an action must be done by using std::move
-const auto unique_count = [](std::vector<MyMarker*> v) {
-  return rng::distance(std::move(v) | rng::actions::sort(lt) | rng::actions::unique(eq));
+const auto unique_count = [](std::vector<MyMarker *> v) {
+  return rng::distance(std::move(v) | rng::actions::sort(lt) |
+                       rng::actions::unique(eq));
 };
 
 // taken from Bryce Adelstein Lelbach's Benchmarking C++ Code talk:
@@ -63,13 +65,13 @@ struct high_resolution_timer {
     return take_time_stamp() - start_time_;
   }
 
-  protected:
+protected:
   static std::uint64_t take_time_stamp() {
     return std::uint64_t(
         std::chrono::high_resolution_clock::now().time_since_epoch().count());
   }
 
-  private:
+private:
   std::uint64_t start_time_;
 };
 
@@ -81,9 +83,7 @@ std::string get_parent_dir() {
   return fs::canonical(full_path.parent_path().parent_path()).string();
 }
 
-std::string get_data_dir() {
-  return CMAKE_INSTALL_DATADIR;
-}
+std::string get_data_dir() { return CMAKE_INSTALL_DATADIR; }
 
 VID_t get_central_sub(int grid_size) {
   return grid_size / 2 - 1; // place at center
@@ -113,14 +113,14 @@ MyMarker *get_central_root(int grid_size) {
 }
 
 void get_img_subscript(VID_t id, VID_t &i, VID_t &j, VID_t &k,
-    VID_t grid_size) {
+                       VID_t grid_size) {
   i = id % grid_size;
   j = (id / grid_size) % grid_size;
   k = (id / (grid_size * grid_size)) % grid_size;
 }
 
 std::vector<MyMarker *> vids_to_markers(std::vector<VID_t> vids,
-    VID_t grid_size) {
+                                        VID_t grid_size) {
   std::vector<MyMarker *> markers;
   for (const auto &vid : vids) {
     VID_t x, y, z;
@@ -151,7 +151,7 @@ VID_t get_used_vertex_size(VID_t grid_size, VID_t block_size) {
 // interval_extents are in z, y, x order
 template <typename T>
 void print_marker_3D(T markers, std::vector<int> interval_extents,
-    std::string stage) {
+                     std::string stage) {
   for (int zi = 0; zi < interval_extents[0]; zi++) {
     cout << "y | Z=" << zi << '\n';
     for (int xi = 0; xi < 2 * interval_extents[2] + 4; xi++) {
@@ -162,11 +162,11 @@ void print_marker_3D(T markers, std::vector<int> interval_extents,
       cout << yi << " | ";
       for (int xi = 0; xi < interval_extents[2]; xi++) {
         VID_t index = ((VID_t)xi) + yi * interval_extents[2] +
-          zi * interval_extents[1] * interval_extents[2];
-        //auto match = std::find(markers.begin(), markers.end(), index);
-        //auto match = markers | find_if
+                      zi * interval_extents[1] * interval_extents[2];
+        // auto match = std::find(markers.begin(), markers.end(), index);
+        // auto match = markers | find_if
         auto value = std::string{"-"};
-        for (const auto& m : markers) {
+        for (const auto &m : markers) {
           // z,y,x order!
           // this is xdim, ydim
           if (m->vid(interval_extents[2], interval_extents[1]) == index) {
@@ -201,7 +201,7 @@ void print_image_3D(T *inimg1d, std::vector<int> interval_extents) {
       cout << yi << " | ";
       for (int xi = 0; xi < interval_extents[2]; xi++) {
         VID_t index = ((VID_t)xi) + yi * interval_extents[2] +
-          zi * interval_extents[1] * interval_extents[2];
+                      zi * interval_extents[1] * interval_extents[2];
         // cout << i << " " ;
         cout << +inimg1d[index] << " ";
       }
@@ -222,7 +222,8 @@ template <typename T> void print_image(T *inimg1d, VID_t size) {
 // the domain, thus it's an extremely hard test to pass
 // not even original fastmarching can
 // recover all of the original pixels
-VID_t trace_mesh_image(VID_t id, uint16_t *inimg1d, const VID_t desired_selected, int grid_size) {
+VID_t trace_mesh_image(VID_t id, uint16_t *inimg1d,
+                       const VID_t desired_selected, int grid_size) {
   VID_t i, j, k, ic, jc, kc;
   i = j = k = ic = kc = jc = 0;
   // set root to 1
@@ -300,8 +301,9 @@ VID_t trace_mesh_image(VID_t id, uint16_t *inimg1d, const VID_t desired_selected
   return actual;
 }
 
-bool is_covered_by_parent(VID_t index, VID_t root_vid, int radius, VID_t grid_size) {
-  VID_t i,j,k,pi,pj,pk;
+bool is_covered_by_parent(VID_t index, VID_t root_vid, int radius,
+                          VID_t grid_size) {
+  VID_t i, j, k, pi, pj, pk;
   get_img_subscript(index, i, j, k, grid_size);
   get_img_subscript(root_vid, pi, pj, pk, grid_size);
   auto x = static_cast<double>(i) - pi;
@@ -326,7 +328,7 @@ bool is_covered_by_parent(VID_t index, VID_t root_vid, int radius, VID_t grid_si
  * radius directly in the center of the grid
  */
 VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
-    const VID_t desired_selected, VID_t root_vid) {
+                   const VID_t desired_selected, VID_t root_vid) {
 
   // need to count total selected for tcase 3 and 5
   VID_t count_selected_pixels = 0;
@@ -336,10 +338,10 @@ VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
   auto radius = grid_size / 4;
   radius = radius > 1 ? radius : 1; // clamp to 1
   double tcase1_factor = PI;
-  double tcase2_factor = 2*PI;
+  double tcase2_factor = 2 * PI;
 
   assertm(grid_size / 2 >= radius,
-      "Can't specify a radius larger than grid_size / 2");
+          "Can't specify a radius larger than grid_size / 2");
   auto root_x = static_cast<int>(get_central_sub(grid_size));
   auto root_y = static_cast<int>(get_central_sub(grid_size));
   auto root_z = static_cast<int>(get_central_sub(grid_size));
@@ -365,11 +367,12 @@ VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
           inimg1d[index] = 1;
         } else if (tcase == 1) {
           inimg1d[index] = (uint16_t)1 + .5 * sin(tcase1_factor * x) *
-            sin(tcase1_factor * y) *
-            sin(tcase1_factor * z);
+                                             sin(tcase1_factor * y) *
+                                             sin(tcase1_factor * z);
         } else if (tcase == 2) {
           inimg1d[index] = (uint16_t)1 - .99 * sin(tcase2_factor * x) *
-            sin(tcase2_factor * y) * sin(tcase2_factor * z);
+                                             sin(tcase2_factor * y) *
+                                             sin(tcase2_factor * z);
         } else if (tcase == 3) {
           double r = sqrt(x * x + y * y);
           double R = sqrt(x * x + y * y + z * z);
@@ -451,7 +454,8 @@ VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
   }
 
   // return number of pixels selected
-  // must count total selected for all tcase 4 and above since it may not match desired
+  // must count total selected for all tcase 4 and above since it may not match
+  // desired
   if (tcase < 3) {
     return grid_size * grid_size * grid_size;
   } else if ((tcase == 3) || (tcase == 5)) {
@@ -463,7 +467,8 @@ VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
   }
 
   // tcase 6 means real image so it's not valid
-  assertm(false, "tcase not recognized: tcase 6 is reserved for reading real images\n tcase higher than 7 not specified");
+  assertm(false, "tcase not recognized: tcase 6 is reserved for reading real "
+                 "images\n tcase higher than 7 not specified");
   return 0; // never reached
 }
 
@@ -478,7 +483,7 @@ VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
  * @param line_per_dim the number of lines per
  */
 VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
-    int grid_size) {
+                   int grid_size) {
   int interval = grid_size / line_per_dim; // roughly equiv
   std::vector<VID_t> x(line_per_dim + 1);
   std::vector<VID_t> y(line_per_dim + 1);
@@ -536,9 +541,9 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
   return selected;
 }
 
-RecutCommandLineArgs get_args(int grid_size, int interval_size,
-    int block_size, int slt_pct, int tcase,
-    bool force_regenerate_image = false) {
+RecutCommandLineArgs get_args(int grid_size, int interval_size, int block_size,
+                              int slt_pct, int tcase,
+                              bool force_regenerate_image = false) {
 
   bool print = false;
 
@@ -564,18 +569,22 @@ RecutCommandLineArgs get_args(int grid_size, int interval_size,
     args.set_image_offsets({110, 229, 57});
     args.set_image_extents({grid_size, grid_size, grid_size});
 
-    if (const char* env_p = std::getenv("TEST_IMAGE")) {
+    if (const char *env_p = std::getenv("TEST_IMAGE")) {
       std::cout << "Using $TEST_IMAGE environment variable: " << env_p << '\n';
       args.set_image_root_dir(std::string(env_p));
     } else {
-      std::cout << "Warning likely fatal: must run: export TEST_IMAGE=\"abs/path/to/image\" to set the environment variable\n\n";
+      std::cout << "Warning likely fatal: must run: export "
+                   "TEST_IMAGE=\"abs/path/to/image\" to set the environment "
+                   "variable\n\n";
     }
 
-    if (const char* env_p = std::getenv("TEST_MARKER")) {
+    if (const char *env_p = std::getenv("TEST_MARKER")) {
       std::cout << "Using $TEST_MARKER environment variable: " << env_p << '\n';
       params.set_marker_file_path(std::string(env_p));
     } else {
-      std::cout << "Warning likely fatal must run: export TEST_MARKER=\"abs/path/to/marker\" to set the environment variable\n\n";
+      std::cout << "Warning likely fatal must run: export "
+                   "TEST_MARKER=\"abs/path/to/marker\" to set the environment "
+                   "variable\n\n";
     }
 
     // foreground_percent is always double between .0 and 1.
@@ -684,7 +693,7 @@ void write_tiff(uint16_t *inimg1d, std::string base, int grid_size) {
 }
 
 void read_tiff(std::string fn, std::vector<int> image_offsets,
-    std::vector<int> image_extents, mcp3d::MImage& image) {
+               std::vector<int> image_extents, mcp3d::MImage &image) {
   cout << "Read: " << fn << '\n';
   // read data from channel 0
   image.ReadImageInfo(0, true);
@@ -739,7 +748,6 @@ void print_macros() {
 #ifdef USE_OMP_INTERVAL
   cout << "USE_OMP_INTERVAL" << '\n';
 #endif
-
 }
 
 // this is not thread safe if concurrent threads
@@ -776,30 +784,27 @@ inline double diff_time(struct timespec time1, struct timespec time2) {
   return time2.tv_sec - time1.tv_sec + (time2.tv_nsec - time1.tv_nsec) * 1e-9;
 }
 
-template<typename T>
-struct CompareResults {
+template <typename T> struct CompareResults {
   T false_negatives;
   T false_positives;
   VID_t duplicate_count;
   VID_t match_count;
 
-  CompareResults(T false_negatives, T false_positives, VID_t duplicate_count, VID_t match_count) :
-    false_negatives(false_negatives), false_positives(false_positives),
-    duplicate_count(duplicate_count) , match_count(match_count) {}
-
+  CompareResults(T false_negatives, T false_positives, VID_t duplicate_count,
+                 VID_t match_count)
+      : false_negatives(false_negatives), false_positives(false_positives),
+        duplicate_count(duplicate_count), match_count(match_count) {}
 };
 
-auto print = [](auto iter){
-  rng::for_each(iter,
-      [](auto i) { std::cout << i << ", "; });
+auto print = [](auto iter) {
+  rng::for_each(iter, [](auto i) { std::cout << i << ", "; });
   std::cout << '\n';
 };
 
 auto get_vids = [](auto tree, auto xdim, auto ydim) {
-  return tree
-    | rng::views::transform([&](auto v) {
-        return v->vid(xdim, ydim); })
-    | rng::to_vector;
+  return tree |
+         rng::views::transform([&](auto v) { return v->vid(xdim, ydim); }) |
+         rng::to_vector;
 };
 
 auto get_vids_sorted = [](auto tree, auto xdim, auto ydim) {
@@ -808,7 +813,7 @@ auto get_vids_sorted = [](auto tree, auto xdim, auto ydim) {
 
 // prints mismatches between two trees in uid sorted order
 template <typename T, typename T2, typename T3>
-auto compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3& recut) {
+auto compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3 &recut) {
 
   bool print = false;
 #ifdef LOG
@@ -826,43 +831,44 @@ auto compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3& recut) {
   auto check_vids = get_vids_sorted(check_tree, xdim, ydim);
 
   if (print) {
-    //std::cout << "truth_vids\n";
-    //print(truth_vids);
-    //std::cout << "check_vids\n";
-    //print(check_vids);
+    // std::cout << "truth_vids\n";
+    // print(truth_vids);
+    // std::cout << "check_vids\n";
+    // print(check_vids);
   }
 
-  auto matches = rng::views::set_intersection( truth_vids, check_vids);
+  auto matches = rng::views::set_intersection(truth_vids, check_vids);
 
-  //for (auto&& vid : matches) {
-  //const auto block = recut.get_block_id(vid);
-  //std::cout <<  "match"<< " at: " << vid << " block: " << block << '\n';
+  // for (auto&& vid : matches) {
+  // const auto block = recut.get_block_id(vid);
+  // std::cout <<  "match"<< " at: " << vid << " block: " << block << '\n';
   //}
 
   VID_t match_count = rng::distance(matches);
   if (print)
-    std::cout <<  "match count: "<< match_count<< '\n';
+    std::cout << "match count: " << match_count << '\n';
 
   // move all this logic into the function body of tests
-  auto get_negatives = [&](auto& tree, auto& matches, auto specifier) {
-    return rng::views::set_difference( tree, matches)
-      | rng::views::transform([&](auto vid) {
-          const auto block = recut.get_block_id(vid);
-          if (print)
-          std::cout << "false " << specifier << " at: " << vid <<" block: " << block <<  '\n';
-          return std::make_pair(vid, block);
-          })
-    | rng::to_vector ;
+  auto get_negatives = [&](auto &tree, auto &matches, auto specifier) {
+    return rng::views::set_difference(tree, matches) |
+           rng::views::transform([&](auto vid) {
+             const auto block = recut.get_block_id(vid);
+             if (print)
+               std::cout << "false " << specifier << " at: " << vid
+                         << " block: " << block << '\n';
+             return std::make_pair(vid, block);
+           }) |
+           rng::to_vector;
   };
 
   return new CompareResults<std::vector<std::pair<VID_t, VID_t>>>(
       get_negatives(truth_vids, matches, "negative"),
-      get_negatives(check_vids, matches, "positive"),
-      duplicate_count, match_count);
+      get_negatives(check_vids, matches, "positive"), duplicate_count,
+      match_count);
 }
 
 /* returns available memory to system in bytes
-*/
+ */
 inline size_t GetAvailMem() {
 #if defined(_SC_AVPHYS_PAGES)
   map<string, size_t> mem_info;
@@ -887,8 +893,7 @@ inline size_t GetAvailMem() {
 
 // avoid a dependency on boost.accumulators
 // return mean of iterable and sample standard deviation
-template <typename T>
-std::tuple<double, double, double> iter_stats(T v) {
+template <typename T> std::tuple<double, double, double> iter_stats(T v) {
 
   double sum = std::accumulate(v.begin(), v.end(), 0.0);
   double mean = sum / v.size();
@@ -898,8 +903,10 @@ std::tuple<double, double, double> iter_stats(T v) {
     stdev = 0.;
   } else {
     std::vector<double> diff(v.size());
-    std::transform(v.begin(), v.end(), diff.begin(), [mean](double x) { return x - mean; });
-    double sq_sum = std::inner_product(diff.begin(), diff.end(), diff.begin(), 0.0);
+    std::transform(v.begin(), v.end(), diff.begin(),
+                   [mean](double x) { return x - mean; });
+    double sq_sum =
+        std::inner_product(diff.begin(), diff.end(), diff.begin(), 0.0);
 
     // the mean is calculated from this data set the population mean
     // is unknown, therefore use the sample stdev (n - 1)
@@ -909,34 +916,34 @@ std::tuple<double, double, double> iter_stats(T v) {
   return {mean, sum, stdev};
 }
 
-template <typename I>
-std::ostream open_swc_outputs(I root_vids) {
+template <typename I> std::ostream open_swc_outputs(I root_vids) {
   std::ofstream out("out.swc");
   return out;
 }
 
-auto get_img_vid = [](const VID_t i, const VID_t j,
-    const VID_t k,
-    const VID_t image_length_x, const VID_t image_length_y) -> VID_t {
+auto get_img_vid = [](const VID_t i, const VID_t j, const VID_t k,
+                      const VID_t image_length_x,
+                      const VID_t image_length_y) -> VID_t {
   auto image_length_xy = image_length_x * image_length_y;
   return k * image_length_xy + j * image_length_x + i;
 };
 
 // see DILATION_FACTOR definition or accumulate_prune() implementation
 template <typename T, typename T2>
-void create_coverage_mask_accurate(std::vector<MyMarker*>& markers, T* mask,
-    T2 sz0, T2 sz1, T2 sz2) {
+void create_coverage_mask_accurate(std::vector<MyMarker *> &markers, T *mask,
+                                   T2 sz0, T2 sz1, T2 sz2) {
   assertm(sz0 == sz1, "must matching sizes for now");
   assertm(sz1 == sz2, "must matching sizes for now");
-  auto sz01 = static_cast<VID_t>( sz0 * sz1);
+  auto sz01 = static_cast<VID_t>(sz0 * sz1);
   auto tol_sz = sz01 * sz2;
   VID_t count_selected_pixels = 0;
-  for (VID_t index=0; index < tol_sz; ++index) {
+  for (VID_t index = 0; index < tol_sz; ++index) {
     mask[index] = 0;
     // check all marker to see if their radius covers it
-    for (const auto& marker : markers) {
+    for (const auto &marker : markers) {
       assertm(marker->radius > 0, "Markers must have a radius > 0");
-      if (is_covered_by_parent(index, marker->vid(sz0, sz1), marker->radius - (DILATION_FACTOR - 1), sz0)) {
+      if (is_covered_by_parent(index, marker->vid(sz0, sz1),
+                               marker->radius - (DILATION_FACTOR - 1), sz0)) {
         mask[index] = 1;
         count_selected_pixels++;
         break;
@@ -946,10 +953,10 @@ void create_coverage_mask_accurate(std::vector<MyMarker*>& markers, T* mask,
 }
 
 template <typename T, typename T2>
-void create_coverage_mask(std::vector<MyMarker*>& markers, T* mask,
-    T2 sz0, T2 sz1, T2 sz2) {
-  auto sz01 = static_cast<VID_t>( sz0 * sz1);
-  for (const auto& marker : markers) {
+void create_coverage_mask(std::vector<MyMarker *> &markers, T *mask, T2 sz0,
+                          T2 sz1, T2 sz2) {
+  auto sz01 = static_cast<VID_t>(sz0 * sz1);
+  for (const auto &marker : markers) {
     int32_t r = marker->radius;
     assertm(marker->radius > 0, "Markers must have a radius > 0");
     r -= (DILATION_FACTOR - 1);
@@ -972,9 +979,10 @@ void create_coverage_mask(std::vector<MyMarker*>& markers, T* mask,
           if (dst > r)
             continue;
           int32_t ind = z2 * sz01 + y2 * sz0 + x2;
-          //if (mask[ind] > 0) {
-          //std::cout << "Warning: marker " << marker->description(sz0, sz1) <<
-          //" is over covering at pixel " << x2 << " " << y2 << " " << z2 << '\n';
+          // if (mask[ind] > 0) {
+          // std::cout << "Warning: marker " << marker->description(sz0, sz1) <<
+          //" is over covering at pixel " << x2 << " " << y2 << " " << z2 <<
+          //'\n';
           //}
           mask[ind]++;
         }
@@ -985,19 +993,19 @@ void create_coverage_mask(std::vector<MyMarker*>& markers, T* mask,
 
 template <typename T, typename T2, typename T3>
 auto check_coverage(const T mask, const T2 inimg1d, const VID_t tol_sz,
-    T3 bkg_thresh) {
+                    T3 bkg_thresh) {
   VID_t match_count = 0;
   VID_t over_coverage = 0;
   std::vector<VID_t> false_negatives;
   std::vector<VID_t> false_positives;
 
-  for (VID_t i=0; i < tol_sz; i++) {
+  for (VID_t i = 0; i < tol_sz; i++) {
     auto check = mask[i];
     // ground represents the original pixel value wheras
     // check merely indicates how many times a pixel was
     // covered in a pruning pass
     auto ground = inimg1d[i];
-    //assertm(ground < 2, "this function only works on binarized images");
+    // assertm(ground < 2, "this function only works on binarized images");
 
     if (ground > bkg_thresh) {
       if (check) {
@@ -1020,6 +1028,5 @@ auto check_coverage(const T mask, const T2 inimg1d, const VID_t tol_sz,
   }
 
   return new CompareResults<std::vector<VID_t>>(
-      false_negatives, false_positives, over_coverage,
-      match_count);
+      false_negatives, false_positives, over_coverage, match_count);
 }

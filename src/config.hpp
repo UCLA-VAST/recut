@@ -11,7 +11,7 @@ typedef uint64_t VID_t; // for multi-interval runs
 // pre-generated array of vertices initialized wth desired default values,
 // useful for mmap
 // must match the VID_t bit length type
-// on remote servers with mounted filesystems it is 
+// on remote servers with mounted filesystems it is
 // recommended to place the interval in /tmp/ to avoid mmap issues
 //#define INTERVAL_BASE "/tmp/interval_base_32.bin";
 //#define INTERVAL_BASE "../data/interval_base_64bit.bin"
@@ -20,18 +20,16 @@ typedef uint64_t VID_t; // for multi-interval runs
 // block_size 4 including padding (ghost cells) WARNING: if you change this
 // number you need to rerun CreateIntervalBase function in recut_tests.cpp to
 // save an interval at least that size at /tmp/
-// MAX_INTERVAL_VERTICES needs to be larger than just the processing region to account
-// for ghost regions
-// see utils.hpp:get_used_vertex_size()
-// or recut_test.cpp:PrintDefaultInfo()
-// Vertices needed for a 1024^3 interval block size 4 : 3623878656
-// Vertices needed for a 2048^3 interval block size 4 : 28991029248
-// Vertices needed for a 8^3 interval block size 2 : 4096
+// MAX_INTERVAL_VERTICES needs to be larger than just the processing region to
+// account for ghost regions see utils.hpp:get_used_vertex_size() or
+// recut_test.cpp:PrintDefaultInfo() Vertices needed for a 1024^3 interval block
+// size 4 : 3623878656 Vertices needed for a 2048^3 interval block size 4 :
+// 28991029248 Vertices needed for a 8^3 interval block size 2 : 4096
 #ifdef TEST_ALL_BENCHMARKS
- //const VID_t MAX_INTERVAL_VERTICES =  3623878656; 
-  const VID_t MAX_INTERVAL_VERTICES = 4096;
+                        // const VID_t MAX_INTERVAL_VERTICES =  3623878656;
+const VID_t MAX_INTERVAL_VERTICES = 4096;
 #else
-  const VID_t MAX_INTERVAL_VERTICES = 4096;
+const VID_t MAX_INTERVAL_VERTICES = 4096;
 #endif
 
 // equivalent max allows up to interval actual size of 256, 256, 256 with
@@ -62,7 +60,7 @@ typedef uint64_t VID_t; // for multi-interval runs
 // radii, it means the effective coverage may be lower
 // keep in mind this is merely a heuristic statistic to judge pruning methods
 // you should refer to the actual pruning method semantics
-// when checking 1 hop away (adjacent) from current, 
+// when checking 1 hop away (adjacent) from current,
 // all radii greater than 1 imply some redundancy in coverage
 // but this may be desired with DILATION_FACTORS higher than 1
 #define DILATION_FACTOR 1

@@ -1166,14 +1166,26 @@ TEST(CheckGlobals, LocalFifo) {
 
   bool found;
   for (auto vid : l) {
-    recut.get_or_set_active_vertex(0, 0, vid, found);
+    auto vertex = recut.get_or_set_active_vertex(0, 0, vid, found);
     ASSERT_FALSE(found);
+    ASSERT_FALSE(vertex->selected());
+    vertex->mark_selected();
+    ASSERT_TRUE(vertex->valid_vid()) << "vid: " << vertex->vid;
+    ASSERT_TRUE(vertex->selected());
   }
 
   for (auto vid : l) {
-    recut.get_or_set_active_vertex(0, 0, vid, found);
-    ASSERT_FALSE(found);
+    auto vertex = recut.get_or_set_active_vertex(0, 0, vid, found);
+    ASSERT_TRUE(found);
+    ASSERT_TRUE(vertex->selected());
+
+    // remove from this intervals heap
+    auto msg_vertex = &(recut.local_fifo[0][0].front());
+    recut.local_fifo[0][0].pop(); // remove it
+
+    ASSERT_EQ(msg_vertex->vid, vid);
   }
+  ASSERT_TRUE(recut.local_fifo[0][0].empty());
 }
 
 TEST(Radius, Full) {

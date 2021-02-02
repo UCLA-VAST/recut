@@ -79,6 +79,12 @@ struct VertexAttr {
         radius(numeric_limits<uint8_t>::max()) ,
         parent(numeric_limits<VID_t>::max()) {}
 
+  VertexAttr(VID_t vid)
+      : edge_state(192), value(numeric_limits<float>::max()), vid(vid),
+        handle(numeric_limits<handle_t>::max()),
+        radius(numeric_limits<uint8_t>::max()),
+        parent(numeric_limits<VID_t>::max()) {}
+
   VertexAttr(float value)
       : edge_state(192), value(value), vid(numeric_limits<VID_t>::max()),
         handle(numeric_limits<handle_t>::max()),

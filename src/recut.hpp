@@ -153,8 +153,8 @@ public:
 #ifdef DENSE
   Grid grid;
   inline void release() { grid.Release(); }
-  inline VertexAttr *get_vertex_vid(VID_t interval_id, VID_t block_id, VID_t vid,
-                                  VID_t *output_offset);
+  inline VertexAttr *get_vertex_vid(VID_t interval_id, VID_t block_id,
+                                    VID_t vid, VID_t *output_offset);
   template <typename vertex_t>
   void brute_force_extract(vector<vertex_t> &outtree, bool accept_band = false,
                            bool release_intervals = true);
@@ -228,16 +228,14 @@ public:
   template <class Container>
   void accumulate_radius(VID_t interval_id, VID_t dst_id, VID_t block_id,
                          struct VertexAttr *current, VID_t &revisits,
-                         int stride,
-                         int pad_stride, Container &fifo);
+                         int stride, int pad_stride, Container &fifo);
   template <class Container>
   void update_neighbors(const image_t *tile, VID_t interval_id, VID_t block_id,
                         struct VertexAttr *current, VID_t &revisits,
                         std::string stage,
                         const TileThresholds<image_t> *tile_thresholds,
                         bool &found_adjacent_invalid,
-                        VertexAttr &found_higher_parent,
-                        Container &fifo,
+                        VertexAttr &found_higher_parent, Container &fifo,
                         bool &covered, bool current_outside_domain = false,
                         bool enqueue_dsts = false);
   template <class Container>
@@ -246,8 +244,9 @@ public:
   void adjust_vertex_parent(VertexAttr *vertex);
   template <class Container>
   bool integrate_vertex(const VID_t interval_id, const VID_t block_id,
-                        struct VertexAttr *updated_vertex, bool ignore_KNOWN_NEW,
-                        std::string stage, Container &fifo);
+                        struct VertexAttr *updated_vertex,
+                        bool ignore_KNOWN_NEW, std::string stage,
+                        Container &fifo);
   template <class Container>
   void march_narrow_band(const image_t *tile, VID_t interval_id, VID_t block_id,
                          std::string stage,
@@ -818,7 +817,7 @@ bool Recut<image_t>::is_covered_by_parent(VID_t interval_id, VID_t block_id,
 
 #ifdef DENSE
   auto parent = get_vertex_vid(parent_interval_id, parent_block_id,
-                             current->parent, nullptr);
+                               current->parent, nullptr);
 #else
   auto parent =
       get_active_vertex(parent_interval_id, parent_block_id, current->parent);
@@ -957,10 +956,11 @@ void Recut<image_t>::accumulate_prune(
  */
 template <class image_t>
 template <class Container>
-void Recut<image_t>::accumulate_radius(
-    VID_t interval_id, VID_t dst_id, VID_t block_id, struct VertexAttr *current,
-    VID_t &revisits, int stride,
-    int pad_stride, Container &fifo) {
+void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t dst_id,
+                                       VID_t block_id,
+                                       struct VertexAttr *current,
+                                       VID_t &revisits, int stride,
+                                       int pad_stride, Container &fifo) {
 
   // note the current vertex can belong in the boundary
   // region of a separate block /interval and is only
@@ -1471,8 +1471,8 @@ void Recut<image_t>::update_neighbors(
     struct VertexAttr *current, VID_t &revisits, std::string stage,
     const TileThresholds<image_t> *tile_thresholds,
     bool &found_adjacent_invalid, VertexAttr &found_higher_parent,
-    Container &fifo, bool &covered,
-    bool current_outside_domain, bool enqueue_dsts) {
+    Container &fifo, bool &covered, bool current_outside_domain,
+    bool enqueue_dsts) {
 
   VID_t i, j, k;
   i = j = k = 0;
@@ -1608,10 +1608,11 @@ bool Recut<image_t>::integrate_vertex(const VID_t interval_id,
   bool found;
 #ifdef DENSE
   found = true;
-  auto dst = get_vertex_vid(interval_id, block_id, updated_vertex->vid, nullptr);
-#else
   auto dst =
-      get_or_set_active_vertex(interval_id, block_id, updated_vertex->vid, found);
+      get_vertex_vid(interval_id, block_id, updated_vertex->vid, nullptr);
+#else
+  auto dst = get_or_set_active_vertex(interval_id, block_id,
+                                      updated_vertex->vid, found);
 #endif
 
   if (stage == "connected") {
@@ -1936,7 +1937,6 @@ void Recut<image_t>::connected_tile(
     visited += 1;
 #endif
 
-    // remove from this intervals heap
     auto msg_vertex = &(local_fifo[interval_id][block_id].front());
     local_fifo[interval_id][block_id].pop(); // remove it
 
@@ -1955,7 +1955,8 @@ void Recut<image_t>::connected_tile(
     if (in_domain) {
       current = get_active_vertex(interval_id, block_id, msg_vertex->vid);
       assertm(current != nullptr, "connected can't be passed a null");
-      assertm(current->selected() || current->root(), "active vertices must also be selected");
+      assertm(current->selected() || current->root(),
+              "active vertices must also be selected");
     } else {
       current = new VertexAttr(msg_vertex->vid);
       current->mark_selected();
@@ -1968,8 +1969,8 @@ void Recut<image_t>::connected_tile(
     auto found_adjacent_invalid = false;
     auto covered = false;
     update_neighbors(tile, interval_id, block_id, current, revisits, stage,
-                     tile_thresholds, found_adjacent_invalid, *current, 
-                     fifo, covered);
+                     tile_thresholds, found_adjacent_invalid, *current, fifo,
+                     covered);
 
     // surface related logic
     if (found_adjacent_invalid) {
@@ -2066,8 +2067,8 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
     auto found_adjacent_invalid = false;
     auto covered = false;
     update_neighbors(tile, interval_id, block_id, current, revisits, stage,
-                     tile_thresholds, found_adjacent_invalid, *current, 
-                     fifo, covered);
+                     tile_thresholds, found_adjacent_invalid, *current, fifo,
+                     covered);
     const auto check_block_id = get_block_id(current->vid);
     const auto check_interval_id = get_interval_id(current->vid);
     const bool in_domain =
@@ -2215,8 +2216,7 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
     } else {
       // check if covered
       update_neighbors(nullptr, interval_id, block_id, current, revisits,
-                       "prune", nullptr, _, found_higher_parent,
-                       fifo, covered,
+                       "prune", nullptr, _, found_higher_parent, fifo, covered,
                        current_outside_domain, enqueue_dsts);
     }
 
@@ -2224,8 +2224,8 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
     // if current is covered second pass here sets all dst->parent to
     // current->parent
     update_neighbors(nullptr, interval_id, block_id, current, revisits, "prune",
-                     nullptr, _, found_higher_parent, 
-                     fifo, covered, current_outside_domain, enqueue_dsts);
+                     nullptr, _, found_higher_parent, fifo, covered,
+                     current_outside_domain, enqueue_dsts);
 
     if (covered) {
       // roots can never be added back in by accumulate_prune
@@ -2332,17 +2332,16 @@ void Recut<image_t>::prune_tile_assign_parent(
     } else {
       // check if covered
       update_neighbors(nullptr, interval_id, block_id, current, revisits,
-                       "prune", nullptr, false, found_higher_parent,
-                       fifo, covered,
-                       current_outside_domain, enqueue_dsts);
+                       "prune", nullptr, false, found_higher_parent, fifo,
+                       covered, current_outside_domain, enqueue_dsts);
     }
 
     enqueue_dsts = true;
     // if current is covered second pass here sets all dst->parent to
     // current->parent
     update_neighbors(nullptr, interval_id, block_id, current, revisits, "prune",
-                     nullptr, false, found_higher_parent, 
-                     fifo, covered, current_outside_domain, enqueue_dsts);
+                     nullptr, false, found_higher_parent, fifo, covered,
+                     current_outside_domain, enqueue_dsts);
 
     if (covered) {
       // roots can never be added back in by accumulate_prune
@@ -2407,7 +2406,7 @@ void Recut<image_t>::march_narrow_band(
   VID_t visited = 0;
   clock_gettime(CLOCK_REALTIME, &time0);
   cout << "Start marching interval: " << interval_id << " block: " << block_id
-         << '\n';
+       << '\n';
 #endif
 
   VID_t revisits = 0;
@@ -2883,7 +2882,7 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
 // returns the execution time for updating the entire
 // stage excluding I/O
 // note that tile_thresholds has a default value
-// of nullptr, see update declaration 
+// of nullptr, see update declaration
 template <class image_t>
 template <class Container>
 std::unique_ptr<InstrumentedUpdateStatistics>
@@ -3495,7 +3494,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
 template <class image_t>
 inline VertexAttr *
 Recut<image_t>::get_vertex_vid(const VID_t interval_id, const VID_t block_id,
-                             const VID_t img_vid, VID_t *output_offset) {
+                               const VID_t img_vid, VID_t *output_offset) {
   VID_t i, j, k, img_block_i, img_block_j, img_block_k;
   VID_t pad_img_block_i, pad_img_block_j, pad_img_block_k;
   i = j = k = 0;
