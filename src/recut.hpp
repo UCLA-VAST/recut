@@ -1048,12 +1048,6 @@ bool Recut<image_t>::accumulate_connected(
   bool found;
   // all dsts are guaranteed within this domain
   auto dst = get_or_set_active_vertex(interval_id, block_id, dst_id, found);
-  if (found) {
-    revisits += 1;
-#ifdef NO_RV
-    return false;
-#endif
-  }
 #endif
 
   auto dst_vox = get_img_val(tile, dst_id);
@@ -1072,6 +1066,12 @@ bool Recut<image_t>::accumulate_connected(
     cout << "\t\tfailed tile_thresholds->bkg_thresh" << '\n';
 #endif
     found_background = true;
+    return false;
+  }
+
+  // skip already selected vertices too
+  if (found) {
+    revisits += 1;
     return false;
   }
 
@@ -1231,7 +1231,7 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
       processing_blocks[nb_interval_id][nb_block_id].compare_exchange_strong(
           false, true)) {
 #else
-  if (true) {
+  {
 #endif
     // will check if below band in march narrow
     // use processing blocks to make sure no other neighbor of nb_block_id is
@@ -1958,8 +1958,8 @@ void Recut<image_t>::connected_tile(
       assertm(current->selected() || current->root(),
               "active vertices must also be selected");
     } else {
-      current = new VertexAttr(msg_vertex->vid);
-      current->mark_selected();
+      current = msg_vertex;
+      assertm(current->selected(), "must be selected");
     }
 #endif
 
@@ -1972,8 +1972,9 @@ void Recut<image_t>::connected_tile(
                      tile_thresholds, found_adjacent_invalid, *current, fifo,
                      covered);
 
-    // surface related logic
-    if (found_adjacent_invalid) {
+    // ignore if already designated as surface
+    // also prevents adding to fifo twice
+    if (found_adjacent_invalid && !(current->surface())) {
 #ifdef FULL_PRINT
       std::cout << "found surface vertex " << interval_id << " " << block_id
                 << " " << current->vid << " label " << current->label() << '\n';
@@ -1987,9 +1988,15 @@ void Recut<image_t>::connected_tile(
         // each fifo corresponds to a specific interval_id and block_id
         // so there are no race conditions
         fifo.push_back(current->vid);
+#ifdef DENSE
+        // ghost regions in the DENSE case have shared copies of ghost regions
+        // so they would need to know about any changes to vertex state
+        // otherwise surface status change is irrelevant to outside domains
+        // at this stage
         // goes into updated_ghost_vec of neighbors if its on the edge with them
         // these then get added into neighbor local_fifo
         check_ghost_update(interval_id, block_id, current, stage);
+#endif
       } else {
         // leverage updated_ghost_vec to avoid race conditions
         // check_ghost_update never applies to vertices outside

@@ -1155,6 +1155,34 @@ TEST(CoveredByParent, Full) {
   }
 }
 
+TEST(CheckGlobals, ActiveVertices) {
+  // minimal setup of globals
+  int max_size = 8;
+  auto args = get_args(max_size, max_size, max_size, 100, 0, true);
+  auto recut = Recut<uint16_t>(args);
+  auto root_vids = recut.initialize();
+  std::list<VID_t> l(10);
+  std::iota(l.begin(), l.end(), 0);
+
+  bool found;
+  for (VID_t vid : l) {
+    auto vertex = recut.get_or_set_active_vertex(0, 0, vid, found);
+    ASSERT_FALSE(found);
+    ASSERT_FALSE(vertex->selected());
+    vertex->mark_selected();
+    ASSERT_TRUE(vertex->valid_vid()) << "vid: " << vertex->vid;
+    ASSERT_TRUE(vertex->selected());
+    ASSERT_EQ(vertex->vid, vid);
+  }
+
+  for (auto vid : l) {
+    cout << "check vid: " << vid << '\n';
+    auto vertex = recut.get_or_set_active_vertex(0, 0, vid, found);
+    ASSERT_TRUE(found);
+    ASSERT_TRUE(vertex->selected());
+  }
+}
+
 TEST(CheckGlobals, LocalFifo) {
   // minimal setup of globals
   int max_size = 8;
@@ -1165,16 +1193,20 @@ TEST(CheckGlobals, LocalFifo) {
   std::iota(l.begin(), l.end(), 0);
 
   bool found;
-  for (auto vid : l) {
+  for (VID_t vid : l) {
     auto vertex = recut.get_or_set_active_vertex(0, 0, vid, found);
+    recut.local_fifo[0][0].push(*vertex);
     ASSERT_FALSE(found);
     ASSERT_FALSE(vertex->selected());
     vertex->mark_selected();
     ASSERT_TRUE(vertex->valid_vid()) << "vid: " << vertex->vid;
     ASSERT_TRUE(vertex->selected());
+    ASSERT_EQ(vertex->vid, vid);
   }
 
   for (auto vid : l) {
+    cout << "check vid: " << vid << '\n';
+    cout << "fifo size: " << recut.local_fifo[0][0].size() << '\n';
     auto vertex = recut.get_or_set_active_vertex(0, 0, vid, found);
     ASSERT_TRUE(found);
     ASSERT_TRUE(vertex->selected());
@@ -1184,6 +1216,7 @@ TEST(CheckGlobals, LocalFifo) {
     recut.local_fifo[0][0].pop(); // remove it
 
     ASSERT_EQ(msg_vertex->vid, vid);
+    ASSERT_EQ(msg_vertex->vid, vertex->vid);
   }
   ASSERT_TRUE(recut.local_fifo[0][0].empty());
 }
