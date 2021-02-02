@@ -50,19 +50,17 @@ struct InstrumentedUpdateStatistics {
         computation_time(computation_time), io_time(io_time),
         interval_open_counts(interval_open_counts) {
 
-    if (heap_vec) {
-      for (int i = 0; i < grid_interval_size; i++) {
-        for (int j = 0; j < interval_block_size; j++) {
-          auto heap = heap_vec[i][j];
-          max_sizes.push_back(heap.max_size);
-          if (heap.cumulative_count == 0 || heap.op_count == 0) {
-            mean_sizes.push_back(0);
-          } else {
-            mean_sizes.push_back(heap.cumulative_count / heap.op_count);
-          }
-        }
-      }
-    }
+      //for (int i = 0; i < grid_interval_size; i++) {
+        //for (int j = 0; j < interval_block_size; j++) {
+          //auto heap = heap_vec[i][j];
+          //max_sizes.push_back(heap.max_size);
+          //if (heap.cumulative_count == 0 || heap.op_count == 0) {
+            //mean_sizes.push_back(0);
+          //} else {
+            //mean_sizes.push_back(heap.cumulative_count / heap.op_count);
+          //}
+        //}
+      //}
   }
 };
 
@@ -294,10 +292,10 @@ public:
   process_interval(VID_t interval_id, const image_t *tile, std::string stage,
                    const TileThresholds<image_t> *tile_thresholds,
                    Container &fifo);
-  template <class Container, class Container2>
+  template <class Container>
   std::unique_ptr<InstrumentedUpdateStatistics>
   update(std::string stage, Container &fifo = nullptr,
-         TileThresholds<image_t> *tile_thresholds = nullptr, Container2 root_heap=nullptr);
+         TileThresholds<image_t> *tile_thresholds = nullptr);
   const std::vector<VID_t> initialize();
   template <typename vertex_t>
   void convert_to_markers(vector<vertex_t> &outtree, bool accept_band = false);
@@ -1640,9 +1638,8 @@ void Recut<image_t>::update_neighbors(
                            found_higher_parent, covered, enqueue_dsts,
                            dst_outside_domain, fifo);
         } else if (stage == "value") {
-          accumulate_value(interval_id, dst_id, block_id, current,
-                           found_higher_parent, covered, enqueue_dsts,
-                           dst_outside_domain, fifo);
+          accumulate_value(tile, interval_id, dst_id, block_id, current,
+                           revisits, tile_thresholds, found_adjacent_invalid);
         }
       }
     }
@@ -2944,10 +2941,10 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
 // of nullptr, see the declaration of update in the
 // class body, this required for the template type to work
 template <class image_t>
-template <class Container, class Container2>
+template <class Container>
 std::unique_ptr<InstrumentedUpdateStatistics>
 Recut<image_t>::update(std::string stage, Container &fifo,
-                       TileThresholds<image_t> *tile_thresholds, Container2 root_heap) {
+                       TileThresholds<image_t> *tile_thresholds) {
 
   // init all timers
   struct timespec update_start_time, update_finish_time;
@@ -3110,7 +3107,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   return std::make_unique<InstrumentedUpdateStatistics>(
       outer_iteration_idx, total_update_time, computation_time, io_time,
       interval_open_count, grid_interval_size, interval_block_size,
-      root_heap);
+      this->heap_vec);
 } // end update()
 
 /* get the vid with respect to the entire image passed to the
