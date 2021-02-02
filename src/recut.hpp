@@ -3231,20 +3231,20 @@ template <class image_t>
 void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
                                         const VID_t &interval_block_size) {
 
-  this->heap_vec.reserve(grid_interval_size);
-  for (int i = 0; i < grid_interval_size; i++) {
-    vector<local_heap> inner_vec;
-    this->heap_vec.reserve(interval_block_size);
-    for (int j = 0; j < interval_block_size; j++) {
-      local_heap test;
-      inner_vec.push_back(test);
-    }
-    this->heap_vec.push_back(inner_vec);
-  }
+  //this->heap_vec.reserve(grid_interval_size);
+  //for (int i = 0; i < grid_interval_size; i++) {
+    //vector<local_heap> inner_vec;
+    //this->heap_vec.reserve(interval_block_size);
+    //for (int j = 0; j < interval_block_size; j++) {
+      //local_heap test;
+      //inner_vec.push_back(test);
+    //}
+    //this->heap_vec.push_back(inner_vec);
+  //}
 
-#ifdef LOG_FULL
-  cout << "Created global heap_vec" << '\n';
-#endif
+//#ifdef LOG_FULL
+  //cout << "Created global heap_vec" << '\n';
+//#endif
 
   // active boolean for in interval domain in block_id ghost region, in
   // domain of block
