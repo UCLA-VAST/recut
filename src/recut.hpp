@@ -975,11 +975,10 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t dst_id,
   auto dst = get_vertex_vid(interval_id, block_id, dst_id, nullptr);
 #else
   auto dst = get_active_vertex(interval_id, block_id, dst_id);
-#endif
-
   if (dst == nullptr) {
     return;
   }
+#endif
 
   uint8_t updated_radius = 1 + current->radius;
   cout << "current radius " << +(current->radius) << '\n';
@@ -1041,15 +1040,6 @@ bool Recut<image_t>::accumulate_connected(
     struct VertexAttr *current, VID_t &revisits,
     const TileThresholds<image_t> *tile_thresholds, bool &found_background) {
 
-  // dsts are always within this domain
-#ifdef DENSE
-  auto dst = get_vertex_vid(interval_id, block_id, dst_id, nullptr);
-#else
-  bool found;
-  // all dsts are guaranteed within this domain
-  auto dst = get_or_set_active_vertex(interval_id, block_id, dst_id, found);
-#endif
-
   auto dst_vox = get_img_val(tile, dst_id);
 
 #ifdef FULL_PRINT
@@ -1069,14 +1059,21 @@ bool Recut<image_t>::accumulate_connected(
     return false;
   }
 
+  // all dsts are guaranteed within this domain
+#ifdef DENSE
+  auto dst = get_vertex_vid(interval_id, block_id, dst_id, nullptr);
+#else
+  bool found;
+  // new vertices automatically set as selected
+  auto dst = get_or_set_active_vertex(interval_id, block_id, dst_id, found);
+#endif
+
   // skip already selected vertices too
   if (found) {
     revisits += 1;
     return false;
   }
 
-  // new vertices automatically set as selected
-  dst->mark_selected();
   // ensure traces a path back to root in case no prune stage
   // parent will likely be mutated during prune stage
   dst->set_parent(current->vid);
@@ -1619,8 +1616,6 @@ bool Recut<image_t>::integrate_vertex(const VID_t interval_id,
     assertm(updated_vertex->selected() || updated_vertex->root(),
             "connected stage needs to mark new vertices as selected");
     if (found) {
-      assertm(dst->selected() || dst->root(),
-              "connected stage needs to mark new vertices as selected");
       // designating a vertex as surface is permanent
       // therefore ignore an updated if dst is already a surface
       if (!(dst->surface()) && updated_vertex->surface()) {
@@ -1959,7 +1954,7 @@ void Recut<image_t>::connected_tile(
               "active vertices must also be selected");
     } else {
       current = msg_vertex;
-      assertm(current->selected(), "must be selected");
+      assertm(current->selected() || current->root(), "must be selected");
     }
 #endif
 
@@ -3157,11 +3152,14 @@ Recut<image_t>::get_or_set_active_vertex(const VID_t interval_id,
   auto vertex = get_active_vertex(interval_id, block_id, img_vid);
   if (vertex) {
     found = true;
+    assertm(vertex->selected() || vertex->root(),
+            "all active vertices must be selected");
     return vertex;
   } else {
     found = false;
-    return &(
-        this->active_vertices[interval_id][block_id].emplace_back(img_vid));
+    auto v = &(this->active_vertices[interval_id][block_id].emplace_back(img_vid));
+    v->mark_selected();
+    return v;
   }
 }
 

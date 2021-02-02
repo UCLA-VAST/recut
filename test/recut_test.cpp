@@ -1227,16 +1227,27 @@ TEST(Radius, Full) {
 #ifdef LOG
   print_all = true;
 #endif
+  bool prune = false;
+  // for circular test cases app2's accuracy_radius is not correct
+  // in terms of hops to background, it counts 1 as being
+  // still near border regions like
+  // 1 0
+  // 1 1
+  // 1 0
+  // but it should be
+  // 1 0
+  // 2 1
+  // 1 0
+  auto expect_exact_radii_match_with_app2 = false;
+  // app2 has a 2D radii estimation which can also be compared
   bool check_xy = false;
-  bool prune = true;
-  auto expect_exact_radii_match = false;
 
   int max_size = 8;
   // std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
   // max_size / 2, max_size};
   std::vector<int> grid_sizes = {max_size};
-  std::vector<int> interval_sizes = {max_size};
-  std::vector<int> block_sizes = {max_size};
+  std::vector<int> interval_sizes = {max_size, max_size / 2, max_size / 4};
+  std::vector<int> block_sizes = {max_size, max_size / 2, max_size / 4};
   // tcase 5 is a sphere of radius grid_size / 4 centered
   // in the middle of an image
   // tcase 7 is a square radius grid_size / 4
@@ -1253,11 +1264,18 @@ TEST(Radius, Full) {
   for (auto &grid_size : grid_sizes) {
     VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
     auto radii_grid = std::make_unique<uint16_t[]>(tol_sz);
+    auto seq_radii_grid = std::make_unique<uint16_t[]>(tol_sz);
     if (check_xy) {
       radii_grid_xy = std::make_unique<uint16_t[]>(tol_sz);
     }
     for (auto &interval_size : interval_sizes) {
+      if (interval_size > grid_size)
+        continue;
       for (auto &block_size : block_sizes) {
+        if (block_size > interval_size)
+          continue;
+        auto sequential =
+            grid_size == interval_size == block_size ? true : false;
         for (auto &tcase : tcases) {
           auto interval_extents = {grid_size, grid_size, grid_size};
           auto args = get_args(grid_size, interval_size, block_size, slt_pct,
@@ -1349,17 +1367,7 @@ TEST(Radius, Full) {
 
           // make sure all surface vertices were identified correctly
           double xy_err, recut_err;
-          // for circular test cases app2's accuracy_radius is not correct
-          // in terms of hops to background, it counts 1 as being
-          // still near border regions like
-          // 1 0
-          // 1 1
-          // 1 0
-          // but it should be
-          // 1 0
-          // 2 1
-          // 1 0
-          if (expect_exact_radii_match) {
+          if (expect_exact_radii_match_with_app2) {
             EXPECT_NO_FATAL_FAILURE(
                 check_recut_error(recut, radii_grid.get(), grid_size, "surface",
                                   recut_err, recut.global_fifo));
@@ -1394,8 +1402,29 @@ TEST(Radius, Full) {
           // see above comment on app2's accuracy_radius
           // the error is still recorded and radii are made sure to be
           // valid in the right locations
-          if (expect_exact_radii_match) {
+          if (expect_exact_radii_match_with_app2) {
             EXPECT_NEAR(recut_err, 0., .001);
+          }
+
+          // check against sequential recut radii run
+          if (sequential) {
+            for (int vid = 0; vid < tol_sz; ++vid) {
+              // this is only done for the full domain case so interval and
+              // block are known
+              seq_radii_grid[vid] = recut.get_active_vertex(0, 0, vid) ? 1 : 0;
+            }
+          } else {
+            if (print_all) {
+              cout << "sequential radii \n";
+              print_image_3D(seq_radii_grid.get(),
+                             {grid_size, grid_size, grid_size});
+            }
+            // radii are made sure to be valid in the right locations
+            EXPECT_NO_FATAL_FAILURE(
+                check_recut_error(recut, seq_radii_grid.get(), grid_size,
+                                  "radius", recut_err, recut.global_fifo));
+            // exact match at every radii value
+            ASSERT_EQ(recut_err, 0.);
           }
 
           if (print_csv) {
@@ -1418,9 +1447,9 @@ TEST(Radius, Full) {
             std::cout << '\n';
           }
 
-          recut.convert_to_markers(args.output_tree, false);
-
           if (prune) {
+            recut.convert_to_markers(args.output_tree, false);
+
             std::vector<MyMarker *> sequential_output_tree;
             std::vector<MyMarker *> sequential_output_tree_prune;
             std::vector<MyMarker> targets;
@@ -1530,6 +1559,7 @@ TEST(Radius, Full) {
             // recut_output_tree_prune, grid_size, grid_size, recut);
 
             stage = "prune";
+
             RecordProperty("False positives " + stage,
                            results->false_positives.size());
             RecordProperty("False negatives " + stage,

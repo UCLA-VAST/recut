@@ -192,7 +192,7 @@ struct VertexAttr {
       return 'R';
     }
     if (this->selected()) {
-      return 'S';
+      return 'V';
     }
     if (this->unvisited()) {
       return '-';

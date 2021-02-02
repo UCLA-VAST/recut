@@ -4,8 +4,8 @@
 # jobs leveraging asynctasks.vim and asyncrun.vim
 
 [project-init]
-command= cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug -DDENSE=OFF -DFULL_PRINT=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DTEST_ALL_BENCHMARKS=on -DCMAKE_INSTALL_PREFIX=.. -DFETCHCONTENT_UPDATES_DISCONNECTED=ON
-# command=rm -rf build && cmake -B build -DRECUT_ENABLE_BENCHMARKING=ON -DUSE_OMP_BLOCK=ON 
+command= cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug -DFULL_PRINT=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DTEST_ALL_BENCHMARKS=on -DCMAKE_INSTALL_PREFIX=.. -DFETCHCONTENT_UPDATES_DISCONNECTED=ON
+# command=rm -rf build && cmake -B build -DRECUT_ENABLE_BENCHMARKING=ON 
 #-DUSE_MCP3D=ON 
 #-DTEST_ALL_BENCHMARKS=ON
 #-DLOG=ON -DLOG_FULL=ON -DFULL_PRINT=ON 
@@ -27,11 +27,14 @@ cwd=<root>
 
 # rebuild and run test
 [project-run]
-command=cd build && ninja install && cd ../bin && ./recut_test --gtest_output=json:../data/test_detail.json --gtest_filter=*.ChecksIfFinalVerticesCorrect/11
+command= cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug -DFULL_PRINT=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DTEST_ALL_BENCHMARKS=on -DCMAKE_INSTALL_PREFIX=.. -DFETCHCONTENT_UPDATES_DISCONNECTED=ON && cd bin && ./recut_test --gtest_output=json:../data/test_detail.json  --gtest_also_run_disabled_tests --gtest_filter=Radius.Full
+;command=cd build && ninja install && cd ../bin && ./recut_test --gtest_output=json:../data/test_detail.json --gtest_filter=*.ChecksIfFinalVerticesCorrect/11
+;command=cd misc_scripts && python performance_test.py
 cwd=<root>
 
 [project-gdb]
-command=cd build && gdb recut_test 
+command=sudo sysctl -w kernel.core_patter=core-%e.%p.%h.%t && cd build && ./recut_test && gdb -c core* 
+# (gdb) symbol-file [path to binary]
 output=terminal
 cwd=<root>
 
@@ -43,10 +46,6 @@ cwd=<root>
 command=sudo cpupower frequency-set -g performance && cd bin && perf record -g recut_bench && sudo cpupower frequency-set -g powersave
 #&& perf report -g 'graph,.9,caller'
 #command=sudo cpupower frequency-set -g performance && cd bin && perf stat -e L1-dcache-misses L1-dcache-loads LLC-load-misses LLC-loads faults instructions cycles recut_bench && sudo cpupower frequency-set -g powersave
-cwd=<root>
-
-[project-run]
-command=cd misc_scripts && python performance_test.py
 cwd=<root>
 
 [project-tags]
