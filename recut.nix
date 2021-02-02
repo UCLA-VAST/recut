@@ -20,7 +20,7 @@ stdenv.mkDerivation {
   TEST_IMAGE = "/curr/kdmarrett/data/tcase6_image";
   TEST_MARKER = "/curr/kdmarrett/data/tcase6_marker";
 
-  cmakeFlags = ["-DFROM_NIX_BUILD=ON -DLOG=ON -DFULL_PRINT=ON -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Debug -DUSE_MMAP=ON -DDENSE=OFF"];
+  cmakeFlags = ["-DLOG=ON -DFULL_PRINT=ON -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Debug -DUSE_MMAP=ON -DDENSE=OFF"];
 
   nativeBuildInputs = [ cmake ];
 

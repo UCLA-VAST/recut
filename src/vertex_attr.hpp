@@ -91,7 +91,9 @@ struct VertexAttr {
       : edge_state(a.edge_state), value(a.value), vid(a.vid), radius(a.radius), parent(a.parent) {
   }
 
-  // emplace back constructor
+  VertexAttr(uint8_t edge_state, float value, VID_t vid, VID_t parent)
+      : edge_state(edge_state), value(value), vid(vid), parent(parent) {}
+
   VertexAttr(struct bitfield edge_state, float value, VID_t vid, uint8_t radius, VID_t parent)
       : edge_state(edge_state), value(value), vid(vid), radius(radius), parent(parent) {}
 

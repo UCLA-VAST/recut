@@ -4,27 +4,35 @@
 # jobs leveraging asynctasks.vim and asyncrun.vim
 
 [project-init]
-command= rm -rf build && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug -DUSE_MMAP=ON -DFULL_PRINT=ON
-# command=rm -rf build && cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DRECUT_ENABLE_BENCHMARKING=ON -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc -DUSE_MMAP=ON -DUSE_OMP_BLOCK=ON 
+command= cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug -DDENSE=OFF -DFULL_PRINT=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DTEST_ALL_BENCHMARKS=on -DCMAKE_INSTALL_PREFIX=.. -DFETCHCONTENT_UPDATES_DISCONNECTED=ON
+# command=rm -rf build && cmake -B build -DRECUT_ENABLE_BENCHMARKING=ON -DUSE_OMP_BLOCK=ON 
 #-DUSE_MCP3D=ON 
 #-DTEST_ALL_BENCHMARKS=ON
 #-DLOG=ON -DLOG_FULL=ON -DFULL_PRINT=ON 
 #-DCMAKE_CXX_COMPILER=clang++ 
 cwd=<root>
 
-[project-build]
+[project-build:cmake]
+command=cd build && make -j 8 && make -j 8 install && make installcheck
+cwd=<root>
+
+[project-build:nix]
 command=nix-env -f . -i
-# command=cd build && make -j 56 && make install -j 56
 cwd=<root>
 
 [project-test]
-command=cd bin && ./recut_test --gtest_output=json:../data/test_detail.json  --gtest_also_run_disabled_tests
+command=cd build && ./recut_test --gtest_output=json:../data/test_detail.json  --gtest_also_run_disabled_tests
 #--gtest_filter=*.ChecksIfFinalVerticesCorrect/11 | tee ../data/test_detail.log
 cwd=<root>
 
 # rebuild and run test
 [project-run]
 command=cd build && ninja install && cd ../bin && ./recut_test --gtest_output=json:../data/test_detail.json --gtest_filter=*.ChecksIfFinalVerticesCorrect/11
+cwd=<root>
+
+[project-gdb]
+command=cd build && gdb recut_test 
+output=terminal
 cwd=<root>
 
 [project-bench]

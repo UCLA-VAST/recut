@@ -1,36 +1,31 @@
 enable_testing()
-# note we recommend at least 3.9 because of
-# cpp 17 features that don't work
-# on older version during linking
-# we strongly suggest upgrading to this version
-# or higher to build this code from source
-cmake_minimum_required(VERSION 3.8)
+# at least 3.9 for full cpp 17 features
+# 3.14 for FetchContent
+cmake_minimum_required(VERSION 3.14)
 
 project("Recut" VERSION 0.9.0
-             DESCRIPTION "A c++ library for parallel graph kernels"
-             HOMEPAGE_URL "https://github.com/UCLA-VAST/recut-pipeline")
+  DESCRIPTION "A c++ library for parallel graph kernels"
+  HOMEPAGE_URL "https://github.com/UCLA-VAST/recut-pipeline")
+
+# if not user defined, set to sane default for unix
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  set(CMAKE_INSTALL_PREFIX "/usr/local" CACHE PATH "..." FORCE)
+endif()
+
+if (DEFINED CMAKE_EXPORT_NO_PACKAGE_REGISTRY)
+  message(STATUS "CMAKE_EXPORT_NO_PACKAGE_REGISTRY : ${CMAKE_EXPORT_NO_PACKAGE_REGISTRY}")
+endif()
 
 # get platforms paths for general, non-nix installs
 include(GNUInstallDirs)
 
 if(NOT DEFINED CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release)
+  set(CMAKE_BUILD_TYPE Release)
 endif()
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
-if (NOT DEFINED CMAKE_INSTALL_BINDIR)
-  set(CMAKE_INSTALL_BINDIR ${PROJECT_SOURCE_DIR}/bin)
-endif()
-message(STATUS "CMAKE_INSTALL_BINDIR: ${CMAKE_INSTALL_BINDIR}")
-
-if (DEFINED FROM_NIX_BUILD)
-  set(CMAKE_INSTALL_DATADIR ${CMAKE_INSTALL_PREFIX}/data)
-else()
-  set(CMAKE_INSTALL_DATADIR ${PROJECT_SOURCE_DIR}/data)
-endif()
+set(CMAKE_INSTALL_DATADIR ${CMAKE_INSTALL_PREFIX}/data)
 message(STATUS "CMAKE_INSTALL_DATADIR: ${CMAKE_INSTALL_DATADIR}")
-
-set(INTERVAL_BASE "${CMAKE_INSTALL_DATADIR}/interval_base_64bit.bin")
 
 # works for cmake 3.9+
 # https://stackoverflow.com/questions/48825416/missing-openmp-c-flags-openmp-c-lib-names
@@ -66,27 +61,47 @@ set(RECUT_ENABLE_EXECUTABLE ON CACHE BOOL "Enable Recut building its command lin
 set(RECUT_ENABLE_TESTING ON CACHE BOOL "Enable Recut building its test targets")
 set(RECUT_ENABLE_BENCHMARKING OFF CACHE BOOL "Enable Recut building its benchmarks targets")
 
-# NIX-BUILD overrides some dependencies
-option( FROM_NIX_BUILD OFF)
-if (FROM_NIX_BUILD)
-  message(STATUS " FROM_NIX_BUILD ON")
-  # message(STATUS " NIX_CFLAGS_COMPILE: $ENV{NIX_CFLAGS_COMPILE}")
+# if doing a plain system install (not from nix or a package manager)
+if (NOT CMAKE_EXPORT_NO_PACKAGE_REGISTRY)
+  # nix-build handles gtest and gbenchmark libraries independently from submodules
+  # they are automatically added to the include path
+  option(FETCHCONTENT_UPDATES_DISCONNECTED "skips only update step" ON)
+  include(FetchContent)
+
+  FetchContent_Declare(
+        Range-v3
+        GIT_REPOSITORY "https://github.com/ericniebler/range-v3"
+        GIT_TAG master
+  )
+  FetchContent_MakeAvailable(Range-v3)
+
+  if (RECUT_ENABLE_TESTING)
+    set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
+
+    FetchContent_Declare(
+      googletest
+      GIT_REPOSITORY https://github.com/google/googletest.git
+      GIT_TAG        release-1.10.0
+      )
+    FetchContent_MakeAvailable(googletest)
+  endif()
+
+  if (RECUT_ENABLE_BENCHMARKING)
+    # build google benchmark (target: benchmark)
+    # do not build tests of benchmarking lib
+    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "Suppressing benchmark's tests" FORCE)
+    set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "Don't install benchmark" FORCE)
+
+    FetchContent_Declare(googlebenchmark
+        GIT_REPOSITORY https://github.com/google/benchmark.git
+        GIT_TAG master) # need master for benchmark::benchmark
+    FetchContent_MakeAvailable(googlebenchmark)
+  endif()
 endif()
 
-# nix-build handles gtest and gbenchmark libraries independently from submodules
-# they are automatically added to the include path
-if (RECUT_ENABLE_TESTING AND NOT FROM_NIX_BUILD)
-  # build tests (targets: gtest, gtest_main)
-  add_subdirectory(extern/googletest/googletest)
-endif()
-
-if (RECUT_ENABLE_BENCHMARKING AND NOT FROM_NIX_BUILD)
-  # build google benchmark (target: benchmark)
-  # do not build tests of benchmarking lib
-  set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "Suppressing benchmark's tests" FORCE)
-  set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "Don't install benchmark" FORCE)
-  add_subdirectory(extern/benchmark)
-endif()
+# other dependencies
+set(RANGE_V3_TESTS OFF CACHE BOOL "Don't test range-v3" FORCE)
+find_package(range-v3)
 
 #  this creates tests that match the benchmarks
 #  to check their validity, warning this invokes
@@ -121,7 +136,7 @@ option( DENSE "Assume dense access to grid of vertices" OFF)
 option( USE_MMAP "Determines read speed of vertex info from INTERVAL_BASE" OFF)
 option( USE_MCP3D "Use and link external library MCP3D into recut for image reading of TIF and HDF5 (.ims) file types" OFF)
 
-if (USE_MCP3D) 
+if (USE_MCP3D)
   message(STATUS "USE_MCP3D ON")
 endif()
 
@@ -176,8 +191,8 @@ include_directories(src)
 if (RECUT_ENABLE_TESTING )
   target_link_libraries(recut_test PRIVATE gtest)
 endif()
-if (RECUT_ENABLE_BENCHMARKING AND NOT FROM_NIX_BUILD)
-  target_link_libraries(recut_bench PRIVATE benchmark)
+if (RECUT_ENABLE_BENCHMARKING)
+  target_link_libraries(recut_bench PRIVATE benchmark::benchmark)
 endif()
 
 # determine which targets to build
@@ -223,11 +238,13 @@ foreach(I ${ALL_TARGETS})
   if (CONCURRENT_MAP)
     target_compile_definitions(${I} PRIVATE CONCURRENT_MAP)
   endif()
-  if (USE_MMAP)
-    target_compile_definitions(${I} PRIVATE USE_MMAP)
-  endif()
   if (DENSE)
     target_compile_definitions(${I} PRIVATE DENSE)
+    if (USE_MMAP)
+      target_compile_definitions(${I} PRIVATE USE_MMAP)
+      set(INTERVAL_BASE "${CMAKE_INSTALL_DATADIR}/interval_base_64bit.bin")
+      target_compile_definitions(${I} PRIVATE "INTERVAL_BASE=\"${INTERVAL_BASE}\"")
+    endif()
   endif()
   if (USE_MCP3D)
     target_compile_definitions(${I} PRIVATE USE_MCP3D)
@@ -244,7 +261,6 @@ foreach(I ${ALL_TARGETS})
   if (GIT_HASH)
     target_compile_definitions(${I} PRIVATE GIT_HASH)
   endif()
-  target_compile_definitions(${I} PRIVATE "INTERVAL_BASE=\"${INTERVAL_BASE}\"")
   target_compile_definitions(${I} PRIVATE "CMAKE_INSTALL_DATADIR=\"${CMAKE_INSTALL_DATADIR}\"")
 
   target_compile_features(${I} PRIVATE cxx_std_17)
@@ -252,10 +268,7 @@ foreach(I ${ALL_TARGETS})
   target_compile_options(${I} PRIVATE -fno-omit-frame-pointer -g)
   install(TARGETS ${I} DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-  # other dependencies
-  if (NOT FROM_NIX_BUILD) 
-    target_include_directories(${I} PRIVATE extern/range-v3/include)
-  endif()
+  target_link_libraries(${I} PRIVATE range-v3::range-v3)
 
   if (USE_OMP_INTERVAL OR USE_OMP_BLOCK)
     target_link_libraries(${I} PRIVATE OpenMP::OpenMP_CXX)

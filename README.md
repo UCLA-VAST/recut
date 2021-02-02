@@ -21,16 +21,15 @@ recut
 ## CMake Only Installation
 The following are the commands are required for a CMake and git based installation
 ```
-# don't forget --recursive flag for git submodules in ./extern/...
-git clone --recursive git@github.com:UCLA-VAST/recut-pipeline
+git clone git@github.com:UCLA-VAST/recut-pipeline
 cd recut-pipeline
 mkdir build
 cd build
 cmake ..
 make [-j 8]
-make install [-j 8]
+sudo make install [-j 8]
 # required to generate test and interval data
-make installcheck
+sudo make installcheck
 # Optionally, run all tests by running the test suite
 make test
 ```
@@ -42,8 +41,7 @@ If all test passed the installation is successful. If you have *any* errors in t
 This program relies on: 
 - Cmake (version 3.17 or newer)
   for proper gcc support of all necessary c++17 features
-- Optionally: google-test and google-benchmark library submodules (already included via `git
-  --recursive ...`, auto built/linked through cmake, see
+- Optionally: google-test and google-benchmark library submodules ( auto built/linked through cmake, see
   `recut/CMakeLists.txt` for details)
 - Optionally: `mcp3d` an image reading library for Tiff, Imaris/HDF5 file types see below 
 - Optionally: python3.8 matplotlib, gdb, clang-tools, linux-perf
@@ -59,10 +57,9 @@ cmake -B build -D USE_MCP3D=ON
 cmake -B build -D USE_MCP3D=ON -D TEST_ALL_BENCHMARKS=ON
 cd build
 make 
-make install
+sudo make install
 # install the test images like so:
-make installcheck
-cd ../bin
+sudo make installcheck
 # run all tests
 ./recut_test 
 ```
@@ -102,12 +99,11 @@ Once recut is installed you can see example usage by running:
 ```
 recut
 ```
-If you installed via CMake you can find the executables by:
+If you installed globally via CMake you can run the executables by:
 ```
-cd bin
-./recut
+recut
 # or for tests
-./recut_test 
+recut_test 
 ```
 
 If you have nix installed (recommended) you can also run the same CI tests with:

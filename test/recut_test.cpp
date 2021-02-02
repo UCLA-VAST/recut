@@ -109,6 +109,13 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
             ASSERT_TRUE(found) << "vid " << vid << " x" << xi << " y " << yi
                                << " z " << zi << " v->vid " << v->vid << '\n';
           }
+        } else if (stage == "connected") {
+          if (recut.generated_image[vid]) {
+            ASSERT_NE(v, nullptr);
+          }
+          if (v) {
+            ASSERT_EQ(recut.generated_image[vid], 1);
+          }
         }
       }
     }
@@ -142,9 +149,10 @@ template <typename T, typename T2> void check_parents(T markers, T2 grid_size) {
       // can't have more than 2 children
       if (current->parent->type != 0) {
         // this condition is relaxed
-        //EXPECT_LE(children_count[index], 2) << "at index " << index;
+        // EXPECT_LE(children_count[index], 2) << "at index " << index;
         if (children_count[index] > 2) {
-          cout << "Warning children count " << +(children_count[index]) << " at index " << index << '\n';
+          cout << "Warning children count " << +(children_count[index])
+               << " at index " << index << '\n';
         }
       }
       if (current->parent == 0) {
@@ -155,7 +163,8 @@ template <typename T, typename T2> void check_parents(T markers, T2 grid_size) {
       current = current->parent;
     }
     if (current->type != 0) {
-      cout << "Marker never found a path back to a root an uninitialized parent\n";
+      cout << "Marker never found a path back to a root an uninitialized "
+              "parent\n";
       cout << current->description(grid_size, grid_size) << '\n';
       ASSERT_TRUE(false);
     }
@@ -271,7 +280,7 @@ void test_get_attr_vid(bool mmap, int grid_size, int interval_size,
   recut.mmap_ = mmap;
 
   auto root_vids = recut.initialize();
-  recut.activate_vids(root_vids, "value", recut.global_fifo);
+  recut.activate_vids(root_vids, "connected", recut.global_fifo);
 
   ASSERT_EQ(recut.image_length_x, grid_size);
   ASSERT_EQ(recut.image_length_y, grid_size);
@@ -651,7 +660,8 @@ TEST(Install, DISABLED_ImageReadWrite) {
   if (selected == 0) {
     selected = 1;
   }
-  // cout << endl << "Select: " << selected << " (" << slt_pct << "%)" << endl;
+  // cout << endl << "Select: " << selected << " (" << slt_pct << "%)" <<
+  // endl;
   uint16_t *inimg1d = new uint16_t[tol_sz];
   create_image(tcase, inimg1d, grid_size, selected, get_central_vid(grid_size));
   write_tiff(inimg1d, fn, grid_size);
@@ -1213,11 +1223,12 @@ TEST(Radius, Full) {
                            {grid_size, grid_size, grid_size});
           }
 
-          recut.activate_vids(root_vids, "value", recut.global_fifo);
-          recut.update("value", recut.global_fifo);
+          auto stage = "connected";
+          recut.activate_vids(root_vids, stage, recut.global_fifo);
+          recut.update(stage, recut.global_fifo);
           if (print_all) {
-            std::cout << "Recut value\n";
-            recut.print_grid("value", recut.global_fifo);
+            std::cout << "Recut connected\n";
+            recut.print_grid(stage, recut.global_fifo);
             std::cout << "Recut surface\n";
             recut.print_grid("surface", recut.global_fifo);
             auto total = 0;
@@ -1380,9 +1391,10 @@ TEST(Radius, Full) {
             // map<VID_t, MyMarker *> tmp; // hash set
             // for (int interval_id = 0; interval_id < grid.GetNIntervals();
             //++interval_id) {
-            // for (int block_id = 0; block_id < grid.GetNBlocks(); ++block_id)
-            // { while (!(heap_vec[interval_id][block_id].empty())) { const auto
-            // attr = safe_pop<local_heap, VertexAttr *>(
+            // for (int block_id = 0; block_id < grid.GetNBlocks();
+            // ++block_id) { while
+            // (!(heap_vec[interval_id][block_id].empty())) { const auto attr
+            // = safe_pop<local_heap, VertexAttr *>(
             // heap_vec[interval_id][block_id], block_id, interval_id, stage);
             // VID_t i, j, k; // get original
             // i, j, k get_img_subscript(attr->vid, i, j, k);
@@ -1497,8 +1509,8 @@ TEST(Radius, Full) {
 
             check_parents(recut_output_tree_prune, grid_size);
 
-            //EXPECT_EQ(results->false_positives.size(), 0);
-            //EXPECT_EQ(results->false_negatives.size(), 0);
+            // EXPECT_EQ(results->false_positives.size(), 0);
+            // EXPECT_EQ(results->false_negatives.size(), 0);
           }
         }
       }
@@ -1553,7 +1565,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   auto recut = Recut<uint16_t>(args);
   std::vector<VID_t> root_vids;
   root_vids = recut.initialize();
-  recut.activate_vids(root_vids, "value", recut.global_fifo);
+  recut.activate_vids(root_vids, "connected", recut.global_fifo);
 
 #ifdef USE_MCP3D
   mcp3d::MImage image(args.image_root_dir());
@@ -1585,18 +1597,18 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   RecordProperty("max_int", tile_thresholds->max_int);
   RecordProperty("min_int", tile_thresholds->min_int);
 
-  // VALUE
+  // Connected
   // update with fixed tile_thresholds for the entire update
-  auto value_update_stats =
-      recut.update("value", recut.global_fifo, tile_thresholds);
+  auto connected_update_stats =
+      recut.update("connected", recut.global_fifo, tile_thresholds);
 
   if (print_all) {
-    std::cout << "Recut value\n";
+    std::cout << "Recut connected\n";
     recut.print_grid("label", recut.global_fifo);
   }
 
   {
-    auto interval_open_count = value_update_stats->interval_open_counts;
+    auto interval_open_count = connected_update_stats->interval_open_counts;
     // print vector
     std::ostringstream cat;
     std::copy(interval_open_count.begin(), interval_open_count.end(),
@@ -1606,7 +1618,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 #endif
 
     auto [mean, sum, std_dev] =
-        iter_stats(value_update_stats->interval_open_counts);
+        iter_stats(connected_update_stats->interval_open_counts);
     RecordProperty("Total tile reads", sum);
     RecordProperty("Tile reads mean", mean);
     RecordProperty("Tile reads std", std_dev);
@@ -1614,13 +1626,13 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   }
 
   {
-    auto [mean, sum, std_dev] = iter_stats(value_update_stats->mean_sizes);
+    auto [mean, sum, std_dev] = iter_stats(connected_update_stats->mean_sizes);
     RecordProperty("Mean queue size mean", mean);
     RecordProperty("Mean queue size std", std_dev);
   }
 
   {
-    auto [mean, sum, std_dev] = iter_stats(value_update_stats->max_sizes);
+    auto [mean, sum, std_dev] = iter_stats(connected_update_stats->max_sizes);
     RecordProperty("Max queue size mean", mean);
     RecordProperty("Max queue size std", std_dev);
   }
@@ -1637,7 +1649,8 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   // save the output_tree early before it is pruned to compare
   // to sequential
   bool accept_band = false;
-  recut.convert_to_markers(args.output_tree, accept_band); // this fills args.output_tree
+  recut.convert_to_markers(args.output_tree,
+                           accept_band); // this fills args.output_tree
 
   // PRUNE
   auto recut_output_tree_prune = std::vector<MyMarker *>();
@@ -1660,7 +1673,8 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     recut.print_grid("parent", recut.global_fifo);
 
     recut.adjust_parent(false);
-    recut.convert_to_markers(recut_output_tree_prune, accept_band); // this fills args.output_tree
+    recut.convert_to_markers(recut_output_tree_prune,
+                             accept_band); // this fills args.output_tree
   }
 
   double actual_slt_pct = (100. * args.output_tree.size()) / tol_sz;
@@ -1691,8 +1705,8 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     RecordProperty("Grid / interval ratio" + stage, grid_size / interval_size);
   };
 
-  // value update stats
-  record_update_stats(args, value_update_stats.get(), "");
+  // connected update stats
+  record_update_stats(args, connected_update_stats.get(), "");
   record_update_stats(args, radius_update_stats.get(), "radius");
 
   // pregenerated data has a known number of selected
@@ -1734,7 +1748,8 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     // warning record property will auto cast to an int
     RecordProperty("Sequential elapsed (ms)", 1000 * timer->elapsed());
     RecordProperty("Recut speedup factor %",
-                   100 * (value_update_stats->total_time / timer->elapsed()));
+                   100 *
+                       (connected_update_stats->total_time / timer->elapsed()));
 
     RecordProperty("Sequential tree size", sequential_output_tree.size());
     auto diff = absdiff(sequential_output_tree.size(), args.output_tree.size());
@@ -1746,7 +1761,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     auto results = compare_tree(sequential_output_tree, args.output_tree,
                                 grid_size, grid_size, recut);
 
-    stage = "value";
+    stage = "connected";
     RecordProperty("False positives " + stage, results->false_positives.size());
     RecordProperty("False negatives " + stage, results->false_negatives.size());
     RecordProperty("Match count " + stage, results->match_count);
@@ -1850,10 +1865,10 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
       check_parents(recut_output_tree_prune, grid_size);
 
-      //EXPECT_EQ(results->false_positives.size(), 0)
-          //<< "In comparison, seq is " << seq_results->false_positives.size();
-      //EXPECT_EQ(results->false_negatives.size(), 0)
-          //<< "In comparison, seq is " << seq_results->false_negatives.size();
+      // EXPECT_EQ(results->false_positives.size(), 0)
+      //<< "In comparison, seq is " << seq_results->false_positives.size();
+      // EXPECT_EQ(results->false_negatives.size(), 0)
+      //<< "In comparison, seq is " << seq_results->false_negatives.size();
     }
   }
 #endif
@@ -1869,18 +1884,19 @@ INSTANTIATE_TEST_CASE_P(
         std::make_tuple(4, 2, 2, 2, 100., true, false)  // 3
 #ifdef USE_MCP3D
         ,
-        // check_against_sequential (final boolean below) currently uses MCP3D's
-        // reading of image to ensure that both sequential and recut use the
-        // same iamge, to include these test while testing against sequential
-        // change the implementation so that the generated image from recut is
-        // saved and pass it to fastmarching_tree
+        // check_against_sequential (final boolean below) currently uses
+        // MCP3D's reading of image to ensure that both sequential and recut
+        // use the same iamge, to include these test while testing against
+        // sequential change the implementation so that the generated image
+        // from recut is saved and pass it to fastmarching_tree
         std::make_tuple(4, 4, 4, 4, 50., true, true), // 4
         // multi-interval small
         std::make_tuple(4, 2, 2, 4, 50., true, true), // 5
         // multi-block small
         std::make_tuple(4, 4, 2, 4, 50., true, true) // 6
 #ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for
-        // these must have TEST_IMAGE and TEST_MARKER environment variables set
+        // these must have TEST_IMAGE and TEST_MARKER environment variables
+        // set
         ,
         // make sure if bkg_thresh is 0, all vertices are selected for real
         std::make_tuple(4, 4, 4, 6, 100., false, true), // 7
