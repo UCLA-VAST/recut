@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config.hpp"
 #include <atomic>
 #include <numeric>
 #include "markers.h"

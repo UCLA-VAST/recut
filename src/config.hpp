@@ -5,6 +5,7 @@
 
 // uint32_t overflows at ~2e9 nodes, ~ 1024 * 1024 * 1024 * 2
 // typedef uint32_t VID_t; // overflows after ~2e9 ~= 2 1024^3 tiles
+#include <cstdint>
 typedef uint64_t VID_t; // for multi-interval runs
 
 // pre-generated array of vertices initialized wth desired default values,

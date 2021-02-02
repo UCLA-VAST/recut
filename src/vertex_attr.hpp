@@ -11,7 +11,6 @@ using std::ios;
 using std::numeric_limits;
 using std::vector;
 
-#include "config.hpp"
 #include "utils.hpp"
 
 struct bitfield {

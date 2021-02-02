@@ -29,7 +29,7 @@ stdenv.mkDerivation {
     gtest
     gbenchmark
     range-v3
-    openvdb
+    #openvdb
     mcp3d.defaultPackage.x86_64-linux
     # warning leaving breakpointHook on 
     # will cause github actions to hang, if there are any failures

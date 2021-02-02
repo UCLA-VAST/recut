@@ -1,5 +1,5 @@
-#include "recut.hpp"
 #include "app2_helpers.hpp"
+#include "recut.hpp"
 #include "gtest/gtest.h"
 #include <bits/stdc++.h>
 #include <cstdlib> //rand
@@ -1152,6 +1152,27 @@ TEST(CoveredByParent, Full) {
     current->parent = root_vid;
     // ASSERT_FALSE(recut.is_covered_by_parent(0,0,current)) << "for vid " <<
     // check;
+  }
+}
+
+TEST(CheckGlobals, LocalFifo) {
+  // minimal setup of globals
+  int max_size = 8;
+  auto args = get_args(max_size, max_size, max_size, 100, 0, true);
+  auto recut = Recut<uint16_t>(args);
+  auto root_vids = recut.initialize();
+  std::list<VID_t> l(10);
+  std::iota(l.begin(), l.end(), 0);
+
+  bool found;
+  for (auto vid : l) {
+    recut.get_or_set_active_vertex(0, 0, vid, found);
+    ASSERT_FALSE(found);
+  }
+
+  for (auto vid : l) {
+    recut.get_or_set_active_vertex(0, 0, vid, found);
+    ASSERT_FALSE(found);
   }
 }
 
