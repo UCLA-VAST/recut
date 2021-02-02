@@ -1978,7 +1978,10 @@ void Recut<image_t>::connected_tile(
 #ifdef DENSE
     current = get_attr_vid(interval_id, block_id, vid, nullptr);
 #else
-    current = get_or_set_active_vertex(interval_id, block_id, vid);
+    // TODO remove this line
+    //current = get_or_set_active_vertex(interval_id, block_id, vid);
+    current = get_active_vertex(interval_id, block_id, vid);
+    assertm(current != nullptr, "connected can't be passed a null");
 #endif
 
     // TODO mark as selected when adding to fifo
