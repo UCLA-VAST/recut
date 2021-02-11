@@ -1602,20 +1602,16 @@ bool Recut<image_t>::integrate_vertex(const VID_t interval_id,
                                       bool ignore_KNOWN_NEW, std::string stage,
                                       Container &fifo) {
   assertm(updated_vertex, "integrate_vertex got nullptr updated vertex");
-  bool found;
 #ifdef DENSE
-  found = true;
   auto dst =
       get_vertex_vid(interval_id, block_id, updated_vertex->vid, nullptr);
 #else
-  auto dst = get_or_set_active_vertex(interval_id, block_id,
-                                      updated_vertex->vid, found);
+  // TODO remove
+  auto dst = get_active_vertex(interval_id, block_id, updated_vertex->vid);
 #endif
 
   if (stage == "connected") {
-    assertm(updated_vertex->selected() || updated_vertex->root(),
-            "connected stage needs to mark new vertices as selected");
-    if (found) {
+    if (dst) {
       // designating a vertex as surface is permanent
       // therefore ignore an updated if dst is already a surface
       if (!(dst->surface()) && updated_vertex->surface()) {
@@ -1624,11 +1620,12 @@ bool Recut<image_t>::integrate_vertex(const VID_t interval_id,
         return true;
       }
     } else {
-      if (updated_vertex->surface()) {
-        dst->mark_surface();
-      }
-      dst->mark_selected();
-      local_fifo[interval_id][block_id].push(*dst);
+      // doesn't matter if it's a root or not, it's now just a msg
+      updated_vertex->mark_band();
+      // adds to iterable but not to active vertices
+      // since its from an outside region
+      // in this case dst is simply a msg
+      local_fifo[interval_id][block_id].push(*updated_vertex);
       return true;
     }
     return false;
@@ -1636,7 +1633,7 @@ bool Recut<image_t>::integrate_vertex(const VID_t interval_id,
 
   // handle simpler radii stage and exit
   if (stage == "radius") {
-    assertm(found, "active vertex must already exist");
+    assertm(dst, "active vertex must already exist");
     if (dst->radius > updated_vertex->radius) {
       if (dst->valid_vid()) { // "dst must have a valid vid"
         fifo.push_back(dst->vid);
@@ -1652,7 +1649,7 @@ bool Recut<image_t>::integrate_vertex(const VID_t interval_id,
 
   // handle simpler prune stage and exit
   if (stage == "prune") {
-    assertm(found, "active vertex must already exist");
+    assertm(dst, "active vertex must already exist");
     if (updated_vertex->root() || (*dst != *updated_vertex)) {
       // deep copy into the shared memory location in the separate block
       *dst = *updated_vertex;
@@ -1935,26 +1932,18 @@ void Recut<image_t>::connected_tile(
     auto msg_vertex = &(local_fifo[interval_id][block_id].front());
     local_fifo[interval_id][block_id].pop(); // remove it
 
-    // protect from message values added to the heap not inside
-    // this block or interval roots are also added to the heap in initialize
-    // to prevent having to load the full intervals into memory at that time
-    // this retrieves the actual ptr to the vid of the root message min
-    // values so that they can be properly initialized
+    // protect from message values not inside
+    // this block or interval such as roots from activate_vids
 #ifdef DENSE
     current = get_vertex_vid(interval_id, block_id, msg_vertex->vid, nullptr);
 #else
-    const auto check_block_id = get_block_id(current->vid);
-    const auto check_interval_id = get_interval_id(current->vid);
-    const bool in_domain =
-        (check_block_id == block_id) && (check_interval_id == interval_id);
+    const bool in_domain = msg_vertex->selected() || msg_vertex->root();
     if (in_domain) {
       current = get_active_vertex(interval_id, block_id, msg_vertex->vid);
       assertm(current != nullptr, "connected can't be passed a null");
-      assertm(current->selected() || current->root(),
-              "active vertices must also be selected");
     } else {
+      assertm(msg_vertex->band(), "if not selected it must be a band message");
       current = msg_vertex;
-      assertm(current->selected() || current->root(), "must be selected");
     }
 #endif
 
@@ -1973,8 +1962,8 @@ void Recut<image_t>::connected_tile(
 #ifdef FULL_PRINT
       std::cout << "found surface vertex " << interval_id << " " << block_id
                 << " " << current->vid << " label " << current->label() << '\n';
-      std::cout << "check_interval_id " << check_interval_id
-                << " check_block_id " << check_block_id << '\n';
+      // std::cout << "check_interval_id " << check_interval_id
+      //<< " check_block_id " << check_block_id << '\n';
 #endif
       current->mark_surface();
 
@@ -1983,6 +1972,7 @@ void Recut<image_t>::connected_tile(
         // each fifo corresponds to a specific interval_id and block_id
         // so there are no race conditions
         fifo.push_back(current->vid);
+        assertm(current->selected() || current->root(), "must be selected");
 #ifdef DENSE
         // ghost regions in the DENSE case have shared copies of ghost regions
         // so they would need to know about any changes to vertex state
@@ -1993,6 +1983,9 @@ void Recut<image_t>::connected_tile(
         check_ghost_update(interval_id, block_id, current, stage);
 #endif
       } else {
+        const auto check_block_id = get_block_id(current->vid);
+        const auto check_interval_id = get_interval_id(current->vid);
+
         // leverage updated_ghost_vec to avoid race conditions
         // check_ghost_update never applies to vertices outside
         // of this block and interval domain
@@ -2138,8 +2131,8 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
     assertm(current != nullptr,
             "get_active_vertex yielded nullptr radius_tile");
 
-    // radius can't be mutated in value, so this is the opportunity
-    // to set to any vertex that shares a border with background
+    // radius field can now be be mutated 
+    // set any vertex that shares a border with background
     // to the known radius of 1
     if (current->surface()) {
 #ifdef FULL_PRINT
@@ -3157,7 +3150,8 @@ Recut<image_t>::get_or_set_active_vertex(const VID_t interval_id,
     return vertex;
   } else {
     found = false;
-    auto v = &(this->active_vertices[interval_id][block_id].emplace_back(img_vid));
+    auto v =
+        &(this->active_vertices[interval_id][block_id].emplace_back(img_vid));
     v->mark_selected();
     return v;
   }

@@ -1275,7 +1275,7 @@ TEST(Radius, Full) {
         if (block_size > interval_size)
           continue;
         auto sequential =
-            grid_size == interval_size == block_size ? true : false;
+            (grid_size == interval_size) && (grid_size == block_size) ? true : false;
         for (auto &tcase : tcases) {
           auto interval_extents = {grid_size, grid_size, grid_size};
           auto args = get_args(grid_size, interval_size, block_size, slt_pct,
@@ -1293,8 +1293,9 @@ TEST(Radius, Full) {
           // use this to tag and reconstruct data from json file
           iteration_trace << "grid_size " << grid_size << " interval_size "
                           << final_interval_size << " block_size "
-                          << final_block_size;
+                          << final_block_size << '\n';
           SCOPED_TRACE(iteration_trace.str());
+          cout << "\n\n" << iteration_trace.str();
 
           // run
           auto recut = Recut<uint16_t>(args);
@@ -1408,6 +1409,7 @@ TEST(Radius, Full) {
 
           // check against sequential recut radii run
           if (sequential) {
+            // sequential needs to always be run first
             for (int vid = 0; vid < tol_sz; ++vid) {
               // this is only done for the full domain case so interval and
               // block are known

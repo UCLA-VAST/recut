@@ -27,7 +27,7 @@ cwd=<root>
 
 # rebuild and run test
 [project-run]
-command= cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug -DFULL_PRINT=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DTEST_ALL_BENCHMARKS=on -DCMAKE_INSTALL_PREFIX=.. -DFETCHCONTENT_UPDATES_DISCONNECTED=ON && cd bin && ./recut_test --gtest_output=json:../data/test_detail.json  --gtest_also_run_disabled_tests --gtest_filter=Radius.Full
+command= cd build && make -j 8 && make -j 8 install && make installcheck && ./recut_test --gtest_output=json:../data/test_detail.json  --gtest_also_run_disabled_tests --gtest_filter=Radius.Full
 ;command=cd build && ninja install && cd ../bin && ./recut_test --gtest_output=json:../data/test_detail.json --gtest_filter=*.ChecksIfFinalVerticesCorrect/11
 ;command=cd misc_scripts && python performance_test.py
 cwd=<root>
