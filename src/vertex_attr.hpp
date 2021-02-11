@@ -280,11 +280,15 @@ struct VertexAttr {
     return !selected();
   }
 
-  void mark_root(VID_t set_vid) {
+  void mark_root() {
     // no connections is already default
     // roots can also be surface
     edge_state.unset(7);
     edge_state.unset(6);
+  }
+
+  void mark_root(VID_t set_vid) {
+    this->mark_root();
     vid = set_vid;
   }
 
@@ -295,9 +299,7 @@ struct VertexAttr {
   }
 
   void mark_band(VID_t set_vid) {
-    // add to band (01XX XXXX)
-    edge_state.unset(7);
-    edge_state.set(6);
+    this->mark_band();
     vid = set_vid;
   }
 

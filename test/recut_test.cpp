@@ -4,7 +4,6 @@
 #include <bits/stdc++.h>
 #include <cstdlib> //rand
 #include <ctime>   // for srand
-#include <deque>
 #include <fcntl.h>
 #include <fstream>
 #include <iostream>
@@ -644,7 +643,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
 #ifdef USE_MCP3D
 TEST(Install, DISABLED_ImageReadWrite) {
   auto grid_size = 2;
-  auto tcase = 4;
+  auto tcase = 0;
   double slt_pct = 50;
   long sz0 = (long)grid_size;
   long sz1 = (long)grid_size;
@@ -660,8 +659,6 @@ TEST(Install, DISABLED_ImageReadWrite) {
   if (selected == 0) {
     selected = 1;
   }
-  // cout << endl << "Select: " << selected << " (" << slt_pct << "%)" <<
-  // endl;
   uint16_t *inimg1d = new uint16_t[tol_sz];
   create_image(tcase, inimg1d, grid_size, selected, get_central_vid(grid_size));
   write_tiff(inimg1d, fn, grid_size);
@@ -1168,10 +1165,12 @@ TEST(CheckGlobals, ActiveVertices) {
   for (VID_t vid : l) {
     auto vertex = recut.get_or_set_active_vertex(0, 0, vid, found);
     ASSERT_FALSE(found);
-    ASSERT_FALSE(vertex->selected());
-    vertex->mark_selected();
-    ASSERT_TRUE(vertex->valid_vid()) << "vid: " << vertex->vid;
     ASSERT_TRUE(vertex->selected());
+    vertex->mark_root();
+    vertex->radius = 1;
+    ASSERT_TRUE(vertex->valid_vid()) << "vid: " << vertex->vid;
+    ASSERT_TRUE(vertex->root());
+    ASSERT_FALSE(vertex->selected());
     ASSERT_EQ(vertex->vid, vid);
   }
 
@@ -1179,11 +1178,42 @@ TEST(CheckGlobals, ActiveVertices) {
     cout << "check vid: " << vid << '\n';
     auto vertex = recut.get_or_set_active_vertex(0, 0, vid, found);
     ASSERT_TRUE(found);
-    ASSERT_TRUE(vertex->selected());
+    ASSERT_EQ(vertex->radius, 1);
+    ASSERT_TRUE(vertex->root());
   }
 }
 
-TEST(CheckGlobals, LocalFifo) {
+TEST(CheckGlobals, SurfacePassed) {
+  // minimal setup of globals
+  int max_size = 8;
+  auto args = get_args(max_size, max_size, max_size, 100, 0, true);
+  auto recut = Recut<uint16_t>(args);
+  auto root_vids = recut.initialize();
+  auto vid = 0;
+
+  bool found;
+  {
+    auto vertex = recut.get_or_set_active_vertex(0, 0, vid, found);
+    ASSERT_FALSE(found);
+  }
+
+  {
+    auto vertex = recut.get_active_vertex(0, 0, vid);
+    ASSERT_NE(vertex, nullptr);
+    vertex->mark_surface();
+    recut.global_fifo[0][0].push_back(*vertex);
+  }
+
+  {
+    auto msg_vertex = recut.global_fifo[0][0].front();
+    auto vertex = recut.get_active_vertex(0, 0, msg_vertex.vid);
+    ASSERT_NE(vertex, nullptr);
+    ASSERT_TRUE(msg_vertex.surface());
+    ASSERT_TRUE(vertex->surface());
+  }
+}
+
+TEST(CheckGlobals, AllFifo) {
   // minimal setup of globals
   int max_size = 8;
   auto args = get_args(max_size, max_size, max_size, 100, 0, true);
@@ -1193,15 +1223,21 @@ TEST(CheckGlobals, LocalFifo) {
   std::iota(l.begin(), l.end(), 0);
 
   bool found;
-  for (VID_t vid : l) {
+  for (auto vid : l) {
     auto vertex = recut.get_or_set_active_vertex(0, 0, vid, found);
-    recut.local_fifo[0][0].push(*vertex);
     ASSERT_FALSE(found);
-    ASSERT_FALSE(vertex->selected());
-    vertex->mark_selected();
-    ASSERT_TRUE(vertex->valid_vid()) << "vid: " << vertex->vid;
     ASSERT_TRUE(vertex->selected());
+    ASSERT_TRUE(vertex->valid_vid()) << "vid: " << vertex->vid;
     ASSERT_EQ(vertex->vid, vid);
+
+    vertex->mark_root();
+    vertex->mark_surface();
+
+    ASSERT_TRUE(vertex->root());
+    ASSERT_FALSE(vertex->selected());
+
+    recut.global_fifo[0][0].push_back(*vertex);
+    recut.local_fifo[0][0].push_back(*vertex);
   }
 
   for (auto vid : l) {
@@ -1209,19 +1245,34 @@ TEST(CheckGlobals, LocalFifo) {
     cout << "fifo size: " << recut.local_fifo[0][0].size() << '\n';
     auto vertex = recut.get_or_set_active_vertex(0, 0, vid, found);
     ASSERT_TRUE(found);
-    ASSERT_TRUE(vertex->selected());
+    ASSERT_TRUE(vertex->root());
+    ASSERT_TRUE(vertex->surface());
 
     // remove from this intervals heap
     auto msg_vertex = &(recut.local_fifo[0][0].front());
-    recut.local_fifo[0][0].pop(); // remove it
+    recut.local_fifo[0][0].pop_front(); // remove it
 
     ASSERT_EQ(msg_vertex->vid, vid);
     ASSERT_EQ(msg_vertex->vid, vertex->vid);
+
+    ASSERT_TRUE(msg_vertex->root());
+    ASSERT_TRUE(msg_vertex->surface());
+
+    // remove from this intervals heap
+    auto global_vertex = &(recut.global_fifo[0][0].front());
+    recut.global_fifo[0][0].pop_front(); // remove it
+
+    ASSERT_EQ(global_vertex->vid, vid);
+    ASSERT_EQ(global_vertex->vid, vertex->vid);
+
+    ASSERT_TRUE(global_vertex->root());
+    ASSERT_TRUE(global_vertex->surface());
   }
   ASSERT_TRUE(recut.local_fifo[0][0].empty());
+  ASSERT_TRUE(recut.global_fifo[0][0].empty());
 }
 
-TEST(Radius, Full) {
+TEST(Update, EachStageIteratively) {
   bool print_all = false;
   bool print_csv = false;
 #ifdef LOG
@@ -1239,6 +1290,7 @@ TEST(Radius, Full) {
   // 2 1
   // 1 0
   auto expect_exact_radii_match_with_app2 = false;
+  auto expect_exact_radii_match_with_seq = true;
   // app2 has a 2D radii estimation which can also be compared
   bool check_xy = false;
 
@@ -1275,7 +1327,8 @@ TEST(Radius, Full) {
         if (block_size > interval_size)
           continue;
         auto sequential =
-            (grid_size == interval_size) && (grid_size == block_size) ? true : false;
+            (grid_size == interval_size) && (grid_size == block_size) ? true
+                                                                      : false;
         for (auto &tcase : tcases) {
           auto interval_extents = {grid_size, grid_size, grid_size};
           auto args = get_args(grid_size, interval_size, block_size, slt_pct,
@@ -1325,9 +1378,14 @@ TEST(Radius, Full) {
                 for (int j = 0; j < outer.size(); ++j) {
                   const auto inner = outer[j];
                   std::cout << " Block " << j << '\n';
-                  for (auto &vid : inner) {
+                  for (auto &vertex : inner) {
                     total++;
-                    cout << "\t" << vid << '\n';
+                    // cout << "\t" << vertex.vid << '\n';
+                    cout << "\t" << vertex.description() << '\n';
+                    ASSERT_TRUE(vertex.surface());
+                    ASSERT_TRUE(vertex.root() || vertex.selected());
+                    ASSERT_NE(nullptr,
+                              recut.get_active_vertex(i, j, vertex.vid));
                   }
                 }
               }
@@ -1426,22 +1484,24 @@ TEST(Radius, Full) {
                 check_recut_error(recut, seq_radii_grid.get(), grid_size,
                                   "radius", recut_err, recut.global_fifo));
             // exact match at every radii value
-            ASSERT_EQ(recut_err, 0.);
+            if (expect_exact_radii_match_with_seq) {
+              ASSERT_EQ(recut_err, 0.);
+            }
           }
 
+          std::ostringstream xy_stream, recut_stream;
+          recut_stream << "Recut Error " << iteration_trace.str();
+          RecordProperty(recut_stream.str(), recut_err);
           if (print_csv) {
             if (check_xy) {
               std::cout << "\"xy_radius/" << grid_size << "\",1," << xy_err
                         << '\n';
+              xy_stream << "XY Error " << iteration_trace.str();
+              RecordProperty(xy_stream.str(), xy_err);
             }
             std::cout << "\"fast_marching_radius/" << grid_size << "\",1,"
                       << recut_err << '\n';
           }
-          std::ostringstream xy_stream, recut_stream;
-          xy_stream << "XY Error " << iteration_trace.str();
-          recut_stream << "Recut Error " << iteration_trace.str();
-          RecordProperty(xy_stream.str(), xy_err);
-          RecordProperty(recut_stream.str(), recut_err);
 
           if (print_all) {
             std::cout << "roots:\n";
