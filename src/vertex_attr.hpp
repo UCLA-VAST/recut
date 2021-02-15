@@ -108,7 +108,6 @@ struct VertexAttr {
 
   // you can pipe the output directly to std::cout
   std::string description() const {
-    std::cout << vid << '\n';
     std::string descript = "vid:" + std::to_string(vid);
     descript += '\n';
     descript += "parent vid:";
@@ -124,6 +123,8 @@ struct VertexAttr {
     for (int i = 7; i >= 0; i--) {
       descript += edge_state.test(i) ? "1" : "0";
     }
+    descript += '\n';
+    descript += "label:" + std::to_string(label());
     descript += '\n';
     descript += "radius:" + std::to_string(radius);
     descript += '\n';

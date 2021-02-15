@@ -1226,6 +1226,7 @@ TEST(CheckGlobals, AllFifo) {
   for (auto vid : l) {
     auto vertex = recut.get_or_set_active_vertex(0, 0, vid, found);
     ASSERT_FALSE(found);
+    ASSERT_FALSE(vertex->surface());
     ASSERT_TRUE(vertex->selected());
     ASSERT_TRUE(vertex->valid_vid()) << "vid: " << vertex->vid;
     ASSERT_EQ(vertex->vid, vid);
@@ -1234,7 +1235,18 @@ TEST(CheckGlobals, AllFifo) {
     vertex->mark_surface();
 
     ASSERT_TRUE(vertex->root());
+    ASSERT_TRUE(vertex->surface());
     ASSERT_FALSE(vertex->selected());
+
+    auto gvertex = recut.get_active_vertex(0, 0, vid);
+    ASSERT_TRUE(gvertex->root());
+    ASSERT_TRUE(gvertex->surface());
+    ASSERT_FALSE(gvertex->selected());
+
+    gvertex->mark_selected();
+    auto g2vertex = recut.get_active_vertex(0, 0, vid);
+    ASSERT_TRUE(g2vertex->selected());
+    gvertex->mark_root();
 
     recut.global_fifo[0][0].push_back(*vertex);
     recut.local_fifo[0][0].push_back(*vertex);
@@ -1244,6 +1256,9 @@ TEST(CheckGlobals, AllFifo) {
     cout << "check vid: " << vid << '\n';
     cout << "fifo size: " << recut.local_fifo[0][0].size() << '\n';
     auto vertex = recut.get_or_set_active_vertex(0, 0, vid, found);
+    auto gvertex = recut.get_active_vertex(0, 0, vid);
+    ASSERT_NE(gvertex, nullptr);
+    ASSERT_TRUE(gvertex->surface());
     ASSERT_TRUE(found);
     ASSERT_TRUE(vertex->root());
     ASSERT_TRUE(vertex->surface());

@@ -240,6 +240,8 @@ public:
   template <class Container>
   void integrate_updated_ghost(const VID_t interval_id, const VID_t block_id,
                                std::string stage, Container &fifo);
+  template <class Container>
+  void dump_buffer(Container buffer);
   void adjust_vertex_parent(VertexAttr *vertex);
   template <class Container>
   bool integrate_vertex(const VID_t interval_id, const VID_t block_id,
@@ -1491,6 +1493,7 @@ void Recut<image_t>::update_neighbors(
       if (!(current->valid_radius())) {
 
         cout << current->description();
+        dump_buffer(this->active_vertices);
         assertm(current->valid_radius(),
                 "radius must march outward from known radii");
       }
@@ -1917,6 +1920,21 @@ void Recut<image_t>::adjust_vertex_parent(VertexAttr *vertex) {
 
 template <class image_t>
 template <class Container>
+void Recut<image_t>::dump_buffer(Container buffer) {
+  std::cout << "\n\nDump buffer\n";
+  for (auto interval_id = 0; interval_id < grid_interval_size; ++interval_id) {
+    for (auto block_id = 0; block_id < interval_block_size; ++block_id) {
+      for (auto &v : buffer[interval_id][block_id]) {
+        std::cout << v.description();
+        //print_vertex(&v);
+      }
+    }
+  }
+  std::cout << "\n\nFinished buffer dump\n";
+}
+
+template <class image_t>
+template <class Container>
 void Recut<image_t>::connected_tile(
     const image_t *tile, VID_t interval_id, VID_t block_id, std::string stage,
     const TileThresholds<image_t> *tile_thresholds, Container &fifo,
@@ -1976,6 +1994,14 @@ void Recut<image_t>::connected_tile(
         // so there are no race conditions
         fifo.push_back(*current);
         assertm(current->selected() || current->root(), "must be selected");
+
+        auto test = get_active_vertex(interval_id, block_id, current->vid);
+        if (!(test->surface())) {
+          std::cout << current->description();
+          std::cout << test->description();
+          dump_buffer(this->active_vertices);
+        }
+        assertm(test->surface(), "recovered vertex wasn't marked as surface");
 #ifdef DENSE
         // ghost regions in the DENSE case have shared copies of ghost regions
         // so they would need to know about any changes to vertex state
