@@ -1287,7 +1287,7 @@ TEST(CheckGlobals, AllFifo) {
   ASSERT_TRUE(recut.global_fifo[0][0].empty());
 }
 
-TEST(Update, EachStageIteratively) {
+TEST(Update, DISABLED_EachStageIteratively) {
   bool print_all = false;
   bool print_csv = false;
 #ifdef LOG
@@ -1718,7 +1718,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 #ifdef USE_MCP3D
   force_regenerate_image = false;
 #endif
-  bool prune = true;
+  bool prune = false;
   std::string stage;
 
   // shared params

@@ -21,8 +21,9 @@ command=nix-env -f . -i
 cwd=<root>
 
 [project-test]
-command=cd bin && ./recut_test --gtest_output=json:../data/test_detail.json  --gtest_also_run_disabled_tests --gtest_filter=Update.EachStageIteratively
-#--gtest_filter='*'.ChecksIfFinalVerticesCorrect/11 | tee ../data/test_detail.log
+command=cd bin && ./recut_test --gtest_output=json:../data/test_detail.json  --gtest_also_run_disabled_tests --gtest_filter='*'.ChecksIfFinalVerticesCorrect/'*' | tee ../data/test_detail.log
+;command=cd bin && ./recut_test --gtest_output=json:../data/test_detail.json  --gtest_also_run_disabled_tests --gtest_filter='*'.ChecksIfFinalVerticesCorrect/11 | tee ../data/test_detail.log
+;--gtest_filter=Update.EachStageIteratively
 cwd=<root>
 
 # rebuild and run test

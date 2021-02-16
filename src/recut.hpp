@@ -1725,7 +1725,7 @@ bool Recut<image_t>::integrate_vertex(const VID_t interval_id,
   if (stage == "connected") {
     local_fifo[interval_id][block_id].push_back(*updated_vertex);
   } else {
-    cout << "integrate vertex " << updated_vertex->description();
+    //cout << "integrate vertex " << updated_vertex->description();
     fifo.push_back(*updated_vertex);
   }
   return true;
@@ -2172,20 +2172,16 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
     auto msg_vertex = &(fifo.front());
     fifo.pop_front();
 
-    // cout << "\n\nmsg " << msg_vertex->description();
     if (msg_vertex->band()) {
       // current can be from ghost region in different interval or block
       current = msg_vertex;
-      cout << "\nBAND\n";
     } else {
-      cout << "\nSELECTED\n";
       // current is safe during call to update_neighbors
       current = get_active_vertex(interval_id, block_id, msg_vertex->vid);
       assertm(current != nullptr,
               "get_active_vertex yielded nullptr radius_tile");
     }
     assertm(current->valid_vid(), "fifo must recover a valid_vid vertex");
-    cout << "current " << msg_vertex->description();
 
     // radius field can now be be mutated
     // set any vertex that shares a border with background
