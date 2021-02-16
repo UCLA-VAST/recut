@@ -20,7 +20,7 @@ stdenv.mkDerivation {
   TEST_IMAGE = "/curr/kdmarrett/data/tcase6_image";
   TEST_MARKER = "/curr/kdmarrett/data/tcase6_marker";
 
-  cmakeFlags = ["-DLOG=ON -DFULL_PRINT=OFF -DUSE_OMP_BLOCK=OFF -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=OFF -DCMAKE_BUILD_TYPE=Release"];
+  cmakeFlags = ["-DLOG=ON -DLOG_FULL=ON -DFULL_PRINT=OFF -DUSE_OMP_BLOCK=ON -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Debug"];
 
   nativeBuildInputs = [ cmake ];
 
@@ -44,7 +44,7 @@ stdenv.mkDerivation {
     mkdir $out/data;
     make installcheck;
     ./recut_test;
-    ./recut_test --gtest_also_run_disabled_tests --gtest_filter='*'.'*ChecksIf*';
+    ./recut_test --gtest_also_run_disabled_tests --gtest_filter='*'.'*ChecksIf*/63';
     '';
 
 }

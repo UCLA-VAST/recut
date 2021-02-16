@@ -384,7 +384,7 @@ Recut<image_t>::process_marker_dir(vector<int> global_image_offsets,
       auto vid = get_img_vid(i, j, k);
       root_vids.push_back(vid);
 
-#ifdef LOG
+#ifdef LOG_FULL
       cout << "Read marker at x " << x << " y " << y << " z " << z
            << " adjust to subscripts, i " << i << " j " << j << " k " << k
            << " vid " << vid << '\n';
@@ -406,7 +406,7 @@ void Recut<image_t>::setup_radius(Container &fifo) {
       if (!(fifo[interval_id][block_id].empty())) {
         active_intervals[interval_id] = true;
         active_blocks[interval_id][block_id].store(true);
-#ifdef LOG
+#ifdef FULL_PRINT
         cout << "Set interval " << interval_id << " block " << block_id
              << " to active\n";
 #endif
@@ -986,7 +986,6 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t dst_id,
 #endif
 
   uint8_t updated_radius = 1 + current_radius;
-  cout << "current radius " << +(current_radius) << '\n';
   if (dst->selected() || dst->root()) {
     assertm(dst->valid_vid(), "selected must have a valid vid");
     assertm(dst->vid == dst_id,
@@ -1001,7 +1000,7 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t dst_id,
 
 #ifdef FULL_PRINT
       cout << "\tAdjacent higher dst->vid " << dst->vid << " radius "
-           << +(dst->radius) << '\n';
+           << +(dst->radius) << "current radius " << +(current_radius) << '\n';
       if (dst->root()) {
         cout << "root radius " << +(dst->radius) << ' ' << interval_id << ' '
              << block_id << ' ' << dst->vid << '\n';
@@ -1710,18 +1709,9 @@ bool Recut<image_t>::integrate_vertex(const VID_t interval_id,
     return false;
   }
 #else // not DENSE
-  // TODO remove
-  auto dst = get_active_vertex(interval_id, block_id, updated_vertex->vid);
-  if (dst == nullptr) {
-    cout << "interval id " << interval_id << " block id " << block_id << " vid "
-         << updated_vertex->vid << '\n';
-    assertm(dst == nullptr, "should never find outside vertices");
-  }
-
   // doesn't matter if it's a root or not, it's now just a msg
   updated_vertex->mark_band();
-  // adds to iterable but not to active vertices since its from an outside
-  // region in this case dst is simply a msg
+  // adds to iterable but not to active vertices since its from outside domain
   if (stage == "connected") {
     local_fifo[interval_id][block_id].push_back(*updated_vertex);
   } else {
@@ -3482,7 +3472,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   clock_gettime(CLOCK_REALTIME, &time3);
 
 #ifdef LOG
-  cout << "Initialized globals" << diff_time(time2, time3) << '\n';
+  cout << "Initialized globals " << diff_time(time2, time3) << '\n';
 #endif
 
   if (this->params->force_regenerate_image) {

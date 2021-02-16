@@ -640,7 +640,8 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
   }
 }
 
-#ifdef USE_MCP3D
+//#ifdef USE_MCP3D
+#ifdef TEMP_DISABLE
 TEST(Install, DISABLED_ImageReadWrite) {
   auto grid_size = 2;
   auto tcase = 0;
@@ -1731,7 +1732,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   // uint16_t is image_t here
   TileThresholds<uint16_t> *tile_thresholds;
   bool print_all = false;
-#ifdef LOG
+#ifdef FULL_PRINT
   print_all = true;
 #endif
 
@@ -1787,7 +1788,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     std::copy(interval_open_count.begin(), interval_open_count.end(),
               std::ostream_iterator<int>(cat, ", "));
 #ifdef LOG
-    std::cout << "Interval reopens" << cat.str() << '\n';
+    std::cout << "Interval reopens " << cat.str() << '\n';
 #endif
 
     auto [mean, sum, std_dev] =
@@ -1917,7 +1918,10 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
       print_marker_3D(sequential_output_tree, interval_extents, "label");
     }
 
-    cout << "sequential fastmarching elapsed (s)" << timer->elapsed() << '\n';
+#ifdef LOG
+      cout << "sequential fastmarching elapsed (s)" << timer->elapsed() << '\n';
+#endif
+
     // warning record property will auto cast to an int
     RecordProperty("Sequential elapsed (ms)", 1000 * timer->elapsed());
     RecordProperty("Recut speedup factor %",
@@ -2145,7 +2149,12 @@ INSTANTIATE_TEST_CASE_P(
         std::make_tuple(8192, 512, 64, 6, 1, false, false),
         std::make_tuple(8192, 512, 128, 6, 1, false, false),
         std::make_tuple(8192, 512, 256, 6, 1, false, false),
-        std::make_tuple(8192, 512, 512, 6, 1, false, false)
+        std::make_tuple(8192, 512, 512, 6, 1, false, false),
+
+        std::make_tuple(1024, 1024, 128, 6, 1, false, false), // 63
+        std::make_tuple(2048, 2048, 128, 6, 1, false, false), // 64
+        std::make_tuple(4096, 4096, 128, 6, 1, false, false), // 65
+        std::make_tuple(8192, 8192, 128, 6, 1, false, false) 
 #endif
 #endif
             ));
