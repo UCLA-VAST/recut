@@ -12,6 +12,9 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
   set(CMAKE_INSTALL_PREFIX "/usr/local" CACHE PATH "..." FORCE)
 endif()
 
+message(STATUS "NIX_CFLAGS_COMPILE : $ENV{NIX_CFLAGS_COMPILE}")
+message(STATUS "NIX_LDFLAGS : $ENV{NIX_LDFLAGS}")
+
 if (DEFINED CMAKE_EXPORT_NO_PACKAGE_REGISTRY)
   message(STATUS "CMAKE_EXPORT_NO_PACKAGE_REGISTRY : ${CMAKE_EXPORT_NO_PACKAGE_REGISTRY}")
 endif()
@@ -46,10 +49,6 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set(OpenMP_libgomp_LIBRARY ${OpenMP_CXX_LIB_NAMES} CACHE STRING "" FORCE)
   set(OpenMP_libiomp5_LIBRARY ${OpenMP_CXX_LIB_NAMES} CACHE STRING "" FORCE)
 endif()
-find_package(OpenMP REQUIRED)
-
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-find_package(Threads REQUIRED)
 
 # CMake Preprocessor Defines:
 # determine which targets to build
@@ -61,6 +60,12 @@ set(RECUT_ENABLE_EXECUTABLE ON CACHE BOOL "Enable Recut building its command lin
 set(RECUT_ENABLE_TESTING ON CACHE BOOL "Enable Recut building its test targets")
 set(RECUT_ENABLE_BENCHMARKING OFF CACHE BOOL "Enable Recut building its benchmarks targets")
 
+# forbid heavy config steps regardless of setting
+# FIXME still ignored by ranges library
+set(RANGE_V3_DOCS OFF CACHE BOOL "off" FORCE)
+set(RANGE_V3_TESTS OFF CACHE BOOL "off" FORCE)
+set(RANGE_V3_EXAMPLES OFF CACHE BOOL "off" FORCE)
+
 # if doing a plain system install (not from nix or a package manager)
 if (NOT CMAKE_EXPORT_NO_PACKAGE_REGISTRY)
   # nix-build handles gtest and gbenchmark libraries independently from submodules
@@ -69,10 +74,10 @@ if (NOT CMAKE_EXPORT_NO_PACKAGE_REGISTRY)
   include(FetchContent)
 
   FetchContent_Declare(
-        Range-v3
-        GIT_REPOSITORY "https://github.com/ericniebler/range-v3"
-        GIT_TAG master
-  )
+    Range-v3
+    GIT_REPOSITORY "https://github.com/ericniebler/range-v3"
+    GIT_TAG master
+    )
   FetchContent_MakeAvailable(Range-v3)
 
   if (RECUT_ENABLE_TESTING)
@@ -93,15 +98,35 @@ if (NOT CMAKE_EXPORT_NO_PACKAGE_REGISTRY)
     set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "Don't install benchmark" FORCE)
 
     FetchContent_Declare(googlebenchmark
-        GIT_REPOSITORY https://github.com/google/benchmark.git
-        GIT_TAG master) # need master for benchmark::benchmark
+      GIT_REPOSITORY https://github.com/google/benchmark.git
+      GIT_TAG master) # need master for benchmark::benchmark
     FetchContent_MakeAvailable(googlebenchmark)
   endif()
-endif()
 
-# other dependencies
-set(RANGE_V3_TESTS OFF CACHE BOOL "Don't test range-v3" FORCE)
-find_package(range-v3)
+  if (USE_VDB)
+    # Dependencies of OpenVDB TODO FIXME use nix for now
+    FetchContent_Declare(
+      Blosc
+      GIT_REPOSITORY "https://github.com/Blosc/c-blosc.git"
+      GIT_TAG master
+      )
+    FetchContent_MakeAvailable(Blosc)
+
+    # TODO FIXME non-nix / plain cmake install will have to install all dependencies to OpenVDB
+    #find_package(Blosc REQUIRED)
+    #find_package(TBB REQUIRED)
+    # etc...
+
+    FetchContent_Declare(
+      OpenVDB
+      GIT_REPOSITORY "https://github.com/AcademySoftwareFoundation/openvdb.git"
+      GIT_TAG master
+      )
+    FetchContent_MakeAvailable(OpenVDB)
+
+  endif()
+
+endif()
 
 #  this creates tests that match the benchmarks
 #  to check their validity, warning this invokes
@@ -122,6 +147,7 @@ option( USE_HUGE_PAGE OFF)
 # Note you can't have both OMP_BLOCK and OMP_INTERVAL defined
 option( USE_OMP_INTERVAL OFF)
 option( USE_OMP_BLOCK OFF)
+option( USE_VDB OFF)
 option( CONCURRENT_MAP "Define usage of the optimized map data structure" OFF)
 # Define how revisits/reupdates to previous seen vertices is handled
 option( RV "Count the number of revisits or attempted revisits of vertices" OFF)
@@ -136,9 +162,6 @@ option( DENSE "Assume dense access to grid of vertices" OFF)
 option( USE_MMAP "Determines read speed of vertex info from INTERVAL_BASE" OFF)
 option( USE_MCP3D "Use and link external library MCP3D into recut for image reading of TIF and HDF5 (.ims) file types" OFF)
 
-if (USE_MCP3D)
-  message(STATUS "USE_MCP3D ON")
-endif()
 
 set(MARKERS ${PROJECT_SOURCE_DIR}/src/markers.cpp)
 set(PARAMS ${PROJECT_SOURCE_DIR}/src/recut_parameters.cpp)
@@ -209,6 +232,12 @@ if (RECUT_ENABLE_BENCHMARKING)
   list(APPEND ALL_TARGETS recut_bench)
 endif()
 
+# required dependencies
+find_package(range-v3)
+find_package(OpenMP REQUIRED)
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+
 foreach(I ${ALL_TARGETS})
   message(STATUS "${I}")
 
@@ -249,6 +278,9 @@ foreach(I ${ALL_TARGETS})
   if (USE_MCP3D)
     target_compile_definitions(${I} PRIVATE USE_MCP3D)
   endif()
+  if (USE_VDB)
+    target_compile_definitions(${I} PRIVATE USE_VDB)
+  endif()
   if (NO_INTERVAL_RV)
     target_compile_definitions(${I} PRIVATE NO_INTERVAL_RV)
   endif()
@@ -281,13 +313,11 @@ foreach(I ${ALL_TARGETS})
   target_link_libraries(${I} PRIVATE Threads::Threads)
 
   if (USE_MCP3D)
+    message(STATUS "USE_MCP3D ON")
     find_package(Eigen3 REQUIRED)
-    message(STATUS "EIGEN3_INCLUDE_DIR: ${EIGEN3_INCLUDE_DIR}")
     target_include_directories(${I} PRIVATE ${EIGEN3_INCLUDE_DIR})
 
     find_package(OpenCV REQUIRED core imgcodecs imgproc)
-    message(STATUS "OPENCV_INCLUDE_DIR: ${OpenCV_INCLUDE_DIRS}")
-    message(STATUS "OPENCV_LIBRARYS: ${OpenCV_LIBS}")
     target_include_directories(${I} PRIVATE ${OpenCV_INCLUDE_DIRS})
     target_link_libraries(${I} PRIVATE ${OpenCV_LIBS})
 
@@ -297,6 +327,13 @@ foreach(I ${ALL_TARGETS})
       libmcp3d_common.so
       libmcp3d_project_structure.so
       )
+  endif()
+
+  if (USE_VDB)
+    #message(STATUS "CMAKE_MODULE_PATH: ${CMAKE_MODULE_PATH}")
+    find_package(OpenVDB REQUIRED)
+    target_link_libraries(${I} PRIVATE OpenVDB::openvdb)
+    message(STATUS "Linked OpenVDB")
   endif()
 
   # make Recut libraries truly relocatable when linking from downstream programs

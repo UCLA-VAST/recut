@@ -1,6 +1,6 @@
 {
   description = "recut-pipeline";
-  inputs = { 
+  inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/733e537a8ad76fd355b6f501127f7d0eb8861775";
     mcp3d.url = "git+ssh://git@github.com/muyezhu/mcp3d?ref=kdm-dev";
     mcp3d.inputs.nixpkgs.follows = "nixpkgs";
@@ -11,6 +11,10 @@
   };
 
   outputs = inputs: {
-    defaultPackage.x86_64-linux = import ./recut.nix { nixpkgs = inputs.nixpkgs; mcp3d = inputs.mcp3d; };
+
+    defaultPackage.x86_64-linux = import ./recut.nix {
+      nixpkgs = inputs.nixpkgs;
+      mcp3d = inputs.mcp3d;
+    };
   };
 }
