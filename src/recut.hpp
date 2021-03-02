@@ -2854,7 +2854,8 @@ void Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
 }
 
 #ifdef USE_VDB
-void convert_buffer(VID_t interval_id, const image_t *tile,
+template<class image_t>
+void Recut<image_t>::convert_buffer(VID_t interval_id, const image_t *tile,
                     openvdb::FloatGrid::Ptr vdb_grid) {
 
   // Get an accessor for coordinate-based access to voxels.
@@ -3425,7 +3426,10 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
                     args->image_root_dir() + ", do nothing.")
       throw;
     }
-    global_image.SaveImageInfo(); // save to __image_info__.json
+
+    // save to __image_info__.json in corresponding dir
+    // global_image.SaveImageInfo(); 
+
     // reflects the total global image domain
     global_image_dims = global_image.xyz_dims(args->resolution_level());
   }
@@ -3437,6 +3441,8 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   // account for image_offsets and args->image_extents
   // extents are the length of the domain for each dim
   for (int i = 0; i < 3; i++) {
+    cout << args->image_offsets[i] << '\n';
+    cout << global_image_dims[i] << '\n';
     // default image_offsets is {0, 0, 0}
     // this enforces the minimum extent to be 1 in each dim
     assertm(args->image_offsets[i] < global_image_dims[i],

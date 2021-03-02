@@ -682,8 +682,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
   }
 }
 
-//#ifdef USE_MCP3D
-#ifdef TEMP_DISABLE
+#ifdef USE_MCP3D
 TEST(Install, DISABLED_ImageReadWrite) {
   auto grid_size = 2;
   auto tcase = 0;
@@ -724,7 +723,6 @@ TEST(Install, DISABLED_ImageReadWrite) {
 
   delete[] inimg1d;
 }
-
 #endif
 
 TEST(Heap, PushUpdate) {
