@@ -32,6 +32,7 @@ class RecutParameters {
       high_intensity_ = false;
       brightfield_ = false;
       marker_file_path_ = std::string();
+      out_vdb_ = std::string();
       parallel_num_ = 1; // default is the max hardware concurrency when not set
       block_size_ = 64;
       interval_size_ = 1024;
@@ -116,25 +117,28 @@ class RecutParameters {
     void set_marker_file_path(const std::string &marker_file_path) {
       marker_file_path_ = marker_file_path;
     }
+    // if string out_vdb is left empty means don't just convert and exit
+    void set_out_vdb(const std::string &out_vdb) {
+      out_vdb_ = out_vdb;
+    }
     void set_max_intensity(double max_intensity) {
       max_intensity_ = max_intensity;
     }
     void set_min_intensity(double min_intensity) {
       min_intensity_ = min_intensity;
     }
+
     // no getters or setters
     bool force_regenerate_image;
     int tcase, slt_pct;
     uint64_t selected, root_vid;
-
-  private:
     bool gsdt_, coverage_prune_, allow_gap_, cube_256_, radius_from_2d_,
          swc_resample_, high_intensity_, brightfield_, restart_;
     int user_thread_count_, background_thresh_, cnn_type_, parallel_num_,
         interval_size_, block_size_, prune_;
     double foreground_percent_, sr_ratio_, length_thresh_, restart_factor_,
            max_intensity_, min_intensity_;
-    std::string marker_file_path_;
+    std::string marker_file_path_, out_vdb_;
 };
 
 class RecutCommandLineArgs {

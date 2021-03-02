@@ -23,10 +23,6 @@
 #include <opencv2/opencv.hpp>          // imwrite
 #endif
 
-#ifdef USE_VDB
-#include <openvdb/openvdb.h>
-#endif
-
 #define EXP_DEV_LOW .05
 
 #ifdef USE_MCP3D

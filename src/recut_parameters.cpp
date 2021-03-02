@@ -26,7 +26,9 @@ string RecutParameters::MetaString() {
 }
 
 void RecutCommandLineArgs::PrintUsage() {
-  cout << "Basic usage : recut <image_root_dir> [--seeds <marker_dir>] [--channel <int>] "
+  cout << "Basic usage : recut <image_root_dir> [--seeds <marker_dir>] "
+          "[--channel <int>] "
+          "[--convert <vdb_file>] "
           "[--outswc <swc_file>] "
           "[--resolution-level <int>] [--image-offsets <int> [<int>] [<int>]] "
           "[--image-extents <int> [<int>] [<int>]] "
@@ -35,17 +37,23 @@ void RecutCommandLineArgs::PrintUsage() {
   cout << "<image_root_dir>     directory for input image\n";
   cout << "--seeds              [-s] directory containing all marker "
           "files which represent known soma locations\n";
+  cout << "--convert            [-cv] convert image file and exit default "
+          "out.vdb\n";
   cout << "--max                set max image voxel raw value allowed, "
-          "computed automatically when --bg_thresh or --fg-percent are specified\n";
+          "computed automatically when --bg_thresh or --fg-percent are "
+          "specified\n";
   cout << "--min                set min image voxel raw value allowed, "
-          "computed automatically when --bg_thresh or --fg-percent are specified\n";
+          "computed automatically when --bg_thresh or --fg-percent are "
+          "specified\n";
   cout << "--channel            [-c] channel number of image default 0\n";
   cout << "--outswc             [-os] output tracing result default is "
           "out.swc\n";
   cout << "--resolution-level   [-rl] resolution level to perform tracing at. "
           "default is 0, ie original resolution\n";
-  cout << "--image-offsets      [-io] offsets of subvolume, in z y x order default 0 0 0\n";
-  cout << "--image-extents      [-ie] extents of subvolume, in z y x order defaults"
+  cout << "--image-offsets      [-io] offsets of subvolume, in z y x order "
+          "default 0 0 0\n";
+  cout << "--image-extents      [-ie] extents of subvolume, in z y x order "
+          "defaults"
           " to max range from offset start to max length in each axis\n";
   cout << "--bg-thresh          [-bt] background threshold value desired\n";
   cout << "--fg-percent         [-fp] default 0.01, percent of voxels to be "
@@ -84,12 +92,21 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
     // if the switch is given, parameter(s) corresponding to the switch is
     // expected
     for (int i = 2; i < argc; ++i) {
-      if (strcmp(argv[i], "--seeds") == 0 ||
-          strcmp(argv[i], "-s") == 0) {
+      if (strcmp(argv[i], "--convert") == 0 || strcmp(argv[i], "-cv") == 0) {
+        ++i;
+        if (!(i >= argc || argv[i][0] == '-')) {
+          args.recut_parameters().set_out_vdb(argv[i]);
+        } else {
+          // still convert but set to default file name
+          // only vdb is supported
+          args.recut_parameters().set_out_vdb("out.vdb");
+        }
+      } else if (strcmp(argv[i], "--seeds") == 0 ||
+                 strcmp(argv[i], "-s") == 0) {
         args.recut_parameters().set_marker_file_path(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--resolution-level") == 0 ||
-          strcmp(argv[i], "-rl") == 0) {
+                 strcmp(argv[i], "-rl") == 0) {
         args.set_resolution_level(atoi(argv[i + 1]));
         ++i;
       } else if (strcmp(argv[i], "--image-offsets") == 0 ||
@@ -175,19 +192,20 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
                  strcmp(argv[i], "-bs") == 0) {
         args.recut_parameters().set_block_size(atoi(argv[i + 1]));
         ++i;
-      //} else if (strcmp(argv[i], "--restart") == 0 ||
-                 //strcmp(argv[i], "-rs") == 0) {
-        //args.recut_parameters().set_restart(true);
-        //args.recut_parameters().set_restart_factor(4.0);
-        //if (!(i + 1 >= argc || argv[i + 1][0] == '-')) {
-          //args.recut_parameters().set_restart_factor(atof(argv[i + 1]));
-          //if (atof(argv[i + 1]) <=
-              //0.00000001) { // parse double has issues with 0
-            //args.recut_parameters().set_restart(false);
-          //}
-          //++i;
+        //} else if (strcmp(argv[i], "--restart") == 0 ||
+        // strcmp(argv[i], "-rs") == 0) {
+        // args.recut_parameters().set_restart(true);
+        // args.recut_parameters().set_restart_factor(4.0);
+        // if (!(i + 1 >= argc || argv[i + 1][0] == '-')) {
+        // args.recut_parameters().set_restart_factor(atof(argv[i + 1]));
+        // if (atof(argv[i + 1]) <=
+        // 0.00000001) { // parse double has issues with 0
+        // args.recut_parameters().set_restart(false);
         //}
-      } else if (strcmp(argv[i], "--gsdt") == 0 || strcmp(argv[i], "-gs") == 0) {
+        //++i;
+        //}
+      } else if (strcmp(argv[i], "--gsdt") == 0 ||
+                 strcmp(argv[i], "-gs") == 0) {
         args.recut_parameters().set_gsdt(true);
       } else if (strcmp(argv[i], "--allow-gap") == 0 ||
                  strcmp(argv[i], "--ag") == 0) {
