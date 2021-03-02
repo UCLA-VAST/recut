@@ -353,13 +353,16 @@ template <class image_t>
 std::vector<VID_t>
 Recut<image_t>::process_marker_dir(vector<int> global_image_offsets,
                                    vector<int> global_image_extents) {
+  vector<VID_t> root_vids;
+
+  if (params->marker_file_path().empty()) return root_vids;
+
   // allow either dir or dir/ naming styles
   if (params->marker_file_path().back() != '/')
     params->set_marker_file_path(params->marker_file_path().append("/"));
 
   cout << "marker dir path: " << params->marker_file_path() << '\n';
   vector<MyMarker> inmarkers;
-  vector<VID_t> root_vids;
   for (const auto &marker_file :
        fs::directory_iterator(params->marker_file_path())) {
     const auto marker_name = marker_file.path().filename().string();
@@ -2443,7 +2446,10 @@ void Recut<image_t>::march_narrow_band(
 
   VID_t revisits = 0;
 
-  if (stage == "connected") {
+  if (stage == "convert") {
+    convert_tile(tile, interval_id, block_id, stage, tile_thresholds, fifo,
+                   revisits);
+  } else if (stage == "connected") {
     connected_tile(tile, interval_id, block_id, stage, tile_thresholds, fifo,
                    revisits);
   } else if (stage == "radius") {
@@ -3984,13 +3990,19 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
 }
 
 template <class image_t> void Recut<image_t>::run_pipeline() {
+  std::string stage;
   // create a list of root vids
   auto root_vids = this->initialize();
+
+  if (root_vids.empty()) {
+    stage = "convert";
+    this->update(stage, global_fifo);
+  }
 
   // starting from the roots
   // value stage will save all surface vertices into
   // fifo
-  std::string stage = "connected";
+  stage = "connected";
   this->activate_vids(root_vids, stage, global_fifo);
   this->update(stage, global_fifo);
 

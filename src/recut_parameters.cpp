@@ -16,7 +16,6 @@ string RecutParameters::MetaString() {
   meta_stream << "# background_thresh = " << background_thresh_ << '\n';
   meta_stream << "# max_int = " << max_intensity_ << '\n';
   meta_stream << "# min_int = " << min_intensity_ << '\n';
-  //meta_stream << "# restart = " << restart_ << '\n';
   meta_stream << "# parallel = " << parallel_num_ << '\n';
   meta_stream << "# interval_size = " << interval_size_ << '\n';
   meta_stream << "# block_size = " << block_size_ << '\n';
@@ -27,14 +26,14 @@ string RecutParameters::MetaString() {
 }
 
 void RecutCommandLineArgs::PrintUsage() {
-  cout << "Basic usage : recut <image_root_dir> <marker_dir> [--channel <int>] "
+  cout << "Basic usage : recut <image_root_dir> [--seeds <marker_dir>] [--channel <int>] "
           "[--outswc <swc_file>] "
           "[--resolution-level <int>] [--image-offsets <int> [<int>] [<int>]] "
           "[--image-extents <int> [<int>] [<int>]] "
           "[--bkg-thresh <int>] [--fg-percent <double>]\n\n";
 
   cout << "<image_root_dir>     directory for input image\n";
-  cout << "<marker_dir>         directory containing all marker "
+  cout << "--seeds              [-s] directory containing all marker "
           "files which represent known soma locations\n";
   cout << "--max                set max image voxel raw value allowed, "
           "computed automatically when --bg_thresh or --fg-percent are specified\n";
@@ -59,8 +58,6 @@ void RecutCommandLineArgs::PrintUsage() {
           "defaults to interval cubes of edge length 1024\n";
   cout << "--block-size         [-bs] block size length "
           "defaults to block cubes of edge length 64\n";
-  //cout << "--restart            [-rs] enforce parallel restarts default: "
-          //"false, if true with no number passed restart factor defaults to 4\n\n";
 }
 
 string RecutCommandLineArgs::MetaString() {
@@ -77,19 +74,21 @@ string RecutCommandLineArgs::MetaString() {
 }
 
 bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
-  if (argc < 3) {
+  if (argc < 2) {
     RecutCommandLineArgs::PrintUsage();
     return false;
   }
   try {
     // global volume and channel selection
     args.set_image_root_dir(argv[1]);
-    args.recut_parameters().set_marker_file_path(argv[2]);
     // if the switch is given, parameter(s) corresponding to the switch is
     // expected
-    for (int i = 3; i < argc; ++i) {
-      // subvolume selection arguments
-      if (strcmp(argv[i], "--resolution-level") == 0 ||
+    for (int i = 2; i < argc; ++i) {
+      if (strcmp(argv[i], "--seeds") == 0 ||
+          strcmp(argv[i], "-s") == 0) {
+        args.recut_parameters().set_marker_file_path(argv[i + 1]);
+        ++i;
+      } else if (strcmp(argv[i], "--resolution-level") == 0 ||
           strcmp(argv[i], "-rl") == 0) {
         args.set_resolution_level(atoi(argv[i + 1]));
         ++i;
