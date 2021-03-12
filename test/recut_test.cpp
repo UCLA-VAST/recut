@@ -557,7 +557,22 @@ TEST(VDB, MakeGrid) {
     }
 }
 
-// https://www.openvdb.org/documentation/doxygen/codeExamples.html
+TEST(ConvertOnlyAndOutVDB, Any) {
+  auto grid_size = 2;
+  auto tcase = 0;
+  double slt_pct = 100;
+  auto fn = "test-convert_only.vdb";
+  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, /*force_regenerate_image=*/ true);
+  auto recut = Recut<uint16_t>(args);
+
+  recut.params->convert_only_ = true;
+  recut.params->out_vdb_ = fn;
+  ASSERT_FALSE(fs::exists(fn));
+  recut();
+
+  ASSERT_TRUE(fs::exists(fn));
+}
+
 TEST(VDB, WriteGrid) {
 }
 #endif // USE_VDB
@@ -579,7 +594,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
   // grid_sizes = {2, 4, 8, 16, 32, 64, 128, 256, 512};
   //#endif
 
-  std::vector<int> testcases = {4, 3, 2, 1, 0};
+  std::vector<int> testcases = {7, 5, 4, 3, 2, 1, 0};
   std::vector<double> selected_percents = {1, 10, 50, 100};
   auto print = false;
 #ifdef LOG
@@ -631,7 +646,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         fn_marker = fn_marker + delim;
         fn_marker = fn_marker + "slt_pct";
         fn_marker = fn_marker + std::to_string((int)slt_pct);
-        fn_marker = fn_marker + delim;
+        //fn_marker = fn_marker + delim;
         // record the root
         write_marker(x, y, z, fn_marker);
 
@@ -643,7 +658,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         fn = fn + delim;
         fn = fn + "slt_pct";
         fn = fn + std::to_string((int)slt_pct);
-        fn = fn + delim;
+        //fn = fn + delim;
 
         VID_t desired_selected;
         desired_selected = tol_sz * (slt_pct / (float)100); // for tcase 4
@@ -686,13 +701,14 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
 TEST(Install, DISABLED_ImageReadWrite) {
   auto grid_size = 2;
   auto tcase = 0;
-  double slt_pct = 50;
+  double slt_pct = 100;
   long sz0 = (long)grid_size;
   long sz1 = (long)grid_size;
   long sz2 = (long)grid_size;
   VID_t tol_sz = sz0 * sz1 * sz2;
   std::string fn(get_data_dir());
-  fn = fn + "/test_images/ReadWriteTest/";
+  // Warning: do not use directory names postpended with slash
+  fn = fn + "/test_images/ReadWriteTest";
   vector<int> image_offsets = {0, 0, 0}; // zyx
   vector<int> image_extents = {grid_size, grid_size, grid_size};
 
@@ -704,11 +720,13 @@ TEST(Install, DISABLED_ImageReadWrite) {
   uint16_t *inimg1d = new uint16_t[tol_sz];
   create_image(tcase, inimg1d, grid_size, selected, get_central_vid(grid_size));
   write_tiff(inimg1d, fn, grid_size);
-  mcp3d::MImage check(fn), check3(fn);
+  mcp3d::MImage check(fn, {"ch0"});
+  ASSERT_NE(check.n_channels(), 0);
   read_tiff(fn, image_offsets, image_extents, check);
   // print_image(check, grid_size * grid_size * grid_size);
   ASSERT_NO_FATAL_FAILURE(
       check_image_equality(inimg1d, check.Volume<uint16_t>(0), grid_size));
+  cout << "first read passed\n";
 
   // run recut over the image, force it to run in read image
   // non-generated mode since MCP3D is guaranteed here
@@ -717,6 +735,9 @@ TEST(Install, DISABLED_ImageReadWrite) {
   recut();
 
   // check again
+  cout << "second read\n";
+  mcp3d::MImage check3(fn, {"ch0"});
+  ASSERT_NE(check3.n_channels(), 0);
   read_tiff(fn, image_offsets, image_extents, check3);
   ASSERT_NO_FATAL_FAILURE(
       check_image_equality(inimg1d, check3.Volume<uint16_t>(0), grid_size));
@@ -983,7 +1004,7 @@ TEST(TileThresholds, AllTcases) {
   print_image = true;
 #endif
   // doesn't include real images tcase 6
-  std::vector<int> tcases = {1, 2, 3, 4, 5};
+  std::vector<int> tcases = {1, 2, 3, 4, 5, 7};
   for (const auto &tcase : tcases) {
     auto args =
         get_args(grid_size, grid_size, grid_size, slt_pct, tcase, false);

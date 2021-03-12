@@ -46,7 +46,7 @@ in
     # warning leaving breakpointHook on
     # will cause github actions to hang, if there are any failures
     # always comment it out before pushing
-    #breakpointHook
+    breakpointHook
   ];
 
   doInstallCheck = true;

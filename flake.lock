@@ -7,18 +7,13 @@
         ]
       },
       "locked": {
-        "lastModified": 1609379776,
-        "narHash": "sha256-4ZW2Gj+QYi9Tnv+W+cvB1ciaPsTLXflgyWuhKX9tiAg=",
-        "ref": "kdm-dev",
-        "rev": "8c3dbaed2ff0d7f8099e4642f6af8666016fc940",
-        "revCount": 365,
-        "type": "git",
-        "url": "ssh://git@github.com/muyezhu/mcp3d"
+        "narHash": "sha256-xxY1EHqecu//GYj5ancs1l2+nRZQbWb3wNlcJZllv4M=",
+        "path": "/home/kdmarrett/mcp3d",
+        "type": "path"
       },
       "original": {
-        "ref": "kdm-dev",
-        "type": "git",
-        "url": "ssh://git@github.com/muyezhu/mcp3d"
+        "path": "/home/kdmarrett/mcp3d",
+        "type": "path"
       }
     },
     "nixpkgs": {

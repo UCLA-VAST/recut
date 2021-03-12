@@ -321,7 +321,7 @@ bool is_covered_by_parent(VID_t index, VID_t root_vid, int radius,
  * sets all to 1 for tcase 0
  * tcase4 : trace_mesh_image
  * tcase5 : sphere grid
- * tcase6 : reserved for real images throws error if passed
+ * tcase6 : reserved for real images throws error if passed otherwise
  * tcase7 : cube of selected centered at root, side length grid_size /2
  * takes an empty binarized inimg1d (all zeros)
  * and creates a central sphere of specified
@@ -641,7 +641,7 @@ void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
     if (print)
       cout << "      Delete old: " << fn << '\n';
     fs::create_directories(fn);
-    fn = fn + "marker";
+    fn = fn + "/marker";
     std::ofstream mf;
     mf.open(fn);
     mf << "# x,y,z\n";
@@ -659,6 +659,7 @@ void write_tiff(uint16_t *inimg1d, std::string base, int grid_size) {
   print = true;
 #endif
 
+  base =  base + "/ch0";
   bool rerun = false;
   if (!fs::exists(base) || rerun) {
     fs::remove_all(base); // make sure it's an overwrite
@@ -668,7 +669,7 @@ void write_tiff(uint16_t *inimg1d, std::string base, int grid_size) {
     // print_image(inimg1d, grid_size * grid_size * grid_size);
     for (int zi = 0; zi < grid_size; zi++) {
       std::string fn = base;
-      fn = fn + "img_";
+      fn = fn + "/img_";
       // fn = fn + mcp3d::PadNumStr(zi, 9999); // pad to 4 digits
       fn = fn + std::to_string(zi); // pad to 4 digits
       std::string suff = ".tif";
@@ -688,7 +689,7 @@ void write_tiff(uint16_t *inimg1d, std::string base, int grid_size) {
       // mcp3d::image::MImage mimg(dims); // defaults to uint16 format
     }
     if (print)
-      cout << "      Wrote test images at: " << base << '\n';
+      cout << "      Wrote test images in: " << base << '\n';
   }
 }
 
@@ -696,7 +697,7 @@ void read_tiff(std::string fn, std::vector<int> image_offsets,
                std::vector<int> image_extents, mcp3d::MImage &image) {
   cout << "Read: " << fn << '\n';
   // read data from channel 0
-  image.ReadImageInfo(0, true);
+  image.ReadImageInfo({0}, true);
   try {
     // use unit strides only
     mcp3d::MImageBlock block(image_offsets, image_extents);

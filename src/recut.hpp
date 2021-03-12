@@ -373,6 +373,9 @@ Recut<image_t>::process_marker_dir(vector<int> global_image_offsets,
     params->set_marker_file_path(params->marker_file_path().append("/"));
 
   cout << "marker dir path: " << params->marker_file_path() << '\n';
+  assertm(fs::exists(params->marker_file_path()),
+          "Marker file path must exist");
+
   vector<MyMarker> inmarkers;
   for (const auto &marker_file :
        fs::directory_iterator(params->marker_file_path())) {
@@ -2854,9 +2857,9 @@ void Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
 }
 
 #ifdef USE_VDB
-template<class image_t>
+template <class image_t>
 void Recut<image_t>::convert_buffer(VID_t interval_id, const image_t *tile,
-                    openvdb::FloatGrid::Ptr vdb_grid) {
+                                    openvdb::FloatGrid::Ptr vdb_grid) {
 
   // Get an accessor for coordinate-based access to voxels.
   auto vdb_accessor = vdb_grid->getAccessor();
@@ -2881,6 +2884,7 @@ void Recut<image_t>::convert_buffer(VID_t interval_id, const image_t *tile,
       }
     }
   }
+  active_intervals[interval_id] = false;
 }
 #endif
 
@@ -2976,8 +2980,6 @@ std::unique_ptr<InstrumentedUpdateStatistics>
 Recut<image_t>::update(std::string stage, Container &fifo,
                        TileThresholds<image_t> *tile_thresholds) {
 
-  // init all timers
-  struct timespec update_start_time, update_finish_time;
   atomic<double> computation_time;
   computation_time = 0.0;
   auto interval_open_count = std::vector<uint16_t>(grid_interval_size, 0);
@@ -2993,7 +2995,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #ifdef LOG
   cout << "Start updating stage " << stage << '\n';
 #endif
-  clock_gettime(CLOCK_REALTIME, &update_start_time);
+  auto timer = new high_resolution_timer();
 
 #ifdef USE_VDB
   openvdb::initialize();
@@ -3087,8 +3089,9 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
 #ifdef USE_MCP3D
         mcp3d::MImage mcp3d_tile(
-            args->image_root_dir()); // prevent destruction before calling
-                                     // process_interval
+            args->image_root_dir(),
+            {args->channel()}); // prevent destruction before calling
+                                // process_interval
         // tile is only needed for the value stage
         if (stage == "value" || stage == "connected") {
           if (!(this->params->force_regenerate_image)) {
@@ -3112,30 +3115,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
         if (stage == "convert") {
 #ifdef USE_VDB
-          // FIXME undefined ref when passing vdb grid
-          // pasted below
-          // convert_buffer(interval_id, tile, vdb_grid);
-          auto vdb_accessor = vdb_grid->getAccessor();
-          vector<int> interval_offsets;
-          vector<int> interval_extents;
-
-          get_interval_offsets(interval_id, interval_offsets, interval_extents);
-
-          for (uint32_t z = interval_offsets[2];
-               z < interval_offsets[2] + interval_extents[2]; ++z) {
-            for (uint32_t y = interval_offsets[1];
-                 y < interval_offsets[1] + interval_extents[1]; ++y) {
-              for (uint32_t x = interval_offsets[0];
-                   x < interval_offsets[1] + interval_extents[0]; ++x) {
-                openvdb::Coord xyz(x, y, z);
-                auto interval_vid = get_interval_id_vert_sub(
-                    x - interval_offsets[0], y - interval_offsets[1],
-                    z - interval_offsets[2]);
-                auto val = tile[interval_vid];
-                vdb_accessor.setValue(xyz, val);
-              }
-            }
-          }
+          convert_buffer(interval_id, tile, vdb_grid);
 #endif
         } else {
           computation_time =
@@ -3147,17 +3127,25 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
     } // end one interval traversal
   }   // finished all intervals
-  clock_gettime(CLOCK_REALTIME, &update_finish_time);
+  auto total_update_time = timer->elapsed();
 
+  if (stage == "convert") {
+    timer->restart();
+    // Create a VDB file object and write out the grid.
+    openvdb::io::File(this->params->out_vdb_).write({vdb_grid});
+#ifdef LOG
+    cout << "Finished write whole grid in: " << timer->elapsed() << " sec\n";
+#endif
+  } else {
 #ifdef RV
-  cout << "Total ";
+    cout << "Total ";
 #ifdef NO_RV
-  cout << "rejected";
+    cout << "rejected";
 #endif
-  cout << " revisits: " << global_revisits << " vertices" << '\n';
+    cout << " revisits: " << global_revisits << " vertices" << '\n';
 #endif
+  }
 
-  auto total_update_time = diff_time(update_start_time, update_finish_time);
   auto io_time = total_update_time - computation_time;
 #ifdef LOG
   cout << "Finished stage: " << stage << '\n';
@@ -3168,11 +3156,6 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   cout << "Total interval iterations: " << outer_iteration_idx << '\n';
 //", block iterations: "<< final_inner_iter + 1<< '\n';
 #endif
-
-  if (stage == "convert") {
-    // Create a VDB file object and write out the grid.
-    openvdb::io::File(this->params->out_vdb_).write({vdb_grid});
-  }
 
   return std::make_unique<InstrumentedUpdateStatistics>(
       outer_iteration_idx, total_update_time, computation_time, io_time,
@@ -3330,24 +3313,22 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
       vector<vector<bool>>(interval_block_size,
                            vector<bool>(interval_block_size)));
 
-#ifdef LOG_FULL
-  cout << "Created active neighbors" << '\n';
-#endif
-
+  if (!(params->convert_only_)) {
 #ifdef CONCURRENT_MAP
-  updated_ghost_vec = std::make_unique<ConcurrentMap64>();
+    updated_ghost_vec = std::make_unique<ConcurrentMap64>();
 #else
-  updated_ghost_vec = vector<vector<vector<vector<struct VertexAttr>>>>(
-      grid_interval_size,
-      vector<vector<vector<struct VertexAttr>>>(
-          interval_block_size,
-          vector<vector<struct VertexAttr>>(interval_block_size,
-                                            vector<struct VertexAttr>())));
+    updated_ghost_vec = vector<vector<vector<vector<struct VertexAttr>>>>(
+        grid_interval_size,
+        vector<vector<vector<struct VertexAttr>>>(
+            interval_block_size,
+            vector<vector<struct VertexAttr>>(interval_block_size,
+                                              vector<struct VertexAttr>())));
 #endif
 
 #ifdef LOG_FULL
-  cout << "Created updated ghost vec" << '\n';
+    cout << "Created updated ghost vec" << '\n';
 #endif
+  }
 
   // Initialize.
   vector<vector<atomwrapper<bool>>> temp(
@@ -3383,20 +3364,23 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
   cout << "Created processing blocks" << '\n';
 #endif
 
-  // fifo is a deque representing the vids left to
-  // process at each stage
-  this->global_fifo = std::vector<std::vector<std::deque<VertexAttr>>>(
-      grid_interval_size, std::vector<std::deque<VertexAttr>>(
-                              interval_block_size, std::deque<VertexAttr>()));
+  if (!(params->convert_only_)) {
+    // fifo is a deque representing the vids left to
+    // process at each stage
+    this->global_fifo = std::vector<std::vector<std::deque<VertexAttr>>>(
+        grid_interval_size, std::vector<std::deque<VertexAttr>>(
+                                interval_block_size, std::deque<VertexAttr>()));
 
-  this->local_fifo = std::vector<std::vector<std::deque<VertexAttr>>>(
-      grid_interval_size, std::vector<std::deque<VertexAttr>>(
-                              interval_block_size, std::deque<VertexAttr>()));
+    this->local_fifo = std::vector<std::vector<std::deque<VertexAttr>>>(
+        grid_interval_size, std::vector<std::deque<VertexAttr>>(
+                                interval_block_size, std::deque<VertexAttr>()));
 
-  // global active vertex list
-  this->active_vertices = std::vector<std::vector<std::vector<VertexAttr>>>(
-      grid_interval_size, std::vector<std::vector<VertexAttr>>(
-                              interval_block_size, std::vector<VertexAttr>()));
+    // global active vertex list
+    this->active_vertices = std::vector<std::vector<std::vector<VertexAttr>>>(
+        grid_interval_size,
+        std::vector<std::vector<VertexAttr>>(interval_block_size,
+                                             std::vector<VertexAttr>()));
+  }
 }
 
 template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
@@ -3405,8 +3389,11 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   omp_set_num_threads(params->user_thread_count());
 #ifdef LOG
   cout << "User specific thread count " << params->user_thread_count() << '\n';
+  cout << "User specified image root dir " << args->image_root_dir() << '\n';
 #endif
 #endif
+  assertm(fs::exists(args->image_root_dir()),
+          "Image root directory does not exist");
 
   struct timespec time0, time1, time2, time3;
   uint64_t root_64bit;
@@ -3418,7 +3405,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
 #ifdef USE_MCP3D
   if (!(this->params->force_regenerate_image)) {
     // determine the image size
-    mcp3d::MImage global_image(args->image_root_dir());
+    mcp3d::MImage global_image(args->image_root_dir(), {args->channel()});
     // read data from channel
     global_image.ReadImageInfo(args->resolution_level(), true);
     if (global_image.image_info().empty()) {
@@ -3428,7 +3415,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     }
 
     // save to __image_info__.json in corresponding dir
-    // global_image.SaveImageInfo(); 
+    // global_image.SaveImageInfo();
 
     // reflects the total global image domain
     global_image_dims = global_image.xyz_dims(args->resolution_level());
@@ -3441,9 +3428,8 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   // account for image_offsets and args->image_extents
   // extents are the length of the domain for each dim
   for (int i = 0; i < 3; i++) {
-    cout << args->image_offsets[i] << '\n';
-    cout << global_image_dims[i] << '\n';
     // default image_offsets is {0, 0, 0}
+    // which means start at the beginning of the image
     // this enforces the minimum extent to be 1 in each dim
     assertm(args->image_offsets[i] < global_image_dims[i],
             "input offset can not exceed dimension of image");
@@ -3560,13 +3546,15 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
               *this, this->mmap_);
 
   clock_gettime(CLOCK_REALTIME, &time2);
-#endif // DENSE
 
 #ifdef LOG
-  cout << "Created super interval in " << diff_time(time0, time2) << " s";
+  cout << "Created grid in " << diff_time(time0, time2) << " s";
   cout << " with total intervals: " << grid_interval_size << '\n';
 #endif
 
+#endif // DENSE
+
+  clock_gettime(CLOCK_REALTIME, &time2);
   initialize_globals(grid_interval_size, interval_block_size);
 
   clock_gettime(CLOCK_REALTIME, &time3);
@@ -3608,8 +3596,12 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     return {this->params->root_vid};
 
   } else {
-    // adds all valid markers to root_vids vector and returns
-    return process_marker_dir(args->image_offsets, args->image_extents);
+    if (params->convert_only_) {
+      return {0}; // dummy root vid
+    } else {
+      // adds all valid markers to root_vids vector and returns
+      return process_marker_dir(args->image_offsets, args->image_extents);
+    }
   }
 }
 
@@ -4089,11 +4081,12 @@ template <class image_t> void Recut<image_t>::run_pipeline() {
   // create a list of root vids
   auto root_vids = this->initialize();
 
-  if (!(this->params->out_vdb_.empty())) {
+  if (params->convert_only_) {
     stage = "convert";
     activate_all_intervals();
     // auto saves converted grid in update
     this->update(stage, global_fifo);
+
     // no more work to do
     return;
   }

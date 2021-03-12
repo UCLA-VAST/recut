@@ -27,7 +27,7 @@ string RecutParameters::MetaString() {
 
 void RecutCommandLineArgs::PrintUsage() {
   cout << "Basic usage : recut <image_root_dir> [--seeds <marker_dir>] "
-          "[--channel <int>] "
+          "[--channel <dir>] "
           "[--convert <vdb_file>] "
           "[--outswc <swc_file>] "
           "[--resolution-level <int>] [--image-offsets <int> [<int>] [<int>]] "
@@ -45,7 +45,7 @@ void RecutCommandLineArgs::PrintUsage() {
   cout << "--min                set min image voxel raw value allowed, "
           "computed automatically when --bg_thresh or --fg-percent are "
           "specified\n";
-  cout << "--channel            [-c] channel number of image default 0\n";
+  cout << "--channel            [-c] directory of channel image default ch0\n";
   cout << "--outswc             [-os] output tracing result default is "
           "out.swc\n";
   cout << "--resolution-level   [-rl] resolution level to perform tracing at. "
@@ -101,6 +101,7 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
           // only vdb is supported
           args.recut_parameters().set_out_vdb("out.vdb");
         }
+        args.recut_parameters().set_convert_only(true);
       } else if (strcmp(argv[i], "--seeds") == 0 ||
                  strcmp(argv[i], "-s") == 0) {
         args.recut_parameters().set_marker_file_path(argv[i + 1]);
@@ -133,7 +134,7 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
         ++i;
       } else if (strcmp(argv[i], "--channel") == 0 ||
                  strcmp(argv[i], "-c") == 0) {
-        args.set_channel(atoi(argv[i + 1]));
+        args.set_channel(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--bg-thresh") == 0 ||
                  strcmp(argv[i], "-bt") == 0) {

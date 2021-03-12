@@ -33,6 +33,7 @@ class RecutParameters {
       brightfield_ = false;
       marker_file_path_ = std::string();
       out_vdb_ = std::string();
+      convert_only_ = false;
       parallel_num_ = 1; // default is the max hardware concurrency when not set
       block_size_ = 64;
       interval_size_ = 1024;
@@ -117,9 +118,11 @@ class RecutParameters {
     void set_marker_file_path(const std::string &marker_file_path) {
       marker_file_path_ = marker_file_path;
     }
-    // if string out_vdb is left empty means don't just convert and exit
     void set_out_vdb(const std::string &out_vdb) {
       out_vdb_ = out_vdb;
+    }
+    void set_convert_only(const bool &convert_only) {
+      convert_only_ = convert_only;
     }
     void set_max_intensity(double max_intensity) {
       max_intensity_ = max_intensity;
@@ -129,7 +132,7 @@ class RecutParameters {
     }
 
     // no getters or setters
-    bool force_regenerate_image;
+    bool force_regenerate_image, convert_only_;
     int tcase, slt_pct;
     uint64_t selected, root_vid;
     bool gsdt_, coverage_prune_, allow_gap_, cube_256_, radius_from_2d_,
@@ -145,7 +148,7 @@ class RecutCommandLineArgs {
   public:
     RecutCommandLineArgs()
       : recut_parameters_(RecutParameters{}), image_root_dir_(std::string()),
-      swc_path_("out.swc"), channel_(0), resolution_level_(0),
+      swc_path_("out.swc"), channel_("ch0"), resolution_level_(0),
       image_offsets({0, 0, 0}), image_extents({0, 0, 0}) {}
     static void PrintUsage();
     std::string MetaString();
@@ -155,7 +158,7 @@ class RecutCommandLineArgs {
     RecutParameters &recut_parameters() { return recut_parameters_; }
     std::string image_root_dir() const { return image_root_dir_; }
     std::string swc_path() const { return swc_path_; }
-    int channel() const { return channel_; }
+    std::string channel() const { return channel_; }
     int resolution_level() const { return resolution_level_; }
     // std::vector<int> image_offsets() const { return image_offsets; }
     // std::vector<int> image_extents() const { return image_extents; }
@@ -170,7 +173,7 @@ class RecutCommandLineArgs {
 
     void set_swc_path(const std::string &swc_path) { swc_path_ = swc_path; }
 
-    void set_channel(int channel) {
+    void set_channel(std::string channel) {
       channel_ = channel;
     }
 
@@ -195,8 +198,8 @@ class RecutCommandLineArgs {
 
   private:
     RecutParameters recut_parameters_;
-    std::string image_root_dir_, swc_path_;
-    int channel_, resolution_level_;
+    std::string image_root_dir_, swc_path_, channel_; 
+    int resolution_level_;
 };
 
 bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args);

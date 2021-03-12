@@ -9,3 +9,4 @@ include
 compile_commands.json
 result
 .envrc
+out.vdb
