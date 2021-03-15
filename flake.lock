@@ -7,13 +7,18 @@
         ]
       },
       "locked": {
-        "narHash": "sha256-xxY1EHqecu//GYj5ancs1l2+nRZQbWb3wNlcJZllv4M=",
-        "path": "/home/kdmarrett/mcp3d",
-        "type": "path"
+        "lastModified": 1609534110,
+        "narHash": "sha256-JscarEvJW8imSrBQdq0ZlAagady5HUoQNVflIudqe9w=",
+        "ref": "stable_lib",
+        "rev": "3addf1d56825cc2fe2990a659242a57e79f6d6b3",
+        "revCount": 368,
+        "type": "git",
+        "url": "ssh://git@github.com/muyezhu/mcp3d"
       },
       "original": {
-        "path": "/home/kdmarrett/mcp3d",
-        "type": "path"
+        "ref": "stable_lib",
+        "type": "git",
+        "url": "ssh://git@github.com/muyezhu/mcp3d"
       }
     },
     "nixpkgs": {

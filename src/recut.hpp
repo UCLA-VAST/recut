@@ -43,29 +43,14 @@ struct InstrumentedUpdateStatistics {
   std::vector<uint64_t> max_sizes;
   std::vector<uint64_t> mean_sizes;
 
-  template <typename T>
   InstrumentedUpdateStatistics(int iterations, double total_time,
                                double computation_time, double io_time,
                                std::vector<uint16_t> interval_open_counts,
                                const VID_t &grid_interval_size,
-                               const VID_t &interval_block_size,
-                               const T &heap_vec)
+                               const VID_t &interval_block_size)
       : iterations(iterations), total_time(total_time),
         computation_time(computation_time), io_time(io_time),
-        interval_open_counts(interval_open_counts) {
-
-    // for (int i = 0; i < grid_interval_size; i++) {
-    // for (int j = 0; j < interval_block_size; j++) {
-    // auto heap = heap_vec[i][j];
-    // max_sizes.push_back(heap.max_size);
-    // if (heap.cumulative_count == 0 || heap.op_count == 0) {
-    // mean_sizes.push_back(0);
-    //} else {
-    // mean_sizes.push_back(heap.cumulative_count / heap.op_count);
-    //}
-    //}
-    //}
-  }
+        interval_open_counts(interval_open_counts) { }
 };
 
 template <class image_t> class Recut {
@@ -3115,7 +3100,31 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
         if (stage == "convert") {
 #ifdef USE_VDB
-          convert_buffer(interval_id, tile, vdb_grid);
+          // convert_buffer(interval_id, tile, vdb_grid);
+          // Get an accessor for coordinate-based access to voxels.
+          auto vdb_accessor = vdb_grid->getAccessor();
+
+          vector<int> interval_offsets;
+          vector<int> interval_extents;
+
+          get_interval_offsets(interval_id, interval_offsets, interval_extents);
+
+          for (uint32_t z = interval_offsets[2];
+               z < interval_offsets[2] + interval_extents[2]; ++z) {
+            for (uint32_t y = interval_offsets[1];
+                 y < interval_offsets[1] + interval_extents[1]; ++y) {
+              for (uint32_t x = interval_offsets[0];
+                   x < interval_offsets[1] + interval_extents[0]; ++x) {
+                openvdb::Coord xyz(x, y, z);
+                auto interval_vid = get_interval_id_vert_sub(
+                    x - interval_offsets[0], y - interval_offsets[1],
+                    z - interval_offsets[2]);
+                auto val = tile[interval_vid];
+                vdb_accessor.setValue(xyz, val);
+              }
+            }
+          }
+          active_intervals[interval_id] = false;
 #endif
         } else {
           computation_time =
@@ -3158,9 +3167,11 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #endif
 
   return std::make_unique<InstrumentedUpdateStatistics>(
-      outer_iteration_idx, total_update_time, computation_time, io_time,
-      interval_open_count, grid_interval_size, interval_block_size,
-      this->heap_vec);
+      outer_iteration_idx, total_update_time, 0., io_time,
+      interval_open_count, grid_interval_size, interval_block_size);
+  //return std::make_unique<InstrumentedUpdateStatistics>(
+      //outer_iteration_idx, total_update_time, computation_time, io_time,
+      //interval_open_count, grid_interval_size, interval_block_size);
 } // end update()
 
 /* get the vid with respect to the entire image passed to the
