@@ -43,29 +43,12 @@ struct InstrumentedUpdateStatistics {
   std::vector<uint64_t> max_sizes;
   std::vector<uint64_t> mean_sizes;
 
-  template <typename T>
   InstrumentedUpdateStatistics(int iterations, double total_time,
                                double computation_time, double io_time,
-                               std::vector<uint16_t> interval_open_counts,
-                               const VID_t &grid_interval_size,
-                               const VID_t &interval_block_size,
-                               const T &heap_vec)
+                               std::vector<uint16_t> interval_open_counts)
       : iterations(iterations), total_time(total_time),
         computation_time(computation_time), io_time(io_time),
-        interval_open_counts(interval_open_counts) {
-
-    // for (int i = 0; i < grid_interval_size; i++) {
-    // for (int j = 0; j < interval_block_size; j++) {
-    // auto heap = heap_vec[i][j];
-    // max_sizes.push_back(heap.max_size);
-    // if (heap.cumulative_count == 0 || heap.op_count == 0) {
-    // mean_sizes.push_back(0);
-    //} else {
-    // mean_sizes.push_back(heap.cumulative_count / heap.op_count);
-    //}
-    //}
-    //}
-  }
+        interval_open_counts(interval_open_counts) {}
 };
 
 template <class image_t> class Recut {
@@ -1963,6 +1946,7 @@ void Recut<image_t>::connected_tile(
     VID_t revisits) {
 
   VertexAttr *current, *msg_vertex;
+  VID_t visited = 0;
   while (!(local_fifo[interval_id][block_id].empty())) {
 
 #ifdef LOG_FULL
@@ -2066,6 +2050,7 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
                                 Container &fifo, VID_t revisits) {
   assertm(false, "deprecated");
   VertexAttr *current;
+  VID_t visited = 0;
   while (!(heap_vec[interval_id][block_id].empty())) {
 
     if (restart_bool) {
@@ -2184,6 +2169,7 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
                                  const TileThresholds<image_t> *tile_thresholds,
                                  Container &fifo, VID_t revisits) {
   VertexAttr *current; // for performance
+  VID_t visited = 0;
   while (!(fifo.empty())) {
     // msg_vertex will be invalidated during call to update_neighbors
     auto msg_vertex = &(fifo.front());
@@ -2233,6 +2219,7 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
                                 Container &fifo, VID_t revisits) {
   VertexAttr *current;
   bool current_outside_domain, covered;
+  VID_t visited = 0;
   while (!(fifo.empty())) {
     covered = false;
     // fifo starts with only roots
@@ -2869,16 +2856,19 @@ void Recut<image_t>::convert_buffer(VID_t interval_id, const image_t *tile,
 
   get_interval_offsets(interval_id, interval_offsets, interval_extents);
 
-  for (uint32_t z = interval_offsets[2];
-       z < interval_offsets[2] + interval_extents[2]; ++z) {
+  for (uint32_t z = interval_offsets[0];
+       z < interval_offsets[0] + interval_extents[0]; ++z) {
     for (uint32_t y = interval_offsets[1];
          y < interval_offsets[1] + interval_extents[1]; ++y) {
-      for (uint32_t x = interval_offsets[0];
-           x < interval_offsets[1] + interval_extents[0]; ++x) {
+      for (uint32_t x = interval_offsets[2];
+           x < interval_offsets[2] + interval_extents[2]; ++x) {
         openvdb::Coord xyz(x, y, z);
-        auto interval_vid = get_interval_id_vert_sub(x - interval_offsets[0],
+#ifdef FULL_PRINT
+        cout << " x " << x << " y " << y << " z " << z << '\n';
+#endif
+        auto interval_vid = get_interval_id_vert_sub(x - interval_offsets[2],
                                                      y - interval_offsets[1],
-                                                     z - interval_offsets[2]);
+                                                     z - interval_offsets[0]);
         auto val = tile[interval_vid];
         vdb_accessor.setValue(xyz, val);
       }
@@ -3093,7 +3083,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
             {args->channel()}); // prevent destruction before calling
                                 // process_interval
         // tile is only needed for the value stage
-        if (stage == "value" || stage == "connected") {
+        if (stage == "value" || stage == "connected" || stage == "convert") {
           if (!(this->params->force_regenerate_image)) {
             // mcp3d_tile must be kept in scope during the processing
             // of this interval otherwise dangling reference then seg fault
@@ -3158,9 +3148,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #endif
 
   return std::make_unique<InstrumentedUpdateStatistics>(
-      outer_iteration_idx, total_update_time, computation_time, io_time,
-      interval_open_count, grid_interval_size, interval_block_size,
-      this->heap_vec);
+      outer_iteration_idx, total_update_time,
+      static_cast<double>(computation_time), io_time, interval_open_count);
 } // end update()
 
 /* get the vid with respect to the entire image passed to the
@@ -3456,14 +3445,25 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   this->image_length_xy = image_length_x * image_length_y;
   this->image_size = image_length_x * image_length_y * image_length_z;
 
+  // Determine the size of each interval in each dim
   // the image size and offsets override the user inputted interval size
   // continuous id's are the same for current or dst intervals
   // round up (pad)
-  // Determine the size of each interval in each dim
-  // constrict so less data is allocated especially in z dimension
-  interval_length_x = min((VID_t)params->interval_size(), image_length_x);
-  interval_length_y = min((VID_t)params->interval_size(), image_length_y);
-  interval_length_z = min((VID_t)params->interval_size(), image_length_z);
+  if (this->params->convert_only_) {
+    // images are saved in separate z-planes, so conversion should respect that
+    // for best performance
+    // constrict so less data is allocated especially in z dimension
+    this->interval_length_x = image_length_x;
+    this->interval_length_y = image_length_y;
+    this->interval_length_z = 1;
+  } else {
+    this->interval_length_x =
+        min((VID_t)params->interval_size(), image_length_x);
+    this->interval_length_y =
+        min((VID_t)params->interval_size(), image_length_y);
+    this->interval_length_z =
+        min((VID_t)params->interval_size(), image_length_z);
+  }
 
   // determine the length of intervals in each dim
   // rounding up (ceil)
@@ -4084,8 +4084,11 @@ template <class image_t> void Recut<image_t>::run_pipeline() {
   if (params->convert_only_) {
     stage = "convert";
     activate_all_intervals();
+
+    auto tile_thresholds = new TileThresholds<uint16_t>(
+        /*max*/ 65535, /*min*/ 0, /*bkg_thresh*/ 420);
     // auto saves converted grid in update
-    this->update(stage, global_fifo);
+    this->update(stage, global_fifo, tile_thresholds);
 
     // no more work to do
     return;

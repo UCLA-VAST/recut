@@ -23,7 +23,7 @@ in
   TEST_IMAGE = "/curr/kdmarrett/data/tcase6_image";
   TEST_MARKER = "/curr/kdmarrett/data/tcase6_marker";
 
-  cmakeFlags = ["-DUSE_VDB=ON -DLOG=ON -DFULL_PRINT=OFF -DUSE_OMP_BLOCK=ON -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MODULE_PATH=${openvdb}/lib/cmake/OpenVDB"];
+  cmakeFlags = ["-DUSE_VDB=ON -DLOG=ON -DLOG_FULL=ON -DFULL_PRINT=OFF -DUSE_OMP_BLOCK=ON -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MODULE_PATH=${openvdb}/lib/cmake/OpenVDB"];
 
   nativeBuildInputs = [ cmake ];
 
@@ -46,8 +46,12 @@ in
     # warning leaving breakpointHook on
     # will cause github actions to hang, if there are any failures
     # always comment it out before pushing
-    breakpointHook
+    #breakpointHook
   ];
+
+  # more debug info
+  dontStrip = true;
+  enableDebugging = true;
 
   doInstallCheck = true;
   # You have to run installcheck step first such that the relevant files used at runtime
