@@ -2990,7 +2990,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #ifdef USE_VDB
   openvdb::initialize();
   // Create an empty grid with background value 0.
-  openvdb::FloatGrid::Ptr vdb_grid = openvdb::FloatGrid::create();
+  auto vdb_grid = openvdb::FloatGrid::create();
 #endif
 
   // Main march for loop
