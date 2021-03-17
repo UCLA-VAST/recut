@@ -70,7 +70,7 @@ public:
   //    be unaware of such grouping
   // n, num, number: these terms are avoided due to ambiguity
   // iterables: are given plural names where possible to aid "for each" clarity
-  // id: unique identifier of an instance
+  // vid, id: unique identifier of an instance
   // idx: index for example in looping variables
   //
   // Example:
@@ -273,8 +273,10 @@ public:
   TileThresholds<image_t> *get_tile_thresholds(mcp3d::MImage &mcp3d_tile);
 #endif
 #ifdef USE_VDB
-  void convert_buffer(VID_t interval_id, const image_t *tile,
-                      openvdb::FloatGrid::Ptr vdb_grid);
+  template <typename T1, typename T2>
+  void convert_buffer(VID_t interval_id, const image_t *tile, T1 vdb_grid,
+                      T2 vdb_accessor,
+                      TileThresholds<image_t> *tile_thresholds);
 #endif
   template <class Container>
   std::atomic<double>
@@ -2845,11 +2847,12 @@ void Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
 
 #ifdef USE_VDB
 template <class image_t>
+template <typename T1, typename T2>
 void Recut<image_t>::convert_buffer(VID_t interval_id, const image_t *tile,
-                                    openvdb::FloatGrid::Ptr vdb_grid) {
+                                    T1 vdb_grid, T2 vdb_accessor,
+                                    TileThresholds<image_t> *tile_thresholds) {
 
   // Get an accessor for coordinate-based access to voxels.
-  auto vdb_accessor = vdb_grid->getAccessor();
 
   vector<int> interval_offsets;
   vector<int> interval_extents;
@@ -2870,7 +2873,10 @@ void Recut<image_t>::convert_buffer(VID_t interval_id, const image_t *tile,
                                                      y - interval_offsets[1],
                                                      z - interval_offsets[0]);
         auto val = tile[interval_vid];
-        vdb_accessor.setValue(xyz, val);
+        // voxels equal to discarded
+        if (val > tile_thresholds->bkg_thresh) {
+          vdb_accessor.setValue(xyz, true);
+        }
       }
     }
   }
@@ -2990,7 +2996,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #ifdef USE_VDB
   openvdb::initialize();
   // Create an empty grid with background value 0.
-  auto vdb_grid = openvdb::FloatGrid::create();
+  auto vdb_grid = openvdb::TopologyGrid::create();
+  auto vdb_accessor = vdb_grid->getAccessor();
 #endif
 
   // Main march for loop
@@ -3105,7 +3112,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
         if (stage == "convert") {
 #ifdef USE_VDB
-          convert_buffer(interval_id, tile, vdb_grid);
+          convert_buffer(interval_id, tile, vdb_grid, vdb_accessor,
+                         local_tile_thresholds);
 #endif
         } else {
           computation_time =
@@ -4085,8 +4093,10 @@ template <class image_t> void Recut<image_t>::run_pipeline() {
     stage = "convert";
     activate_all_intervals();
 
-    auto tile_thresholds = new TileThresholds<uint16_t>(
-        /*max*/ 65535, /*min*/ 0, /*bkg_thresh*/ 420);
+    auto tile_thresholds = new TileThresholds<image_t>(
+        /*max*/ numeric_limits<image_t>::max(),
+        /*min*/ numeric_limits<image_t>::min(), 
+        /*bkg_thresh*/ 420);
     // auto saves converted grid in update
     this->update(stage, global_fifo, tile_thresholds);
 
