@@ -527,7 +527,8 @@ TEST(ConvertOnlyAndOutVDB, Any) {
   auto grid_size = 2;
   auto tcase = 0;
   double slt_pct = 100;
-  auto fn = "test-convert_only.vdb";
+  auto str_path = get_data_dir();
+  auto fn = str_path + "/test_convert_only.vdb";
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, /*force_regenerate_image=*/ true);
   auto recut = Recut<uint16_t>(args);
 
@@ -537,9 +538,18 @@ TEST(ConvertOnlyAndOutVDB, Any) {
   recut();
 
   ASSERT_TRUE(fs::exists(fn));
-}
 
-TEST(VDB, ReadGrid) {
+  args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, /*force_regenerate_image=*/ false);
+
+  // pass actual fn
+  args.set_image_root_dir(fn);
+  auto recut2 = Recut<uint16_t>(args);
+
+  // handle read from image
+  recut();
+
+  // print_grid
+  // assert equals original grid above
 }
 #endif // USE_VDB
 

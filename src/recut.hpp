@@ -89,6 +89,7 @@ public:
   std::ofstream out;
   image_t *generated_image = nullptr;
   bool mmap_;
+  bool input_is_vdb;
   size_t iteration;
   float bound_band;
   float stride;
@@ -164,6 +165,7 @@ public:
               std::string cmp_field);
 
   image_t get_img_val(const image_t *tile, VID_t vid);
+  template <typename T> bool get_vdb_val(T accessor, VID_t vid);
   inline VID_t rotate_index(VID_t img_sub, const VID_t current,
                             const VID_t neighbor,
                             const VID_t interval_block_size,
@@ -195,11 +197,12 @@ public:
   void check_ghost_update(VID_t interval_id, VID_t block_id,
                           struct VertexAttr *dst, std::string stage);
   int get_parent_code(VID_t dst_id, VID_t src_id);
+  template <typename T>
   bool accumulate_connected(const image_t *tile, VID_t interval_id,
                             VID_t dst_id, VID_t block_id, VID_t current_vid,
                             VID_t &revisits,
                             const TileThresholds<image_t> *tile_thresholds,
-                            bool &found_background);
+                            bool &found_background, T vdb_accessor);
   bool accumulate_value(const image_t *tile, VID_t interval_id, VID_t dst_id,
                         VID_t block_id, struct VertexAttr *current,
                         VID_t &revisits,
@@ -218,14 +221,15 @@ public:
   void accumulate_radius(VID_t interval_id, VID_t dst_id, VID_t block_id,
                          T current_radius, VID_t &revisits, int stride,
                          int pad_stride, Container &fifo);
-  template <class Container>
+  template <class Container, typename T>
   void update_neighbors(const image_t *tile, VID_t interval_id, VID_t block_id,
                         VertexAttr *current, VID_t current_vid, VID_t &revisits,
                         std::string stage,
                         const TileThresholds<image_t> *tile_thresholds,
                         bool &found_adjacent_invalid,
                         VertexAttr &found_higher_parent, Container &fifo,
-                        bool &covered, bool current_outside_domain = false,
+                        bool &covered, T vdb_accessor,
+                        bool current_outside_domain = false,
                         bool enqueue_dsts = false);
   template <class Container>
   void integrate_updated_ghost(const VID_t interval_id, const VID_t block_id,
@@ -237,36 +241,37 @@ public:
                         struct VertexAttr *updated_vertex,
                         bool ignore_KNOWN_NEW, std::string stage,
                         Container &fifo);
-  template <class Container>
+  template <class Container, typename T>
   void march_narrow_band(const image_t *tile, VID_t interval_id, VID_t block_id,
                          std::string stage,
                          const TileThresholds<image_t> *tile_thresholds,
-                         Container &fifo);
-  template <class Container>
+                         Container &fifo, T vdb_accessor);
+  template <class Container, typename T>
   void connected_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
                       std::string stage,
                       const TileThresholds<image_t> *tile_thresholds,
-                      Container &fifo, VID_t revisits);
-  template <class Container>
+                      Container &fifo, VID_t revisits, T vdb_accessor);
+  template <class Container, typename T>
   void value_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
                   std::string stage,
                   const TileThresholds<image_t> *tile_thresholds,
-                  Container &fifo, VID_t revisits);
-  template <class Container>
+                  Container &fifo, VID_t revisits, T vdb_accessor);
+  template <class Container, typename T>
   void radius_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
                    std::string stage,
                    const TileThresholds<image_t> *tile_thresholds,
-                   Container &fifo, VID_t revisits);
-  template <class Container>
+                   Container &fifo, VID_t revisits, T vdb_accessor);
+  template <class Container, typename T>
   void prune_tile_assign_parent(const image_t *tile, VID_t interval_id,
                                 VID_t block_id, std::string stage,
                                 const TileThresholds<image_t> *tile_thresholds,
-                                Container &fifo, VID_t revisits);
-  template <class Container>
+                                Container &fifo, VID_t revisits,
+                                T vdb_accessor);
+  template <class Container, typename T>
   void prune_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
                   std::string stage,
                   const TileThresholds<image_t> *tile_thresholds,
-                  Container &fifo, VID_t revisits);
+                  Container &fifo, VID_t revisits, T vdb_accessor);
   void create_march_thread(VID_t interval_id, VID_t block_id);
 #ifdef USE_MCP3D
   void load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile);
@@ -278,11 +283,11 @@ public:
                       T2 vdb_accessor,
                       TileThresholds<image_t> *tile_thresholds);
 #endif
-  template <class Container>
+  template <class Container, typename T>
   std::atomic<double>
   process_interval(VID_t interval_id, const image_t *tile, std::string stage,
                    const TileThresholds<image_t> *tile_thresholds,
-                   Container &fifo);
+                   Container &fifo, T vdb_accessor);
   template <class Container>
   std::unique_ptr<InstrumentedUpdateStatistics>
   update(std::string stage, Container &fifo = nullptr,
@@ -775,6 +780,19 @@ inline VID_t Recut<image_t>::get_interval_id_vert_sub(const VID_t i,
          i;
 }
 
+template <class image_t>
+template <typename T>
+bool Recut<image_t>::get_vdb_val(T vdb_accessor, VID_t vid) {
+  VID_t x, y, z;
+  x = y = z = 0;
+  get_img_subscript(vid, x, y, z);
+  openvdb::Coord xyz(x, y, z);
+#ifdef FULL_PRINT
+  cout << " x " << x << " y " << y << " z " << z << '\n';
+#endif
+  return vdb_accessor.getValue(xyz);
+}
+
 /*
  * Takes a global image vid
  * and converts it to linear index of current
@@ -805,8 +823,7 @@ image_t Recut<image_t>::get_img_val(const image_t *tile, VID_t vid) {
   // cout<< "\n\tia: "<<ia<<" ja: "<<ja <<" ka: "<< ka<< " interval vid: " <<
   // interval_vid << '\n';
 #endif
-  auto val = tile[interval_vid];
-  return val;
+  return tile[interval_vid];
 }
 
 template <typename image_t>
@@ -1029,31 +1046,38 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t dst_id,
  * attribute selected
  */
 template <class image_t>
+template <typename T>
 bool Recut<image_t>::accumulate_connected(
     const image_t *tile, VID_t interval_id, VID_t dst_id, VID_t block_id,
     VID_t current_vid, VID_t &revisits,
-    const TileThresholds<image_t> *tile_thresholds, bool &found_background) {
-
-  auto dst_vox = get_img_val(tile, dst_id);
+    const TileThresholds<image_t> *tile_thresholds, bool &found_background,
+    T vdb_accessor) {
 
 #ifdef FULL_PRINT
   cout << "\tcheck dst vid: " << dst_id;
-  cout << " pixel " << dst_vox;
   cout << " bkg_thresh " << +(tile_thresholds->bkg_thresh) << '\n';
 #endif
 
   // skip backgrounds
   // the image voxel of this dst vertex is the primary method to exclude this
   // pixel/vertex for the remainder of all processing
-  if (dst_vox <= tile_thresholds->bkg_thresh) {
+  if (this->input_is_vdb) {
+    if (!get_vdb_val(vdb_accessor, dst_id))
+      found_background = true;
+  } else {
+    auto dst_vox = get_img_val(tile, dst_id);
+    if (dst_vox <= tile_thresholds->bkg_thresh) {
 #ifdef FULL_PRINT
-    cout << "\t\tfailed tile_thresholds->bkg_thresh" << '\n';
+      cout << "\t\tfailed tile_thresholds->bkg_thresh" << '\n';
 #endif
-    found_background = true;
-    return false;
+      found_background = true;
+    }
   }
 
-  // all dsts are guaranteed within this domain
+  if (found_background)
+    return false;
+
+    // all dsts are guaranteed within this domain
 #ifdef DENSE
   auto dst = get_vertex_vid(interval_id, block_id, dst_id, nullptr);
 #else
@@ -1463,13 +1487,13 @@ int Recut<image_t>::get_parent_code(VID_t dst_id, VID_t src_id) {
 
 // check and add dst vertices in star stencil
 template <class image_t>
-template <class Container>
+template <class Container, typename T>
 void Recut<image_t>::update_neighbors(
     const image_t *tile, VID_t interval_id, VID_t block_id, VertexAttr *current,
     VID_t current_vid, VID_t &revisits, std::string stage,
     const TileThresholds<image_t> *tile_thresholds,
     bool &found_adjacent_invalid, VertexAttr &found_higher_parent,
-    Container &fifo, bool &covered, bool current_outside_domain,
+    Container &fifo, bool &covered, T vdb_accessor, bool current_outside_domain,
     bool enqueue_dsts) {
 
   VID_t i, j, k;
@@ -1588,7 +1612,7 @@ void Recut<image_t>::update_neighbors(
         if (stage == "connected") {
           accumulate_connected(tile, interval_id, dst_id, block_id, current_vid,
                                revisits, tile_thresholds,
-                               found_adjacent_invalid);
+                               found_adjacent_invalid, vdb_accessor);
         } else if (stage == "radius") {
           accumulate_radius(interval_id, dst_id, block_id, current_radius,
                             revisits, stride, pad_stride, fifo);
@@ -1845,11 +1869,12 @@ template <class image_t> bool Recut<image_t>::are_intervals_finished() {
 #endif
     }
   }
+  cout << '\n';
   if (tot_active == 0) {
     return true;
   } else {
 #ifdef LOG_FULL
-    cout << '\n' << tot_active << " total intervals active" << '\n';
+    cout << tot_active << " total intervals active" << '\n';
 #endif
     return false;
   }
@@ -1941,11 +1966,11 @@ void Recut<image_t>::dump_buffer(Container buffer) {
 }
 
 template <class image_t>
-template <class Container>
+template <class Container, typename T>
 void Recut<image_t>::connected_tile(
     const image_t *tile, VID_t interval_id, VID_t block_id, std::string stage,
     const TileThresholds<image_t> *tile_thresholds, Container &fifo,
-    VID_t revisits) {
+    VID_t revisits, T vdb_accessor) {
 
   VertexAttr *current, *msg_vertex;
   VID_t visited = 0;
@@ -1968,7 +1993,7 @@ void Recut<image_t>::connected_tile(
     auto covered = false;
     update_neighbors(tile, interval_id, block_id, msg_vertex, vid, revisits,
                      stage, tile_thresholds, found_adjacent_invalid,
-                     *msg_vertex, fifo, covered);
+                     *msg_vertex, fifo, covered, vdb_accessor);
 
     // protect from message values not inside
     // this block or interval such as roots from activate_vids
@@ -2045,11 +2070,12 @@ void Recut<image_t>::connected_tile(
 }
 
 template <class image_t>
-template <class Container>
+template <class Container, typename T>
 void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
                                 VID_t block_id, std::string stage,
                                 const TileThresholds<image_t> *tile_thresholds,
-                                Container &fifo, VID_t revisits) {
+                                Container &fifo, VID_t revisits,
+                                T vdb_accessor) {
   assertm(false, "deprecated");
   VertexAttr *current;
   VID_t visited = 0;
@@ -2111,7 +2137,7 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
     auto covered = false;
     update_neighbors(tile, interval_id, block_id, current, current->vid,
                      revisits, stage, tile_thresholds, found_adjacent_invalid,
-                     *current, fifo, covered);
+                     *current, fifo, covered, vdb_accessor);
     const auto check_block_id = get_block_id(current->vid);
     const auto check_interval_id = get_interval_id(current->vid);
     const bool in_domain =
@@ -2165,11 +2191,12 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
 }
 
 template <class image_t>
-template <class Container>
+template <class Container, typename T>
 void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
                                  VID_t block_id, std::string stage,
                                  const TileThresholds<image_t> *tile_thresholds,
-                                 Container &fifo, VID_t revisits) {
+                                 Container &fifo, VID_t revisits,
+                                 T vdb_accessor) {
   VertexAttr *current; // for performance
   VID_t visited = 0;
   while (!(fifo.empty())) {
@@ -2209,16 +2236,18 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
 
     bool _ = false;
     update_neighbors(tile, interval_id, block_id, current, current->vid,
-                     revisits, stage, tile_thresholds, _, *current, fifo, _);
+                     revisits, stage, tile_thresholds, _, *current, fifo, _,
+                     vdb_accessor);
   }
 }
 
 template <class image_t>
-template <class Container>
+template <class Container, typename T>
 void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
                                 VID_t block_id, std::string stage,
                                 const TileThresholds<image_t> *tile_thresholds,
-                                Container &fifo, VID_t revisits) {
+                                Container &fifo, VID_t revisits,
+                                T vdb_accessor) {
   VertexAttr *current;
   bool current_outside_domain, covered;
   VID_t visited = 0;
@@ -2266,7 +2295,8 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
       // check if covered
       update_neighbors(nullptr, interval_id, block_id, current, current->vid,
                        revisits, "prune", nullptr, _, found_higher_parent, fifo,
-                       covered, current_outside_domain, enqueue_dsts);
+                       covered, vdb_accessor, current_outside_domain,
+                       enqueue_dsts);
     }
 
     enqueue_dsts = true;
@@ -2274,7 +2304,8 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
     // current->parent
     update_neighbors(nullptr, interval_id, block_id, current, current->vid,
                      revisits, "prune", nullptr, _, found_higher_parent, fifo,
-                     covered, current_outside_domain, enqueue_dsts);
+                     covered, vdb_accessor, current_outside_domain,
+                     enqueue_dsts);
 
     if (covered) {
       // roots can never be added back in by accumulate_prune
@@ -2330,11 +2361,11 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
 } // end prune_tile
 
 // template <class image_t>
-// template <class Container>
+// template <class Container, typename T>
 // void Recut<image_t>::prune_tile_assign_parent(
 // const image_t *tile, VID_t interval_id, VID_t block_id, std::string stage,
 // const TileThresholds<image_t> *tile_thresholds, Container &fifo,
-// VID_t revisits) {
+// VID_t revisits, T vdb_accessor) {
 // VertexAttr *current;
 //// fifo only starts with roots
 // while (!(fifo.empty())) {
@@ -2445,10 +2476,11 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
 //} // end prune_tile
 
 template <class image_t>
-template <class Container>
+template <class Container, typename T>
 void Recut<image_t>::march_narrow_band(
     const image_t *tile, VID_t interval_id, VID_t block_id, std::string stage,
-    const TileThresholds<image_t> *tile_thresholds, Container &fifo) {
+    const TileThresholds<image_t> *tile_thresholds, Container &fifo,
+    T vdb_accessor) {
 #ifdef LOG_FULL
   struct timespec time0, time1;
   VID_t visited = 0;
@@ -2461,16 +2493,16 @@ void Recut<image_t>::march_narrow_band(
 
   if (stage == "connected") {
     connected_tile(tile, interval_id, block_id, stage, tile_thresholds, fifo,
-                   revisits);
+                   revisits, vdb_accessor);
   } else if (stage == "radius") {
     radius_tile(tile, interval_id, block_id, stage, tile_thresholds, fifo,
-                revisits);
+                revisits, vdb_accessor);
   } else if (stage == "prune") {
     prune_tile(tile, interval_id, block_id, stage, tile_thresholds, fifo,
-               revisits);
+               revisits, vdb_accessor);
   } else if (stage == "value") {
     value_tile(tile, interval_id, block_id, stage, tile_thresholds, fifo,
-               revisits);
+               revisits, vdb_accessor);
   } else {
     assertm(false, "Stage name not recognized");
   }
@@ -2617,10 +2649,12 @@ int Recut<image_t>::get_bkg_threshold(const image_t *tile,
 }
 
 template <class image_t>
-template <class Container>
-std::atomic<double> Recut<image_t>::process_interval(
-    VID_t interval_id, const image_t *tile, std::string stage,
-    const TileThresholds<image_t> *tile_thresholds, Container &fifo) {
+template <class Container, typename T>
+std::atomic<double>
+Recut<image_t>::process_interval(VID_t interval_id, const image_t *tile,
+                                 std::string stage,
+                                 const TileThresholds<image_t> *tile_thresholds,
+                                 Container &fifo, T vdb_accessor) {
 
   struct timespec presave_time, postmarch_time, iter_start,
       start_iter_loop_time, end_iter_time, postsave_time;
@@ -2686,12 +2720,12 @@ std::atomic<double> Recut<image_t>::process_interval(
           // FIXME check passing tile ptr as ref
           prevent_destruction.back()->silent_emplace([=, &tile]() {
             march_narrow_band(tile, interval_id, block_id, stage,
-                              tile_thresholds);
+                              tile_thresholds, vdb_accessor);
           });
           added_task = true;
 #else
           async(launch::async, &Recut<image_t>::march_narrow_band, this, tile,
-                interval_id, block_id, stage, tile_thresholds);
+                interval_id, block_id, stage, tile_thresholds, vdb_accessor);
 #endif // TF
         }
       }
@@ -2718,7 +2752,7 @@ std::atomic<double> Recut<image_t>::process_interval(
 #endif
     for (VID_t block_id = 0; block_id < interval_block_size; ++block_id) {
       march_narrow_band(tile, interval_id, block_id, stage, tile_thresholds,
-                        fifo[block_id]);
+                        fifo[block_id], vdb_accessor);
     }
 
 #endif // ASYNC
@@ -2997,6 +3031,13 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   openvdb::initialize();
   // Create an empty grid with background value 0.
   auto vdb_grid = openvdb::TopologyGrid::create();
+  vdb_grid->setName("topology");
+  vdb_grid->insertMeta("image_length_x",
+                       openvdb::Int32Metadata(image_length_x));
+  vdb_grid->insertMeta("image_length_y",
+                       openvdb::Int32Metadata(image_length_y));
+  vdb_grid->insertMeta("image_length_z",
+                       openvdb::Int32Metadata(image_length_z));
   auto vdb_accessor = vdb_grid->getAccessor();
 #endif
 
@@ -3092,14 +3133,16 @@ Recut<image_t>::update(std::string stage, Container &fifo,
         // tile is only needed for the value stage
         if (stage == "value" || stage == "connected" || stage == "convert") {
           if (!(this->params->force_regenerate_image)) {
-            // mcp3d_tile must be kept in scope during the processing
-            // of this interval otherwise dangling reference then seg fault
-            // on image access
-            load_tile(interval_id, mcp3d_tile);
-            if (!local_tile_thresholds) {
-              local_tile_thresholds = get_tile_thresholds(mcp3d_tile);
+            if (!this->input_is_vdb) {
+              // mcp3d_tile must be kept in scope during the processing
+              // of this interval otherwise dangling reference then seg fault
+              // on image access
+              load_tile(interval_id, mcp3d_tile);
+              if (!local_tile_thresholds) {
+                local_tile_thresholds = get_tile_thresholds(mcp3d_tile);
+              }
+              tile = mcp3d_tile.Volume<image_t>(0);
             }
-            tile = mcp3d_tile.Volume<image_t>(0);
           }
         }
 #else
@@ -3112,14 +3155,19 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
         if (stage == "convert") {
 #ifdef USE_VDB
+          assertm(!this->input_is_vdb,
+                  "input can't be vdb during convert stage");
+          auto convert_start = timer->elapsed();
           convert_buffer(interval_id, tile, vdb_grid, vdb_accessor,
                          local_tile_thresholds);
+          computation_time =
+              computation_time + (timer->elapsed() - convert_start);
 #endif
         } else {
           computation_time =
-              computation_time + process_interval(interval_id, tile, stage,
-                                                  local_tile_thresholds,
-                                                  fifo[interval_id]);
+              computation_time +
+              process_interval(interval_id, tile, stage, local_tile_thresholds,
+                               fifo[interval_id], vdb_accessor);
         }
       } // if the interval is active
 
@@ -3128,10 +3176,25 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   auto total_update_time = timer->elapsed();
 
   if (stage == "convert") {
+
+    // finalize grid
     timer->restart();
+    // mark as level set?
+    vdb_grid->setGridClass(openvdb::GridClass(openvdb::v8_0::GRID_LEVEL_SET));
+    vdb_grid->addStatsMetadata();
+    auto vdb_grid_meta = vdb_grid->getStatsMetadata();
+    auto mem_usage_bytes = vdb_grid->memUsage();
+    auto active_voxel_dim = vdb_grid->evalActiveVoxelDim();
+
+    computation_time = computation_time + timer->elapsed();
+
     // Create a VDB file object and write out the grid.
-    openvdb::io::File(this->params->out_vdb_).write({vdb_grid});
+    timer->restart();
+    openvdb::io::File vdb_file(this->params->out_vdb_);
+    vdb_file.write({vdb_grid});
+    vdb_file.close();
 #ifdef LOG
+    cout << "Wrote output to " << this->params->out_vdb_ << '\n';
     cout << "Finished write whole grid in: " << timer->elapsed() << " sec\n";
 #endif
   } else {
@@ -3399,25 +3462,50 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   // to reflect the total global image domain
   // see get_args() in utils.hpp
   auto global_image_dims = args->image_extents;
-#ifdef USE_MCP3D
-  if (!(this->params->force_regenerate_image)) {
-    // determine the image size
-    mcp3d::MImage global_image(args->image_root_dir(), {args->channel()});
-    // read data from channel
-    global_image.ReadImageInfo(args->resolution_level(), true);
-    if (global_image.image_info().empty()) {
-      MCP3D_MESSAGE("no supported image formats found in " +
-                    args->image_root_dir() + ", do nothing.")
-      throw;
+  auto image_ext = std::string(fs::path(args->image_root_dir()).extension());
+  this->input_is_vdb = image_ext == ".vdb" ? true : false;
+  if (this->input_is_vdb) {
+
+    cout << "Reading vdb file: " << args->image_root_dir() << " ...\n";
+    if (!fs::exists(args->image_root_dir())) {
+      cout << "Input image file does not exist or not found, exiting...\n";
+      exit(1);
     }
+    openvdb::io::File file(args->image_root_dir());
+    file.open();
+    cout << "read topology\n";
+    openvdb::GridBase::Ptr base_grid = file.readGrid("topology");
+    file.close();
+    auto topology_grid = openvdb::gridPtrCast<openvdb::TopologyGrid>(base_grid);
+    auto active_voxel_dim = topology_grid->evalActiveVoxelDim();
 
-    // save to __image_info__.json in corresponding dir
-    // global_image.SaveImageInfo();
+    // read metadata
+    // global_image_dims = {
+    // topology_grid->metaValue<openvdb::v8_0::Int32Metadata>("image_length_z").value(),
+    // topology_grid->metaValue<openvdb::v8_0::Int32Metadata>("image_length_y").value(),
+    // topology_grid->metaValue<openvdb::v8_0::Int32Metadata>("image_length_x").value()
+    //};
+  } else {
+#ifdef USE_MCP3D
+    if (!(this->params->force_regenerate_image)) {
+      // determine the image size
+      mcp3d::MImage global_image(args->image_root_dir(), {args->channel()});
+      // read data from channel
+      global_image.ReadImageInfo(args->resolution_level(), true);
+      if (global_image.image_info().empty()) {
+        MCP3D_MESSAGE("no supported image formats found in " +
+                      args->image_root_dir() + ", do nothing.")
+        throw;
+      }
 
-    // reflects the total global image domain
-    global_image_dims = global_image.xyz_dims(args->resolution_level());
-  }
+      // save to __image_info__.json in corresponding dir
+      // global_image.SaveImageInfo();
+
+      // reflects the total global image domain
+      global_image_dims = global_image.xyz_dims(args->resolution_level());
+    }
 #endif
+  }
 
   // these are in z y x order
   vector<int> ext;
@@ -4095,7 +4183,7 @@ template <class image_t> void Recut<image_t>::run_pipeline() {
 
     auto tile_thresholds = new TileThresholds<image_t>(
         /*max*/ numeric_limits<image_t>::max(),
-        /*min*/ numeric_limits<image_t>::min(), 
+        /*min*/ numeric_limits<image_t>::min(),
         /*bkg_thresh*/ 420);
     // auto saves converted grid in update
     this->update(stage, global_fifo, tile_thresholds);
