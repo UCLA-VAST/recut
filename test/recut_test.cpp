@@ -9,6 +9,7 @@
 #include <iostream>
 #include <string>
 #include <tuple>
+#include <typeinfo>
 #include <vector>
 
 // catch an assertion and auto drop into
@@ -41,7 +42,11 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
                        std::string stage, double &error_rate,
                        std::vector<std::vector<T2>> fifo) {
   auto tol_sz = static_cast<VID_t>(grid_size) * grid_size * grid_size;
-  // cout << "check image " << endl;
+
+#ifdef USE_VDB
+  auto vdb_accessor = recut.topology_grid->getAccessor();
+#endif
+
   double error_sum = 0.0;
   VID_t total_valid = 0;
   VertexAttr *v;
@@ -65,7 +70,22 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
         v = recut.get_active_vertex(interval_id, block_id, vid);
 #endif
 
-        if (stage == "value") {
+        if (stage == "convert") {
+#ifdef USE_VDB
+          openvdb::Coord xyz(xi, yi, zi);
+          auto val = vdb_accessor.getValue(xyz);
+          std::cout << "type: " << typeid(val).name() << '\n';
+          std::cout << xyz;
+          auto int_val = val ? 1 : 0;
+          if (recut.generated_image[vid]) {
+            ASSERT_TRUE(val);
+          }
+          if (val) {
+            ASSERT_EQ(recut.generated_image[vid], 1);
+            error_sum += absdiff(ground_truth[vid], int_val);
+          }
+#endif
+        } else if (stage == "value") {
           if (recut.generated_image[vid]) {
             ASSERT_NE(v, nullptr);
             bool valid_value = v->value != std::numeric_limits<uint8_t>::max();
@@ -75,7 +95,6 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
             if (v->valid_value()) {
               ASSERT_EQ(recut.generated_image[vid], 1);
               error_sum += absdiff(ground_truth[vid], v->value);
-              // cout << v->value << " ";
             }
           }
         } else if (stage == "radius") {
@@ -524,32 +543,62 @@ TEST(Interval, GetAttrVidMultiInterval) {
 /* https://www.openvdb.org/documentation/doxygen/codeExamples.html
  */
 TEST(ConvertOnlyAndOutVDB, Any) {
-  auto grid_size = 2;
-  auto tcase = 0;
-  double slt_pct = 100;
+  auto grid_size = 8;
+  // do no use tcase 4 since it is randomized and will not match
+  // for the second read test
+  auto tcase = 7;
+  double slt_pct = 10;
   auto str_path = get_data_dir();
   auto fn = str_path + "/test_convert_only.vdb";
-  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, /*force_regenerate_image=*/ true);
-  auto recut = Recut<uint16_t>(args);
 
+  // generate an image buffer on the fly
+  // then convert to vdb
+  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+                       /*force_regenerate_image=*/true);
+  auto recut = Recut<uint16_t>(args);
   recut.params->convert_only_ = true;
   recut.params->out_vdb_ = fn;
   ASSERT_FALSE(fs::exists(fn));
-  recut();
+  recut.initialize();
 
-  ASSERT_TRUE(fs::exists(fn));
+  if (recut.params->convert_only_) {
+    recut.activate_all_intervals();
+  }
 
-  args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, /*force_regenerate_image=*/ false);
+  // mutates topology_grid
+  auto stage = "convert";
+  recut.update(stage, recut.global_fifo);
 
-  // pass actual fn
-  args.set_image_root_dir(fn);
-  auto recut2 = Recut<uint16_t>(args);
+  // don't write out the file since you will have read only paths in nix
+  // environments ASSERT_TRUE(fs::exists(fn));
 
-  // handle read from image
-  recut();
+  double write_error_rate;
+  check_recut_error(recut, recut.generated_image, grid_size, stage, write_error_rate,
+                    recut.global_fifo);
+  ASSERT_EQ(write_error_rate, 0.);
 
-  // print_grid
-  // assert equals original grid above
+  // test reading from a pre-generated vdb file of exact same
+  {
+    args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+                    /*force_regenerate_image=*/false,
+                    /*input_is_vdb=*/true);
+    // args.set_image_root_dir(fn);
+    auto recut_from_vdb_file = Recut<uint16_t>(args);
+    // handle read from vdb
+    recut_from_vdb_file();
+
+    // print_grid
+    print_vdb(recut_from_vdb_file.topology_grid->getConstAccessor(),
+              {grid_size, grid_size, grid_size});
+
+    // assert equals original grid above
+    double read_from_file_error_rate;
+    check_recut_error(recut_from_vdb_file, recut.generated_image, grid_size,
+                      stage, read_from_file_error_rate,
+                      recut_from_vdb_file.global_fifo);
+
+    ASSERT_EQ(read_from_file_error_rate, 0.);
+  }
 }
 #endif // USE_VDB
 
@@ -622,11 +671,10 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         fn_marker = fn_marker + delim;
         fn_marker = fn_marker + "slt_pct";
         fn_marker = fn_marker + std::to_string((int)slt_pct);
-        //fn_marker = fn_marker + delim;
+        // fn_marker = fn_marker + delim;
         // record the root
         write_marker(x, y, z, fn_marker);
 
-#ifdef USE_MCP3D
         auto fn = base + "/test_images/";
         fn = fn + std::to_string(grid_size);
         fn = fn + "/tcase";
@@ -634,7 +682,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         fn = fn + delim;
         fn = fn + "slt_pct";
         fn = fn + std::to_string((int)slt_pct);
-        //fn = fn + delim;
+        // fn = fn + delim;
 
         VID_t desired_selected;
         desired_selected = tol_sz * (slt_pct / (float)100); // for tcase 4
@@ -665,9 +713,18 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
           ASSERT_NEAR(actual_slt_pct, slt_pct, 100 * EXP_DEV_LOW);
         }
 
+        auto topology_grid = openvdb::TopologyGrid::create();
+        topology_grid->setName("topology");
+        topology_grid->setCreator("recut");
+        convert_buffer_to_vdb(inimg1d, topology_grid->getAccessor(),
+                              {grid_size, grid_size, grid_size});
+
+        write_vdb_file(fn + "/topology.vdb", topology_grid);
+
+#ifdef USE_MCP3D
         write_tiff(inimg1d, fn, grid_size);
-        delete[] inimg1d;
 #endif
+        delete[] inimg1d;
       }
     }
   }
@@ -1956,7 +2013,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     }
 
 #ifdef LOG
-      cout << "sequential fastmarching elapsed (s)" << timer->elapsed() << '\n';
+    cout << "sequential fastmarching elapsed (s)" << timer->elapsed() << '\n';
 #endif
 
     // warning record property will auto cast to an int
@@ -2191,7 +2248,7 @@ INSTANTIATE_TEST_CASE_P(
         std::make_tuple(1024, 1024, 128, 6, 1, false, false), // 63
         std::make_tuple(2048, 2048, 128, 6, 1, false, false), // 64
         std::make_tuple(4096, 4096, 128, 6, 1, false, false), // 65
-        std::make_tuple(8192, 8192, 128, 6, 1, false, false) 
+        std::make_tuple(8192, 8192, 128, 6, 1, false, false)
 #endif
 #endif
             ));
@@ -2258,6 +2315,12 @@ int main(int argc, char **argv) {
 #endif
 #ifdef USE_MCP3D
   testing::Test::RecordProperty("USE_MCP3D", 1);
+#endif
+
+#ifdef USE_VDB
+  // warning: needs to be called once per executable before any related
+  // function is called otherwise confusing seg faults ensue
+  openvdb::initialize();
 #endif
 
   return RUN_ALL_TESTS();

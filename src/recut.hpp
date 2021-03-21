@@ -23,10 +23,6 @@ class Grid;
 #include <unistd.h>
 #include <unordered_set>
 
-#ifdef USE_VDB
-#include <openvdb/openvdb.h>
-#endif
-
 // taskflow significantly increases load times, avoid loading it if possible
 #ifdef TF
 #include <taskflow/taskflow.hpp>
@@ -90,6 +86,9 @@ public:
   image_t *generated_image = nullptr;
   bool mmap_;
   bool input_is_vdb;
+#ifdef USE_VDB
+  openvdb::v8_0::TopologyGrid::Ptr topology_grid;
+#endif
   size_t iteration;
   float bound_band;
   float stride;
@@ -279,7 +278,7 @@ public:
 #endif
 #ifdef USE_VDB
   template <typename T1, typename T2>
-  void convert_buffer(VID_t interval_id, const image_t *tile, T1 vdb_grid,
+  void convert_buffer(VID_t interval_id, const image_t *tile, T1 topology_grid,
                       T2 vdb_accessor,
                       TileThresholds<image_t> *tile_thresholds);
 #endif
@@ -1067,17 +1066,18 @@ bool Recut<image_t>::accumulate_connected(
   } else {
     auto dst_vox = get_img_val(tile, dst_id);
     if (dst_vox <= tile_thresholds->bkg_thresh) {
-#ifdef FULL_PRINT
-      cout << "\t\tfailed tile_thresholds->bkg_thresh" << '\n';
-#endif
       found_background = true;
     }
   }
 
-  if (found_background)
+  if (found_background) {
+#ifdef FULL_PRINT
+    cout << "\t\tfailed tile_thresholds->bkg_thresh" << '\n';
+#endif
     return false;
+  }
 
-    // all dsts are guaranteed within this domain
+  // all dsts are guaranteed within this domain
 #ifdef DENSE
   auto dst = get_vertex_vid(interval_id, block_id, dst_id, nullptr);
 #else
@@ -2883,7 +2883,7 @@ void Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
 template <class image_t>
 template <typename T1, typename T2>
 void Recut<image_t>::convert_buffer(VID_t interval_id, const image_t *tile,
-                                    T1 vdb_grid, T2 vdb_accessor,
+                                    T1 topology_grid, T2 vdb_accessor,
                                     TileThresholds<image_t> *tile_thresholds) {
 
   // Get an accessor for coordinate-based access to voxels.
@@ -3028,17 +3028,11 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   auto timer = new high_resolution_timer();
 
 #ifdef USE_VDB
-  openvdb::initialize();
-  // Create an empty grid with background value 0.
-  auto vdb_grid = openvdb::TopologyGrid::create();
-  vdb_grid->setName("topology");
-  vdb_grid->insertMeta("image_length_x",
-                       openvdb::Int32Metadata(image_length_x));
-  vdb_grid->insertMeta("image_length_y",
-                       openvdb::Int32Metadata(image_length_y));
-  vdb_grid->insertMeta("image_length_z",
-                       openvdb::Int32Metadata(image_length_z));
-  auto vdb_accessor = vdb_grid->getAccessor();
+  // note openvdb::initialize() must have been called before this point
+  // otherewise seg faults will occur
+  assertm(this->topology_grid, "topology grid not initialized");
+  auto vdb_const_accessor = this->topology_grid->getConstAccessor();
+  auto vdb_accessor = this->topology_grid->getAccessor();
 #endif
 
   // Main march for loop
@@ -3121,7 +3115,10 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           if (!local_tile_thresholds) {
             // note these default thresholds apply to any generated image
             // thus they will only be replaced if we're reading a real image
-            local_tile_thresholds = new TileThresholds<image_t>(2, 0, 0);
+            local_tile_thresholds = new TileThresholds<image_t>(
+                /*max*/ 2,
+                /*min*/ 0,
+                /*bkg_thresh*/ 0);
           }
         }
 
@@ -3158,7 +3155,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           assertm(!this->input_is_vdb,
                   "input can't be vdb during convert stage");
           auto convert_start = timer->elapsed();
-          convert_buffer(interval_id, tile, vdb_grid, vdb_accessor,
+          convert_buffer(interval_id, tile, topology_grid, vdb_accessor,
                          local_tile_thresholds);
           computation_time =
               computation_time + (timer->elapsed() - convert_start);
@@ -3167,7 +3164,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           computation_time =
               computation_time +
               process_interval(interval_id, tile, stage, local_tile_thresholds,
-                               fifo[interval_id], vdb_accessor);
+                               fifo[interval_id], vdb_const_accessor);
         }
       } // if the interval is active
 
@@ -3179,24 +3176,15 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
     // finalize grid
     timer->restart();
-    // mark as level set?
-    vdb_grid->setGridClass(openvdb::GridClass(openvdb::v8_0::GRID_LEVEL_SET));
-    vdb_grid->addStatsMetadata();
-    auto vdb_grid_meta = vdb_grid->getStatsMetadata();
-    auto mem_usage_bytes = vdb_grid->memUsage();
-    auto active_voxel_dim = vdb_grid->evalActiveVoxelDim();
+
+    print_grid_metadata(topology_grid);
+
+    topology_grid->pruneGrid();
+
+    print_grid_metadata(topology_grid);
 
     computation_time = computation_time + timer->elapsed();
 
-    // Create a VDB file object and write out the grid.
-    timer->restart();
-    openvdb::io::File vdb_file(this->params->out_vdb_);
-    vdb_file.write({vdb_grid});
-    vdb_file.close();
-#ifdef LOG
-    cout << "Wrote output to " << this->params->out_vdb_ << '\n';
-    cout << "Finished write whole grid in: " << timer->elapsed() << " sec\n";
-#endif
   } else {
 #ifdef RV
     cout << "Total ";
@@ -3424,7 +3412,13 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
   cout << "Created processing blocks" << '\n';
 #endif
 
-  if (!(params->convert_only_)) {
+  openvdb::initialize();
+  // Create an empty grid with background value 0.
+  this->topology_grid = openvdb::TopologyGrid::create();
+  topology_grid->setName("topology");
+  topology_grid->setCreator("recut");
+
+  if (!params->convert_only_) {
     // fifo is a deque representing the vids left to
     // process at each stage
     this->global_fifo = std::vector<std::vector<std::deque<VertexAttr>>>(
@@ -3452,9 +3446,6 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   cout << "User specified image root dir " << args->image_root_dir() << '\n';
 #endif
 #endif
-  assertm(fs::exists(args->image_root_dir()),
-          "Image root directory does not exist");
-
   struct timespec time0, time1, time2, time3;
   uint64_t root_64bit;
 
@@ -3466,28 +3457,19 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   this->input_is_vdb = image_ext == ".vdb" ? true : false;
   if (this->input_is_vdb) {
 
-    cout << "Reading vdb file: " << args->image_root_dir() << " ...\n";
-    if (!fs::exists(args->image_root_dir())) {
-      cout << "Input image file does not exist or not found, exiting...\n";
-      exit(1);
-    }
-    openvdb::io::File file(args->image_root_dir());
-    file.open();
-    cout << "read topology\n";
-    openvdb::GridBase::Ptr base_grid = file.readGrid("topology");
-    file.close();
-    auto topology_grid = openvdb::gridPtrCast<openvdb::TopologyGrid>(base_grid);
-    auto active_voxel_dim = topology_grid->evalActiveVoxelDim();
+    std::string grid_name = "topology";
+    this->topology_grid::Ptr = read_vdb_file(args->image_root_dir(), grid_name);
 
     // read metadata
-    // global_image_dims = {
-    // topology_grid->metaValue<openvdb::v8_0::Int32Metadata>("image_length_z").value(),
-    // topology_grid->metaValue<openvdb::v8_0::Int32Metadata>("image_length_y").value(),
-    // topology_grid->metaValue<openvdb::v8_0::Int32Metadata>("image_length_x").value()
-    //};
+    auto active_voxel_dim = topology_grid->evalActiveVoxelDim();
+    global_image_dims = {active_voxel_dim[2], active_voxel_dim[1],
+                         active_voxel_dim[0]};
   } else {
 #ifdef USE_MCP3D
     if (!(this->params->force_regenerate_image)) {
+      assertm(fs::exists(args->image_root_dir()),
+              "Image root directory does not exist");
+
       // determine the image size
       mcp3d::MImage global_image(args->image_root_dir(), {args->channel()});
       // read data from channel
@@ -4178,22 +4160,18 @@ template <class image_t> void Recut<image_t>::run_pipeline() {
   auto root_vids = this->initialize();
 
   if (params->convert_only_) {
-    stage = "convert";
     activate_all_intervals();
 
-    auto tile_thresholds = new TileThresholds<image_t>(
-        /*max*/ numeric_limits<image_t>::max(),
-        /*min*/ numeric_limits<image_t>::min(),
-        /*bkg_thresh*/ 420);
-    // auto saves converted grid in update
-    this->update(stage, global_fifo, tile_thresholds);
+    // mutates topology_grid
+    stage = "convert";
+    this->update(stage, global_fifo);
 
+    write_vdb_file(this->params->out_vdb_, this->topology_grid);
     // no more work to do
     return;
   }
 
-  // starting from the roots
-  // value stage will save all surface vertices into
+  // starting from the roots connected stage saves all surface vertices into
   // fifo
   stage = "connected";
   this->activate_vids(root_vids, stage, global_fifo);

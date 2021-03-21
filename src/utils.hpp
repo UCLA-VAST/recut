@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <math.h>
 #include <numeric>
+#include <openvdb/openvdb.h>
 
 namespace fs = std::filesystem;
 namespace rng = ranges;
@@ -188,6 +189,32 @@ void print_marker_3D(T markers, std::vector<int> interval_extents,
   cout << '\n';
 }
 
+// only values strictly greater than bkg_thresh are valid
+template <typename T>
+void print_vdb(T vdb_accessor, std::vector<int> extents, int bkg_thresh = -1) {
+  for (int z = 0; z < extents[2]; z++) {
+    cout << "y | Z=" << z << '\n';
+    for (int x = 0; x < 2 * extents[0] + 4; x++) {
+      cout << "-";
+    }
+    cout << '\n';
+    for (int y = 0; y < extents[1]; y++) {
+      cout << y << " | ";
+      for (int x = 0; x < extents[0]; x++) {
+        openvdb::Coord xyz(x, y, z);
+        auto val = vdb_accessor.getValue(xyz);
+        if ((bkg_thresh > -1) && (val <= bkg_thresh)) {
+          cout << "- ";
+        } else {
+          cout << val << " ";
+        }
+      }
+      cout << '\n';
+    }
+    cout << '\n';
+  }
+}
+
 // interval_extents are in z, y, x order
 template <typename T>
 void print_image_3D(T *inimg1d, std::vector<int> interval_extents) {
@@ -315,6 +342,52 @@ bool is_covered_by_parent(VID_t index, VID_t root_vid, int radius,
     return true;
   }
   return false;
+}
+
+template <typename T> void print_grid_metadata(T vdb_grid) {
+  // stats need to be refreshed manually after any changes with addStatsMetadata
+  vdb_grid->addStatsMetadata();
+
+  auto mem_usage_bytes = vdb_grid->memUsage();
+  auto active_voxel_dim = vdb_grid->evalActiveVoxelDim();
+  cout << "active voxel_dim: " << active_voxel_dim << '\n';
+  cout << "Mem usage GB: " << static_cast<double>(mem_usage_bytes) / (1 << 30)
+       << '\n';
+  cout << "Active voxel count: " << vdb_grid->activeVoxelCount() << '\n';
+  cout << "Grid class: "
+       << vdb_grid->gridClassToString(vdb_grid->getGridClass()) << '\n';
+}
+
+auto read_vdb_file(std::string fn, std::string grid_name) {
+#ifdef LOG
+  cout << "Reading vdb file: " << fn << " grid: " << grid_name << " ...\n";
+#endif
+  if (!fs::exists(fn)) {
+    cout << "Input image file does not exist or not found, exiting...\n";
+    exit(1);
+  }
+  openvdb::io::File file(fn);
+  file.open();
+  openvdb::GridBase::Ptr base_grid = file.readGrid(grid_name);
+  file.close();
+  auto topology_grid =
+      openvdb::gridPtrCast<openvdb::v8_0::TopologyGrid>(base_grid);
+
+#ifdef LOG
+  print_grid_metadata(topology_grid);
+#endif
+}
+
+// Create a VDB file object and write out a vector of grids.
+template <typename T> void write_vdb_file(std::string fn, T vdb_grids) {
+  auto timer = new high_resolution_timer();
+  openvdb::io::File vdb_file(fn);
+  vdb_file.write({vdb_grids});
+  vdb_file.close();
+#ifdef LOG
+  cout << "Wrote output to " << fn << '\n';
+  cout << "Finished write whole grid in: " << timer->elapsed() << " sec\n";
+#endif
 }
 
 /*
@@ -543,7 +616,8 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
 
 RecutCommandLineArgs get_args(int grid_size, int interval_size, int block_size,
                               int slt_pct, int tcase,
-                              bool force_regenerate_image = false) {
+                              bool force_regenerate_image = false,
+                              bool input_is_vdb = false) {
 
   bool print = false;
 
@@ -597,9 +671,14 @@ RecutCommandLineArgs get_args(int grid_size, int interval_size, int block_size,
     params.set_max_intensity(2);
     params.set_min_intensity(0);
     params.force_regenerate_image = force_regenerate_image;
-    args.set_image_root_dir(
+    auto image_root_dir =
         str_path + "/test_images/" + std::to_string(grid_size) + "/tcase" +
-        std::to_string(tcase) + "/slt_pct" + std::to_string(slt_pct));
+        std::to_string(tcase) + "/slt_pct" + std::to_string(slt_pct);
+    if (input_is_vdb) {
+      args.set_image_root_dir(image_root_dir + "/topology.vdb");
+    } else {
+      args.set_image_root_dir(image_root_dir);
+    }
   }
 
   // the total number of blocks allows more parallelism
@@ -652,6 +731,30 @@ void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
   }
 }
 
+VID_t coord_to_vid(openvdb::Coord xyz, std::vector<int> extents) {
+  return xyz[2] * (extents[0] * extents[1]) + xyz[1] * extents[0] + xyz[0];
+}
+
+template <typename BufT, typename AccT>
+void convert_buffer_to_vdb(BufT buffer, AccT vdb_accessor,
+                           std::vector<int> extents, BufT bkg_thresh = 0) {
+  for (auto x : rng::views::iota(0, extents[0])) {
+    for (auto y : rng::views::iota(0, extents[1])) {
+      for (auto z : rng::views::iota(0, extents[2])) {
+        openvdb::Coord xyz(x, y, z);
+#ifdef FULL_PRINT
+        cout << " x " << x << " y " << y << " z " << z << '\n';
+#endif
+        auto val = buffer[coord_to_vid(xyz, extents)];
+        // voxels equal to discarded
+        if (val > bkg_thresh) {
+          vdb_accessor.setValue(xyz, true);
+        }
+      }
+    }
+  }
+}
+
 #ifdef USE_MCP3D
 void write_tiff(uint16_t *inimg1d, std::string base, int grid_size) {
   auto print = false;
@@ -659,7 +762,7 @@ void write_tiff(uint16_t *inimg1d, std::string base, int grid_size) {
   print = true;
 #endif
 
-  base =  base + "/ch0";
+  base = base + "/ch0";
   bool rerun = false;
   if (!fs::exists(base) || rerun) {
     fs::remove_all(base); // make sure it's an overwrite
