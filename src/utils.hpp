@@ -192,6 +192,7 @@ void print_marker_3D(T markers, std::vector<int> interval_extents,
 // only values strictly greater than bkg_thresh are valid
 template <typename T>
 void print_vdb(T vdb_accessor, std::vector<int> extents, int bkg_thresh = -1) {
+  cout << "Print VDB grid: \n";
   for (int z = 0; z < extents[2]; z++) {
     cout << "y | Z=" << z << '\n';
     for (int x = 0; x < 2 * extents[0] + 4; x++) {
@@ -376,17 +377,43 @@ auto read_vdb_file(std::string fn, std::string grid_name) {
 #ifdef LOG
   print_grid_metadata(topology_grid);
 #endif
+  return topology_grid;
 }
 
 // Create a VDB file object and write out a vector of grids.
-template <typename T> void write_vdb_file(std::string fn, T vdb_grids) {
-  auto timer = new high_resolution_timer();
-  openvdb::io::File vdb_file(fn);
-  vdb_file.write({vdb_grids});
-  vdb_file.close();
+// Add the grid pointer to a container.
+// openvdb::GridPtrVec grids;
+// grids.push_back(grid);
+void write_vdb_file(openvdb::GridPtrVec vdb_grids, std::string fp = "") {
+
+  // safety checks
+  auto default_fn = "topology.vdb";
+  if (fp.empty()) {
+    fp = get_data_dir() + '/' + default_fn;
+  } else {
+    auto dir = fs::path(fp).remove_filename();
+    if (fs::exists(dir)) {
+      if (fs::exists(fp)) {
 #ifdef LOG
-  cout << "Wrote output to " << fn << '\n';
+        cout << "Warning: " << fp << " already exists, overwriting...\n";
+#endif
+      }
+    } else {
+#ifdef LOG
+      cout << "Directory: " << dir << " does not exist, creating...\n";
+#endif
+      fs::create_directories(dir);
+    }
+  }
+
+  auto timer = new high_resolution_timer();
+  openvdb::io::File vdb_file(fp);
+  vdb_file.write(vdb_grids);
+  vdb_file.close();
+
+#ifdef LOG
   cout << "Finished write whole grid in: " << timer->elapsed() << " sec\n";
+  cout << "Wrote output to " << fp << '\n';
 #endif
 }
 
@@ -735,20 +762,31 @@ VID_t coord_to_vid(openvdb::Coord xyz, std::vector<int> extents) {
   return xyz[2] * (extents[0] * extents[1]) + xyz[1] * extents[0] + xyz[0];
 }
 
+// keep only voxels strictly greater than bkg_thresh
 template <typename BufT, typename AccT>
-void convert_buffer_to_vdb(BufT buffer, AccT vdb_accessor,
-                           std::vector<int> extents, BufT bkg_thresh = 0) {
-  for (auto x : rng::views::iota(0, extents[0])) {
-    for (auto y : rng::views::iota(0, extents[1])) {
-      for (auto z : rng::views::iota(0, extents[2])) {
+void convert_buffer_to_vdb(BufT *buffer, AccT vdb_accessor,
+                           std::vector<int> buffer_extents,
+                           std::vector<int> buffer_offsets,
+                           std::vector<int> image_offsets, BufT bkg_thresh = 0) {
+
+  auto coord_add = [](auto first, auto second) {
+    return openvdb::Coord(first[0] + second[0], first[1] + second[1],
+                          first[2] + second[2]);
+  };
+
+  for (auto x : rng::views::iota(0, buffer_extents[0])) {
+    for (auto y : rng::views::iota(0, buffer_extents[1])) {
+      for (auto z : rng::views::iota(0, buffer_extents[2])) {
         openvdb::Coord xyz(x, y, z);
-#ifdef FULL_PRINT
-        cout << " x " << x << " y " << y << " z " << z << '\n';
-#endif
-        auto val = buffer[coord_to_vid(xyz, extents)];
+        openvdb::Coord buffer_xyz = coord_add(xyz, buffer_offsets);
+        openvdb::Coord grid_xyz = coord_add(xyz, image_offsets);
+        auto val = buffer[coord_to_vid(buffer_xyz, buffer_extents)];
         // voxels equal to discarded
         if (val > bkg_thresh) {
-          vdb_accessor.setValue(xyz, true);
+#ifdef FULL_PRINT
+          cout << xyz << '\n';
+#endif
+          vdb_accessor.setValue(grid_xyz, true);
         }
       }
     }
@@ -756,14 +794,14 @@ void convert_buffer_to_vdb(BufT buffer, AccT vdb_accessor,
 }
 
 #ifdef USE_MCP3D
-void write_tiff(uint16_t *inimg1d, std::string base, int grid_size) {
+void write_tiff(uint16_t *inimg1d, std::string base, int grid_size,
+                bool rerun = false) {
   auto print = false;
 #ifdef LOG
   print = true;
 #endif
 
   base = base + "/ch0";
-  bool rerun = false;
   if (!fs::exists(base) || rerun) {
     fs::remove_all(base); // make sure it's an overwrite
     if (print)

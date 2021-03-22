@@ -43,6 +43,11 @@ template <class image_t> struct TileThresholds {
   TileThresholds<image_t>(image_t max_int, image_t min_int, image_t bkg_thresh)
     : max_int(max_int), min_int(min_int), bkg_thresh(bkg_thresh) {}
 
+  friend std::ostream &operator<<(std::ostream &os, const TileThresholds &tt) {
+    os << "[max: " << tt.max_int << ", min: " << tt.min_int << ", bkg_thresh: " << tt.bkg_thresh << ']';
+    return os;
+  }
+
   double calc_weight(image_t pixel) const {
     std::ostringstream err;
     cout << +( pixel ) << '\n';

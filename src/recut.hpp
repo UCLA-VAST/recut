@@ -82,6 +82,7 @@ public:
       interval_length_z, grid_interval_length_x, grid_interval_length_y,
       grid_interval_length_z, grid_interval_size, interval_block_size;
 
+  std::vector<int> image_extents;
   std::ofstream out;
   image_t *generated_image = nullptr;
   bool mmap_;
@@ -275,12 +276,6 @@ public:
 #ifdef USE_MCP3D
   void load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile);
   TileThresholds<image_t> *get_tile_thresholds(mcp3d::MImage &mcp3d_tile);
-#endif
-#ifdef USE_VDB
-  template <typename T1, typename T2>
-  void convert_buffer(VID_t interval_id, const image_t *tile, T1 topology_grid,
-                      T2 vdb_accessor,
-                      TileThresholds<image_t> *tile_thresholds);
 #endif
   template <class Container, typename T>
   std::atomic<double>
@@ -2879,45 +2874,6 @@ void Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
 #endif
 }
 
-#ifdef USE_VDB
-template <class image_t>
-template <typename T1, typename T2>
-void Recut<image_t>::convert_buffer(VID_t interval_id, const image_t *tile,
-                                    T1 topology_grid, T2 vdb_accessor,
-                                    TileThresholds<image_t> *tile_thresholds) {
-
-  // Get an accessor for coordinate-based access to voxels.
-
-  vector<int> interval_offsets;
-  vector<int> interval_extents;
-
-  get_interval_offsets(interval_id, interval_offsets, interval_extents);
-
-  for (uint32_t z = interval_offsets[0];
-       z < interval_offsets[0] + interval_extents[0]; ++z) {
-    for (uint32_t y = interval_offsets[1];
-         y < interval_offsets[1] + interval_extents[1]; ++y) {
-      for (uint32_t x = interval_offsets[2];
-           x < interval_offsets[2] + interval_extents[2]; ++x) {
-        openvdb::Coord xyz(x, y, z);
-#ifdef FULL_PRINT
-        cout << " x " << x << " y " << y << " z " << z << '\n';
-#endif
-        auto interval_vid = get_interval_id_vert_sub(x - interval_offsets[2],
-                                                     y - interval_offsets[1],
-                                                     z - interval_offsets[0]);
-        auto val = tile[interval_vid];
-        // voxels equal to discarded
-        if (val > tile_thresholds->bkg_thresh) {
-          vdb_accessor.setValue(xyz, true);
-        }
-      }
-    }
-  }
-  active_intervals[interval_id] = false;
-}
-#endif
-
 // Calculate new tile thresholds or use input thresholds according
 // to params and args this function has no sideffects outside
 // of the returned tile_thresholds struct
@@ -2985,12 +2941,10 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
         this->args->recut_parameters().get_min_intensity();
   }
 
-#ifdef LOG
+#ifdef LOG_FULL
   cout << "max_int: " << +(tile_thresholds->max_int)
        << " min_int: " << +(tile_thresholds->min_int) << '\n';
   cout << "bkg_thresh value = " << +(tile_thresholds->bkg_thresh) << '\n';
-#endif
-#ifdef LOG_FULL
   cout << "interval dims x " << interval_dims[2] << " y " << interval_dims[1]
        << " z " << interval_dims[0] << '\n';
 #endif
@@ -3155,8 +3109,23 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           assertm(!this->input_is_vdb,
                   "input can't be vdb during convert stage");
           auto convert_start = timer->elapsed();
-          convert_buffer(interval_id, tile, topology_grid, vdb_accessor,
-                         local_tile_thresholds);
+
+          vector<int> interval_offsets;
+          vector<int> no_offsets = {0, 0, 0};
+          vector<int> interval_extents;
+          get_interval_offsets(interval_id, interval_offsets, interval_extents);
+
+          vector<int> buffer_offsets =
+              params->force_regenerate_image ? interval_offsets : no_offsets;
+          vector<int> buffer_extents =
+              params->force_regenerate_image ? this->image_extents : interval_extents;
+
+          convert_buffer_to_vdb(tile, vdb_accessor, buffer_extents,
+                                /*buffer_offsets=*/buffer_offsets,
+                                /*image_offsets=*/interval_offsets,
+                                local_tile_thresholds->bkg_thresh);
+
+          active_intervals[interval_id] = false;
           computation_time =
               computation_time + (timer->elapsed() - convert_start);
 #endif
@@ -3176,13 +3145,10 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
     // finalize grid
     timer->restart();
-
     print_grid_metadata(topology_grid);
 
     topology_grid->pruneGrid();
-
     print_grid_metadata(topology_grid);
-
     computation_time = computation_time + timer->elapsed();
 
   } else {
@@ -3457,8 +3423,10 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   this->input_is_vdb = image_ext == ".vdb" ? true : false;
   if (this->input_is_vdb) {
 
+    assertm(!params->convert_only_,
+            "Convert only option is not valid from vdb to vdb");
     std::string grid_name = "topology";
-    this->topology_grid::Ptr = read_vdb_file(args->image_root_dir(), grid_name);
+    this->topology_grid = read_vdb_file(args->image_root_dir(), grid_name);
 
     // read metadata
     auto active_voxel_dim = topology_grid->evalActiveVoxelDim();
@@ -3522,6 +3490,9 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   this->image_length_z = args->image_extents[0];
   this->image_length_xy = image_length_x * image_length_y;
   this->image_size = image_length_x * image_length_y * image_length_z;
+  this->image_extents = {static_cast<int>(image_length_x),
+                                    static_cast<int>(image_length_y),
+                                    static_cast<int>(image_length_z)};
 
   // Determine the size of each interval in each dim
   // the image size and offsets override the user inputted interval size
@@ -4166,8 +4137,11 @@ template <class image_t> void Recut<image_t>::run_pipeline() {
     stage = "convert";
     this->update(stage, global_fifo);
 
-    write_vdb_file(this->params->out_vdb_, this->topology_grid);
-    // no more work to do
+    openvdb::GridPtrVec grids;
+    grids.push_back(this->topology_grid);
+    write_vdb_file(grids, this->params->out_vdb_);
+
+    // no more work to do, exiting
     return;
   }
 
