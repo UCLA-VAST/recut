@@ -3117,8 +3117,9 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
           vector<int> buffer_offsets =
               params->force_regenerate_image ? interval_offsets : no_offsets;
-          vector<int> buffer_extents =
-              params->force_regenerate_image ? this->image_extents : interval_extents;
+          vector<int> buffer_extents = params->force_regenerate_image
+                                           ? this->image_extents
+                                           : interval_extents;
 
           convert_buffer_to_vdb(tile, vdb_accessor, buffer_extents,
                                 /*buffer_offsets=*/buffer_offsets,
@@ -3491,8 +3492,8 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   this->image_length_xy = image_length_x * image_length_y;
   this->image_size = image_length_x * image_length_y * image_length_z;
   this->image_extents = {static_cast<int>(image_length_x),
-                                    static_cast<int>(image_length_y),
-                                    static_cast<int>(image_length_z)};
+                         static_cast<int>(image_length_y),
+                         static_cast<int>(image_length_z)};
 
   // Determine the size of each interval in each dim
   // the image size and offsets override the user inputted interval size
@@ -4135,7 +4136,11 @@ template <class image_t> void Recut<image_t>::run_pipeline() {
 
     // mutates topology_grid
     stage = "convert";
-    this->update(stage, global_fifo);
+    auto tile_thresholds = new TileThresholds<image_t>(
+        /*max*/ 2,
+        /*min*/ 0,
+        /*bkg_thresh*/ 0);
+    this->update(stage, global_fifo, tile_thresholds);
 
     openvdb::GridPtrVec grids;
     grids.push_back(this->topology_grid);
