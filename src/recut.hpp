@@ -2910,22 +2910,32 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
     if (params->background_thresh() >= 0) {
       tile_thresholds->bkg_thresh = params->background_thresh();
     }
-    // tile_thresholds->bkg_thresh default inits to 0
   }
+  // otherwise: tile_thresholds->bkg_thresh default inits to 0
 
   // assign max and min ints for this tile
   if (this->args->recut_parameters().get_max_intensity() < 0) {
-    // max and min members will be set
-    tile_thresholds->get_max_min(mcp3d_tile.Volume<image_t>(0),
-                                 interval_vertex_size);
+    if (params->convert_only_) {
+      tile_thresholds->max_int = std::numeric_limits<image_t>::max();
+      tile_thresholds->min_int = std::numeric_limits<image_t>::min();
+    } else {
+      // max and min members will be set
+      tile_thresholds->get_max_min(mcp3d_tile.Volume<image_t>(0),
+                                   interval_vertex_size);
+    }
   } else if (this->args->recut_parameters().get_min_intensity() < 0) {
     // if max intensity was set but not a min, just use the bkg_thresh value
     if (tile_thresholds->bkg_thresh >= 0) {
       tile_thresholds->min_int = tile_thresholds->bkg_thresh;
     } else {
-      // max and min members will be set
-      tile_thresholds->get_max_min(mcp3d_tile.Volume<image_t>(0),
-                                   interval_vertex_size);
+      if (params->convert_only_) {
+        tile_thresholds->max_int = std::numeric_limits<image_t>::max();
+        tile_thresholds->min_int = std::numeric_limits<image_t>::min();
+      } else {
+        // max and min members will be set
+        tile_thresholds->get_max_min(mcp3d_tile.Volume<image_t>(0),
+                                     interval_vertex_size);
+      }
     }
   } else { // both values were set
     // either of these values are signed and default inited -1, casting
@@ -3077,22 +3087,24 @@ Recut<image_t>::update(std::string stage, Container &fifo,
         }
 
 #ifdef USE_MCP3D
-        mcp3d::MImage mcp3d_tile(
-            args->image_root_dir(),
-            {args->channel()}); // prevent destruction before calling
-                                // process_interval
-        // tile is only needed for the value stage
-        if (stage == "value" || stage == "connected" || stage == "convert") {
-          if (!(this->params->force_regenerate_image)) {
-            if (!this->input_is_vdb) {
-              // mcp3d_tile must be kept in scope during the processing
-              // of this interval otherwise dangling reference then seg fault
-              // on image access
-              load_tile(interval_id, mcp3d_tile);
+        // mcp3d_tile must be kept in scope during the processing
+        // of this interval otherwise dangling reference then seg fault
+        // on image access so prevent destruction before calling
+        // process_interval
+        mcp3d::MImage* mcp3d_tile;
+        if (!input_is_vdb) {
+          mcp3d_tile = new mcp3d::MImage(args->image_root_dir(), {args->channel()});
+          // tile is only needed for the value stage
+          if (stage == "value" || stage == "connected" || stage == "convert") {
+            if (!(this->params->force_regenerate_image)) {
+              load_tile(interval_id, *mcp3d_tile);
               if (!local_tile_thresholds) {
-                local_tile_thresholds = get_tile_thresholds(mcp3d_tile);
+                auto thresh_start = timer->elapsed();
+                local_tile_thresholds = get_tile_thresholds(*mcp3d_tile);
+                computation_time =
+                    computation_time + (timer->elapsed() - thresh_start);
               }
-              tile = mcp3d_tile.Volume<image_t>(0);
+              tile = mcp3d_tile->Volume<image_t>(0);
             }
           }
         }
@@ -3129,6 +3141,9 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           active_intervals[interval_id] = false;
           computation_time =
               computation_time + (timer->elapsed() - convert_start);
+#ifdef LOG
+          cout << "Completed interval id: " << interval_id << '\n';
+#endif
 #endif
         } else {
           computation_time =
@@ -3140,18 +3155,11 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
     } // end one interval traversal
   }   // finished all intervals
-  auto total_update_time = timer->elapsed();
 
   if (stage == "convert") {
-
-    // finalize grid
-    timer->restart();
+    auto finalize_start = timer->elapsed();
     print_grid_metadata(topology_grid);
-
-    topology_grid->pruneGrid();
-    print_grid_metadata(topology_grid);
-    computation_time = computation_time + timer->elapsed();
-
+    computation_time = computation_time + (finalize_start - timer->elapsed());
   } else {
 #ifdef RV
     cout << "Total ";
@@ -3162,6 +3170,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #endif
   }
 
+  auto total_update_time = timer->elapsed();
   auto io_time = total_update_time - computation_time;
 #ifdef LOG
   cout << "Finished stage: " << stage << '\n';
@@ -3379,7 +3388,6 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
   cout << "Created processing blocks" << '\n';
 #endif
 
-  openvdb::initialize();
   // Create an empty grid with background value 0.
   this->topology_grid = openvdb::TopologyGrid::create();
   topology_grid->setName("topology");
@@ -3422,17 +3430,27 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   auto global_image_dims = args->image_extents;
   auto image_ext = std::string(fs::path(args->image_root_dir()).extension());
   this->input_is_vdb = image_ext == ".vdb" ? true : false;
+
+  if (params->convert_only_ || this->input_is_vdb) {
+    openvdb::initialize();
+  }
+
   if (this->input_is_vdb) {
 
     assertm(!params->convert_only_,
             "Convert only option is not valid from vdb to vdb");
+
     std::string grid_name = "topology";
+    auto timer = new high_resolution_timer();
     this->topology_grid = read_vdb_file(args->image_root_dir(), grid_name);
+#ifdef LOG
+    cout << "Read image in: " << timer->elapsed() << " s\n";
+#endif
 
     // read metadata
     auto active_voxel_dim = topology_grid->evalActiveVoxelDim();
-    global_image_dims = {active_voxel_dim[2], active_voxel_dim[1],
-                         active_voxel_dim[0]};
+    global_image_dims = {active_voxel_dim[0], active_voxel_dim[1],
+                         active_voxel_dim[2]};
   } else {
 #ifdef USE_MCP3D
     if (!(this->params->force_regenerate_image)) {
@@ -3506,6 +3524,10 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     this->interval_length_x = image_length_x;
     this->interval_length_y = image_length_y;
     this->interval_length_z = 1;
+  } else if (this->input_is_vdb) {
+    this->interval_length_x = image_length_x;
+    this->interval_length_y = image_length_y;
+    this->interval_length_z = image_length_z;
   } else {
     this->interval_length_x =
         min((VID_t)params->interval_size(), image_length_x);
@@ -3525,9 +3547,15 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
       (image_length_z + interval_length_z - 1) / interval_length_z;
 
   // the resulting interval size override the user inputted block size
-  block_length_x = min(interval_length_x, user_def_block_size);
-  block_length_y = min(interval_length_y, user_def_block_size);
-  block_length_z = min(interval_length_z, user_def_block_size);
+  if (this->params->convert_only_) {
+    block_length_x = interval_length_x;
+    block_length_y = interval_length_y;
+    block_length_z = interval_length_z;
+  } else {
+    block_length_x = min(interval_length_x, user_def_block_size);
+    block_length_y = min(interval_length_y, user_def_block_size);
+    block_length_z = min(interval_length_z, user_def_block_size);
+  }
 
   // determine length of blocks that span an interval for each dim
   // this rounds up
@@ -4136,11 +4164,7 @@ template <class image_t> void Recut<image_t>::run_pipeline() {
 
     // mutates topology_grid
     stage = "convert";
-    auto tile_thresholds = new TileThresholds<image_t>(
-        /*max*/ 2,
-        /*min*/ 0,
-        /*bkg_thresh*/ 0);
-    this->update(stage, global_fifo, tile_thresholds);
+    this->update(stage, global_fifo);
 
     openvdb::GridPtrVec grids;
     grids.push_back(this->topology_grid);

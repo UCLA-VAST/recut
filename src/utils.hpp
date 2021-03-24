@@ -351,12 +351,25 @@ template <typename T> void print_grid_metadata(T vdb_grid) {
 
   auto mem_usage_bytes = vdb_grid->memUsage();
   auto active_voxel_dim = vdb_grid->evalActiveVoxelDim();
-  cout << "active voxel_dim: " << active_voxel_dim << '\n';
+  VID_t hypo_bound_vol_count = static_cast<VID_t>(active_voxel_dim[0]) *
+      active_voxel_dim[1] * active_voxel_dim[2];
+  auto active_voxel_count = vdb_grid->activeVoxelCount();
+  auto fg_pct = (static_cast<double>(100) * active_voxel_count) / hypo_bound_vol_count;
+
+  cout << "Metadata for vdb grid name: " << vdb_grid->getName() << " creator: " << vdb_grid->getCreator() << '\n';
+  cout << "Grid class: " << vdb_grid->gridClassToString(vdb_grid->getGridClass()) << '\n';
+  //cout << "Tree type: "
+  //cout << "Value type: "
+  cout << "Active voxel_dim: " << active_voxel_dim << '\n';
   cout << "Mem usage GB: " << static_cast<double>(mem_usage_bytes) / (1 << 30)
        << '\n';
-  cout << "Active voxel count: " << vdb_grid->activeVoxelCount() << '\n';
-  cout << "Grid class: "
-       << vdb_grid->gridClassToString(vdb_grid->getGridClass()) << '\n';
+  cout << "Active voxel count: " << active_voxel_count << '\n';
+  cout << "Bytes per active voxel count: " << mem_usage_bytes / static_cast<double>(active_voxel_count) << '\n';
+  cout << "Foreground (%): " << fg_pct << '\n';
+  cout << "Hypothetical bounding volume voxel count: " << hypo_bound_vol_count << '\n';
+  cout << "Compression factor over 2 byte hypothetical bounding volume: " << static_cast<double>(hypo_bound_vol_count * 2) / mem_usage_bytes << '\n';
+  cout << "Usage bytes per hypothetical bounding voxel count (multiplier): " << static_cast<double>(mem_usage_bytes) / hypo_bound_vol_count << '\n';
+  cout << '\n';
 }
 
 auto read_vdb_file(std::string fn, std::string grid_name) {
@@ -392,7 +405,7 @@ void write_vdb_file(openvdb::GridPtrVec vdb_grids, std::string fp = "") {
     fp = get_data_dir() + '/' + default_fn;
   } else {
     auto dir = fs::path(fp).remove_filename();
-    if (fs::exists(dir)) {
+    if (dir.empty() || fs::exists(dir)) {
       if (fs::exists(fp)) {
 #ifdef LOG
         cout << "Warning: " << fp << " already exists, overwriting...\n";
@@ -758,8 +771,9 @@ void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
   }
 }
 
-VID_t coord_to_vid(openvdb::Coord xyz, std::vector<int> extents) {
-  return xyz[2] * (extents[0] * extents[1]) + xyz[1] * extents[0] + xyz[0];
+template <typename T1, typename T2> VID_t coord_to_vid(T1 xyz, T2 extents) {
+  return static_cast<VID_t>(xyz[2]) * (extents[0] * extents[1]) +
+         xyz[1] * extents[0] + xyz[0];
 }
 
 // keep only voxels strictly greater than bkg_thresh
@@ -767,16 +781,17 @@ template <typename BufT, typename AccT>
 void convert_buffer_to_vdb(BufT *buffer, AccT vdb_accessor,
                            std::vector<int> buffer_extents,
                            std::vector<int> buffer_offsets,
-                           std::vector<int> image_offsets, BufT bkg_thresh = 0) {
+                           std::vector<int> image_offsets,
+                           BufT bkg_thresh = 0) {
 
   auto coord_add = [](auto first, auto second) {
     return openvdb::Coord(first[0] + second[0], first[1] + second[1],
                           first[2] + second[2]);
   };
 
-  for (auto x : rng::views::iota(0, buffer_extents[0])) {
+  for (auto z : rng::views::iota(0, buffer_extents[2])) {
     for (auto y : rng::views::iota(0, buffer_extents[1])) {
-      for (auto z : rng::views::iota(0, buffer_extents[2])) {
+      for (auto x : rng::views::iota(0, buffer_extents[0])) {
         openvdb::Coord xyz(x, y, z);
         openvdb::Coord buffer_xyz = coord_add(xyz, buffer_offsets);
         openvdb::Coord grid_xyz = coord_add(xyz, image_offsets);

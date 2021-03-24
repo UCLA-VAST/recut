@@ -231,9 +231,9 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
     }
     // if neither background threshold nor foreground percent given, set
     // foreground percent to 0.01
-    if (args.recut_parameters().background_thresh() < 0 &&
-        args.recut_parameters().foreground_percent() < 0)
-      args.recut_parameters().set_foreground_percent(0.01);
+    //if (args.recut_parameters().background_thresh() < 0 &&
+        //args.recut_parameters().foreground_percent() < 0)
+      //args.recut_parameters().set_foreground_percent(0.01);
     return true;
   } catch (const exception &e) {
     cout << e.what() << '\n';

@@ -35,7 +35,7 @@ class RecutParameters {
       out_vdb_ = std::string();
       convert_only_ = false;
       parallel_num_ = 1; // default is the max hardware concurrency when not set
-      block_size_ = 64;
+      block_size_ = 512;
       interval_size_ = 1024;
       max_intensity_ = -1;
       min_intensity_ = -1;

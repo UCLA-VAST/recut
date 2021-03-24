@@ -60,6 +60,7 @@ in
     echo; echo;
     mkdir $out/data;
     make installcheck;
+    ./recut_test
   '';
 
 }
