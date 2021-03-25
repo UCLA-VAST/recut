@@ -385,7 +385,7 @@ auto read_vdb_file(std::string fn, std::string grid_name) {
   openvdb::GridBase::Ptr base_grid = file.readGrid(grid_name);
   file.close();
   auto topology_grid =
-      openvdb::gridPtrCast<openvdb::v8_0::TopologyGrid>(base_grid);
+      openvdb::gridPtrCast<openvdb::v8_0::FloatGrid>(base_grid);
 
 #ifdef LOG
   print_grid_metadata(topology_grid);

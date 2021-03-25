@@ -88,7 +88,7 @@ public:
   bool mmap_;
   bool input_is_vdb;
 #ifdef USE_VDB
-  openvdb::v8_0::TopologyGrid::Ptr topology_grid;
+  openvdb::v8_0::FloatGrid::Ptr topology_grid;
 #endif
   size_t iteration;
   float bound_band;
@@ -577,14 +577,15 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
         } else if (stage == "surface") {
           // for now just print the first block of the
           // interval
-          auto surface = fifo[block_id];
-          bool match = false;
-          for (auto check_v : surface) {
-            if (v->vid == check_v.vid) {
-              match = true;
-            }
-          }
-          if (match) {
+          //auto surface = fifo[block_id];
+          //bool match = false;
+          //for (auto check_v : surface) {
+            //if (v->vid == check_v.vid) {
+              //match = true;
+            //}
+          //}
+          //if (match) {
+          if (v->surface()) {
             cout << "L "; // L for leaf and because disambiguates selected S
           } else {
             cout << "- ";
@@ -3389,7 +3390,7 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
 #endif
 
   // Create an empty grid with background value 0.
-  this->topology_grid = openvdb::TopologyGrid::create();
+  this->topology_grid = openvdb::FloatGrid::create();
   topology_grid->setName("topology");
   topology_grid->setCreator("recut");
 
@@ -3444,7 +3445,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     auto timer = new high_resolution_timer();
     this->topology_grid = read_vdb_file(args->image_root_dir(), grid_name);
 #ifdef LOG
-    cout << "Read image in: " << timer->elapsed() << " s\n";
+    cout << "Read grid in: " << timer->elapsed() << " s\n";
 #endif
 
     // read metadata

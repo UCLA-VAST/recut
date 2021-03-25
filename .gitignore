@@ -9,5 +9,5 @@ include
 compile_commands.json
 result
 .envrc
-out.vdb
-out.swc
+*.vdb
+*.swc

@@ -1445,7 +1445,7 @@ TEST(CheckGlobals, AllFifo) {
   ASSERT_TRUE(recut.global_fifo[0][0].empty());
 }
 
-TEST(Update, DISABLED_EachStageIteratively) {
+TEST(Update, EachStageIteratively) {
   bool print_all = false;
   bool print_csv = false;
 #ifdef LOG
@@ -1487,7 +1487,7 @@ TEST(Update, DISABLED_EachStageIteratively) {
     cout << "name,iterations,error_rate(%)\n";
   }
   for (auto &grid_size : grid_sizes) {
-    VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
+    const VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
     auto radii_grid = std::make_unique<uint16_t[]>(tol_sz);
     auto seq_radii_grid = std::make_unique<uint16_t[]>(tol_sz);
     if (check_xy) {
@@ -1499,7 +1499,7 @@ TEST(Update, DISABLED_EachStageIteratively) {
       for (auto &block_size : block_sizes) {
         if (block_size > interval_size)
           continue;
-        auto sequential =
+        auto is_sequential_run =
             (grid_size == interval_size) && (grid_size == block_size) ? true
                                                                       : false;
         for (auto &tcase : tcases) {
@@ -1541,6 +1541,7 @@ TEST(Update, DISABLED_EachStageIteratively) {
             std::cout << "Recut connected\n";
             recut.print_grid(stage, recut.global_fifo);
             std::cout << "Recut surface\n";
+            std::cout << iteration_trace.str();
             recut.print_grid("surface", recut.global_fifo);
             auto total = 0;
             if (false) {
@@ -1638,13 +1639,15 @@ TEST(Update, DISABLED_EachStageIteratively) {
             EXPECT_NEAR(recut_err, 0., .001);
           }
 
-          // check against sequential recut radii run
-          if (sequential) {
-            // sequential needs to always be run first
+          // check against is_sequential_run recut radii run
+          if (is_sequential_run) {
+            // is_sequential_run needs to always be run first
             for (int vid = 0; vid < tol_sz; ++vid) {
               // this is only done for the full domain case so interval and
               // block are known
-              seq_radii_grid[vid] = recut.get_active_vertex(0, 0, vid) ? 1 : 0;
+              // if v is not active it is a nullptr
+              auto v = recut.get_active_vertex(0, 0, vid);
+              seq_radii_grid[vid] = v ? v->radius : 0;
             }
           } else {
             if (print_all) {
