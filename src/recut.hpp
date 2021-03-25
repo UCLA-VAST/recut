@@ -88,7 +88,7 @@ public:
   bool mmap_;
   bool input_is_vdb;
 #ifdef USE_VDB
-  openvdb::v8_0::FloatGrid::Ptr topology_grid;
+  openvdb::v8_0::TopologyGrid::Ptr topology_grid;
 #endif
   size_t iteration;
   float bound_band;
@@ -450,8 +450,6 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
 #else
       msg_vertex = get_active_vertex(interval_id, block_id, vid);
 #endif
-      cout << "root radius " << +(msg_vertex->radius) << ' ' << interval_id
-           << ' ' << block_id << ' ' << msg_vertex->vid << '\n';
       assertm(msg_vertex->valid_radius(),
               "activate vids didn't find valid radius");
       assertm(msg_vertex != nullptr, "get_active_vertex yielded nullptr");
@@ -577,14 +575,14 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
         } else if (stage == "surface") {
           // for now just print the first block of the
           // interval
-          //auto surface = fifo[block_id];
-          //bool match = false;
-          //for (auto check_v : surface) {
-            //if (v->vid == check_v.vid) {
-              //match = true;
-            //}
+          // auto surface = fifo[block_id];
+          // bool match = false;
+          // for (auto check_v : surface) {
+          // if (v->vid == check_v.vid) {
+          // match = true;
           //}
-          //if (match) {
+          //}
+          // if (match) {
           if (v->surface()) {
             cout << "L "; // L for leaf and because disambiguates selected S
           } else {
@@ -1028,6 +1026,10 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t dst_id,
   }
 }
 
+// template <typename T>
+// auto get_topology_val(VID_t dst_id, T vdb_accessor) {
+//}
+
 /**
  * accumulate is the core function of fast marching, it can only operate
  * on VertexAttr that are within the current interval_id and block_id, since
@@ -1057,7 +1059,9 @@ bool Recut<image_t>::accumulate_connected(
   // the image voxel of this dst vertex is the primary method to exclude this
   // pixel/vertex for the remainder of all processing
   if (this->input_is_vdb) {
-    if (!get_vdb_val(vdb_accessor, dst_id))
+    auto dst_vox = get_vdb_val(vdb_accessor, dst_id);
+    cout << "dst_vox " << dst_vox << '\n';
+    if (!dst_vox)
       found_background = true;
   } else {
     auto dst_vox = get_img_val(tile, dst_id);
@@ -1573,10 +1577,9 @@ void Recut<image_t>::update_neighbors(
         // can not be added in to processing stack
         // ghost vertices can only be added in to the stack
         // during `integrate_updated_ghost()`
-        dst_outside_domain =
-            ((dst_interval_id != interval_id) || (dst_block_id != block_id))
-                ? true
-                : false;
+        auto outside_interval = dst_interval_id != interval_id;
+        auto outside_block = dst_block_id != block_id;
+        dst_outside_domain = outside_interval || outside_block;
 
         // only prune considers currents outside of the domain
         // prune uses these ghost regions (+-1) to pass messages
@@ -1593,8 +1596,37 @@ void Recut<image_t>::update_neighbors(
               continue;
           }
         } else {
-          if (dst_outside_domain)
-            continue;
+          if (stage == "connected") {
+            // FIXME multi-interval runs where !input_is_vdb &&
+            // !force_regenerate_image accessing outside interval image not in
+            // memory
+            if (outside_interval) {
+              assertm(false,
+                      "multi-interval not supported for this input image type "
+                      "yet, surface vertices can not be identified safely");
+            }
+            // for blocks it's safe to access the underlying image even in other
+            // domains since its const / static
+            if (outside_block) {
+              // skip backgrounds
+              // the image voxel of this dst vertex is the primary method to
+              // exclude this pixel/vertex for the remainder of all processing
+              // TODO refactor this into a function call from
+              // accumulate_connected too
+              if (this->input_is_vdb) {
+                if (!get_vdb_val(vdb_accessor, dst_id))
+                  found_adjacent_invalid = true;
+              } else {
+                auto dst_vox = get_img_val(tile, dst_id);
+                if (dst_vox <= tile_thresholds->bkg_thresh) {
+                  found_adjacent_invalid = true;
+                }
+              }
+            }
+          } else {
+            if (dst_outside_domain)
+              continue;
+          }
         }
 
         // note although this is summed only one of ii,jj,kk
@@ -2063,6 +2095,9 @@ void Recut<image_t>::connected_tile(
       }
     }
   }
+#ifdef LOG_FULL
+  cout << "visited vertices: " << visited << '\n';
+#endif
 }
 
 template <class image_t>
@@ -2995,9 +3030,12 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #ifdef USE_VDB
   // note openvdb::initialize() must have been called before this point
   // otherewise seg faults will occur
+  // if (this->input_is_vdb || params->convert_only_) {
   assertm(this->topology_grid, "topology grid not initialized");
   auto vdb_const_accessor = this->topology_grid->getConstAccessor();
   auto vdb_accessor = this->topology_grid->getAccessor();
+  //print_vdb(vdb_accessor, {image_length_x, image_length_y, image_length_y});
+  //}
 #endif
 
   // Main march for loop
@@ -3069,6 +3107,13 @@ Recut<image_t>::update(std::string stage, Container &fifo,
         // if user did not pass in valid tile_thresholds value
         TileThresholds<image_t> *local_tile_thresholds = tile_thresholds;
 
+        if (this->input_is_vdb && !local_tile_thresholds) {
+            local_tile_thresholds = new TileThresholds<image_t>(
+                /*max*/ 2,
+                /*min*/ 0,
+                /*bkg_thresh*/ 0);
+        }
+
         // pre-generated images are for testing, or when an outside
         // library wants to pass input images instead
         if (this->params->force_regenerate_image) {
@@ -3092,9 +3137,10 @@ Recut<image_t>::update(std::string stage, Container &fifo,
         // of this interval otherwise dangling reference then seg fault
         // on image access so prevent destruction before calling
         // process_interval
-        mcp3d::MImage* mcp3d_tile;
+        mcp3d::MImage *mcp3d_tile;
         if (!input_is_vdb) {
-          mcp3d_tile = new mcp3d::MImage(args->image_root_dir(), {args->channel()});
+          mcp3d_tile =
+              new mcp3d::MImage(args->image_root_dir(), {args->channel()});
           // tile is only needed for the value stage
           if (stage == "value" || stage == "connected" || stage == "convert") {
             if (!(this->params->force_regenerate_image)) {
@@ -3389,11 +3435,6 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
   cout << "Created processing blocks" << '\n';
 #endif
 
-  // Create an empty grid with background value 0.
-  this->topology_grid = openvdb::FloatGrid::create();
-  topology_grid->setName("topology");
-  topology_grid->setCreator("recut");
-
   if (!params->convert_only_) {
     // fifo is a deque representing the vids left to
     // process at each stage
@@ -3443,7 +3484,9 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
 
     std::string grid_name = "topology";
     auto timer = new high_resolution_timer();
-    this->topology_grid = read_vdb_file(args->image_root_dir(), grid_name);
+    auto base_grid = read_vdb_file(args->image_root_dir(), grid_name);
+    this->topology_grid =
+        openvdb::gridPtrCast<openvdb::v8_0::TopologyGrid>(base_grid);
 #ifdef LOG
     cout << "Read grid in: " << timer->elapsed() << " s\n";
 #endif
@@ -3453,6 +3496,10 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     global_image_dims = {active_voxel_dim[0], active_voxel_dim[1],
                          active_voxel_dim[2]};
   } else {
+    // if (params->convert_only_) {
+    // Create an empty grid with background value 0.
+    this->topology_grid = create_vdb_grid();
+    //}
 #ifdef USE_MCP3D
     if (!(this->params->force_regenerate_image)) {
       assertm(fs::exists(args->image_root_dir()),

@@ -204,7 +204,8 @@ void print_vdb(T vdb_accessor, std::vector<int> extents, int bkg_thresh = -1) {
       for (int x = 0; x < extents[0]; x++) {
         openvdb::Coord xyz(x, y, z);
         auto val = vdb_accessor.getValue(xyz);
-        if ((bkg_thresh > -1) && (val <= bkg_thresh)) {
+        //if ((bkg_thresh > -1) && (val <= bkg_thresh)) {
+        if (!val) {
           cout << "- ";
         } else {
           cout << val << " ";
@@ -352,24 +353,39 @@ template <typename T> void print_grid_metadata(T vdb_grid) {
   auto mem_usage_bytes = vdb_grid->memUsage();
   auto active_voxel_dim = vdb_grid->evalActiveVoxelDim();
   VID_t hypo_bound_vol_count = static_cast<VID_t>(active_voxel_dim[0]) *
-      active_voxel_dim[1] * active_voxel_dim[2];
+                               active_voxel_dim[1] * active_voxel_dim[2];
   auto active_voxel_count = vdb_grid->activeVoxelCount();
-  auto fg_pct = (static_cast<double>(100) * active_voxel_count) / hypo_bound_vol_count;
+  auto fg_pct =
+      (static_cast<double>(100) * active_voxel_count) / hypo_bound_vol_count;
 
-  cout << "Metadata for vdb grid name: " << vdb_grid->getName() << " creator: " << vdb_grid->getCreator() << '\n';
-  cout << "Grid class: " << vdb_grid->gridClassToString(vdb_grid->getGridClass()) << '\n';
-  //cout << "Tree type: "
-  //cout << "Value type: "
+  cout << "Metadata for vdb grid name: " << vdb_grid->getName()
+       << " creator: " << vdb_grid->getCreator() << '\n';
+  cout << "Grid class: "
+       << vdb_grid->gridClassToString(vdb_grid->getGridClass()) << '\n';
+  // cout << "Tree type: "
+  // cout << "Value type: "
   cout << "Active voxel_dim: " << active_voxel_dim << '\n';
   cout << "Mem usage GB: " << static_cast<double>(mem_usage_bytes) / (1 << 30)
        << '\n';
   cout << "Active voxel count: " << active_voxel_count << '\n';
-  cout << "Bytes per active voxel count: " << mem_usage_bytes / static_cast<double>(active_voxel_count) << '\n';
+  cout << "Bytes per active voxel count: "
+       << mem_usage_bytes / static_cast<double>(active_voxel_count) << '\n';
   cout << "Foreground (%): " << fg_pct << '\n';
-  cout << "Hypothetical bounding volume voxel count: " << hypo_bound_vol_count << '\n';
-  cout << "Compression factor over 2 byte hypothetical bounding volume: " << static_cast<double>(hypo_bound_vol_count * 2) / mem_usage_bytes << '\n';
-  cout << "Usage bytes per hypothetical bounding voxel count (multiplier): " << static_cast<double>(mem_usage_bytes) / hypo_bound_vol_count << '\n';
+  cout << "Hypothetical bounding volume voxel count: " << hypo_bound_vol_count
+       << '\n';
+  cout << "Compression factor over 2 byte hypothetical bounding volume: "
+       << static_cast<double>(hypo_bound_vol_count * 2) / mem_usage_bytes
+       << '\n';
+  cout << "Usage bytes per hypothetical bounding voxel count (multiplier): "
+       << static_cast<double>(mem_usage_bytes) / hypo_bound_vol_count << '\n';
   cout << '\n';
+}
+
+auto create_vdb_grid() {
+  auto topology_grid = openvdb::TopologyGrid::create();
+  topology_grid->setName("topology");
+  topology_grid->setCreator("recut");
+  return topology_grid;
 }
 
 auto read_vdb_file(std::string fn, std::string grid_name) {
@@ -384,13 +400,11 @@ auto read_vdb_file(std::string fn, std::string grid_name) {
   file.open();
   openvdb::GridBase::Ptr base_grid = file.readGrid(grid_name);
   file.close();
-  auto topology_grid =
-      openvdb::gridPtrCast<openvdb::v8_0::FloatGrid>(base_grid);
 
 #ifdef LOG
-  print_grid_metadata(topology_grid);
+  print_grid_metadata(base_grid);
 #endif
-  return topology_grid;
+  return base_grid;
 }
 
 // Create a VDB file object and write out a vector of grids.

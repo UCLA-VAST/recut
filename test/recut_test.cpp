@@ -771,9 +771,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
           ASSERT_NEAR(actual_slt_pct, slt_pct, 100 * EXP_DEV_LOW);
         }
 
-        auto topology_grid = openvdb::TopologyGrid::create();
-        topology_grid->setName("topology");
-        topology_grid->setCreator("recut");
+        auto topology_grid = create_vdb_grid();
         convert_buffer_to_vdb(inimg1d, topology_grid->getAccessor(),
                               {grid_size, grid_size, grid_size}, {0, 0, 0},
                               {0, 0, 0});
@@ -1471,7 +1469,7 @@ TEST(Update, EachStageIteratively) {
   // std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
   // max_size / 2, max_size};
   std::vector<int> grid_sizes = {max_size};
-  std::vector<int> interval_sizes = {max_size, max_size / 2, max_size / 4};
+  std::vector<int> interval_sizes = {max_size};
   std::vector<int> block_sizes = {max_size, max_size / 2, max_size / 4};
   // tcase 5 is a sphere of radius grid_size / 4 centered
   // in the middle of an image
