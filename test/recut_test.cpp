@@ -689,9 +689,9 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
       cout << "Create grids of " << grid_size << endl;
     auto root_vid = get_central_vid(grid_size);
     // FIXME save root marker vid
-    long sz0 = (long)grid_size;
-    long sz1 = (long)grid_size;
-    long sz2 = (long)grid_size;
+    auto sz0 = (long)grid_size;
+    auto sz1 = (long)grid_size;
+    auto sz2 = (long)grid_size;
     VID_t tol_sz = sz0 * sz1 * sz2;
 
     uint16_t bkg_thresh = 0;
@@ -771,7 +771,8 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
           ASSERT_NEAR(actual_slt_pct, slt_pct, 100 * EXP_DEV_LOW);
         }
 
-        auto topology_grid = create_vdb_grid();
+        auto topology_grid = create_vdb_grid({grid_size,
+            grid_size, grid_size});
         convert_buffer_to_vdb(inimg1d, topology_grid->getAccessor(),
                               {grid_size, grid_size, grid_size}, {0, 0, 0},
                               {0, 0, 0});
@@ -1451,15 +1452,9 @@ TEST(Update, EachStageIteratively) {
 #endif
   bool prune = false;
   // for circular test cases app2's accuracy_radius is not correct
-  // in terms of hops to background, it counts 1 as being
-  // still near border regions like
-  // 1 0
-  // 1 1
-  // 1 0
-  // but it should be
-  // 1 0
-  // 2 1
-  // 1 0
+  // in terms of hops, 1-norm, manhattan-distance, cell-centered euclidean
+  // distance etc. to background voxel, it counts 1 for diagonals to a
+  // background, for example 1 0 1 1 1 0 but it should be 1 0 2 1 1 0
   auto expect_exact_radii_match_with_app2 = false;
   auto expect_exact_radii_match_with_seq = true;
   // app2 has a 2D radii estimation which can also be compared
@@ -1471,9 +1466,11 @@ TEST(Update, EachStageIteratively) {
   std::vector<int> grid_sizes = {max_size};
   std::vector<int> interval_sizes = {max_size};
   std::vector<int> block_sizes = {max_size, max_size / 2, max_size / 4};
+  std::vector<bool> input_is_vdbs = {false, true};
   // tcase 5 is a sphere of radius grid_size / 4 centered
   // in the middle of an image
   // tcase 7 is a square radius grid_size / 4
+  // tcase 4 uses rand, different runs produce different results
   std::vector<int> tcases = {5};
   // on tcase 5 a sphere accuracy does not produce correct results according
   // to our definition of hops away, so you'll need to suppress the more
@@ -1484,371 +1481,395 @@ TEST(Update, EachStageIteratively) {
   if (print_csv) {
     cout << "name,iterations,error_rate(%)\n";
   }
-  for (auto &grid_size : grid_sizes) {
-    const VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
-    auto radii_grid = std::make_unique<uint16_t[]>(tol_sz);
-    auto seq_radii_grid = std::make_unique<uint16_t[]>(tol_sz);
-    if (check_xy) {
-      radii_grid_xy = std::make_unique<uint16_t[]>(tol_sz);
-    }
-    for (auto &interval_size : interval_sizes) {
-      if (interval_size > grid_size)
-        continue;
-      for (auto &block_size : block_sizes) {
-        if (block_size > interval_size)
+  for (auto input_is_vdb : input_is_vdbs) {
+    if ( input_is_vdb ) cout << "Checking input_is_vdb\n";
+    for (auto &grid_size : grid_sizes) {
+      const VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
+      auto radii_grid = std::make_unique<uint16_t[]>(tol_sz);
+      auto seq_radii_grid = std::make_unique<uint16_t[]>(tol_sz);
+      if (check_xy) {
+        radii_grid_xy = std::make_unique<uint16_t[]>(tol_sz);
+      }
+      for (auto &interval_size : interval_sizes) {
+        if (interval_size > grid_size)
           continue;
-        auto is_sequential_run =
-            (grid_size == interval_size) && (grid_size == block_size) ? true
-                                                                      : false;
-        for (auto &tcase : tcases) {
-          auto interval_extents = {grid_size, grid_size, grid_size};
-          auto args = get_args(grid_size, interval_size, block_size, slt_pct,
-                               tcase, true);
+        for (auto &block_size : block_sizes) {
+          if (block_size > interval_size)
+            continue;
+          auto is_sequential_run =
+              (grid_size == interval_size) && (grid_size == block_size) ? true
+                                                                        : false;
+          for (auto &tcase : tcases) {
+            const auto interval_extents = {grid_size, grid_size, grid_size};
 
-          // the total number of blocks allows more parallelism
-          // ideally intervals >> thread count
-          auto final_interval_size =
-              interval_size > grid_size ? grid_size : interval_size;
-          auto final_block_size = block_size > final_interval_size
-                                      ? final_interval_size
-                                      : block_size;
+            // create ground truth refence for the rest of the loop body
+            auto ground_truth_args =
+                get_args(grid_size, interval_size, block_size, slt_pct, tcase);
+            auto ground_truth_params = ground_truth_args.recut_parameters();
+            auto ground_truth_image = std::make_unique<uint16_t[]>(tol_sz);
+            auto selected =
+                create_image(tcase, ground_truth_image.get(),
+                             grid_size, ground_truth_params.selected,
+                             ground_truth_params.root_vid);
 
-          std::ostringstream iteration_trace;
-          // use this to tag and reconstruct data from json file
-          iteration_trace << "grid_size " << grid_size << " interval_size "
-                          << final_interval_size << " block_size "
-                          << final_block_size << '\n';
-          SCOPED_TRACE(iteration_trace.str());
-          cout << "\n\n" << iteration_trace.str();
+          auto force_regenerate_image = input_is_vdb ? false : true;
+            auto args =
+                get_args(grid_size, interval_size, block_size, slt_pct, tcase,
+                         /*force_regenerate_image=*/force_regenerate_image,
+                         input_is_vdb);
 
-          // run
-          auto recut = Recut<uint16_t>(args);
-          auto root_vids = recut.initialize();
-          auto selected = args.recut_parameters().selected;
+            // the total number of blocks allows more parallelism
+            // ideally intervals >> thread count
+            auto final_interval_size =
+                interval_size > grid_size ? grid_size : interval_size;
+            auto final_block_size = block_size > final_interval_size
+                                        ? final_interval_size
+                                        : block_size;
 
-          if (print_all) {
-            std::cout << "recut image grid" << endl;
-            print_image_3D(recut.generated_image,
-                           {grid_size, grid_size, grid_size});
-          }
+            std::ostringstream iteration_trace;
+            // use this to tag and reconstruct data from json file
+            iteration_trace << "grid_size " << grid_size << " interval_size "
+                            << final_interval_size << " block_size "
+                            << final_block_size << '\n';
+            SCOPED_TRACE(iteration_trace.str());
+            cout << "\n\n" << iteration_trace.str();
 
-          auto stage = "connected";
-          recut.activate_vids(root_vids, stage, recut.global_fifo);
-          recut.update(stage, recut.global_fifo);
-          if (print_all) {
-            std::cout << "Recut connected\n";
-            recut.print_grid(stage, recut.global_fifo);
-            std::cout << "Recut surface\n";
-            std::cout << iteration_trace.str();
-            recut.print_grid("surface", recut.global_fifo);
-            auto total = 0;
-            if (false) {
-              std::cout << "All surface vids: \n";
-              for (int i = 0; i < recut.global_fifo.size(); ++i) {
-                std::cout << "Interval " << i << '\n';
-                const auto outer = recut.global_fifo[i];
-                for (int j = 0; j < outer.size(); ++j) {
-                  const auto inner = outer[j];
-                  std::cout << " Block " << j << '\n';
-                  for (auto &vertex : inner) {
-                    total++;
-                    // cout << "\t" << vertex.vid << '\n';
-                    cout << "\t" << vertex.description() << '\n';
-                    ASSERT_TRUE(vertex.surface());
-                    ASSERT_TRUE(vertex.root() || vertex.selected());
-                    ASSERT_NE(nullptr,
-                              recut.get_active_vertex(i, j, vertex.vid));
-                  }
-                }
-              }
-              cout << "Surface vid total size " << total << '\n';
-            }
-          }
+            // run
+            auto recut = Recut<uint16_t>(args);
+            auto root_vids = recut.initialize();
+            auto regenerated_selected = args.recut_parameters().selected;
 
-          // Get accurate and approximate radii according to APP2
-          // methods
-          auto total_visited = 0;
-          for (VID_t i = 0; i < tol_sz; i++) {
-            if (recut.generated_image[i]) {
-              // calculate radius with baseline accurate method
-              radii_grid[i] =
-                  get_radius_accurate(recut.generated_image, grid_size, i,
-                                      tile_thresholds->bkg_thresh);
-              if (check_xy) {
-                // build original production version
-                radii_grid_xy[i] =
-                    get_radius_hanchuan_XY(recut.generated_image, grid_size, i,
-                                           tile_thresholds->bkg_thresh);
-              }
-              ++total_visited;
-            }
-          }
-          ASSERT_EQ(total_visited, selected);
-
-          // Debug by eye
-          if (print_all) {
-            cout << "accuracy_radius\n";
-            print_image_3D(radii_grid.get(), {grid_size, grid_size, grid_size});
-            if (check_xy) {
-              std::cout << "XY radii grid\n";
-              print_image_3D(radii_grid_xy.get(),
-                             {grid_size, grid_size, grid_size});
-            }
-          }
-
-          // make sure all surface vertices were identified correctly
-          double xy_err, recut_err;
-          if (expect_exact_radii_match_with_app2) {
-            EXPECT_NO_FATAL_FAILURE(
-                check_recut_error(recut, radii_grid.get(), grid_size, "surface",
-                                  recut_err, recut.global_fifo));
-          }
-
-          recut.setup_radius(recut.global_fifo);
-
-          // conducting update on radius consumes all fifo values
-          recut.update("radius", recut.global_fifo);
-          for (const auto &o : recut.global_fifo) {
-            for (const auto &i : o) {
-              ASSERT_EQ(i.size(), 0);
-            }
-          }
-
-          // Debug by eye
-          if (print_all) {
-            std::cout << "Recut radii\n";
-            recut.print_grid("radius", recut.global_fifo);
-          }
-
-          VID_t interval_num = 0;
-
-          if (check_xy) {
-            ASSERT_NO_FATAL_FAILURE(check_image_error(
-                recut.generated_image, radii_grid.get(), radii_grid_xy.get(),
-                grid_size, recut.params->selected, xy_err));
-          }
-          EXPECT_NO_FATAL_FAILURE(
-              check_recut_error(recut, radii_grid.get(), grid_size, "radius",
-                                recut_err, recut.global_fifo));
-          // see above comment on app2's accuracy_radius
-          // the error is still recorded and radii are made sure to be
-          // valid in the right locations
-          if (expect_exact_radii_match_with_app2) {
-            EXPECT_NEAR(recut_err, 0., .001);
-          }
-
-          // check against is_sequential_run recut radii run
-          if (is_sequential_run) {
-            // is_sequential_run needs to always be run first
-            for (int vid = 0; vid < tol_sz; ++vid) {
-              // this is only done for the full domain case so interval and
-              // block are known
-              // if v is not active it is a nullptr
-              auto v = recut.get_active_vertex(0, 0, vid);
-              seq_radii_grid[vid] = v ? v->radius : 0;
-            }
-          } else {
             if (print_all) {
-              cout << "sequential radii \n";
-              print_image_3D(seq_radii_grid.get(),
-                             {grid_size, grid_size, grid_size});
+              std::cout << "recut image grid" << endl;
+              if (force_regenerate_image) {
+                print_image_3D(ground_truth_image.get(),
+                               {grid_size, grid_size, grid_size});
+              } else {
+                auto vdb_accessor = recut.topology_grid->getConstAccessor();
+                print_vdb(vdb_accessor, interval_extents);
+              }
             }
-            // radii are made sure to be valid in the right locations
-            EXPECT_NO_FATAL_FAILURE(
-                check_recut_error(recut, seq_radii_grid.get(), grid_size,
-                                  "radius", recut_err, recut.global_fifo));
-            // exact match at every radii value
-            if (expect_exact_radii_match_with_seq) {
-              ASSERT_EQ(recut_err, 0.);
-            }
-          }
 
-          std::ostringstream xy_stream, recut_stream;
-          recut_stream << "Recut Error " << iteration_trace.str();
-          RecordProperty(recut_stream.str(), recut_err);
-          if (print_csv) {
-            if (check_xy) {
-              std::cout << "\"xy_radius/" << grid_size << "\",1," << xy_err
-                        << '\n';
-              xy_stream << "XY Error " << iteration_trace.str();
-              RecordProperty(xy_stream.str(), xy_err);
-            }
-            std::cout << "\"fast_marching_radius/" << grid_size << "\",1,"
-                      << recut_err << '\n';
-          }
-
-          if (print_all) {
-            std::cout << "roots:\n";
-            rng::for_each(root_vids, [](auto i) { std::cout << i << ", "; });
-            std::cout << '\n';
-          }
-
-          if (prune) {
-            recut.convert_to_markers(args.output_tree, false);
-
-            std::vector<MyMarker *> sequential_output_tree;
-            std::vector<MyMarker *> sequential_output_tree_prune;
-            std::vector<MyMarker> targets;
-            // convert roots into markers (vector)
-            std::vector<MyMarker *> root_markers;
-            if (tcase == 6) {
-              root_markers = vids_to_markers(root_vids, grid_size);
-            } else {
-              root_markers = {get_central_root(grid_size)};
-            }
-            fastmarching_tree(root_markers, targets, recut.generated_image,
-                              sequential_output_tree, grid_size, grid_size,
-                              grid_size, 1, tile_thresholds->bkg_thresh,
-                              tile_thresholds->max_int,
-                              tile_thresholds->min_int);
-
-            // get sequential results for radius and pruning from app2
-            // take recut results before pruningg and do pruning
-            // with app2
-            happ(sequential_output_tree, sequential_output_tree_prune,
-                 recut.generated_image, grid_size, grid_size, grid_size,
-                 tile_thresholds->bkg_thresh, 0.);
-
-            // starting from roots, prune stage will
-            // find final list of vertices
-            auto stage = std::string{"prune"};
+            auto stage = "connected";
             recut.activate_vids(root_vids, stage, recut.global_fifo);
             recut.update(stage, recut.global_fifo);
-
-            // recover pruned vertices
-            auto recut_output_tree_prune = std::vector<MyMarker *>();
-            // TODO recut_output_tree_prune.reserve(slt_pct * grid.image);
-
-            // map<VID_t, MyMarker *> tmp; // hash set
-            // for (int interval_id = 0; interval_id < grid.GetNIntervals();
-            //++interval_id) {
-            // for (int block_id = 0; block_id < grid.GetNBlocks();
-            // ++block_id) { while
-            // (!(heap_vec[interval_id][block_id].empty())) { const auto attr
-            // = safe_pop<local_heap, VertexAttr *>(
-            // heap_vec[interval_id][block_id], block_id, interval_id, stage);
-            // VID_t i, j, k; // get original
-            // i, j, k get_img_subscript(attr->vid, i, j, k);
-            // auto marker = new MyMarker(i, j, k);
-            // if (attr->root()) {
-            // marker->type = 0;
-            //}
-            // marker->radius = attr->radius;
-            // tmp[attr->vid] = marker; // save this marker ptr to a map
-            // std::cout << "added to temp vid " << attr->vid << '\n';
-            //}
-            //}
-            //}
-
-            // for (const auto marker : tmp) {
-            // adjust_parent(
-            //}
-            //// branch_parent
-
-            // recut.out.open("out.swc");
-            // recut.out.close();
-
-            recut.adjust_parent(false);
-            recut.convert_to_markers(recut_output_tree_prune, true);
-
             if (print_all) {
-              std::cout << "Recut prune\n";
-              recut.print_grid("label", recut.global_fifo);
+              std::cout << "Recut connected\n";
+              recut.print_grid(stage, recut.global_fifo);
+              std::cout << "Recut surface\n";
+              std::cout << iteration_trace.str();
+              recut.print_grid("surface", recut.global_fifo);
+              auto total = 0;
+              if (false) {
+                std::cout << "All surface vids: \n";
+                for (int i = 0; i < recut.global_fifo.size(); ++i) {
+                  std::cout << "Interval " << i << '\n';
+                  const auto outer = recut.global_fifo[i];
+                  for (int j = 0; j < outer.size(); ++j) {
+                    const auto inner = outer[j];
+                    std::cout << " Block " << j << '\n';
+                    for (auto &vertex : inner) {
+                      total++;
+                      // cout << "\t" << vertex.vid << '\n';
+                      cout << "\t" << vertex.description() << '\n';
+                      ASSERT_TRUE(vertex.surface());
+                      ASSERT_TRUE(vertex.root() || vertex.selected());
+                      ASSERT_NE(nullptr,
+                                recut.get_active_vertex(i, j, vertex.vid));
+                    }
+                  }
+                }
+                cout << "Surface vid total size " << total << '\n';
+              }
+            }
 
-              std::cout << "Recut radii post prune\n";
+            // Get accurate and approximate radii according to APP2
+            // methods
+            auto total_visited = 0;
+            for (VID_t i = 0; i < tol_sz; i++) {
+              if (ground_truth_image[i]) {
+                // calculate radius with baseline accurate method
+                radii_grid[i] =
+                    get_radius_accurate(ground_truth_image.get(), grid_size, i,
+                                        tile_thresholds->bkg_thresh);
+                if (check_xy) {
+                  // build original production version
+                  radii_grid_xy[i] =
+                      get_radius_hanchuan_XY(ground_truth_image.get(), grid_size,
+                                             i, tile_thresholds->bkg_thresh);
+                }
+                ++total_visited;
+              }
+            }
+            ASSERT_EQ(total_visited, selected);
+
+            // Debug by eye
+            if (print_all) {
+              cout << "accuracy_radius\n";
+              print_image_3D(radii_grid.get(),
+                             {grid_size, grid_size, grid_size});
+              if (check_xy) {
+                std::cout << "XY radii grid\n";
+                print_image_3D(radii_grid_xy.get(),
+                               {grid_size, grid_size, grid_size});
+              }
+            }
+
+            // make sure all surface vertices were identified correctly
+            double xy_err, recut_err;
+            if (expect_exact_radii_match_with_app2) {
+              EXPECT_NO_FATAL_FAILURE(
+                  check_recut_error(recut, radii_grid.get(), grid_size,
+                                    "surface", recut_err, recut.global_fifo));
+            }
+
+            recut.setup_radius(recut.global_fifo);
+
+            // conducting update on radius consumes all fifo values
+            recut.update("radius", recut.global_fifo);
+            for (const auto &o : recut.global_fifo) {
+              for (const auto &i : o) {
+                ASSERT_EQ(i.size(), 0);
+              }
+            }
+
+            // Debug by eye
+            if (print_all) {
+              std::cout << "Recut radii\n";
               recut.print_grid("radius", recut.global_fifo);
-
-              std::cout << "Seq prune\n";
-              print_marker_3D(sequential_output_tree_prune, interval_extents,
-                              "label");
-
-              std::cout << "Seq radius\n";
-              print_marker_3D(sequential_output_tree_prune, interval_extents,
-                              "radius");
             }
 
-            auto mask = std::make_unique<uint8_t[]>(tol_sz);
-            create_coverage_mask_accurate(recut_output_tree_prune, mask.get(),
-                                          grid_size, grid_size, grid_size);
-            auto results = check_coverage(mask.get(), recut.generated_image,
-                                          tol_sz, tile_thresholds->bkg_thresh);
+            VID_t interval_num = 0;
 
-            auto seq_mask = std::make_unique<uint8_t[]>(tol_sz);
-            create_coverage_mask_accurate(sequential_output_tree_prune,
-                                          seq_mask.get(), grid_size, grid_size,
-                                          grid_size);
-            auto seq_results =
-                check_coverage(seq_mask.get(), recut.generated_image, tol_sz,
-                               tile_thresholds->bkg_thresh);
+            if (check_xy) {
+              ASSERT_NO_FATAL_FAILURE(check_image_error(
+                  ground_truth_image.get(), radii_grid.get(), radii_grid_xy.get(),
+                  grid_size, recut.params->selected, xy_err));
+            }
+            EXPECT_NO_FATAL_FAILURE(
+                check_recut_error(recut, radii_grid.get(), grid_size, "radius",
+                                  recut_err, recut.global_fifo));
+            // see above comment on app2's accuracy_radius
+            // the error is still recorded and radii are made sure to be
+            // valid in the right locations
+            if (expect_exact_radii_match_with_app2) {
+              EXPECT_NEAR(recut_err, 0., .001);
+            }
+
+            // check against is_sequential_run recut radii run
+            if (is_sequential_run) {
+              // is_sequential_run needs to always be run first
+              for (int vid = 0; vid < tol_sz; ++vid) {
+                // this is only done for the full domain case so interval and
+                // block are known
+                // if v is not active it is a nullptr
+                auto v = recut.get_active_vertex(0, 0, vid);
+                seq_radii_grid[vid] = v ? v->radius : 0;
+              }
+            } else {
+              if (print_all) {
+                cout << "sequential radii \n";
+                print_image_3D(seq_radii_grid.get(),
+                               {grid_size, grid_size, grid_size});
+              }
+              // radii are made sure to be valid in the right locations
+              EXPECT_NO_FATAL_FAILURE(
+                  check_recut_error(recut, seq_radii_grid.get(), grid_size,
+                                    "radius", recut_err, recut.global_fifo));
+              // exact match at every radii value
+              if (expect_exact_radii_match_with_seq) {
+                ASSERT_EQ(recut_err, 0.);
+              }
+            }
+
+            std::ostringstream xy_stream, recut_stream;
+            recut_stream << "Recut Error " << iteration_trace.str();
+            RecordProperty(recut_stream.str(), recut_err);
+            if (print_csv) {
+              if (check_xy) {
+                std::cout << "\"xy_radius/" << grid_size << "\",1," << xy_err
+                          << '\n';
+                xy_stream << "XY Error " << iteration_trace.str();
+                RecordProperty(xy_stream.str(), xy_err);
+              }
+              std::cout << "\"fast_marching_radius/" << grid_size << "\",1,"
+                        << recut_err << '\n';
+            }
 
             if (print_all) {
-              std::cout << "Recut coverage mask\n";
-              print_image_3D(mask.get(), interval_extents);
-
-              std::cout << "Seq coverage mask\n";
-              print_image_3D(seq_mask.get(), interval_extents);
+              std::cout << "roots:\n";
+              rng::for_each(root_vids, [](auto i) { std::cout << i << ", "; });
+              std::cout << '\n';
             }
 
-            //// compare_tree will print to log matches, false positive and
-            /// negative
-            // auto results = compare_tree(sequential_output_tree_prune,
-            // recut_output_tree_prune, grid_size, grid_size, recut);
+            if (prune) {
+              recut.convert_to_markers(args.output_tree, false);
 
-            stage = "prune";
+              std::vector<MyMarker *> sequential_output_tree;
+              std::vector<MyMarker *> sequential_output_tree_prune;
+              std::vector<MyMarker> targets;
+              // convert roots into markers (vector)
+              std::vector<MyMarker *> root_markers;
+              if (tcase == 6) {
+                root_markers = vids_to_markers(root_vids, grid_size);
+              } else {
+                root_markers = {get_central_root(grid_size)};
+              }
+              fastmarching_tree(root_markers, targets, ground_truth_image.get(),
+                                sequential_output_tree, grid_size, grid_size,
+                                grid_size, 1, tile_thresholds->bkg_thresh,
+                                tile_thresholds->max_int,
+                                tile_thresholds->min_int);
 
-            RecordProperty("False positives " + stage,
-                           results->false_positives.size());
-            RecordProperty("False negatives " + stage,
-                           results->false_negatives.size());
-            RecordProperty("Match count " + stage, results->match_count);
-            RecordProperty("Match % " + stage, (100 * results->match_count) /
-                                                   args.output_tree.size());
-            RecordProperty("Duplicate count " + stage,
-                           seq_results->duplicate_count);
-            RecordProperty("Total nodes " + stage, args.output_tree.size());
-            RecordProperty("Total pruned nodes " + stage,
-                           recut_output_tree_prune.size());
-            RecordProperty("Compression factor " + stage,
-                           args.output_tree.size() /
-                               recut_output_tree_prune.size());
+              // get sequential results for radius and pruning from app2
+              // take recut results before pruningg and do pruning
+              // with app2
+              happ(sequential_output_tree, sequential_output_tree_prune,
+                   ground_truth_image.get(), grid_size, grid_size, grid_size,
+                   tile_thresholds->bkg_thresh, 0.);
 
-            stage = "seq prune";
-            RecordProperty("False positives " + stage,
-                           seq_results->false_positives.size());
-            RecordProperty("False negatives " + stage,
-                           seq_results->false_negatives.size());
-            RecordProperty("Match count " + stage, seq_results->match_count);
-            RecordProperty("Match % " + stage,
-                           (100 * seq_results->match_count) /
-                               sequential_output_tree.size());
-            RecordProperty("Duplicate count " + stage,
-                           seq_results->duplicate_count);
-            RecordProperty("Total nodes " + stage,
-                           sequential_output_tree.size());
-            RecordProperty("Total pruned nodes " + stage,
-                           sequential_output_tree_prune.size());
-            RecordProperty("Compression factor " + stage,
-                           sequential_output_tree.size() /
-                               sequential_output_tree_prune.size());
+              // starting from roots, prune stage will
+              // find final list of vertices
+              auto stage = std::string{"prune"};
+              recut.activate_vids(root_vids, stage, recut.global_fifo);
+              recut.update(stage, recut.global_fifo);
 
-            //// check the compare tree worked properly
-            // ASSERT_EQ(recut_output_tree_prune.size(),
-            // results->match_count + results->false_positives.size());
-            // ASSERT_EQ(recut_output_tree_prune.size(),
-            // results->match_count + results->false_negatives.size());
-            // EXPECT_EQ(recut_output_tree_prune.size(),
-            // sequential_output_tree_prune.size());
+              // recover pruned vertices
+              auto recut_output_tree_prune = std::vector<MyMarker *>();
+              // TODO recut_output_tree_prune.reserve(slt_pct * grid.image);
 
-            check_parents(recut_output_tree_prune, grid_size);
+              // map<VID_t, MyMarker *> tmp; // hash set
+              // for (int interval_id = 0; interval_id < grid.GetNIntervals();
+              //++interval_id) {
+              // for (int block_id = 0; block_id < grid.GetNBlocks();
+              // ++block_id) { while
+              // (!(heap_vec[interval_id][block_id].empty())) { const auto attr
+              // = safe_pop<local_heap, VertexAttr *>(
+              // heap_vec[interval_id][block_id], block_id, interval_id, stage);
+              // VID_t i, j, k; // get original
+              // i, j, k get_img_subscript(attr->vid, i, j, k);
+              // auto marker = new MyMarker(i, j, k);
+              // if (attr->root()) {
+              // marker->type = 0;
+              //}
+              // marker->radius = attr->radius;
+              // tmp[attr->vid] = marker; // save this marker ptr to a map
+              // std::cout << "added to temp vid " << attr->vid << '\n';
+              //}
+              //}
+              //}
 
-            // EXPECT_EQ(results->false_positives.size(), 0);
-            // EXPECT_EQ(results->false_negatives.size(), 0);
+              // for (const auto marker : tmp) {
+              // adjust_parent(
+              //}
+              //// branch_parent
+
+              // recut.out.open("out.swc");
+              // recut.out.close();
+
+              recut.adjust_parent(false);
+              recut.convert_to_markers(recut_output_tree_prune, true);
+
+              if (print_all) {
+                std::cout << "Recut prune\n";
+                recut.print_grid("label", recut.global_fifo);
+
+                std::cout << "Recut radii post prune\n";
+                recut.print_grid("radius", recut.global_fifo);
+
+                std::cout << "Seq prune\n";
+                print_marker_3D(sequential_output_tree_prune, interval_extents,
+                                "label");
+
+                std::cout << "Seq radius\n";
+                print_marker_3D(sequential_output_tree_prune, interval_extents,
+                                "radius");
+              }
+
+              auto mask = std::make_unique<uint8_t[]>(tol_sz);
+              create_coverage_mask_accurate(recut_output_tree_prune, mask.get(),
+                                            grid_size, grid_size, grid_size);
+              auto results =
+                  check_coverage(mask.get(), ground_truth_image.get(), tol_sz,
+                                 tile_thresholds->bkg_thresh);
+
+              auto seq_mask = std::make_unique<uint8_t[]>(tol_sz);
+              create_coverage_mask_accurate(sequential_output_tree_prune,
+                                            seq_mask.get(), grid_size,
+                                            grid_size, grid_size);
+              auto seq_results =
+                  check_coverage(seq_mask.get(), ground_truth_image.get(), tol_sz,
+                                 tile_thresholds->bkg_thresh);
+
+              if (print_all) {
+                std::cout << "Recut coverage mask\n";
+                print_image_3D(mask.get(), interval_extents);
+
+                std::cout << "Seq coverage mask\n";
+                print_image_3D(seq_mask.get(), interval_extents);
+              }
+
+              //// compare_tree will print to log matches, false positive and
+              /// negative
+              // auto results = compare_tree(sequential_output_tree_prune,
+              // recut_output_tree_prune, grid_size, grid_size, recut);
+
+              stage = "prune";
+
+              RecordProperty("False positives " + stage,
+                             results->false_positives.size());
+              RecordProperty("False negatives " + stage,
+                             results->false_negatives.size());
+              RecordProperty("Match count " + stage, results->match_count);
+              RecordProperty("Match % " + stage, (100 * results->match_count) /
+                                                     args.output_tree.size());
+              RecordProperty("Duplicate count " + stage,
+                             seq_results->duplicate_count);
+              RecordProperty("Total nodes " + stage, args.output_tree.size());
+              RecordProperty("Total pruned nodes " + stage,
+                             recut_output_tree_prune.size());
+              RecordProperty("Compression factor " + stage,
+                             args.output_tree.size() /
+                                 recut_output_tree_prune.size());
+
+              stage = "seq prune";
+              RecordProperty("False positives " + stage,
+                             seq_results->false_positives.size());
+              RecordProperty("False negatives " + stage,
+                             seq_results->false_negatives.size());
+              RecordProperty("Match count " + stage, seq_results->match_count);
+              RecordProperty("Match % " + stage,
+                             (100 * seq_results->match_count) /
+                                 sequential_output_tree.size());
+              RecordProperty("Duplicate count " + stage,
+                             seq_results->duplicate_count);
+              RecordProperty("Total nodes " + stage,
+                             sequential_output_tree.size());
+              RecordProperty("Total pruned nodes " + stage,
+                             sequential_output_tree_prune.size());
+              RecordProperty("Compression factor " + stage,
+                             sequential_output_tree.size() /
+                                 sequential_output_tree_prune.size());
+
+              //// check the compare tree worked properly
+              // ASSERT_EQ(recut_output_tree_prune.size(),
+              // results->match_count + results->false_positives.size());
+              // ASSERT_EQ(recut_output_tree_prune.size(),
+              // results->match_count + results->false_negatives.size());
+              // EXPECT_EQ(recut_output_tree_prune.size(),
+              // sequential_output_tree_prune.size());
+
+              check_parents(recut_output_tree_prune, grid_size);
+
+              // EXPECT_EQ(results->false_positives.size(), 0);
+              // EXPECT_EQ(results->false_negatives.size(), 0);
+            }
           }
         }
       }
     }
   }
-} // Radius.FULL
+} // EachStageIteratively
 
 class RecutPipelineParameterTests
     : public ::testing::TestWithParam<

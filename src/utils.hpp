@@ -191,7 +191,8 @@ void print_marker_3D(T markers, std::vector<int> interval_extents,
 
 // only values strictly greater than bkg_thresh are valid
 template <typename T>
-void print_vdb(T vdb_accessor, std::vector<int> extents, int bkg_thresh = -1) {
+void print_vdb(T vdb_accessor, const std::vector<int> extents,
+               const int bkg_thresh = -1) {
   cout << "Print VDB grid: \n";
   for (int z = 0; z < extents[2]; z++) {
     cout << "y | Z=" << z << '\n';
@@ -204,7 +205,7 @@ void print_vdb(T vdb_accessor, std::vector<int> extents, int bkg_thresh = -1) {
       for (int x = 0; x < extents[0]; x++) {
         openvdb::Coord xyz(x, y, z);
         auto val = vdb_accessor.getValue(xyz);
-        //if ((bkg_thresh > -1) && (val <= bkg_thresh)) {
+        // if ((bkg_thresh > -1) && (val <= bkg_thresh)) {
         if (!val) {
           cout << "- ";
         } else {
@@ -362,6 +363,14 @@ template <typename T> void print_grid_metadata(T vdb_grid) {
        << " creator: " << vdb_grid->getCreator() << '\n';
   cout << "Grid class: "
        << vdb_grid->gridClassToString(vdb_grid->getGridClass()) << '\n';
+  for (openvdb::MetaMap::MetaIterator iter = grid->beginMeta();
+       iter != grid->endMeta(); ++iter) {
+    const std::string &name = iter->first;
+    openvdb::Metadata::Ptr value = iter->second;
+    std::string valueAsString = value->str();
+    std::cout << name << " = " << valueAsString << '\n';
+  }
+
   // cout << "Tree type: "
   // cout << "Value type: "
   cout << "Active voxel_dim: " << active_voxel_dim << '\n';
@@ -381,10 +390,13 @@ template <typename T> void print_grid_metadata(T vdb_grid) {
   cout << '\n';
 }
 
-auto create_vdb_grid() {
+auto create_vdb_grid(std::vector<uint32_t> extents) {
   auto topology_grid = openvdb::TopologyGrid::create();
   topology_grid->setName("topology");
   topology_grid->setCreator("recut");
+  topology_grid->insertMeta("original_bounding_extents",
+                            openvdb::Vec3IMetadata(openvdb::Vec3I(
+                                extents[0], extents[1], extents[2])));
   return topology_grid;
 }
 

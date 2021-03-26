@@ -1060,7 +1060,6 @@ bool Recut<image_t>::accumulate_connected(
   // pixel/vertex for the remainder of all processing
   if (this->input_is_vdb) {
     auto dst_vox = get_vdb_val(vdb_accessor, dst_id);
-    cout << "dst_vox " << dst_vox << '\n';
     if (!dst_vox)
       found_background = true;
   } else {
@@ -3492,14 +3491,12 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
 #endif
 
     // read metadata
-    auto active_voxel_dim = topology_grid->evalActiveVoxelDim();
-    global_image_dims = {active_voxel_dim[0], active_voxel_dim[1],
-                         active_voxel_dim[2]};
+    //auto active_voxel_dim = topology_grid->evalActiveVoxelDim();
+    //global_image_dims = {active_voxel_dim[0], active_voxel_dim[1],
+                         //active_voxel_dim[2]};
+                         auto dims = topology_grid->readMeta<openvb::Vec3I>("original_bounding_extents");
+                         global_image_dims = {dims[0], dims[1], dims[2]};
   } else {
-    // if (params->convert_only_) {
-    // Create an empty grid with background value 0.
-    this->topology_grid = create_vdb_grid();
-    //}
 #ifdef USE_MCP3D
     if (!(this->params->force_regenerate_image)) {
       assertm(fs::exists(args->image_root_dir()),
@@ -3522,6 +3519,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
       global_image_dims = global_image.xyz_dims(args->resolution_level());
     }
 #endif
+    this->topology_grid = create_vdb_grid({global_image_dims[2], global_image_dims[1], global_image_dims[0]});
   }
 
   // these are in z y x order
