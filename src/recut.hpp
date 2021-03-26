@@ -82,7 +82,8 @@ public:
       interval_length_z, grid_interval_length_x, grid_interval_length_y,
       grid_interval_length_z, grid_interval_size, interval_block_size;
 
-  std::vector<int> image_extents;
+  std::vector<int> image_extents = {0, 0, 0};
+  std::vector<int> image_offsets = {0, 0, 0};
   std::ofstream out;
   image_t *generated_image = nullptr;
   bool mmap_;
@@ -321,22 +322,22 @@ template <class image_t> Recut<image_t>::~Recut<image_t>() {
  * Does this subscript belong in the full image
  * accounting for the input offsets and extents
  * i, j, k : subscript of vertex in question
- * off : offsets in z y x order
+ * off : offsets in x y z
  * end : sanitized end pixels order
  */
 template <typename T, typename T2>
 bool check_in_bounds(T i, T j, T k, T2 off, T2 end) {
-  if (i < off[2])
+  if (i < off[0])
     return false;
   if (j < off[1])
     return false;
-  if (k < off[0])
+  if (k < off[2])
     return false;
-  if (i > off[2] + end[2])
+  if (i > off[0] + end[0])
     return false;
   if (j > off[1] + end[1])
     return false;
-  if (k > off[0] + end[0])
+  if (k > off[2] + end[2])
     return false;
   return true;
 }
@@ -379,9 +380,9 @@ Recut<image_t>::process_marker_dir(vector<int> global_image_offsets,
                             global_image_extents)))
         continue;
       // adjust the vid according to the region of the image we are processing
-      i = x - global_image_offsets[2];
+      i = x - global_image_offsets[0];
       j = y - global_image_offsets[1];
-      k = z - global_image_offsets[0];
+      k = z - global_image_offsets[2];
       auto vid = get_img_vid(i, j, k);
       root_vids.push_back(vid);
 
@@ -2033,6 +2034,11 @@ void Recut<image_t>::connected_tile(
       // msg_vertex aleady aware it is a surface
       if (surface) {
         current->mark_surface();
+        // save all surface vertices for the radius stage
+        // each fifo corresponds to a specific interval_id and block_id
+        // so there are no race conditions
+        fifo.push_back(*current);
+
       }
     } else {
       // previous msg_vertex could have been invalidated by insertion in
@@ -2576,22 +2582,21 @@ void Recut<image_t>::get_interval_offsets(const VID_t interval_id,
                                           vector<int> &interval_extents) {
   VID_t i, j, k;
   get_interval_subscript(interval_id, i, j, k);
-  vector<int> subs = {static_cast<int>(k), static_cast<int>(j),
-                      static_cast<int>(i)};
+  vector<int> subs = {static_cast<int>(i), static_cast<int>(j),
+                      static_cast<int>(k)};
   interval_offsets = {0, 0, 0};
-  interval_extents = {static_cast<int>(interval_length_z),
+  interval_extents = {static_cast<int>(interval_length_x),
                       static_cast<int>(interval_length_y),
-                      static_cast<int>(interval_length_x)};
+                      static_cast<int>(interval_length_z)};
   // increment the offset location to extract
-  // args->image_offsets args->image_extents are in z y x order
-  interval_offsets[2] += args->image_offsets[2];
-  interval_offsets[1] += args->image_offsets[1];
-  interval_offsets[0] += args->image_offsets[0];
-  vector<int> szs = {(int)image_length_z, (int)image_length_y,
-                     (int)image_length_x};
-  std::vector<int> interval_lengths = {static_cast<int>(interval_length_z),
+  interval_offsets[0] += this->image_offsets[0];
+  interval_offsets[1] += this->image_offsets[1];
+  interval_offsets[2] += this->image_offsets[2];
+  vector<int> szs = {(int)image_length_x, (int)image_length_y,
+                     (int)image_length_z};
+  std::vector<int> interval_lengths = {static_cast<int>(interval_length_x),
                                        static_cast<int>(interval_length_y),
-                                       static_cast<int>(interval_length_x)};
+                                       static_cast<int>(interval_length_z)};
   // don't constrain the extents to actual image
   // mcp3d pads with zero if requests go beyond memory
   // global command line extents have already been factored
@@ -2601,10 +2606,10 @@ void Recut<image_t>::get_interval_offsets(const VID_t interval_id,
   }
 #ifdef LOG_FULL
   cout << "interval_id: " << interval_id;
-  cout << " offset x " << interval_offsets[2] << " offset y "
-       << interval_offsets[1] << " offset z " << interval_offsets[0] << '\n';
-  cout << " extents x " << interval_extents[2] << " extents y "
-       << interval_extents[1] << " extents z " << interval_extents[0] << '\n';
+  cout << " offset x " << interval_offsets[0] << " offset y "
+       << interval_offsets[1] << " offset z " << interval_offsets[2] << '\n';
+  cout << " extents x " << interval_extents[0] << " extents y "
+       << interval_extents[1] << " extents z " << interval_extents[2] << '\n';
 #endif
 }
 
@@ -2885,6 +2890,14 @@ void Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
   // read data
   try {
     get_interval_offsets(interval_id, interval_offsets, interval_extents);
+#ifdef LOG_FULL
+    cout << "interval offsets x " << interval_offsets[0] << " y "
+         << interval_offsets[1] << " z " << interval_offsets[2] << '\n';
+    cout << "interval extents x " << interval_extents[0] << " y "
+         << interval_extents[1] << " z " << interval_extents[2] << '\n';
+#endif
+    std::reverse(interval_offsets.begin(), interval_offsets.end());
+    std::reverse(interval_extents.begin(), interval_extents.end());
     // use unit strides only
     mcp3d::MImageBlock block(interval_offsets, interval_extents);
     mcp3d_tile.SelectView(block, args->resolution_level());
@@ -2900,12 +2913,6 @@ void Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
 #ifdef LOG
   clock_gettime(CLOCK_REALTIME, &image_load);
   cout << "Load image in " << diff_time(start, image_load) << " sec." << '\n';
-#endif
-#ifdef LOG_FULL
-  cout << "interval offsets x " << interval_offsets[2] << " y "
-       << interval_offsets[1] << " z " << interval_offsets[0] << '\n';
-  cout << "interval extents x " << interval_extents[2] << " y "
-       << interval_extents[1] << " z " << interval_extents[0] << '\n';
 #endif
 }
 
@@ -3033,7 +3040,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   assertm(this->topology_grid, "topology grid not initialized");
   auto vdb_const_accessor = this->topology_grid->getConstAccessor();
   auto vdb_accessor = this->topology_grid->getAccessor();
-  //print_vdb(vdb_accessor, {image_length_x, image_length_y, image_length_y});
+  // print_vdb(vdb_accessor, {image_length_x, image_length_y, image_length_y});
   //}
 #endif
 
@@ -3107,10 +3114,10 @@ Recut<image_t>::update(std::string stage, Container &fifo,
         TileThresholds<image_t> *local_tile_thresholds = tile_thresholds;
 
         if (this->input_is_vdb && !local_tile_thresholds) {
-            local_tile_thresholds = new TileThresholds<image_t>(
-                /*max*/ 2,
-                /*min*/ 0,
-                /*bkg_thresh*/ 0);
+          local_tile_thresholds = new TileThresholds<image_t>(
+              /*max*/ 2,
+              /*min*/ 0,
+              /*bkg_thresh*/ 0);
         }
 
         // pre-generated images are for testing, or when an outside
@@ -3465,21 +3472,33 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   struct timespec time0, time1, time2, time3;
   uint64_t root_64bit;
 
-  // for generated image runs trust the args->image_extents
-  // to reflect the total global image domain
-  // see get_args() in utils.hpp
-  auto global_image_dims = args->image_extents;
-  auto image_ext = std::string(fs::path(args->image_root_dir()).extension());
-  this->input_is_vdb = image_ext == ".vdb" ? true : false;
+  auto path_extension =
+      std::string(fs::path(args->image_root_dir()).extension());
+  this->input_is_vdb = path_extension == ".vdb" ? true : false;
 
   if (params->convert_only_ || this->input_is_vdb) {
     openvdb::initialize();
   }
 
-  if (this->input_is_vdb) {
+  // Deduce extents from the various input options
+  std::vector<int> input_image_extents;
+  if (this->params->force_regenerate_image) {
+    // for generated image runs trust the args->image_extents
+    // to reflect the total global image domain
+    // see get_args() in utils.hpp
+    input_image_extents = args->image_extents;
+
+    // FIXME placeholder grid
+    this->topology_grid = create_vdb_grid<int>({0, 0, 0});
+  } else if (this->input_is_vdb) {
 
     assertm(!params->convert_only_,
             "Convert only option is not valid from vdb to vdb");
+
+#ifndef USE_VDB
+    assertm(false, "Input must either be regenerated, vdb or from image, "
+                   "USE_VDB must be defined");
+#endif
 
     std::string grid_name = "topology";
     auto timer = new high_resolution_timer();
@@ -3490,58 +3509,82 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     cout << "Read grid in: " << timer->elapsed() << " s\n";
 #endif
 
+    input_image_extents = get_grid_original_extents(topology_grid);
+
     // read metadata
-    //auto active_voxel_dim = topology_grid->evalActiveVoxelDim();
-    //global_image_dims = {active_voxel_dim[0], active_voxel_dim[1],
-                         //active_voxel_dim[2]};
-                         auto dims = topology_grid->readMeta<openvb::Vec3I>("original_bounding_extents");
-                         global_image_dims = {dims[0], dims[1], dims[2]};
+    // auto active_voxel_dim = topology_grid->evalActiveVoxelDim();
+    // input_image_extents = {active_voxel_dim[0], active_voxel_dim[1],
+    // active_voxel_dim[2]};
+    //openvdb::Metadata::Ptr dims =
+        //topology_grid->metaValue<openvdb::Vec3S>("original_bounding_extents");
+
+    //openvdb::Metadata::Ptr metadata = topology_grid["original_bounding_extents"];
+    //openvdb::Vec3S v = static_cast<openvdb::Vec3SMetadata&>(*metadata).value();
+
+    //input_image_extents[0] = dims[0];
+    //input_image_extents[1] = dims[1];
+    //input_image_extents[2] = dims[2];
+    //openvdb::Metadata::Ptr metadata = topology_grid["original_bounding_x"];
+    //input_image_extents[0] = static_cast<openvdb::FloatMetadata&>(*metadata).value();
+
+    //input_image_extents[0] = topology_grid->metaValue<float>("original_bounding_x");
+    //input_image_extents[1] = topology_grid->metaValue<float>("original_bounding_y");
+    //input_image_extents[2] = topology_grid->metaValue<float>("original_bounding_z");
   } else {
-#ifdef USE_MCP3D
-    if (!(this->params->force_regenerate_image)) {
-      assertm(fs::exists(args->image_root_dir()),
-              "Image root directory does not exist");
+    // read from image use mcp3d library
 
-      // determine the image size
-      mcp3d::MImage global_image(args->image_root_dir(), {args->channel()});
-      // read data from channel
-      global_image.ReadImageInfo(args->resolution_level(), true);
-      if (global_image.image_info().empty()) {
-        MCP3D_MESSAGE("no supported image formats found in " +
-                      args->image_root_dir() + ", do nothing.")
-        throw;
-      }
-
-      // save to __image_info__.json in corresponding dir
-      // global_image.SaveImageInfo();
-
-      // reflects the total global image domain
-      global_image_dims = global_image.xyz_dims(args->resolution_level());
-    }
+#ifndef USE_MCP3D
+    assertm(false, "Input must either be regenerated, vdb or from image, "
+                   "USE_MCP3D image reading library must be defined");
 #endif
-    this->topology_grid = create_vdb_grid({global_image_dims[2], global_image_dims[1], global_image_dims[0]});
+
+    assertm(fs::exists(args->image_root_dir()),
+            "Image root directory does not exist");
+
+    // determine the image size
+    mcp3d::MImage global_image(args->image_root_dir(), {args->channel()});
+    // read data from channel
+    global_image.ReadImageInfo(args->resolution_level(), true);
+    if (global_image.image_info().empty()) {
+      MCP3D_MESSAGE("no supported image formats found in " +
+                    args->image_root_dir() + ", do nothing.")
+      throw;
+    }
+
+    // save to __image_info__.json in corresponding dir
+    // global_image.SaveImageInfo();
+
+    // reflects the total global image domain
+    input_image_extents = global_image.xyz_dims(args->resolution_level());
+    // reverse mcp3d's z y x order for offsets and extents
+    std::reverse(input_image_extents.begin(), input_image_extents.end());
+
+    auto temp = {input_image_extents[0], input_image_extents[1],
+                 input_image_extents[2]};
+    this->topology_grid = create_vdb_grid<int>(temp);
   }
 
-  // these are in z y x order
-  vector<int> ext;
-
-  // account for image_offsets and args->image_extents
-  // extents are the length of the domain for each dim
+  // account and check requested args->image_offsets and args->image_extents
+  // extents are always the side length of the domain on each dim, in x y z order
+  this->image_offsets = args->image_offsets;
   for (int i = 0; i < 3; i++) {
     // default image_offsets is {0, 0, 0}
     // which means start at the beginning of the image
     // this enforces the minimum extent to be 1 in each dim
-    assertm(args->image_offsets[i] < global_image_dims[i],
+    assertm(this->image_offsets[i] < input_image_extents[i],
             "input offset can not exceed dimension of image");
+
     // protect faulty out of bounds input if extents goes beyond
-    // domain of full image, note: z, y, x order
-    auto max_extent = global_image_dims[i] - args->image_offsets[i];
+    // domain of full image
+    auto max_extent = input_image_extents[i] - this->image_offsets[i];
+
     if (args->image_extents[i]) {
-      args->image_extents[i] = min(args->image_extents[i], max_extent);
+      // use the input extent if possible, or maximum otherwise
+      this->image_extents[i] = min(args->image_extents[i], max_extent);
     } else {
       // image_extents is set to grid_size for force_regenerate_image option,
       // otherwise 0,0,0 means use to the end of input image
-      args->image_extents[i] = max_extent;
+      this->image_extents[i] = max_extent;
       // extents are now sanitized in each dimension
       // and protected from faulty offset values
     }
@@ -3550,14 +3593,12 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   // save to globals the actual size of the full image
   // accounting for the input offsets and extents
   // these will be used throughout the rest of the program
-  this->image_length_x = args->image_extents[2];
-  this->image_length_y = args->image_extents[1];
-  this->image_length_z = args->image_extents[0];
+  // for convenience
+  this->image_length_x = this->image_extents[0];
+  this->image_length_y = this->image_extents[1];
+  this->image_length_z = this->image_extents[2];
   this->image_length_xy = image_length_x * image_length_y;
   this->image_size = image_length_x * image_length_y * image_length_z;
-  this->image_extents = {static_cast<int>(image_length_x),
-                         static_cast<int>(image_length_y),
-                         static_cast<int>(image_length_z)};
 
   // Determine the size of each interval in each dim
   // the image size and offsets override the user inputted interval size
@@ -3569,7 +3610,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     // constrict so less data is allocated especially in z dimension
     this->interval_length_x = image_length_x;
     this->interval_length_y = image_length_y;
-    this->interval_length_z = 1;
+    this->interval_length_z = 10;
   } else if (this->input_is_vdb) {
     this->interval_length_x = image_length_x;
     this->interval_length_y = image_length_y;
@@ -3646,8 +3687,6 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
        << " image_y_len_pad: " << image_y_len_pad
        << " image_z_len_pad: " << image_z_len_pad << " image_xy_len_pad "
        << image_xy_len_pad << '\n';
-  // cout<< "image_offsets_x: "<< image_offsets[2] <<" image_offsets_y: "<<
-  // image_offsets[1] <<" image_offsets_z: "<< image_offsets[0] << '\n';
 #endif
 
 #ifdef DENSE
@@ -3724,7 +3763,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
       return {0}; // dummy root vid
     } else {
       // adds all valid markers to root_vids vector and returns
-      return process_marker_dir(args->image_offsets, args->image_extents);
+      return process_marker_dir(this->image_offsets, this->image_extents);
     }
   }
 }

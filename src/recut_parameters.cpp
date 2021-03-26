@@ -50,9 +50,9 @@ void RecutCommandLineArgs::PrintUsage() {
           "out.swc\n";
   cout << "--resolution-level   [-rl] resolution level to perform tracing at. "
           "default is 0, ie original resolution\n";
-  cout << "--image-offsets      [-io] offsets of subvolume, in z y x order "
+  cout << "--image-offsets      [-io] offsets of subvolume, in x y z order "
           "default 0 0 0\n";
-  cout << "--image-extents      [-ie] extents of subvolume, in z y x order "
+  cout << "--image-extents      [-ie] extents of subvolume, in x y z order "
           "defaults"
           " to max range from offset start to max length in each axis\n";
   cout << "--bg-thresh          [-bt] background threshold value desired\n";
@@ -73,9 +73,9 @@ string RecutCommandLineArgs::MetaString() {
   meta_stream << "# image root dir = " << image_root_dir_ << '\n';
   meta_stream << "# channel = " << channel_ << '\n';
   meta_stream << "# resolution level = " << resolution_level_ << '\n';
-  meta_stream << "# offsets (zyx) = " << image_offsets[0] << " "
+  meta_stream << "# offsets (xyz) = " << image_offsets[0] << " "
               << image_offsets[1] << " " << image_offsets[2] << '\n';
-  meta_stream << "# extents (zyx) = " << image_extents[0] << " "
+  meta_stream << "# extents (xyz) = " << image_extents[0] << " "
               << image_extents[1] << " " << image_extents[2] << '\n';
   meta_stream << recut_parameters_.MetaString();
   return meta_stream.str();

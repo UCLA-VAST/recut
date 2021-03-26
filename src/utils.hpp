@@ -149,28 +149,23 @@ VID_t get_used_vertex_size(VID_t grid_size, VID_t block_size) {
   return interval_vert_num;
 }
 
-// interval_extents are in z, y, x order
 template <typename T>
 void print_marker_3D(T markers, std::vector<int> interval_extents,
                      std::string stage) {
-  for (int zi = 0; zi < interval_extents[0]; zi++) {
+  for (int zi = 0; zi < interval_extents[2]; zi++) {
     cout << "y | Z=" << zi << '\n';
-    for (int xi = 0; xi < 2 * interval_extents[2] + 4; xi++) {
+    for (int xi = 0; xi < 2 * interval_extents[0] + 4; xi++) {
       cout << "-";
     }
     cout << '\n';
     for (int yi = 0; yi < interval_extents[1]; yi++) {
       cout << yi << " | ";
-      for (int xi = 0; xi < interval_extents[2]; xi++) {
-        VID_t index = ((VID_t)xi) + yi * interval_extents[2] +
-                      zi * interval_extents[1] * interval_extents[2];
-        // auto match = std::find(markers.begin(), markers.end(), index);
-        // auto match = markers | find_if
+      for (int xi = 0; xi < interval_extents[0]; xi++) {
+        VID_t index = ((VID_t)xi) + yi * interval_extents[0] +
+                      zi * interval_extents[1] * interval_extents[0];
         auto value = std::string{"-"};
         for (const auto &m : markers) {
-          // z,y,x order!
-          // this is xdim, ydim
-          if (m->vid(interval_extents[2], interval_extents[1]) == index) {
+          if (m->vid(interval_extents[0], interval_extents[1]) == index) {
             if (stage == "label") {
               value = "B";
             } else if (stage == "radius") {
@@ -206,10 +201,10 @@ void print_vdb(T vdb_accessor, const std::vector<int> extents,
         openvdb::Coord xyz(x, y, z);
         auto val = vdb_accessor.getValue(xyz);
         // if ((bkg_thresh > -1) && (val <= bkg_thresh)) {
-        if (!val) {
-          cout << "- ";
-        } else {
+        if (val) {
           cout << val << " ";
+        } else {
+          cout << "- ";
         }
       }
       cout << '\n';
@@ -218,22 +213,31 @@ void print_vdb(T vdb_accessor, const std::vector<int> extents,
   }
 }
 
-// interval_extents are in z, y, x order
+auto print_iter = [](auto iterable) {
+  rng::for_each(iterable, [](auto i) { std::cout << i << ", "; });
+  std::cout << '\n';
+};
+
 template <typename T>
-void print_image_3D(T *inimg1d, std::vector<int> interval_extents) {
-  for (int zi = 0; zi < interval_extents[0]; zi++) {
+void print_image_3D(T *inimg1d, std::vector<int> interval_extents,
+                    const T bkg_thresh = 0) {
+  for (int zi = 0; zi < interval_extents[2]; zi++) {
     cout << "y | Z=" << zi << '\n';
-    for (int xi = 0; xi < 2 * interval_extents[2] + 4; xi++) {
+    for (int xi = 0; xi < 2 * interval_extents[0] + 4; xi++) {
       cout << "-";
     }
     cout << '\n';
     for (int yi = 0; yi < interval_extents[1]; yi++) {
       cout << yi << " | ";
-      for (int xi = 0; xi < interval_extents[2]; xi++) {
-        VID_t index = ((VID_t)xi) + yi * interval_extents[2] +
-                      zi * interval_extents[1] * interval_extents[2];
-        // cout << i << " " ;
-        cout << +inimg1d[index] << " ";
+      for (int xi = 0; xi < interval_extents[0]; xi++) {
+        VID_t index = ((VID_t)xi) + yi * interval_extents[0] +
+                      zi * interval_extents[0] * interval_extents[1];
+        auto val = inimg1d[index];
+        if (val > bkg_thresh) {
+          cout << +(val) << " ";
+        } else {
+          cout << "- ";
+        }
       }
       cout << '\n';
     }
@@ -347,6 +351,41 @@ bool is_covered_by_parent(VID_t index, VID_t root_vid, int radius,
   return false;
 }
 
+template <typename T> auto create_vdb_grid(std::vector<T> extents) {
+  auto topology_grid = openvdb::TopologyGrid::create();
+  topology_grid->setName("topology");
+  topology_grid->setCreator("recut");
+  // topology_grid->insertMeta("original_bounding_extents",
+  // openvdb::Vec3SMetadata(openvdb::v8_0::Vec3S(
+  // extents[0], extents[1], extents[2])));
+  topology_grid->insertMeta("original_bounding_extent_x",
+                            openvdb::FloatMetadata(extents[0]));
+  topology_grid->insertMeta("original_bounding_extent_y",
+                            openvdb::FloatMetadata(extents[1]));
+  topology_grid->insertMeta("original_bounding_extent_z",
+                            openvdb::FloatMetadata(extents[2]));
+  return topology_grid;
+}
+
+template <typename T> std::vector<int> get_grid_original_extents(T vdb_grid) {
+  std::vector image_extents = {0, 0, 0};
+  for (openvdb::MetaMap::MetaIterator iter = vdb_grid->beginMeta();
+       iter != vdb_grid->endMeta(); ++iter) {
+    // name and val
+    const std::string &name = iter->first;
+    openvdb::Metadata::Ptr value = iter->second;
+
+    if (name == "original_bounding_extent_x") {
+      image_extents[0] = static_cast<openvdb::FloatMetadata &>(*value).value();
+    } else if (name == "original_bounding_extent_y") {
+      image_extents[1] = static_cast<openvdb::FloatMetadata &>(*value).value();
+    } else if (name == "original_bounding_extent_z") {
+      image_extents[2] = static_cast<openvdb::FloatMetadata &>(*value).value();
+    }
+  }
+  return image_extents;
+}
+
 template <typename T> void print_grid_metadata(T vdb_grid) {
   // stats need to be refreshed manually after any changes with addStatsMetadata
   vdb_grid->addStatsMetadata();
@@ -363,8 +402,8 @@ template <typename T> void print_grid_metadata(T vdb_grid) {
        << " creator: " << vdb_grid->getCreator() << '\n';
   cout << "Grid class: "
        << vdb_grid->gridClassToString(vdb_grid->getGridClass()) << '\n';
-  for (openvdb::MetaMap::MetaIterator iter = grid->beginMeta();
-       iter != grid->endMeta(); ++iter) {
+  for (openvdb::MetaMap::MetaIterator iter = vdb_grid->beginMeta();
+       iter != vdb_grid->endMeta(); ++iter) {
     const std::string &name = iter->first;
     openvdb::Metadata::Ptr value = iter->second;
     std::string valueAsString = value->str();
@@ -388,16 +427,6 @@ template <typename T> void print_grid_metadata(T vdb_grid) {
   cout << "Usage bytes per hypothetical bounding voxel count (multiplier): "
        << static_cast<double>(mem_usage_bytes) / hypo_bound_vol_count << '\n';
   cout << '\n';
-}
-
-auto create_vdb_grid(std::vector<uint32_t> extents) {
-  auto topology_grid = openvdb::TopologyGrid::create();
-  topology_grid->setName("topology");
-  topology_grid->setCreator("recut");
-  topology_grid->insertMeta("original_bounding_extents",
-                            openvdb::Vec3IMetadata(openvdb::Vec3I(
-                                extents[0], extents[1], extents[2])));
-  return topology_grid;
 }
 
 auto read_vdb_file(std::string fn, std::string grid_name) {
@@ -705,8 +734,7 @@ RecutCommandLineArgs get_args(int grid_size, int interval_size, int block_size,
     // domain and check that all were used
 
     // first marker is at 58, 230, 111 : 7333434
-    // zyx
-    args.set_image_offsets({110, 229, 57});
+    args.set_image_offsets({57, 228, 110});
     args.set_image_extents({grid_size, grid_size, grid_size});
 
     if (const char *env_p = std::getenv("TEST_IMAGE")) {
@@ -762,6 +790,7 @@ RecutCommandLineArgs get_args(int grid_size, int interval_size, int block_size,
 #endif
   std::vector<int> extents = {grid_size, grid_size, grid_size};
   args.set_image_extents(extents);
+  args.set_image_offsets({0, 0, 0});
 
   // For now, params are only saved if this
   // function is called, in the future
@@ -822,7 +851,7 @@ void convert_buffer_to_vdb(BufT *buffer, AccT vdb_accessor,
         openvdb::Coord buffer_xyz = coord_add(xyz, buffer_offsets);
         openvdb::Coord grid_xyz = coord_add(xyz, image_offsets);
         auto val = buffer[coord_to_vid(buffer_xyz, buffer_extents)];
-        // voxels equal to discarded
+        // voxels equal to bkg_thresh are always discarded
         if (val > bkg_thresh) {
 #ifdef FULL_PRINT
           cout << xyz << '\n';
