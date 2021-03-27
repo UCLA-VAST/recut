@@ -1086,7 +1086,6 @@ bool Recut<image_t>::accumulate_connected(
   // this will invalidate any previous refs or iterators returned of active
   // vertices
   auto dst = get_or_set_active_vertex(interval_id, block_id, dst_id, found);
-#endif
 
   // skip already selected vertices too
   if (found) {
@@ -1096,6 +1095,7 @@ bool Recut<image_t>::accumulate_connected(
 
 #ifdef FULL_PRINT
   cout << "\tadded new dst to active set, vid: " << dst_id << '\n';
+#endif
 #endif
 
   // ensure traces a path back to root in case no prune stage
@@ -1608,9 +1608,9 @@ void Recut<image_t>::update_neighbors(
             // for blocks it's safe to access the underlying image even in other
             // domains since its const / static
             if (outside_block) {
-              // skip backgrounds
-              // the image voxel of this dst vertex is the primary method to
-              // exclude this pixel/vertex for the remainder of all processing
+              // read only image/topology checking for topology to another
+              // block within this interval is safe and necessary to get proper
+              // surface values
               // TODO refactor this into a function call from
               // accumulate_connected too
               if (this->input_is_vdb) {
@@ -1622,6 +1622,7 @@ void Recut<image_t>::update_neighbors(
                   found_adjacent_invalid = true;
                 }
               }
+              continue;
             }
           } else {
             if (dst_outside_domain)
@@ -2038,7 +2039,6 @@ void Recut<image_t>::connected_tile(
         // each fifo corresponds to a specific interval_id and block_id
         // so there are no race conditions
         fifo.push_back(*current);
-
       }
     } else {
       // previous msg_vertex could have been invalidated by insertion in
@@ -3515,21 +3515,26 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     // auto active_voxel_dim = topology_grid->evalActiveVoxelDim();
     // input_image_extents = {active_voxel_dim[0], active_voxel_dim[1],
     // active_voxel_dim[2]};
-    //openvdb::Metadata::Ptr dims =
-        //topology_grid->metaValue<openvdb::Vec3S>("original_bounding_extents");
+    // openvdb::Metadata::Ptr dims =
+    // topology_grid->metaValue<openvdb::Vec3S>("original_bounding_extents");
 
-    //openvdb::Metadata::Ptr metadata = topology_grid["original_bounding_extents"];
-    //openvdb::Vec3S v = static_cast<openvdb::Vec3SMetadata&>(*metadata).value();
+    // openvdb::Metadata::Ptr metadata =
+    // topology_grid["original_bounding_extents"]; openvdb::Vec3S v =
+    // static_cast<openvdb::Vec3SMetadata&>(*metadata).value();
 
-    //input_image_extents[0] = dims[0];
-    //input_image_extents[1] = dims[1];
-    //input_image_extents[2] = dims[2];
-    //openvdb::Metadata::Ptr metadata = topology_grid["original_bounding_x"];
-    //input_image_extents[0] = static_cast<openvdb::FloatMetadata&>(*metadata).value();
+    // input_image_extents[0] = dims[0];
+    // input_image_extents[1] = dims[1];
+    // input_image_extents[2] = dims[2];
+    // openvdb::Metadata::Ptr metadata = topology_grid["original_bounding_x"];
+    // input_image_extents[0] =
+    // static_cast<openvdb::FloatMetadata&>(*metadata).value();
 
-    //input_image_extents[0] = topology_grid->metaValue<float>("original_bounding_x");
-    //input_image_extents[1] = topology_grid->metaValue<float>("original_bounding_y");
-    //input_image_extents[2] = topology_grid->metaValue<float>("original_bounding_z");
+    // input_image_extents[0] =
+    // topology_grid->metaValue<float>("original_bounding_x");
+    // input_image_extents[1] =
+    // topology_grid->metaValue<float>("original_bounding_y");
+    // input_image_extents[2] =
+    // topology_grid->metaValue<float>("original_bounding_z");
   } else {
     // read from image use mcp3d library
 
@@ -3565,7 +3570,8 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   }
 
   // account and check requested args->image_offsets and args->image_extents
-  // extents are always the side length of the domain on each dim, in x y z order
+  // extents are always the side length of the domain on each dim, in x y z
+  // order
   this->image_offsets = args->image_offsets;
   for (int i = 0; i < 3; i++) {
     // default image_offsets is {0, 0, 0}
@@ -3954,7 +3960,7 @@ void Recut<image_t>::brute_force_extract(vector<vertex_t> &outtree,
   clock_gettime(CLOCK_REALTIME, &time0);
 
   // FIXME terrible performance
-  map<VID_t, MyMarker *> tmp; // hash set
+  map<VID_t, MyMarker *> vid_to_marker_ptr; // hash set
   // create all valid new marker objects
   VID_t interval_id, block_id;
   for (VID_t vid = 0; vid < this->image_size; vid++) {
@@ -3969,7 +3975,8 @@ void Recut<image_t>::brute_force_extract(vector<vertex_t> &outtree,
       if (filter_by_label(vertex, accept_band)) {
         assert(vertex->valid_vid());
         // don't create redundant copies of same vid
-        if (tmp.find(vertex->vid) == tmp.end()) { // check not already added
+        if (vid_to_marker_ptr.find(vertex->vid) ==
+            vid_to_marker_ptr.end()) { // check not already added
 #ifdef FULL_PRINT
           // cout << "\tadding vertex " << vertex->vid << '\n';
 #endif
@@ -3988,13 +3995,14 @@ void Recut<image_t>::brute_force_extract(vector<vertex_t> &outtree,
             marker->type = 0;
           }
           marker->radius = vertex->radius;
-          tmp[vertex->vid] = marker; // save this marker ptr to a map
+          vid_to_marker_ptr[vertex->vid] =
+              marker; // save this marker ptr to a map
           outtree.push_back(marker);
         } else {
           // check that all copied across blocks and intervals of a
           // single vertex all match same values other than handle
           // FIXME this needs to be moved to recut_test.cpp
-          // auto previous_match = tmp[vertex->vid];
+          // auto previous_match = vid_to_marker_ptr[vertex->vid];
           // assert(*previous_match == *vertex);
           assertm(false, "Can't have two matching vids");
         }
@@ -4018,7 +4026,7 @@ void Recut<image_t>::brute_force_extract(vector<vertex_t> &outtree,
           assertm(false, "must have a valid connection");
         }
         auto parent_vid = vertex->parent;
-        auto marker = tmp[vertex->vid]; // get the ptr
+        auto marker = vid_to_marker_ptr[vertex->vid]; // get the ptr
         if (vertex->root()) {
           marker->parent = 0;
 #ifdef FULL_PRINT
@@ -4030,7 +4038,7 @@ void Recut<image_t>::brute_force_extract(vector<vertex_t> &outtree,
           assertm(marker->type == 0,
                   "a marker with a type of 0, must be a root");
         } else {
-          auto parent = tmp[parent_vid]; // adjust
+          auto parent = vid_to_marker_ptr[parent_vid]; // adjust
           marker->parent = parent;
           if (marker->parent == 0) {
             // failure condition
@@ -4151,13 +4159,14 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
 
   // get a mapping to stable address pointers in outtree such that a markers
   // parent is valid pointer when returning just outtree
-  map<VID_t, MyMarker *> tmp;
+  map<VID_t, MyMarker *> vid_to_marker_ptr;
 
-  // iterate all active vertices
+  // iterate all active vertices ahead of time so each marker
+  // can have a pointer to it's parent marker
   for (auto interval_id = 0; interval_id < grid_interval_size; ++interval_id) {
     for (auto block_id = 0; block_id < interval_block_size; ++block_id) {
-      for (auto &v : this->active_vertices[interval_id][block_id]) {
-        auto vertex = &v;
+      for (auto &vertex_value : this->active_vertices[interval_id][block_id]) {
+        auto vertex = &vertex_value;
 #ifdef FULL_PRINT
         print_vertex(vertex);
 #endif
@@ -4170,9 +4179,13 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
           // check that all copied across blocks and intervals of a
           // single vertex all match same values other than handle
           // FIXME this needs to be moved to recut_test.cpp
-          // auto previous_match = tmp[vertex->vid];
+          // auto previous_match = vid_to_marker_ptr[vertex->vid];
           // assert(*previous_match == *vertex);
-          assertm(tmp.find(vertex->vid) == tmp.end(),
+          if (vid_to_marker_ptr.count(vertex->vid)) {
+            std::cout << interval_id << ' ' << block_id << ' ' << vertex->vid
+                      << " has parent " << vertex->parent << '\n';
+          }
+          assertm(vid_to_marker_ptr.count(vertex->vid) == 0,
                   "Can't have two matching vids");
 #ifdef FULL_PRINT
           // cout << "\tadding vertex " << vertex->vid << '\n';
@@ -4183,46 +4196,58 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
           get_img_subscript(vertex->vid, i, j, k);
           auto marker = new MyMarker(i, j, k);
           if (vertex->root()) {
+            // a marker with a type of 0, must be a root
             marker->type = 0;
           }
           marker->radius = vertex->radius;
-          tmp[vertex->vid] = marker; // save this marker ptr to a map
+          // save this marker ptr to a map
+          vid_to_marker_ptr[vertex->vid] = marker;
+          std::cout << "Added " << interval_id << ' ' << block_id << ' ' << vertex->vid << " has parent "
+                    << vertex->parent << '\n';
           outtree.push_back(marker);
         }
       }
     }
   }
 
-  // iterate all active vertices
+  // know that a pointer to all desired markers is known
+  // iterate and complete the marker definition
   for (auto interval_id = 0; interval_id < grid_interval_size; ++interval_id) {
     for (auto block_id = 0; block_id < interval_block_size; ++block_id) {
-      for (auto &v : this->active_vertices[interval_id][block_id]) {
-        auto vertex = &v;
-        auto parent_vid = vertex->parent;
-        auto marker = tmp[vertex->vid]; // get the ptr
-        if (vertex->root()) {
-          marker->parent = 0;
-          //#ifdef FULL_PRINT
-          // cout << "found root at " << vertex->vid << '\n';
-          // printf("with address of %p\n", (void *)vertex);
-          //#endif
-          assertm(marker->parent == 0,
-                  "a marker with a parent of 0, must be a root");
-          assertm(marker->type == 0,
-                  "a marker with a type of 0, must be a root");
-        } else {
-          auto parent = tmp[parent_vid]; // adjust
-          marker->parent = parent;
-          if (marker->parent == 0) {
-            // failure condition
-            std::cout << "interval vid " << interval_id << '\n';
-            std::cout << "block vid " << block_id << '\n';
-            print_vertex(vertex);
-            assertm(marker->parent != 0,
-                    "a non root marker must have a valid parent");
+      for (auto &vertex_value : this->active_vertices[interval_id][block_id]) {
+        auto vertex = &vertex_value;
+        assertm(vertex->valid_vid(), "no valid vid");
+        assertm(filter_by_vid(vertex->vid, interval_id, block_id),
+                "added to wrong container");
+        // only consider the same vertices as above
+        if (filter_by_label(vertex, accept_band)) {
+          auto parent_vid = vertex->parent;
+          assertm(vid_to_marker_ptr.count(vertex->vid),
+                  "did not find vertex in marker map");
+          auto marker = vid_to_marker_ptr[vertex->vid]; // get the ptr
+          if (vertex->root()) {
+            // a marker with a parent of 0, must be a root
+            marker->parent = 0;
+            //#ifdef FULL_PRINT
+            // cout << "found root at " << vertex->vid << '\n';
+            // printf("with address of %p\n", (void *)vertex);
+            //#endif
+          } else {
+            assertm(vid_to_marker_ptr.count(vertex->vid),
+                    "did not find vertex in marker map");
+            auto parent = vid_to_marker_ptr[parent_vid]; // adjust
+            marker->parent = parent;
+            if (marker->parent == 0) {
+              // failure condition
+              std::cout << "interval vid " << interval_id << '\n';
+              std::cout << "block vid " << block_id << '\n';
+              print_vertex(vertex);
+              assertm(marker->parent != 0,
+                      "a non root marker must have a valid parent");
+            }
+            assertm(marker->type != 0,
+                    "a marker with a type of 0, must be a root");
           }
-          assertm(marker->type != 0,
-                  "a marker with a type of 0, must be a root");
         }
       }
     }

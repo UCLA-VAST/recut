@@ -655,9 +655,10 @@ TEST(VDBConvertOnly, Any) {
   // environments ASSERT_TRUE(fs::exists(fn));
 
   double write_error_rate;
-  EXPECT_NO_FATAL_FAILURE(check_recut_error(
-      recut, /*ground_truth*/ recut.generated_image, grid_size, stage,
-      write_error_rate, recut.global_fifo, recut.params->selected, /*strict_match=*/true));
+  EXPECT_NO_FATAL_FAILURE(
+      check_recut_error(recut, /*ground_truth*/ recut.generated_image,
+                        grid_size, stage, write_error_rate, recut.global_fifo,
+                        recut.params->selected, /*strict_match=*/true));
   ASSERT_NEAR(write_error_rate, 0., NUMERICAL_ERROR);
 
   // test reading from a pre-generated vdb file of exact same as
@@ -687,7 +688,7 @@ TEST(VDBConvertOnly, Any) {
         recut_from_vdb_file,
         /*ground_truth*/ recut.generated_image, grid_size, stage,
         read_from_file_error_rate, recut_from_vdb_file.global_fifo,
-        recut.params->selected, 
+        recut.params->selected,
         /*strict_match=*/true));
 
     ASSERT_NEAR(read_from_file_error_rate, 0., NUMERICAL_ERROR);
@@ -1668,7 +1669,7 @@ TEST(Update, EachStageIteratively) {
               EXPECT_NO_FATAL_FAILURE(check_recut_error(
                   recut, app2_accurate_radii_grid.get(), grid_size, "surface",
                   recut_vs_app2_accurate_surface_error, recut.global_fifo,
-                 surface_count, 
+                  surface_count,
                   /*strict_match=*/false));
             }
 
@@ -1745,7 +1746,7 @@ TEST(Update, EachStageIteratively) {
                 }
               } else {
                 if (print_all) {
-                  cout << "sequential radii \n";
+                  cout << "recut sequential radii \n";
                   print_image_3D(seq_radii_grid.get(),
                                  {grid_size, grid_size, grid_size});
                 }
@@ -1763,36 +1764,50 @@ TEST(Update, EachStageIteratively) {
 
             if (prune) {
               // APP2 PRUNE
-              recut.convert_to_markers(args.output_tree, false);
-
               std::vector<MyMarker *> app2_output_tree;
               std::vector<MyMarker *> app2_output_tree_prune;
-              std::vector<MyMarker> targets;
-              // convert roots into markers (vector)
-              std::vector<MyMarker *> root_markers;
-              if (tcase == 6) {
-                root_markers = vids_to_markers(root_vids, grid_size);
-              } else {
-                root_markers = {get_central_root(grid_size)};
-              }
-              fastmarching_tree(root_markers, targets, ground_truth_image.get(),
-                                app2_output_tree, grid_size, grid_size,
-                                grid_size, 1, tile_thresholds->bkg_thresh,
-                                tile_thresholds->max_int,
-                                tile_thresholds->min_int);
+              {
+                std::vector<MyMarker> targets;
+                // convert roots into markers (vector)
+                std::vector<MyMarker *> root_markers;
+                if (tcase == 6) {
+                  root_markers = vids_to_markers(root_vids, grid_size);
+                } else {
+                  root_markers = {get_central_root(grid_size)};
+                }
+                fastmarching_tree(
+                    root_markers, targets, ground_truth_image.get(),
+                    app2_output_tree, grid_size, grid_size, grid_size, 1,
+                    tile_thresholds->bkg_thresh, tile_thresholds->max_int,
+                    tile_thresholds->min_int);
 
-              // get app2 results for radius and pruning from app2
-              // take recut results before pruningg and do pruning
-              // with app2
-              happ(app2_output_tree, app2_output_tree_prune,
-                   ground_truth_image.get(), grid_size, grid_size, grid_size,
-                   tile_thresholds->bkg_thresh, 0.);
+                // get app2 results for radius and pruning from app2
+                // take recut results before pruningg and do pruning
+                // with app2
+                happ(app2_output_tree, app2_output_tree_prune,
+                     ground_truth_image.get(), grid_size, grid_size, grid_size,
+                     tile_thresholds->bkg_thresh, 0.);
+                if (print_all) {
+                  std::cout << "APP2 prune\n";
+                  std::cout << iteration_trace.str();
+                  print_marker_3D(app2_output_tree_prune, interval_extents,
+                                  "label");
+
+                  std::cout << "APP2 radius\n";
+                  std::cout << iteration_trace.str();
+                  print_marker_3D(app2_output_tree_prune, interval_extents,
+                                  "radius");
+                }
+              }
 
               // RECUT PRUNE
               // starting from roots, prune stage will
               // find final list of vertices
               auto recut_output_tree_prune = std::vector<MyMarker *>();
               {
+                // save the topologyto output_tree before starting
+                std::cout << iteration_trace.str();
+                recut.convert_to_markers(args.output_tree, false);
                 auto stage = std::string{"prune"};
                 recut.activate_vids(root_vids, stage, recut.global_fifo);
                 recut.update(stage, recut.global_fifo);
@@ -1828,27 +1843,18 @@ TEST(Update, EachStageIteratively) {
                 // recut.out.close();
 
                 recut.adjust_parent(false);
+                if (print_all) {
+                  std::cout << "Recut prune\n";
+                  std::cout << iteration_trace.str();
+                  recut.print_grid("label", recut.global_fifo);
+
+                  std::cout << "Recut radii post prune\n";
+                  std::cout << iteration_trace.str();
+                  recut.print_grid("radius", recut.global_fifo);
+                }
+
+                std::cout << iteration_trace.str();
                 recut.convert_to_markers(recut_output_tree_prune, true);
-              }
-
-              if (print_all) {
-                std::cout << "Recut prune\n";
-                std::cout << iteration_trace.str();
-                recut.print_grid("label", recut.global_fifo);
-
-                std::cout << "Recut radii post prune\n";
-                std::cout << iteration_trace.str();
-                recut.print_grid("radius", recut.global_fifo);
-
-                std::cout << "APP2 prune\n";
-                std::cout << iteration_trace.str();
-                print_marker_3D(app2_output_tree_prune, interval_extents,
-                                "label");
-
-                std::cout << "APP2 radius\n";
-                std::cout << iteration_trace.str();
-                print_marker_3D(app2_output_tree_prune, interval_extents,
-                                "radius");
               }
 
               auto mask = std::make_unique<uint8_t[]>(tol_sz);
@@ -1925,6 +1931,7 @@ TEST(Update, EachStageIteratively) {
               // EXPECT_EQ(recut_output_tree_prune.size(),
               // app2_output_tree_prune.size());
 
+                std::cout << iteration_trace.str();
               check_parents(recut_output_tree_prune, grid_size);
 
               // EXPECT_EQ(results->false_positives.size(), 0);
