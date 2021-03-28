@@ -351,11 +351,12 @@ bool is_covered_by_parent(VID_t index, VID_t root_vid, int radius,
   return false;
 }
 
-template <typename T> auto create_vdb_grid(std::vector<T> extents) {
+template <typename T> auto create_vdb_grid(std::vector<T> extents, float bkg_thresh=0.) {
   auto topology_grid = openvdb::TopologyGrid::create();
   topology_grid->setName("topology");
   topology_grid->setCreator("recut");
   topology_grid->setGridClass(openvdb::GRID_FOG_VOLUME);
+
   // topology_grid->insertMeta("original_bounding_extents",
   // openvdb::Vec3SMetadata(openvdb::v8_0::Vec3S(
   // extents[0], extents[1], extents[2])));
@@ -365,6 +366,9 @@ template <typename T> auto create_vdb_grid(std::vector<T> extents) {
                             openvdb::FloatMetadata(extents[1]));
   topology_grid->insertMeta("original_bounding_extent_z",
                             openvdb::FloatMetadata(extents[2]));
+
+  topology_grid->insertMeta("bkg_thresh",
+                            openvdb::FloatMetadata(bkg_thresh));
   return topology_grid;
 }
 
