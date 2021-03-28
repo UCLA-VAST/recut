@@ -63,4 +63,4 @@ const VID_t MAX_INTERVAL_VERTICES = 4096;
 // when checking 1 hop away (adjacent) from current,
 // all radii greater than 1 imply some redundancy in coverage
 // but this may be desired with DILATION_FACTORS higher than 1
-#define DILATION_FACTOR 1
+#define DILATION_FACTOR 2

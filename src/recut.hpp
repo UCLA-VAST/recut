@@ -221,7 +221,7 @@ public:
                                       Container &fifo);
   template <class Container, typename T, typename T2>
   void accumulate_prune(VID_t interval_id, VID_t dst_id, VID_t block_id,
-                        T current_parent, T2 current_vid,
+                        T current, T2 current_vid,
                         bool current_unvisited, Container &fifo);
   template <class Container, typename T>
   void accumulate_radius(VID_t interval_id, VID_t dst_id, VID_t block_id,
@@ -901,7 +901,7 @@ void Recut<image_t>::set_parent_non_branch(const VID_t interval_id,
 template <class image_t>
 template <class Container, typename T, typename T2>
 void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
-                                      VID_t block_id, T current_parent,
+                                      VID_t block_id, T current,
                                       T2 current_vid, bool current_unvisited,
                                       Container &fifo) {
 
@@ -933,7 +933,7 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
     // like modified radius and prune status
     // to other blocks / intervals
     auto update_radius = current->radius - 1;
-    if (update_radius < dst->radius) {
+    if ((!dst->prune_visited()) && (update_radius < dst->radius)) {
       // previously pruned vertex can transmits transitive
       // coverage info
       dst->radius = update_radius;
@@ -1717,7 +1717,7 @@ void Recut<image_t>::update_neighbors(
           accumulate_radius(interval_id, dst_id, block_id, current_radius,
                             revisits, stride, pad_stride, fifo);
         } else if (stage == "prune") {
-          accumulate_prune(interval_id, dst_id, block_id, current_parent,
+          accumulate_prune(interval_id, dst_id, block_id, current,
                            current_vid, current_unvisited, fifo);
         } else if (stage == "value") {
           accumulate_value(tile, interval_id, dst_id, block_id, current,
@@ -2512,79 +2512,11 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
     VertexAttr found_higher_parent = *current;
 
     bool _ = false;
-    enqueue_dsts = true;
+    auto enqueue_dsts = true;
     update_neighbors(nullptr, interval_id, block_id, current, current->vid,
                      revisits, "prune", nullptr, _, found_higher_parent, fifo,
                      covered, vdb_accessor, current_outside_domain,
                      enqueue_dsts);
-
-    // roots were already activated and had check_ghost_update run in
-    // activate_vids and can never be added back in by accumulate_prune so
-    // fifo is safe from infinite loops
-    if (current->root()) {
-      continue;
-    }
-
-    // the only purpose of outside message vertices is to propogate
-    // prune_visited or updated radii values
-    if (current_outside_domain) {
-      // already found to be covered previously
-      if (current->unvisited())
-        continue;
-
-      if (covered) {
-        current->mark_unvisited();
-        // don't propogate these changes, i.e. don't call check_ghost_update
-        // just finish this iteration
-        continue;
-      }
-    }
-
-    // inside that was already marked as pruned
-    if (current->prune_visited() && current->unvisited()) {
-      continue;
-    }
-
-    if (covered) {
-      if (!((current->root()))) {
-        // never visit again and never print it
-        current->mark_unvisited();
-#ifdef FULL_PRINT
-        std::cout << "  covered vid " << current->vid << '\n';
-#endif
-        // get radii before adjusting parent is intended to
-        // preserve coverage info as it decreases in range
-        // only pruned / unselected vertices will have their radii mutated
-        // to transitively pass coverage info across blocks
-        // using only vertices
-        if (found_higher_parent.vid != current->vid) {
-#ifdef FULL_PRINT
-          std::cout << "  refreshed radius to "
-                    << +(found_higher_parent.radius - 1) << " from vid "
-                    << found_higher_parent.vid << '\n';
-#endif
-          assertm(found_higher_parent.valid_radius(),
-                  "higher parent invalid radius");
-          assertm(found_higher_parent.radius != 0,
-                  "higher parent can't have a radii of 0");
-          current->radius = found_higher_parent.radius - 1;
-        } else {
-          if (current->radius != 0) {
-            // if an adjacent (dst) is covering current and that adjacent is
-            // not higher than current, respect dsts radius as truth and
-            // do not refresh the transitive radius coverage
-            // this has advantage of a radius always covering only its
-            // hops disadvantage is that equal or lower values can not
-            // "refresh" the coverage
-            current->radius = current->radius - 1;
-          }
-        }
-
-        check_ghost_update(interval_id, block_id, current, stage);
-        continue;
-      }
-    }
-    check_ghost_update(interval_id, block_id, current, stage);
   } // end while over fifo
 } // end prune_tile
 

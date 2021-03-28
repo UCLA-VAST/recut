@@ -1023,7 +1023,7 @@ auto get_vids_sorted = [](auto tree, auto xdim, auto ydim) {
   return get_vids(tree, xdim, ydim) | rng::action::sort;
 };
 
-// prints mismatches between two trees in uid sorted order
+// prints mismatches between two trees in uid sorted order no assertions
 template <typename T, typename T2, typename T3>
 auto compare_tree(T truth_tree, T check_tree, T2 xdim, T2 ydim, T3 &recut) {
 
@@ -1213,11 +1213,11 @@ auto check_coverage(const T mask, const T2 inimg1d, const VID_t tol_sz,
 
   for (VID_t i = 0; i < tol_sz; i++) {
     auto check = mask[i];
+    assertm(check <= 1, "this function only works on binarized mask as first input");
     // ground represents the original pixel value wheras
     // check merely indicates how many times a pixel was
     // covered in a pruning pass
     auto ground = inimg1d[i];
-    // assertm(ground < 2, "this function only works on binarized images");
 
     if (ground > bkg_thresh) {
       if (check) {
@@ -1239,6 +1239,7 @@ auto check_coverage(const T mask, const T2 inimg1d, const VID_t tol_sz,
     }
   }
 
+  // duplicate count gets set to over coverage
   return new CompareResults<std::vector<VID_t>>(
       false_negatives, false_positives, over_coverage, match_count);
 }

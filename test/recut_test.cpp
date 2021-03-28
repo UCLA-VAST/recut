@@ -1880,12 +1880,17 @@ TEST(Update, EachStageIteratively) {
                 std::cout << "APP2 coverage mask\n";
                 std::cout << iteration_trace.str();
                 print_image_3D(app2_mask.get(), interval_extents);
+
+                std::cout << "Ground truth image";
+                std::cout << iteration_trace.str();
+                print_image_3D(ground_truth_image.get(), interval_extents);
               }
 
               //// compare_tree will print to log matches, false positive and
               /// negative
-              // auto results = compare_tree(app2_output_tree_prune,
-              // recut_output_tree_prune, grid_size, grid_size, recut);
+              auto compare_tree_results =
+                  compare_tree(app2_output_tree_prune, recut_output_tree_prune,
+                               grid_size, grid_size, recut);
 
               auto stage = std::string{"prune"};
 
@@ -1923,19 +1928,35 @@ TEST(Update, EachStageIteratively) {
                              app2_output_tree.size() /
                                  app2_output_tree_prune.size());
 
-              //// check the compare tree worked properly
-              // ASSERT_EQ(recut_output_tree_prune.size(),
-              // results->match_count + results->false_positives.size());
-              // ASSERT_EQ(recut_output_tree_prune.size(),
-              // results->match_count + results->false_negatives.size());
-              // EXPECT_EQ(recut_output_tree_prune.size(),
-              // app2_output_tree_prune.size());
-
-                std::cout << iteration_trace.str();
+              // make sure the swc is valid by checking all paths
+              std::cout << iteration_trace.str();
               check_parents(recut_output_tree_prune, grid_size);
 
-              // EXPECT_EQ(results->false_positives.size(), 0);
-              // EXPECT_EQ(results->false_negatives.size(), 0);
+              std::cout << iteration_trace.str();
+              EXPECT_EQ(compare_tree_results->false_negatives.size(), 0);
+              EXPECT_EQ(compare_tree_results->false_positives.size(), 0);
+              EXPECT_EQ(compare_tree_results->duplicate_count, 0);
+
+              if ( DILATION_FACTOR == 2) {
+              // make sure the coverage topology (equivalent active voxels) is
+              // the same, this only works if DILATION_FACTOR is 
+              std::cout << iteration_trace.str();
+              EXPECT_EQ(results->false_negatives.size(), 0);
+              EXPECT_EQ(results->false_positives.size(), 0);
+              EXPECT_EQ(results->duplicate_count, 0);
+              }
+
+              if ( DILATION_FACTOR == 1) {
+              //// check the compare tree worked properly
+              ASSERT_EQ(recut_output_tree_prune.size(),
+                        compare_tree_results->match_count +
+                            compare_tree_results->false_positives.size());
+              ASSERT_EQ(recut_output_tree_prune.size(),
+                        compare_tree_results->match_count +
+                            compare_tree_results->false_negatives.size());
+              EXPECT_EQ(recut_output_tree_prune.size(),
+                        app2_output_tree_prune.size());
+              }
             }
           }
         }
