@@ -212,12 +212,13 @@ public:
   bool is_covered_by_parent(VID_t interval_id, VID_t block_id,
                             VertexAttr *current);
   template <class Container, typename T, typename T2>
-  void accumulate_prune_assign_parent(VID_t interval_id, VID_t dst_id, VID_t block_id,
-                        T current_parent, T2 current_vid,
-                        bool current_unvisited,
-                        struct VertexAttr &found_higher_parent, bool &covered,
-                        bool enqueue_dsts, const bool dst_outside_domain,
-                        Container &fifo);
+  void accumulate_prune_assign_parent(VID_t interval_id, VID_t dst_id,
+                                      VID_t block_id, T current_parent,
+                                      T2 current_vid, bool current_unvisited,
+                                      struct VertexAttr &found_higher_parent,
+                                      bool &covered, bool enqueue_dsts,
+                                      const bool dst_outside_domain,
+                                      Container &fifo);
   template <class Container, typename T, typename T2>
   void accumulate_prune(VID_t interval_id, VID_t dst_id, VID_t block_id,
                         T current_parent, T2 current_vid,
@@ -269,17 +270,17 @@ public:
                    std::string stage,
                    const TileThresholds<image_t> *tile_thresholds,
                    Container &fifo, VID_t revisits, T vdb_accessor);
-  //template <class Container, typename T>
-  //void prune_tile_assign_parent_higher(const image_t *tile, VID_t interval_id,
-                                //VID_t block_id, std::string stage,
-                                //const TileThresholds<image_t> *tile_thresholds,
-                                //Container &fifo, VID_t revisits,
-                                //T vdb_accessor);
+  // template <class Container, typename T>
+  // void prune_tile_assign_parent_higher(const image_t *tile, VID_t
+  // interval_id, VID_t block_id, std::string stage, const
+  // TileThresholds<image_t> *tile_thresholds, Container &fifo, VID_t revisits,
+  // T vdb_accessor);
   template <class Container, typename T>
-  void prune_tile_assign_parent(const image_t *tile, VID_t interval_id, VID_t block_id,
-                  std::string stage,
-                  const TileThresholds<image_t> *tile_thresholds,
-                  Container &fifo, VID_t revisits, T vdb_accessor);
+  void prune_tile_assign_parent(const image_t *tile, VID_t interval_id,
+                                VID_t block_id, std::string stage,
+                                const TileThresholds<image_t> *tile_thresholds,
+                                Container &fifo, VID_t revisits,
+                                T vdb_accessor);
   template <class Container, typename T>
   void prune_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
                   std::string stage,
@@ -900,7 +901,6 @@ void Recut<image_t>::set_parent_non_branch(const VID_t interval_id,
   }
 }
 
-
 template <class image_t>
 template <class Container, typename T, typename T2>
 void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
@@ -945,12 +945,11 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
     }
   }
 
-  // after all neighbors have been checked, it's safe to know
-  // what the final parent will will be, so you can safely pass
+  // after all neighbors have been previously checked, it's safe to know
+  // what the final parent will be, so you can safely pass
   // along the right parent to dst's by set_parent
   // so dst itself can be used to pass messages
   // beyond just vid to other blocks / intervals
-  // and keep a contiguous path to a root
   if (enqueue_dsts) {
     if ((dst->selected() && !(dst->prune_visited())) && !dst_outside_domain) {
 #ifdef FULL_PRINT
@@ -968,13 +967,11 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
 
 template <class image_t>
 template <class Container, typename T, typename T2>
-void Recut<image_t>::accumulate_prune_assign_parent(VID_t interval_id, VID_t dst_id,
-                                      VID_t block_id, T current_parent,
-                                      T2 current_vid, bool current_unvisited,
-                                      struct VertexAttr &found_higher_parent,
-                                      bool &covered, bool enqueue_dsts,
-                                      const bool dst_outside_domain,
-                                      Container &fifo) {
+void Recut<image_t>::accumulate_prune_assign_parent(
+    VID_t interval_id, VID_t dst_id, VID_t block_id, T current_parent,
+    T2 current_vid, bool current_unvisited,
+    struct VertexAttr &found_higher_parent, bool &covered, bool enqueue_dsts,
+    const bool dst_outside_domain, Container &fifo) {
 
 #ifdef DENSE
   auto dst = get_vertex_vid(interval_id, block_id, dst_id, nullptr);
@@ -983,7 +980,7 @@ void Recut<image_t>::accumulate_prune_assign_parent(VID_t interval_id, VID_t dst
 #endif
   if (dst == nullptr) { // never selected
     return;
-  } 
+  }
   // or if unselected but radius is valid meaning it's been pruned
   if (dst->unselected() && dst->prune_visited()) {
     assertm(dst->valid_radius(), "should always have a valid radius?");
@@ -1658,12 +1655,12 @@ void Recut<image_t>::update_neighbors(
         auto outside_block = dst_block_id != block_id;
         dst_outside_domain = outside_interval || outside_block;
 
-        // only prune considers currents outside of the domain
+        // only prune_assign_parent considers currents outside of the domain
         // prune uses these ghost regions (+-1) to pass messages
         // for example a root can be in the ghost region
         // and the adjacent vertex in this block needs to know it's
         // radius in order to be properly pruned
-        if (stage == "prune") {
+        if (stage == "prune_assign_parent") {
           // if current is already outside this block
           // never take a dst unless it projects back into the current
           // block and interval, otherwise you will go outside of the data race
@@ -1672,39 +1669,37 @@ void Recut<image_t>::update_neighbors(
             if (dst_outside_domain)
               continue;
           }
-        } else {
-          if (stage == "connected") {
-            // FIXME multi-interval runs where !input_is_vdb &&
-            // !force_regenerate_image accessing outside interval image not in
-            // memory
-            if (outside_interval) {
-              assertm(false,
-                      "multi-interval not supported for this input image type "
-                      "yet, surface vertices can not be identified safely");
-            }
-            // for blocks it's safe to access the underlying image even in other
-            // domains since its const / static
-            if (outside_block) {
-              // read only image/topology checking for topology to another
-              // block within this interval is safe and necessary to get proper
-              // surface values
-              // TODO refactor this into a function call from
-              // accumulate_connected too
-              if (this->input_is_vdb) {
-                if (!get_vdb_val(vdb_accessor, dst_id))
-                  found_adjacent_invalid = true;
-              } else {
-                auto dst_vox = get_img_val(tile, dst_id);
-                if (dst_vox <= tile_thresholds->bkg_thresh) {
-                  found_adjacent_invalid = true;
-                }
-              }
-              continue;
-            }
-          } else {
-            if (dst_outside_domain)
-              continue;
+        } else if (stage == "connected") {
+          // FIXME multi-interval runs where !input_is_vdb &&
+          // !force_regenerate_image accessing outside interval image not in
+          // memory
+          if (outside_interval) {
+            assertm(false,
+                    "multi-interval not supported for this input image type "
+                    "yet, surface vertices can not be identified safely");
           }
+          // for blocks it's safe to access the underlying image even in other
+          // domains since its const / static
+          if (outside_block) {
+            // read only image/topology checking for topology to another
+            // block within this interval is safe and necessary to get proper
+            // surface values
+            // TODO refactor this into a function call from
+            // accumulate_connected too
+            if (this->input_is_vdb) {
+              if (!get_vdb_val(vdb_accessor, dst_id))
+                found_adjacent_invalid = true;
+            } else {
+              auto dst_vox = get_img_val(tile, dst_id);
+              if (dst_vox <= tile_thresholds->bkg_thresh) {
+                found_adjacent_invalid = true;
+              }
+            }
+            continue;
+          }
+        } else {
+          if (dst_outside_domain)
+            continue;
         }
 
         // note although this is summed only one of ii,jj,kk
@@ -2356,11 +2351,10 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
 
 template <class image_t>
 template <class Container, typename T>
-void Recut<image_t>::prune_tile_assign_parent(const image_t *tile, VID_t interval_id,
-                                VID_t block_id, std::string stage,
-                                const TileThresholds<image_t> *tile_thresholds,
-                                Container &fifo, VID_t revisits,
-                                T vdb_accessor) {
+void Recut<image_t>::prune_tile_assign_parent(
+    const image_t *tile, VID_t interval_id, VID_t block_id, std::string stage,
+    const TileThresholds<image_t> *tile_thresholds, Container &fifo,
+    VID_t revisits, T vdb_accessor) {
   VertexAttr *current;
   bool current_outside_domain, covered;
   VID_t visited = 0;
@@ -2487,14 +2481,15 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
     covered = false;
     // fifo starts with only roots
     auto msg_vertex = &(fifo.front());
+    auto current_outside_domain = false;
     fifo.pop_front();
 
 #ifdef DENSE
     current = get_vertex_vid(interval_id, block_id, msg_vertex->vid, nullptr);
 #else
     if (msg_vertex->band()) {
-      // current can be from ghost region in different interval or block
       current = msg_vertex;
+      current_outside_domain = true;
     } else {
       current = get_active_vertex(interval_id, block_id, msg_vertex->vid);
       assertm(current != nullptr,
@@ -2520,28 +2515,40 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
 
     bool enqueue_dsts = false;
     bool _ = false;
-    // if current has already been pruned you already know it's covered
-    if (current->unvisited()) {
-      covered = true;
-    } else {
-      // check if covered
-      update_neighbors(nullptr, interval_id, block_id, current, current->vid,
-                       revisits, "prune", nullptr, _, found_higher_parent, fifo,
-                       covered, vdb_accessor, current_outside_domain,
-                       enqueue_dsts);
-    }
-
     enqueue_dsts = true;
-    // if current is covered second pass here sets all dst->parent to
-    // current->parent
     update_neighbors(nullptr, interval_id, block_id, current, current->vid,
                      revisits, "prune", nullptr, _, found_higher_parent, fifo,
                      covered, vdb_accessor, current_outside_domain,
                      enqueue_dsts);
 
-    if (covered) {
-      // roots can never be added back in by accumulate_prune
+      // roots were already activated and had check_ghost_update run in activate_vids 
+      // and can never be added back in by accumulate_prune
       // so fifo is safe from infinite loops
+    if (current->root()) {
+      continue;
+    }
+
+    // the only purpose of outside message vertices is to propogate prune_visited
+    // or updated radii values
+    if (current_outside_domain) {
+      // already found to be covered previously
+      if (current->unvisited()) 
+        continue;
+
+      if (covered) {
+        current->mark_unvisited();
+        // don't propogate these changes, i.e. don't call check_ghost_update
+        // just finish this iteration
+        continue;
+      }
+    }
+
+    // inside that was already marked as pruned
+    if (current->prune_visited() && current->unvisited())  {
+      continue;
+    }
+
+    if (covered) {
       if (!((current->root()))) {
         // never visit again and never print it
         current->mark_unvisited();
@@ -2576,20 +2583,12 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
           }
         }
 
-        if (!current_outside_domain) {
           check_ghost_update(interval_id, block_id, current, stage);
-        }
         continue;
       }
     }
-
-    if (!(current->root())) {
-      current->mark_band();
-    }
-    if (!current_outside_domain) {
       check_ghost_update(interval_id, block_id, current, stage);
-    }
-  } // end while
+  } // end while over fifo
 } // end prune_tile
 
 // template <class image_t>
@@ -2705,7 +2704,7 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
 // check_ghost_update(interval_id, block_id, current, stage);
 //}
 //} // end while
-//} 
+//}
 
 template <class image_t>
 template <class Container, typename T>
@@ -4398,8 +4397,8 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
           marker->radius = vertex->radius;
           // save this marker ptr to a map
           vid_to_marker_ptr[vertex->vid] = marker;
-          std::cout << "Added " << interval_id << ' ' << block_id << ' ' << vertex->vid << " has parent "
-                    << vertex->parent << '\n';
+          std::cout << "Added " << interval_id << ' ' << block_id << ' '
+                    << vertex->vid << " has parent " << vertex->parent << '\n';
           outtree.push_back(marker);
         }
       }
