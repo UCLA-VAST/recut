@@ -212,6 +212,13 @@ public:
   bool is_covered_by_parent(VID_t interval_id, VID_t block_id,
                             VertexAttr *current);
   template <class Container, typename T, typename T2>
+  void accumulate_prune_assign_parent(VID_t interval_id, VID_t dst_id, VID_t block_id,
+                        T current_parent, T2 current_vid,
+                        bool current_unvisited,
+                        struct VertexAttr &found_higher_parent, bool &covered,
+                        bool enqueue_dsts, const bool dst_outside_domain,
+                        Container &fifo);
+  template <class Container, typename T, typename T2>
   void accumulate_prune(VID_t interval_id, VID_t dst_id, VID_t block_id,
                         T current_parent, T2 current_vid,
                         bool current_unvisited,
@@ -262,12 +269,17 @@ public:
                    std::string stage,
                    const TileThresholds<image_t> *tile_thresholds,
                    Container &fifo, VID_t revisits, T vdb_accessor);
+  //template <class Container, typename T>
+  //void prune_tile_assign_parent_higher(const image_t *tile, VID_t interval_id,
+                                //VID_t block_id, std::string stage,
+                                //const TileThresholds<image_t> *tile_thresholds,
+                                //Container &fifo, VID_t revisits,
+                                //T vdb_accessor);
   template <class Container, typename T>
-  void prune_tile_assign_parent(const image_t *tile, VID_t interval_id,
-                                VID_t block_id, std::string stage,
-                                const TileThresholds<image_t> *tile_thresholds,
-                                Container &fifo, VID_t revisits,
-                                T vdb_accessor);
+  void prune_tile_assign_parent(const image_t *tile, VID_t interval_id, VID_t block_id,
+                  std::string stage,
+                  const TileThresholds<image_t> *tile_thresholds,
+                  Container &fifo, VID_t revisits, T vdb_accessor);
   template <class Container, typename T>
   void prune_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
                   std::string stage,
@@ -888,6 +900,7 @@ void Recut<image_t>::set_parent_non_branch(const VID_t interval_id,
   }
 }
 
+
 template <class image_t>
 template <class Container, typename T, typename T2>
 void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
@@ -907,6 +920,70 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
     return;
   }
 
+  // or if unselected but radius is valid meaning it's been pruned
+  if (dst->unselected() && dst->prune_visited()) {
+    assertm(dst->valid_radius(), "should always have a valid radius?");
+  }
+  if (dst->band()    // in the FIFO awaiting visit
+      || dst->root() // a root already processed
+      // or a previously pruned vertex which transmits transitive
+      // coverage info from it's covered:
+      || (dst->unselected() && dst->prune_visited() && dst->valid_radius())) {
+    assertm(dst->valid_vid(), "selected must have a valid vid");
+    assertm(dst->vid == dst_id,
+            "get_active_vertex failed getting correct vertex");
+
+    // dst can only be 1 hop away (adjacent) from current, therefore
+    // all radii greater than 1 imply some redundancy in coverage
+    // but this may be desired with DILATION_FACTOR higher than 1
+    if (dst->radius >= DILATION_FACTOR) {
+      covered = true;
+#ifdef FULL_PRINT
+      std::cout << "  radius of: " << +(dst->radius) << " at dst " << dst_id
+                << " " << dst->label() << " covers current;";
+#endif
+    }
+  }
+
+  // after all neighbors have been checked, it's safe to know
+  // what the final parent will will be, so you can safely pass
+  // along the right parent to dst's by set_parent
+  // so dst itself can be used to pass messages
+  // beyond just vid to other blocks / intervals
+  // and keep a contiguous path to a root
+  if (enqueue_dsts) {
+    if ((dst->selected() && !(dst->prune_visited())) && !dst_outside_domain) {
+#ifdef FULL_PRINT
+      std::cout << "  added dst " << dst_id << " rad " << +(dst->radius)
+                << '\n';
+#endif
+      dst->prune_visit();
+      assertm(dst->valid_vid(), "selected must have a valid vid");
+      assertm(dst->valid_radius(), "selected must have a valid radius");
+      fifo.push_back(*dst);
+      check_ghost_update(interval_id, block_id, dst, "prune");
+    }
+  }
+}
+
+template <class image_t>
+template <class Container, typename T, typename T2>
+void Recut<image_t>::accumulate_prune_assign_parent(VID_t interval_id, VID_t dst_id,
+                                      VID_t block_id, T current_parent,
+                                      T2 current_vid, bool current_unvisited,
+                                      struct VertexAttr &found_higher_parent,
+                                      bool &covered, bool enqueue_dsts,
+                                      const bool dst_outside_domain,
+                                      Container &fifo) {
+
+#ifdef DENSE
+  auto dst = get_vertex_vid(interval_id, block_id, dst_id, nullptr);
+#else
+  auto dst = get_active_vertex(interval_id, block_id, dst_id);
+#endif
+  if (dst == nullptr) { // never selected
+    return;
+  } 
   // or if unselected but radius is valid meaning it's been pruned
   if (dst->unselected() && dst->prune_visited()) {
     assertm(dst->valid_radius(), "should always have a valid radius?");
@@ -2279,6 +2356,125 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
 
 template <class image_t>
 template <class Container, typename T>
+void Recut<image_t>::prune_tile_assign_parent(const image_t *tile, VID_t interval_id,
+                                VID_t block_id, std::string stage,
+                                const TileThresholds<image_t> *tile_thresholds,
+                                Container &fifo, VID_t revisits,
+                                T vdb_accessor) {
+  VertexAttr *current;
+  bool current_outside_domain, covered;
+  VID_t visited = 0;
+  while (!(fifo.empty())) {
+    covered = false;
+    // fifo starts with only roots
+    auto msg_vertex = &(fifo.front());
+    fifo.pop_front();
+
+#ifdef DENSE
+    current = get_vertex_vid(interval_id, block_id, msg_vertex->vid, nullptr);
+#else
+    if (msg_vertex->band()) {
+      // current can be from ghost region in different interval or block
+      current = msg_vertex;
+    } else {
+      current = get_active_vertex(interval_id, block_id, msg_vertex->vid);
+      assertm(current != nullptr,
+              "get_active_vertex yielded nullptr radius_tile");
+    }
+    assertm(current->valid_vid(), "fifo must recover a valid_vid vertex");
+    assertm(current->valid_radius(), "fifo must recover a valid_radius vertex");
+#endif
+
+#ifdef LOG_FULL
+    visited += 1;
+#endif
+
+    // Parent
+    // by default current will have a root of itself
+    if (current->root()) {
+      current->set_parent(current->vid);
+      current->prune_visit();
+    }
+
+    VID_t revisits;
+    VertexAttr found_higher_parent = *current;
+
+    bool enqueue_dsts = false;
+    bool _ = false;
+    // if current has already been pruned you already know it's covered
+    if (current->unvisited()) {
+      covered = true;
+    } else {
+      // check if covered
+      update_neighbors(nullptr, interval_id, block_id, current, current->vid,
+                       revisits, "prune", nullptr, _, found_higher_parent, fifo,
+                       covered, vdb_accessor, current_outside_domain,
+                       enqueue_dsts);
+    }
+
+    enqueue_dsts = true;
+    // if current is covered second pass here sets all dst->parent to
+    // current->parent
+    update_neighbors(nullptr, interval_id, block_id, current, current->vid,
+                     revisits, "prune", nullptr, _, found_higher_parent, fifo,
+                     covered, vdb_accessor, current_outside_domain,
+                     enqueue_dsts);
+
+    if (covered) {
+      // roots can never be added back in by accumulate_prune
+      // so fifo is safe from infinite loops
+      if (!((current->root()))) {
+        // never visit again and never print it
+        current->mark_unvisited();
+#ifdef FULL_PRINT
+        std::cout << "  covered vid " << current->vid << '\n';
+#endif
+        // get radii before adjusting parent is intended to
+        // preserve coverage info as it decreases in range
+        // only pruned / unselected vertices will have their radii mutated
+        // to transitively pass coverage info across blocks
+        // using only vertices
+        if (found_higher_parent.vid != current->vid) {
+#ifdef FULL_PRINT
+          std::cout << "  refreshed radius to "
+                    << +(found_higher_parent.radius - 1) << " from vid "
+                    << found_higher_parent.vid << '\n';
+#endif
+          assertm(found_higher_parent.valid_radius(),
+                  "higher parent invalid radius");
+          assertm(found_higher_parent.radius != 0,
+                  "higher parent can't have a radii of 0");
+          current->radius = found_higher_parent.radius - 1;
+        } else {
+          if (current->radius != 0) {
+            // if an adjacent (dst) is covering current and that adjacent is
+            // not higher than current, respect dsts radius as truth and
+            // do not refresh the transitive radius coverage
+            // this has advantage of a radius always covering only its
+            // hops disadvantage is that equal or lower values can not
+            // "refresh" the coverage
+            current->radius = current->radius - 1;
+          }
+        }
+
+        if (!current_outside_domain) {
+          check_ghost_update(interval_id, block_id, current, stage);
+        }
+        continue;
+      }
+    }
+
+    if (!(current->root())) {
+      current->mark_band();
+    }
+    if (!current_outside_domain) {
+      check_ghost_update(interval_id, block_id, current, stage);
+    }
+  } // end while
+} // end prune_tile_assign_parent
+
+template <class image_t>
+template <class Container, typename T>
 void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
                                 VID_t block_id, std::string stage,
                                 const TileThresholds<image_t> *tile_thresholds,
@@ -2398,7 +2594,7 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
 
 // template <class image_t>
 // template <class Container, typename T>
-// void Recut<image_t>::prune_tile_assign_parent(
+// void Recut<image_t>::prune_tile_assign_parent_higher(
 // const image_t *tile, VID_t interval_id, VID_t block_id, std::string stage,
 // const TileThresholds<image_t> *tile_thresholds, Container &fifo,
 // VID_t revisits, T vdb_accessor) {
@@ -2509,7 +2705,7 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
 // check_ghost_update(interval_id, block_id, current, stage);
 //}
 //} // end while
-//} // end prune_tile
+//} 
 
 template <class image_t>
 template <class Container, typename T>
