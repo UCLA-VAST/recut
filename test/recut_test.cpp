@@ -576,7 +576,8 @@ TEST(Interval, GetAttrVidMultiInterval) {
 
 #ifdef USE_VDB
 TEST(VDBWriteOnly, DISABLED_Any) {
-  auto grid_size = 8;
+  VID_t grid_size = 8;
+  auto grid_extents = std::vector<VID_t>(3, grid_size);
   // do no use tcase 4 since it is randomized and will not match
   // for the second read test
   auto tcase = 7;
@@ -601,18 +602,18 @@ TEST(VDBWriteOnly, DISABLED_Any) {
 
   if (print_all) {
     std::cout << "recut image grid" << endl;
-    print_image_3D(recut.generated_image, {grid_size, grid_size, grid_size});
+    print_image_3D(recut.generated_image, grid_extents);
   }
 
   if (print_all)
-    print_vdb(recut.topology_grid->getConstAccessor(),
-              {grid_size, grid_size, grid_size});
+    print_vdb(recut.topology_grid->getConstAccessor(), grid_extents);
 
   ASSERT_TRUE(fs::exists(fn));
 }
 
 TEST(VDBConvertOnly, Any) {
-  auto grid_size = 8;
+  VID_t grid_size = 8;
+  auto grid_extents = std::vector<VID_t>(3, grid_size);
   // do no use tcase 4 since it is randomized and will not match
   // for the second read test
   auto tcase = 7;
@@ -640,7 +641,7 @@ TEST(VDBConvertOnly, Any) {
 
   if (print_all) {
     std::cout << "recut image grid" << endl;
-    print_image_3D(recut.generated_image, {grid_size, grid_size, grid_size});
+    print_image_3D(recut.generated_image, grid_extents);
   }
 
   // mutates topology_grid
@@ -648,8 +649,7 @@ TEST(VDBConvertOnly, Any) {
   recut.update(stage, recut.global_fifo);
 
   if (print_all)
-    print_vdb(recut.topology_grid->getConstAccessor(),
-              {grid_size, grid_size, grid_size});
+    print_vdb(recut.topology_grid->getConstAccessor(), grid_extents);
 
   // don't write out the file since you will have read only paths in nix
   // environments ASSERT_TRUE(fs::exists(fn));
@@ -680,7 +680,7 @@ TEST(VDBConvertOnly, Any) {
 
     if (print_all)
       print_vdb(recut_from_vdb_file.topology_grid->getConstAccessor(),
-                {grid_size, grid_size, grid_size});
+                grid_extents);
 
     // assert equals original grid above
     double read_from_file_error_rate;
@@ -715,12 +715,14 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
 
   std::vector<int> testcases = {7, 5, 4, 3, 2, 1, 0};
   std::vector<double> selected_percents = {1, 10, 50, 100};
+  std::vector<int> no_offsets{0, 0, 0};
   auto print = false;
 #ifdef LOG
   print = true;
 #endif
 
   for (auto &grid_size : grid_sizes) {
+    auto grid_extents = std::vector<int>(3, grid_size);
     if (print)
       cout << "Create grids of " << grid_size << endl;
     auto root_vid = get_central_vid(grid_size);
@@ -796,7 +798,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
           cout << "    for attempted slt_pct: " << slt_pct << "%" << endl;
         }
 
-        // print_image_3D(inimg1d, {grid_size, grid_size, grid_size});
+        // print_image_3D(inimg1d, grid_extents);
         ASSERT_NE(inimg1d[root->vid], 0) << " tcase " << tcase;
         ASSERT_NE(actual_selected, 0);
 
@@ -807,11 +809,11 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
           ASSERT_NEAR(actual_slt_pct, slt_pct, 100 * EXP_DEV_LOW);
         }
 
-        auto topology_grid =
-            create_vdb_grid<int>({grid_size, grid_size, grid_size});
+        auto topology_grid = create_vdb_grid(grid_extents);
+        std::cout << "created vdb grid\n";
         convert_buffer_to_vdb(inimg1d, topology_grid->getAccessor(),
-                              {grid_size, grid_size, grid_size}, {0, 0, 0},
-                              {0, 0, 0});
+                              grid_extents, no_offsets, no_offsets, 0);
+        std::cout << "converted to vdb grid\n";
 
 #ifdef USE_MCP3D
         write_tiff(inimg1d, fn, grid_size);
@@ -831,6 +833,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
 #ifdef USE_MCP3D
 TEST(Install, DISABLED_ImageReadWrite) {
   auto grid_size = 2;
+  auto grid_extents = std::vector<VID_t>(3, grid_size);
   auto tcase = 0;
   double slt_pct = 100;
   long sz0 = (long)grid_size;
@@ -840,8 +843,8 @@ TEST(Install, DISABLED_ImageReadWrite) {
   std::string fn(get_data_dir());
   // Warning: do not use directory names postpended with slash
   fn = fn + "/test_images/ReadWriteTest";
-  vector<int> image_offsets = {0, 0, 0};
-  vector<int> image_extents = {grid_size, grid_size, grid_size};
+  auto image_extents = std::vector<int>(3, grid_size);
+  auto image_offsets = std::vector<int>(3, 0);
 
   VID_t selected = tol_sz * (slt_pct / 100); // for tcase 4
   // always select at least the root
@@ -1127,7 +1130,8 @@ TEST(VertexAttr, Defaults) {
 }
 
 TEST(TileThresholds, AllTcases) {
-  auto grid_size = 4;
+  VID_t grid_size = 4;
+  auto grid_extents = std::vector<VID_t>(3, grid_size);
   auto slt_pct = 50;
   auto grid_vertex_size = grid_size * grid_size * grid_size;
   auto print_image = false;
@@ -1151,8 +1155,7 @@ TEST(TileThresholds, AllTcases) {
       read_tiff(args.image_root_dir(), args.image_offsets, args.image_extents,
                 image);
       if (print_image) {
-        print_image_3D(image.Volume<uint16_t>(0),
-                       {grid_size, grid_size, grid_size});
+        print_image_3D(image.Volume<uint16_t>(0), grid_extents);
       }
       bkg_thresh = recut.get_bkg_threshold(image.Volume<uint16_t>(0),
                                            grid_vertex_size, slt_pct / 100.);
@@ -1170,7 +1173,7 @@ TEST(TileThresholds, AllTcases) {
       create_image(tcase, inimg1d.get(), grid_size, selected,
                    get_central_vid(grid_size));
       if (print_image) {
-        print_image_3D(inimg1d.get(), {grid_size, grid_size, grid_size});
+        print_image_3D(inimg1d.get(), grid_extents);
       }
       bkg_thresh = recut.get_bkg_threshold(inimg1d.get(), grid_vertex_size,
                                            slt_pct / 100.);
@@ -1224,6 +1227,7 @@ TEST(CompareTree, All) {
   std::vector<MyMarker *> truth;
   std::vector<MyMarker *> check;
   VID_t grid_size = 4;
+  auto grid_extents = std::vector<VID_t>(3, grid_size);
   auto interval_size = grid_size;
   VID_t block_size = 2;
 
@@ -1278,7 +1282,7 @@ TEST(CompareTree, All) {
   // repeats therefore count should be diff
   ASSERT_EQ(truth.size(), counter + 1);
 
-  auto results = compare_tree(truth, check, grid_size, grid_size, recut);
+  auto results = compare_tree(truth, check, grid_extents);
   // make sure duplicates are found
   ASSERT_EQ(results->duplicate_count, 2);
 
@@ -1286,7 +1290,7 @@ TEST(CompareTree, All) {
   truth.pop_back();
   check.pop_back();
 
-  results = compare_tree(truth, check, grid_size, grid_size, recut);
+  results = compare_tree(truth, check, grid_extents);
   // it's a problem if two markers with same vid are in a results vector
   ASSERT_EQ(results->duplicate_count, 0);
 
@@ -1294,7 +1298,7 @@ TEST(CompareTree, All) {
     auto check = check_false_negatives |
                  rng::views::transform([](auto pairi) { return pairi.first; }) |
                  rng::to_vector | rng::action::sort;
-    auto truth = get_vids_sorted(false_negatives, grid_size, grid_size);
+    auto truth = get_vids_sorted(false_negatives, grid_extents);
     auto diff = rng::views::set_intersection(truth, check); // set_difference
     return rng::distance(diff); // return range length
   };
@@ -1537,7 +1541,9 @@ TEST(Update, EachStageIteratively) {
               (grid_size == interval_size) && (grid_size == block_size) ? true
                                                                         : false;
           for (auto &tcase : tcases) {
-            const auto interval_extents = {grid_size, grid_size, grid_size};
+            auto grid_extents = std::vector<VID_t>(3, grid_size);
+            auto interval_extents = std::vector<VID_t>(3, interval_size);
+            auto block_extents = std::vector<VID_t>(3, block_size);
 
             // Create ground truth refence for the rest of the loop body
             auto ground_truth_args =
@@ -1581,8 +1587,7 @@ TEST(Update, EachStageIteratively) {
 
             if (print_all) {
               std::cout << "ground truth image grid" << endl;
-              print_image_3D(ground_truth_image.get(),
-                             {grid_size, grid_size, grid_size});
+              print_image_3D(ground_truth_image.get(), grid_extents);
               if (input_is_vdb) {
                 auto vdb_accessor = recut.topology_grid->getConstAccessor();
                 print_vdb(vdb_accessor, interval_extents);
@@ -1651,12 +1656,10 @@ TEST(Update, EachStageIteratively) {
               // Show everything in 3D
               if (print_all) {
                 cout << "accuracy_radius\n";
-                print_image_3D(app2_accurate_radii_grid.get(),
-                               {grid_size, grid_size, grid_size});
+                print_image_3D(app2_accurate_radii_grid.get(), grid_extents);
                 if (check_xy) {
                   std::cout << "XY radii grid\n";
-                  print_image_3D(app2_xy_radii_grid.get(),
-                                 {grid_size, grid_size, grid_size});
+                  print_image_3D(app2_xy_radii_grid.get(), grid_extents);
                 }
               }
 
@@ -1747,8 +1750,7 @@ TEST(Update, EachStageIteratively) {
               } else {
                 if (print_all) {
                   cout << "recut sequential radii \n";
-                  print_image_3D(seq_radii_grid.get(),
-                                 {grid_size, grid_size, grid_size});
+                  print_image_3D(seq_radii_grid.get(), grid_extents);
                 }
                 double recut_vs_recut_sequential_radius_error;
                 // radii are made sure to be valid in the right locations
@@ -1859,15 +1861,14 @@ TEST(Update, EachStageIteratively) {
 
               auto mask = std::make_unique<uint8_t[]>(tol_sz);
               create_coverage_mask_accurate(recut_output_tree_prune, mask.get(),
-                                            grid_size, grid_size, grid_size);
+                                            grid_extents);
               auto results =
                   check_coverage(mask.get(), ground_truth_image.get(), tol_sz,
                                  tile_thresholds->bkg_thresh);
 
               auto app2_mask = std::make_unique<uint8_t[]>(tol_sz);
               create_coverage_mask_accurate(app2_output_tree_prune,
-                                            app2_mask.get(), grid_size,
-                                            grid_size, grid_size);
+                                            app2_mask.get(), grid_extents);
               auto app2_results =
                   check_coverage(app2_mask.get(), ground_truth_image.get(),
                                  tol_sz, tile_thresholds->bkg_thresh);
@@ -1890,7 +1891,7 @@ TEST(Update, EachStageIteratively) {
               /// negative
               auto compare_tree_results =
                   compare_tree(app2_output_tree_prune, recut_output_tree_prune,
-                               grid_size, grid_size, recut);
+                               grid_extents);
 
               auto stage = std::string{"prune"};
 
@@ -1937,25 +1938,25 @@ TEST(Update, EachStageIteratively) {
               EXPECT_EQ(compare_tree_results->false_positives.size(), 0);
               EXPECT_EQ(compare_tree_results->duplicate_count, 0);
 
-              if ( DILATION_FACTOR == 2) {
-              // make sure the coverage topology (equivalent active voxels) is
-              // the same, this only works if DILATION_FACTOR is 
-              std::cout << iteration_trace.str();
-              EXPECT_EQ(results->false_negatives.size(), 0);
-              EXPECT_EQ(results->false_positives.size(), 0);
-              EXPECT_EQ(results->duplicate_count, 0);
+              if (DILATION_FACTOR == 2) {
+                // make sure the coverage topology (equivalent active voxels) is
+                // the same, this only works if DILATION_FACTOR is
+                std::cout << iteration_trace.str();
+                EXPECT_EQ(results->false_negatives.size(), 0);
+                EXPECT_EQ(results->false_positives.size(), 0);
+                EXPECT_EQ(results->duplicate_count, 0);
               }
 
-              if ( DILATION_FACTOR == 1) {
-              //// check the compare tree worked properly
-              ASSERT_EQ(recut_output_tree_prune.size(),
-                        compare_tree_results->match_count +
-                            compare_tree_results->false_positives.size());
-              ASSERT_EQ(recut_output_tree_prune.size(),
-                        compare_tree_results->match_count +
-                            compare_tree_results->false_negatives.size());
-              EXPECT_EQ(recut_output_tree_prune.size(),
-                        app2_output_tree_prune.size());
+              if (DILATION_FACTOR == 1) {
+                //// check the compare tree worked properly
+                ASSERT_EQ(recut_output_tree_prune.size(),
+                          compare_tree_results->match_count +
+                              compare_tree_results->false_positives.size());
+                ASSERT_EQ(recut_output_tree_prune.size(),
+                          compare_tree_results->match_count +
+                              compare_tree_results->false_negatives.size());
+                EXPECT_EQ(recut_output_tree_prune.size(),
+                          app2_output_tree_prune.size());
               }
             }
           }
@@ -1994,6 +1995,9 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 #endif
   bool prune = false;
   std::string stage;
+  auto grid_extents = std::vector<VID_t>(3, grid_size);
+  auto interval_extents = std::vector<VID_t>(3, interval_size);
+  auto block_extents = std::vector<VID_t>(3, block_size);
 
   // shared params
   // generate image so that you can read it below
@@ -2021,8 +2025,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
               image);
 
     if (print_all) {
-      print_image_3D(image.Volume<uint16_t>(0),
-                     {grid_size, grid_size, grid_size});
+      print_image_3D(image.Volume<uint16_t>(0), grid_extents);
     }
   }
 #endif
@@ -2185,7 +2188,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
                       tile_thresholds->bkg_thresh, tile_thresholds->max_int,
                       tile_thresholds->min_int);
 
-    auto interval_extents = {grid_size, grid_size, grid_size};
+    auto interval_extents = grid_extents;
     if (print_all) {
       std::cout << "APP2 value\n";
       print_marker_3D(app2_output_tree, interval_extents, "label");
@@ -2207,8 +2210,8 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     RecordProperty("Error rate (%)", 100 * (diff / app2_output_tree.size()));
 
     // compare_tree will print to log matches, false positive and negative
-    auto results = compare_tree(app2_output_tree, args.output_tree, grid_size,
-                                grid_size, recut);
+    auto results =
+        compare_tree(app2_output_tree, args.output_tree, grid_extents);
 
     stage = "connected";
     RecordProperty("False positives " + stage, results->false_positives.size());
@@ -2243,13 +2246,13 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
       auto mask = std::make_unique<uint8_t[]>(tol_sz);
       create_coverage_mask_accurate(recut_output_tree_prune, mask.get(),
-                                    grid_size, grid_size, grid_size);
+                                    grid_extents);
       auto results = check_coverage(mask.get(), image.Volume<uint16_t>(0),
                                     tol_sz, tile_thresholds->bkg_thresh);
 
       auto app2_mask = std::make_unique<uint8_t[]>(tol_sz);
       create_coverage_mask_accurate(app2_output_tree_prune, app2_mask.get(),
-                                    grid_size, grid_size, grid_size);
+                                    grid_extents);
       auto app2_results =
           check_coverage(app2_mask.get(), image.Volume<uint16_t>(0), tol_sz,
                          tile_thresholds->bkg_thresh);

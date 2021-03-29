@@ -3615,7 +3615,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     input_image_extents = args->image_extents;
 
     // FIXME placeholder grid
-    this->topology_grid = create_vdb_grid<int>({0, 0, 0}, this->params->background_thresh());
+    this->topology_grid = create_vdb_grid(input_image_extents, this->params->background_thresh());
   } else if (this->input_is_vdb) {
 
     assertm(!params->convert_only_,
@@ -3690,9 +3690,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     // reverse mcp3d's z y x order for offsets and extents
     std::reverse(input_image_extents.begin(), input_image_extents.end());
 
-    auto temp = {input_image_extents[0], input_image_extents[1],
-                 input_image_extents[2]};
-    this->topology_grid = create_vdb_grid<int>(temp);
+    this->topology_grid = create_vdb_grid(input_image_extents);
   }
 
   // account and check requested args->image_offsets and args->image_extents
