@@ -310,8 +310,8 @@ public:
   template <class Container>
   void activate_vids(const std::vector<VID_t> &root_vids, std::string stage,
                      Container &fifo);
-  std::vector<VID_t> process_marker_dir(vector<int> global_image_offsets,
-                                        vector<int> global_image_extents);
+  std::vector<VID_t> process_marker_dir(vector<int> grid_offsets,
+                                        vector<int> grid_extents);
   void print_vertex(VertexAttr *current);
   void set_parent_non_branch(const VID_t interval_id, const VID_t block_id,
                              VertexAttr *dst, VertexAttr *potential_new_parent);
@@ -336,18 +336,18 @@ template <class image_t> Recut<image_t>::~Recut<image_t>() {
  * end : sanitized end pixels order
  */
 template <typename T, typename T2>
-bool check_in_bounds(T i, T j, T k, T2 off, T2 end) {
+bool is_in_bounds(T i, T j, T k, T2 off, T2 end) {
   if (i < off[0])
     return false;
   if (j < off[1])
     return false;
   if (k < off[2])
     return false;
-  if (i > off[0] + end[0])
+  if (i > (off[0] + end[0]))
     return false;
-  if (j > off[1] + end[1])
+  if (j > (off[1] + end[1]))
     return false;
-  if (k > off[2] + end[2])
+  if (k > (off[2] + end[2]))
     return false;
   return true;
 }
@@ -356,8 +356,8 @@ bool check_in_bounds(T i, T j, T k, T2 off, T2 end) {
 //
 template <class image_t>
 std::vector<VID_t>
-Recut<image_t>::process_marker_dir(vector<int> global_image_offsets,
-                                   vector<int> global_image_extents) {
+Recut<image_t>::process_marker_dir(vector<int> grid_offsets,
+                                   vector<int> grid_extents) {
   vector<VID_t> root_vids;
 
   if (params->marker_file_path().empty())
@@ -386,13 +386,13 @@ Recut<image_t>::process_marker_dir(vector<int> global_image_offsets,
       y = root.y + 1;
       z = root.z + 1;
 
-      if (!(check_in_bounds(x, y, z, global_image_offsets,
-                            global_image_extents)))
+      if (!(is_in_bounds(x, y, z, grid_offsets,
+                            grid_extents)))
         continue;
       // adjust the vid according to the region of the image we are processing
-      i = x - global_image_offsets[0];
-      j = y - global_image_offsets[1];
-      k = z - global_image_offsets[2];
+      i = x - grid_offsets[0];
+      j = y - grid_offsets[1];
+      k = z - grid_offsets[2];
       auto vid = get_img_vid(i, j, k);
       root_vids.push_back(vid);
 
