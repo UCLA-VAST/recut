@@ -858,9 +858,6 @@ void convert_buffer_to_vdb(BufT *buffer, AccT vdb_accessor,
         auto val = buffer[coord_to_vid(buffer_xyz, buffer_extents)];
         // voxels equal to bkg_thresh are always discarded
         if (val > bkg_thresh) {
-#ifdef FULL_PRINT
-          cout << xyz << '\n';
-#endif
           vdb_accessor.setValue(grid_xyz, true);
         }
       }

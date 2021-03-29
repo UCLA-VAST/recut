@@ -3742,10 +3742,10 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     // especially in z dimension
     this->interval_length_x = image_length_x;
     this->interval_length_y = image_length_y;
-    auto recommended_max_mem = GetAvailMem() / 2;
-    // how many z-depth tiles will fit in half of available memory?
+    auto recommended_max_mem = GetAvailMem() / 64;
+    // guess how many z-depth tiles will fit before a bad_alloc is likely
     auto simultaneous_tiles = static_cast<double>(recommended_max_mem) / (sizeof(image_t) * image_length_x * image_length_y);
-    assertm(simultaneous_tiles >= 1, "Tile x and y size too large to fit in system memory (DRAM)");
+    //assertm(simultaneous_tiles >= 1, "Tile x and y size too large to fit in system memory (DRAM)");
     this->interval_length_z = std::min(simultaneous_tiles, static_cast<double>(image_length_z));
   } else if (this->input_is_vdb) {
     this->interval_length_x = image_length_x;
