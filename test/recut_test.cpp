@@ -99,19 +99,6 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
             error_sum += absdiff(ground_truth[vid], int_val);
           }
 #endif
-        } else if (stage == "value") {
-          if (ground_truth[vid]) {
-            ASSERT_NE(v, nullptr);
-            bool valid_value = v->value != std::numeric_limits<uint8_t>::max();
-            ASSERT_TRUE(valid_value);
-            ++total_valid;
-          }
-          if (v) {
-            if (v->valid_value()) {
-              ASSERT_EQ(ground_truth[vid], 1);
-              error_sum += absdiff(ground_truth[vid], v->value);
-            }
-          }
         } else if (stage == "radius") {
           if (ground_truth[vid]) {
             ASSERT_NE(v, nullptr);
@@ -265,7 +252,6 @@ void interval_base_immutable(VID_t nvid) {
     ASSERT_TRUE(interval->GetData()[i].unvisited())
         << " i= " << i << " vid " << interval->GetData()[i].vid << endl;
     ASSERT_FALSE(interval->GetData()[i].valid_vid());
-    ASSERT_FALSE(interval->GetData()[i].valid_value());
   }
 }
 
@@ -399,19 +385,17 @@ void test_get_attr_vid(bool mmap, int grid_size, int interval_size,
         auto attr =
             recut.get_attr_vid(interval_id, block_id, vid, &output_offset);
         attr->vid = vid;
-        attr->value = 3;
         auto attr2 =
             recut.get_attr_vid(interval_id, block_id, vid, &output_offset);
         ASSERT_EQ(attr, attr2); // upstream changes?
 
         // TEST 2
-        // assert get_attr_vid can handle dummy structs added in to heaps
+        // assert get_attr_vid can handle dummy structs 
         // and update real embedded values in interval accordingly
         VertexAttr *dummy_attr =
             new VertexAttr(); // march is protect from dummy values like this
         dummy_attr->mark_root(0); // 0000 0000, selected no parent, all zeros
         // indicates KNOWN_FIX root
-        dummy_attr->value = 1.0;
         dummy_attr->vid = vid;
         auto embedded_attr = recut.get_attr_vid(
             interval_id, block_id, dummy_attr->vid, &output_offset);
@@ -468,7 +452,6 @@ TEST(Install, DISABLED_CreateIntervalBase) {
         v.edge_state = 192;
         v.vid = numeric_limits<VID_t>::max();
         v.handle = numeric_limits<VID_t>::max();
-        v.value = numeric_limits<float>::max();
         // cout << i << endl << v.description() << endl;
       }
 
@@ -481,7 +464,6 @@ TEST(Install, DISABLED_CreateIntervalBase) {
       v->edge_state = 192;
       v->vid = numeric_limits<VID_t>::max();
       v->handle = numeric_limits<VID_t>::max();
-      v->value = numeric_limits<float>::max();
       for (VID_t i = 0; i < nvid; i++) {
         // write struct to file
         ofile.write((char *)v, sizeof(VertexAttr));
@@ -880,89 +862,6 @@ TEST(Install, DISABLED_ImageReadWrite) {
 }
 #endif
 
-TEST(Heap, PushUpdate) {
-  VID_t N = 1 << 10;
-  bool update_values = true;
-
-  std::vector<std::string> stages = {"value", "radius"};
-  // float mval = std::numeric_limits<float>::max();
-  float mval = 255;
-  srand(time(0));
-  std::vector<uint8_t> vr;
-  std::vector<float> vv;
-  for (auto &stage : stages) {
-    NeighborHeap<VertexAttr> heap;
-    uint8_t radius;
-    float value;
-    uint8_t updated_radius;
-    float updated_value;
-    for (VID_t i = 0; i < N; i++) {
-      auto vert = new VertexAttr;
-      ASSERT_FALSE(vert->valid_handle());
-      if (stage == "radius") {
-        radius = (uint8_t)rand() % std::numeric_limits<uint8_t>::max();
-        updated_radius = (uint8_t)rand() % std::numeric_limits<uint8_t>::max();
-        vert->radius = radius;
-        vr.push_back(radius);
-        ASSERT_EQ(vert->radius, radius);
-      } else if (stage == "value") {
-        value =
-            static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / mval));
-        updated_value =
-            static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / mval));
-        vert->value = value;
-        vv.push_back(value);
-      }
-      heap.push(vert, 0, stage);
-      ASSERT_TRUE(vert->valid_handle());
-
-      /* for even element, update it with some random number
-       * to make sure the update can still retain proper
-       * ordering
-       */
-      if (update_values && (i % 2)) {
-        // cout << "elems pre-update: " << " i " << i << endl;
-        // heap.print(stage);
-
-        if (stage == "radius") {
-          // vert->radius = updated_radius;
-          vr.pop_back();
-          vr.push_back(updated_radius);
-          heap.update(vert, 0, updated_radius, stage);
-        } else {
-          // vert->value = updated_value;
-          vv.pop_back();
-          vv.push_back(updated_value);
-          heap.update(vert, 0, updated_value, stage);
-        }
-      }
-
-      // cout << "elems: " << endl;
-      // heap.print(stage);
-    }
-
-    // make sure all in heap are popped in
-    // non-increasing order
-    if (stage == "radius") {
-      sort(vr.begin(), vr.end());
-      for (auto &val : vr) {
-        auto min_attr = heap.pop(0, stage);
-        ASSERT_FALSE(min_attr->valid_handle());
-        auto hval = min_attr->radius;
-        ASSERT_EQ(val, hval) << "hval " << +hval << " val " << +val;
-      }
-    } else {
-      sort(vv.begin(), vv.end());
-      for (auto &val : vv) {
-        auto min_attr = heap.pop(0, stage);
-        ASSERT_FALSE(min_attr->valid_handle());
-        auto hval = min_attr->value;
-        ASSERT_EQ(val, hval) << "hval " << +hval << " val " << +val;
-      }
-    }
-  }
-}
-
 TEST(Helpers, DISABLED_DoublePackKey) {
   {
     VID_t block_num = 5;
@@ -1209,14 +1108,12 @@ TEST(VertexAttr, MarkStatus) {
 TEST(VertexAttr, CopyOp) {
   auto v1 = new VertexAttr();
   auto v2 = new VertexAttr();
-  v1->value = 1;
   v1->vid = 1;
   v1->edge_state.reset();
   v1->handle = 1;
   ASSERT_NE(*v1, *v2);
   *v2 = *v1;
   ASSERT_EQ(*v1, *v2);             // same values
-  ASSERT_EQ(v1->value, v2->value); // check those values manually
   ASSERT_EQ(v1->vid, v2->vid);
   ASSERT_NE(v1->handle, v2->handle); // handles should never be copied
   ASSERT_EQ(v1->edge_state.field_, v2->edge_state.field_);
@@ -1466,7 +1363,6 @@ TEST(CheckGlobals, AllFifo) {
     ASSERT_TRUE(vertex->root());
     ASSERT_TRUE(vertex->surface());
 
-    // remove from this intervals heap
     auto msg_vertex = &(recut.local_fifo[0][0].front());
     recut.local_fifo[0][0].pop_front(); // remove it
 
@@ -1476,7 +1372,6 @@ TEST(CheckGlobals, AllFifo) {
     ASSERT_TRUE(msg_vertex->root());
     ASSERT_TRUE(msg_vertex->surface());
 
-    // remove from this intervals heap
     auto global_vertex = &(recut.global_fifo[0][0].front());
     recut.global_fifo[0][0].pop_front(); // remove it
 
@@ -1819,36 +1714,6 @@ TEST(Update, EachStageIteratively) {
                 auto stage = std::string{"prune"};
                 recut.activate_vids(root_vids, stage, recut.global_fifo);
                 recut.update(stage, recut.global_fifo);
-
-                // recover pruned vertices
-                // TODO recut_output_tree_prune.reserve(slt_pct * grid.image);
-
-                // map<VID_t, MyMarker *> tmp; // hash set
-                // for (int interval_id = 0; interval_id < grid.GetNIntervals();
-                //++interval_id) {
-                // for (int block_id = 0; block_id < grid.GetNBlocks();
-                // ++block_id) { while
-                // (!(heap_vec[interval_id][block_id].empty())) { const auto
-                // attr = safe_pop<local_heap, VertexAttr *>(
-                // heap_vec[interval_id][block_id], block_id, interval_id,
-                // stage); VID_t i, j, k; // get original i, j, k
-                // get_img_subscript(attr->vid, i, j, k); auto marker = new
-                // MyMarker(i, j, k); if (attr->root()) { marker->type = 0;
-                //}
-                // marker->radius = attr->radius;
-                // tmp[attr->vid] = marker; // save this marker ptr to a map
-                // std::cout << "added to temp vid " << attr->vid << '\n';
-                //}
-                //}
-                //}
-
-                // for (const auto marker : tmp) {
-                // adjust_parent(
-                //}
-                //// branch_parent
-
-                // recut.out.open("out.swc");
-                // recut.out.close();
 
                 recut.adjust_parent(false);
                 if (print_all) {
