@@ -11,3 +11,4 @@ result
 .envrc
 *.vdb
 *.swc
+perf*

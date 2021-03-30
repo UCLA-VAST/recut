@@ -221,8 +221,8 @@ public:
                                       Container &fifo);
   template <class Container, typename T, typename T2>
   void accumulate_prune(VID_t interval_id, VID_t dst_id, VID_t block_id,
-                        T current, T2 current_vid,
-                        bool current_unvisited, Container &fifo);
+                        T current, T2 current_vid, bool current_unvisited,
+                        Container &fifo);
   template <class Container, typename T>
   void accumulate_radius(VID_t interval_id, VID_t dst_id, VID_t block_id,
                          T current_radius, VID_t &revisits, int stride,
@@ -356,8 +356,8 @@ bool is_in_bounds(T i, T j, T k, T2 off, T2 end) {
 //
 template <class image_t>
 std::vector<VID_t>
-Recut<image_t>::process_marker_dir(vector<int> grid_offsets,
-                                   vector<int> grid_extents) {
+Recut<image_t>::process_marker_dir(const vector<int> grid_offsets,
+                                   const vector<int> grid_extents) {
   vector<VID_t> root_vids;
 
   if (params->marker_file_path().empty())
@@ -386,8 +386,7 @@ Recut<image_t>::process_marker_dir(vector<int> grid_offsets,
       y = root.y + 1;
       z = root.z + 1;
 
-      if (!(is_in_bounds(x, y, z, grid_offsets,
-                            grid_extents)))
+      if (!(is_in_bounds(x, y, z, grid_offsets, grid_extents)))
         continue;
       // adjust the vid according to the region of the image we are processing
       i = x - grid_offsets[0];
@@ -396,11 +395,12 @@ Recut<image_t>::process_marker_dir(vector<int> grid_offsets,
       auto vid = get_img_vid(i, j, k);
       root_vids.push_back(vid);
 
-#ifdef LOG_FULL
+#ifdef FULL_PRINT
       cout << "Read marker at x " << x << " y " << y << " z " << z
            << " adjust to subscripts, i " << i << " j " << j << " k " << k
            << " vid " << vid << '\n';
 #endif
+
     }
   }
   return root_vids;
@@ -901,9 +901,8 @@ void Recut<image_t>::set_parent_non_branch(const VID_t interval_id,
 template <class image_t>
 template <class Container, typename T, typename T2>
 void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
-                                      VID_t block_id, T current,
-                                      T2 current_vid, bool current_unvisited,
-                                      Container &fifo) {
+                                      VID_t block_id, T current, T2 current_vid,
+                                      bool current_unvisited, Container &fifo) {
 
 #ifdef DENSE
   auto dst = get_vertex_vid(interval_id, block_id, dst_id, nullptr);
@@ -1717,8 +1716,8 @@ void Recut<image_t>::update_neighbors(
           accumulate_radius(interval_id, dst_id, block_id, current_radius,
                             revisits, stride, pad_stride, fifo);
         } else if (stage == "prune") {
-          accumulate_prune(interval_id, dst_id, block_id, current,
-                           current_vid, current_unvisited, fifo);
+          accumulate_prune(interval_id, dst_id, block_id, current, current_vid,
+                           current_unvisited, fifo);
         } else if (stage == "value") {
           accumulate_value(tile, interval_id, dst_id, block_id, current,
                            revisits, tile_thresholds, found_adjacent_invalid);
@@ -3608,6 +3607,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
 
   // Deduce extents from the various input options
   std::vector<int> input_image_extents;
+  // auto get_input_image_extents = [this&]() {
   if (this->params->force_regenerate_image) {
     // for generated image runs trust the args->image_extents
     // to reflect the total global image domain
@@ -3615,7 +3615,8 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     input_image_extents = args->image_extents;
 
     // FIXME placeholder grid
-    this->topology_grid = create_vdb_grid(input_image_extents, this->params->background_thresh());
+    this->topology_grid =
+        create_vdb_grid(input_image_extents, this->params->background_thresh());
   } else if (this->input_is_vdb) {
 
     assertm(!params->convert_only_,
@@ -3637,30 +3638,6 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
 
     input_image_extents = get_grid_original_extents(topology_grid);
 
-    // read metadata
-    // auto active_voxel_dim = topology_grid->evalActiveVoxelDim();
-    // input_image_extents = {active_voxel_dim[0], active_voxel_dim[1],
-    // active_voxel_dim[2]};
-    // openvdb::Metadata::Ptr dims =
-    // topology_grid->metaValue<openvdb::Vec3S>("original_bounding_extents");
-
-    // openvdb::Metadata::Ptr metadata =
-    // topology_grid["original_bounding_extents"]; openvdb::Vec3S v =
-    // static_cast<openvdb::Vec3SMetadata&>(*metadata).value();
-
-    // input_image_extents[0] = dims[0];
-    // input_image_extents[1] = dims[1];
-    // input_image_extents[2] = dims[2];
-    // openvdb::Metadata::Ptr metadata = topology_grid["original_bounding_x"];
-    // input_image_extents[0] =
-    // static_cast<openvdb::FloatMetadata&>(*metadata).value();
-
-    // input_image_extents[0] =
-    // topology_grid->metaValue<float>("original_bounding_x");
-    // input_image_extents[1] =
-    // topology_grid->metaValue<float>("original_bounding_y");
-    // input_image_extents[2] =
-    // topology_grid->metaValue<float>("original_bounding_z");
   } else {
     // read from image use mcp3d library
 
@@ -3693,14 +3670,24 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     this->topology_grid = create_vdb_grid(input_image_extents);
   }
 
+  const auto check_input_offsets = [](auto offsets, auto extents) {
+    auto z = rng::views::zip(offsets, extents);
+    for (auto &&[first, second] : z) {
+      assertm(first < second, "input offset can not exceed dimension of image");
+    }
+  };
+
   // account and check requested args->image_offsets and args->image_extents
   // extents are always the side length of the domain on each dim, in x y z
   // order
-  this->image_offsets = args->image_offsets;
-  for (int i = 0; i < 3; i++) {
+  check_input_offsets(args->image_offsets, input_image_extents);
     // default image_offsets is {0, 0, 0}
     // which means start at the beginning of the image
     // this enforces the minimum extent to be 1 in each dim
+  // set and no longer refer to args->image_offsets
+  this->image_offsets = args->image_offsets;
+
+  for (int i = 0; i < 3; i++) {
     assertm(this->image_offsets[i] < input_image_extents[i],
             "input offset can not exceed dimension of image");
 
@@ -3742,9 +3729,13 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     this->interval_length_y = image_length_y;
     auto recommended_max_mem = GetAvailMem() / 64;
     // guess how many z-depth tiles will fit before a bad_alloc is likely
-    auto simultaneous_tiles = static_cast<double>(recommended_max_mem) / (sizeof(image_t) * image_length_x * image_length_y);
-    //assertm(simultaneous_tiles >= 1, "Tile x and y size too large to fit in system memory (DRAM)");
-    this->interval_length_z = std::min(simultaneous_tiles, static_cast<double>(image_length_z));
+    auto simultaneous_tiles =
+        static_cast<double>(recommended_max_mem) /
+        (sizeof(image_t) * image_length_x * image_length_y);
+    // assertm(simultaneous_tiles >= 1, "Tile x and y size too large to fit in
+    // system memory (DRAM)");
+    this->interval_length_z =
+        std::min(simultaneous_tiles, static_cast<double>(image_length_z));
   } else if (this->input_is_vdb) {
     this->interval_length_x = image_length_x;
     this->interval_length_y = image_length_y;
@@ -3897,7 +3888,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
       return {0}; // dummy root vid
     } else {
       // adds all valid markers to root_vids vector and returns
-      return process_marker_dir(this->image_offsets, this->image_extents);
+      return process_marker_dir(this->image_offsets, input_image_extents);
     }
   }
 }

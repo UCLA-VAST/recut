@@ -787,10 +787,6 @@ RecutCommandLineArgs get_args(int grid_size, int interval_size, int block_size,
   params.slt_pct = slt_pct;
   params.selected = img_vox_num * (slt_pct / (float)100);
   params.root_vid = get_central_vid(grid_size);
-  params.set_user_thread_count(1);
-#if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
-  params.set_user_thread_count(omp_get_max_threads());
-#endif
   std::vector<int> extents = {grid_size, grid_size, grid_size};
   args.set_image_extents(extents);
   args.set_image_offsets({0, 0, 0});
@@ -852,6 +848,10 @@ auto sub_to_str = [](auto subscripts) {
   sub_str << '[' << subscripts[0] << ',' << subscripts[1] << ','
           << subscripts[2] << "]";
   return sub_str.str();
+};
+
+const auto print_sub = [](auto subscripts) {
+  std::cout << sub_to_str(subscripts) << '\n';
 };
 
 auto sub_add = [](auto first, auto second) {
