@@ -70,20 +70,20 @@ public:
   // idx: index for example in looping variables
   //
   // Example:
-  // A 3D image has a dimension of image_length_x, image_length_y,
-  // image_length_z. Therefore image_size = image_length_x * image_length_y *
-  // image_length_z. If the program were keeping track of multiple images then
+  // A 3D image has a dimension of this->image_lengths[0], this->image_lengths[1],
+  // this->image_lengths[2]. Therefore image_size = this->image_lengths[0] * this->image_lengths[1] *
+  // this->image_lengths[2]. If the program were keeping track of multiple images then
   // the variable image_count would record that number
-  VID_t image_size, image_length_x, image_length_y, image_length_z,
-      image_length_xy, interval_block_len_x, interval_block_len_y,
+  VID_t image_size, interval_block_len_x, interval_block_len_y,
       interval_block_len_z, user_def_block_size, pad_block_length_x,
-      pad_block_length_y, pad_block_length_z, pad_block_offset, block_length_x,
-      block_length_y, block_length_z, interval_length_x, interval_length_y,
-      interval_length_z, grid_interval_length_x, grid_interval_length_y,
+      pad_block_length_y, pad_block_length_z, pad_block_offset, 
+      grid_interval_length_x, grid_interval_length_y,
       grid_interval_length_z, grid_interval_size, interval_block_size;
 
-  std::vector<int> image_extents = {0, 0, 0};
+  std::vector<int> image_lengths = {0, 0, 0};
   std::vector<int> image_offsets = {0, 0, 0};
+  std::vector<int> interval_lengths = {0, 0, 0};
+  std::vector<int> block_lengths = {0, 0, 0};
   std::ofstream out;
   image_t *generated_image = nullptr;
   bool mmap_;
@@ -215,7 +215,7 @@ public:
                         const TileThresholds<image_t> *tile_thresholds,
                         bool &found_adjacent_invalid,
                         VertexAttr &found_higher_parent, Container &fifo,
-                        bool &covered, T vdb_accessor,
+                        bool &covered, T vdb_accessor, current_coord,
                         bool current_outside_domain = false,
                         bool enqueue_dsts = false);
   template <class Container>
@@ -484,24 +484,24 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
   // these looping vars below are over the non-padded lengths of each interval
   VID_t i, j, k, xadjust, yadjust, zadjust;
   get_interval_subscript(interval_id, i, j, k);
-  xadjust = i * interval_length_x;
-  yadjust = j * interval_length_y;
-  zadjust = k * interval_length_z;
-  for (int zi = zadjust; zi < zadjust + interval_length_z; zi++) {
+  xadjust = i * this->interval_lengths[0];
+  yadjust = j * this->interval_lengths[1];
+  zadjust = k * this->interval_lengths[2];
+  for (int zi = zadjust; zi < zadjust + this->interval_lengths[2]; zi++) {
     cout << "Z=" << zi << '\n';
     cout << "  | ";
-    for (int xi = xadjust; xi < xadjust + interval_length_x; xi++) {
+    for (int xi = xadjust; xi < xadjust + this->interval_lengths[0]; xi++) {
       cout << xi << " ";
     }
     cout << '\n';
-    for (int xi = 0; xi < 2 * interval_length_y + 4; xi++) {
+    for (int xi = 0; xi < 2 * this->interval_lengths[1] + 4; xi++) {
       cout << "-";
     }
     cout << '\n';
-    for (int yi = yadjust; yi < yadjust + interval_length_y; yi++) {
+    for (int yi = yadjust; yi < yadjust + this->interval_lengths[1]; yi++) {
       cout << yi << " | ";
-      for (int xi = xadjust; xi < xadjust + interval_length_x; xi++) {
-        VID_t vid = ((VID_t)xi) + yi * image_length_x + zi * image_length_xy;
+      for (int xi = xadjust; xi < xadjust + this->interval_lengths[0]; xi++) {
+        auto vid = xi + static_cast<VID_t>(yi) * this->image_lengths[0] + static_cast<VID_t>(zi) * this->image_lengths[0] * this->image_lengths[1];
         auto block_id = get_block_id(vid);
         get_img_subscript(vid, i, j, k);
         assertm(xi == i, "i mismatch");
@@ -606,9 +606,9 @@ template <class image_t> VID_t Recut<image_t>::get_interval_id(VID_t vid) {
  */
 template <class image_t>
 VID_t Recut<image_t>::get_sub_to_interval_id(VID_t i, VID_t j, VID_t k) {
-  auto i_interval = i / interval_length_x;
-  auto j_interval = j / interval_length_y;
-  auto k_interval = k / interval_length_z;
+  auto i_interval = i / this->interval_lengths[0];
+  auto j_interval = j / this->interval_lengths[1];
+  auto k_interval = k / this->interval_lengths[2];
   auto interval_id =
       i_interval + j_interval * grid_interval_length_x +
       k_interval * grid_interval_length_x * grid_interval_length_y;
@@ -634,13 +634,13 @@ template <class image_t> VID_t Recut<image_t>::get_block_id(const VID_t vid) {
   i = j = k = 0;
   get_img_subscript(vid, i, j, k);
   // subtract away the interval influence on the block num
-  auto ia = i % interval_length_x;
-  auto ja = j % interval_length_y;
-  auto ka = k % interval_length_z;
+  auto ia = i % this->interval_lengths[0];
+  auto ja = j % this->interval_lengths[1];
+  auto ka = k % this->interval_lengths[2];
   // block in this interval
-  auto i_block = ia / block_length_x;
-  auto j_block = ja / block_length_y;
-  auto k_block = ka / block_length_z;
+  auto i_block = ia / this->block_lengths[0];
+  auto j_block = ja / this->block_lengths[1];
+  auto k_block = ka / this->block_lengths[2];
   return i_block + j_block * interval_block_len_x +
          k_block * interval_block_len_x * interval_block_len_y;
 }
@@ -665,7 +665,7 @@ template <class image_t>
 inline VID_t Recut<image_t>::get_interval_id_vert_sub(const VID_t i,
                                                       const VID_t j,
                                                       const VID_t k) {
-  return k * (interval_length_x * interval_length_y) + j * interval_length_x +
+  return k * (this->interval_lengths[0] * this->interval_lengths[1]) + j * this->interval_lengths[0] +
          i;
 }
 
@@ -703,9 +703,9 @@ image_t Recut<image_t>::get_img_val(const image_t *tile, VID_t vid) {
   i = j = k = 0;
   get_img_subscript(vid, i, j, k);
   // mod out any contributions from the interval
-  auto ia = i % interval_length_x;
-  auto ja = j % interval_length_y;
-  auto ka = k % interval_length_z;
+  auto ia = i % this->interval_lengths[0];
+  auto ja = j % this->interval_lengths[1];
+  auto ka = k % this->interval_lengths[2];
   auto interval_vid = get_interval_id_vert_sub(ia, ja, ka);
 #ifdef FULL_PRINT
   // cout<< "\ti: "<<i<<" j: "<<j <<" k: "<< k<< " dst vid: " << vid << '\n';
@@ -770,6 +770,8 @@ void Recut<image_t>::set_parent_non_branch(const VID_t interval_id,
     assertm(!(potential_new_parent->is_branch_point()),
             "can not assign child to a vertex with already 2 children unless "
             "it is a root");
+
+    auto parent_coord = vid_to_sub(potential_new_parent->vid, image_lengths);
     // new parent is guaranteed to not be a branch point now
     if (potential_new_parent->root()) {
       dst->set_parent(potential_new_parent->vid);
@@ -1119,12 +1121,12 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
   i = j = k = ii = jj = kk = 0;
   VID_t id = dst->vid;
   get_img_subscript(id, i, j, k);
-  ii = i % block_length_x;
-  jj = j % block_length_y;
-  kk = k % block_length_z;
-  iii = i % interval_length_x;
-  jjj = j % interval_length_y;
-  kkk = k % interval_length_z;
+  ii = i % this->block_lengths[0];
+  jj = j % this->block_lengths[1];
+  kk = k % this->block_lengths[2];
+  iii = i % this->interval_lengths[0];
+  jjj = j % this->interval_lengths[1];
+  kkk = k % this->interval_lengths[2];
 
   // check all 6 directions for possible ghost updates
   VID_t nb; // determine neighbor block
@@ -1178,11 +1180,11 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
     }
   }
 
-  if (kk == block_length_x - 1) {
-    if (k < image_length_z - 1) { // protect from image out of bounds
+  if (kk == this->block_lengths[0] - 1) {
+    if (k < this->image_lengths[2] - 1) { // protect from image out of bounds
       nb = block_id + interval_block_len_x * interval_block_len_y;
       nb_interval_id = interval_id; // defaults to current interval
-      if (kkk == interval_length_z - 1) {
+      if (kkk == this->interval_lengths[2] - 1) {
         nb_interval_id =
             interval_id + grid_interval_length_x * grid_interval_length_y;
         nb = get_block_id(iblock, jblock, 0);
@@ -1191,11 +1193,11 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
         place_vertex(nb_interval_id, block_id, nb, dst, stage);
     }
   }
-  if (jj == block_length_y - 1) {
-    if (j < image_length_y - 1) { // protect from image out of bounds
+  if (jj == this->block_lengths[1] - 1) {
+    if (j < this->image_lengths[1] - 1) { // protect from image out of bounds
       nb = block_id + interval_block_len_x;
       nb_interval_id = interval_id; // defaults to current interval
-      if (jjj == interval_length_y - 1) {
+      if (jjj == this->interval_lengths[1] - 1) {
         nb_interval_id = interval_id + grid_interval_length_x;
         nb = get_block_id(iblock, 0, kblock);
       }
@@ -1203,11 +1205,11 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
         place_vertex(nb_interval_id, block_id, nb, dst, stage);
     }
   }
-  if (ii == block_length_z - 1) {
-    if (i < image_length_x - 1) { // protect from image out of bounds
+  if (ii == this->block_lengths[2] - 1) {
+    if (i < this->image_lengths[0] - 1) { // protect from image out of bounds
       nb = block_id + 1;
       nb_interval_id = interval_id; // defaults to current interval
-      if (iii == interval_length_x - 1) {
+      if (iii == this->interval_lengths[0] - 1) {
         nb_interval_id = interval_id + 1;
         nb = get_block_id(0, jblock, kblock);
       }
@@ -1226,12 +1228,12 @@ template <class image_t>
 int Recut<image_t>::get_parent_code(VID_t dst_id, VID_t src_id) {
   auto src_gr = src_id > dst_id ? true : false; // current greater
   auto adiff = absdiff(dst_id, src_id);
-  if ((adiff % image_length_xy) == 0) {
+  if ((adiff % image_lengths[0] * image_lengths[1]) == 0) {
     if (src_gr)
       return 5;
     else
       return 4;
-  } else if ((adiff % image_length_x) == 0) {
+  } else if ((adiff % this->image_lengths[0]) == 0) {
     if (src_gr)
       return 3;
     else
@@ -1292,7 +1294,7 @@ void Recut<image_t>::update_neighbors(
   int x, y, z;
   bool dst_outside_domain;
   int stride, pad_stride;
-  int z_stride = this->block_length_x * this->block_length_y;
+  int z_stride = this->this->block_lengths[0] * this->this->block_lengths[1];
   int z_pad_stride = this->pad_block_length_x * this->pad_block_length_y;
 
   // save current params before it possibly becomes undefined by iterator
@@ -1303,19 +1305,19 @@ void Recut<image_t>::update_neighbors(
 
   for (int kk = -1; kk <= 1; kk++) {
     z = ((int)k) + kk;
-    if (z < 0 || z >= image_length_z) {
+    if (z < 0 || z >= this->image_lengths[2]) {
       found_adjacent_invalid = true;
       continue;
     }
     for (int jj = -1; jj <= 1; jj++) {
       y = ((int)j) + jj;
-      if (y < 0 || y >= image_length_y) {
+      if (y < 0 || y >= this->image_lengths[1]) {
         found_adjacent_invalid = true;
         continue;
       }
       for (int ii = -1; ii <= 1; ii++) {
         x = ((int)i) + ii;
-        if (x < 0 || x >= image_length_x) {
+        if (x < 0 || x >= this->image_lengths[0]) {
           found_adjacent_invalid = true;
           continue;
         }
@@ -1390,7 +1392,7 @@ void Recut<image_t>::update_neighbors(
 
         // note although this is summed only one of ii,jj,kk
         // will be not equal to 0
-        stride = ii + jj * this->block_length_x + kk * z_stride;
+        stride = ii + jj * this->this->block_lengths[0] + kk * z_stride;
         pad_stride = ii + jj * this->pad_block_length_x + kk * z_pad_stride;
 #ifdef FULL_PRINT
         cout << "x " << x << " y " << y << " z " << z << " dst_id " << dst_id
@@ -1746,8 +1748,6 @@ void Recut<image_t>::connected_tile(
 #ifdef FULL_PRINT
       std::cout << "found surface vertex " << interval_id << " " << block_id
                 << " " << current->vid << " label " << current->label() << '\n';
-      // std::cout << "check_interval_id " << check_interval_id
-      //<< " check_block_id " << check_block_id << '\n';
 #endif
       current->mark_surface();
 
@@ -1758,13 +1758,6 @@ void Recut<image_t>::connected_tile(
         fifo.push_back(*current);
         assertm(current->selected() || current->root(), "must be selected");
 
-        auto test = get_active_vertex(interval_id, block_id, current->vid);
-        if (!(test->surface())) {
-          std::cout << current->description();
-          std::cout << test->description();
-          dump_buffer(this->active_vertices);
-        }
-        assertm(test->surface(), "recovered vertex wasn't marked as surface");
 #ifdef DENSE
         // ghost regions in the DENSE case have shared copies of ghost regions
         // so they would need to know about any changes to vertex state
@@ -1881,10 +1874,11 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
     visited += 1;
 #endif
 
+    auto current_coord = vid_to_sub(current->vid);
     // Parent
     // by default current will have a root of itself
     if (current->root()) {
-      current->set_parent(current->vid);
+      current->set_parent(current_coord);
       current->prune_visit();
     }
 
@@ -1971,18 +1965,18 @@ void Recut<image_t>::get_interval_offsets(const VID_t interval_id,
   vector<int> subs = {static_cast<int>(i), static_cast<int>(j),
                       static_cast<int>(k)};
   interval_offsets = {0, 0, 0};
-  interval_extents = {static_cast<int>(interval_length_x),
-                      static_cast<int>(interval_length_y),
-                      static_cast<int>(interval_length_z)};
+  interval_extents = {static_cast<int>(this->interval_lengths[0]),
+                      static_cast<int>(this->interval_lengths[1]),
+                      static_cast<int>(this->interval_lengths[2])};
   // increment the offset location to extract
   interval_offsets[0] += this->image_offsets[0];
   interval_offsets[1] += this->image_offsets[1];
   interval_offsets[2] += this->image_offsets[2];
-  vector<int> szs = {(int)image_length_x, (int)image_length_y,
-                     (int)image_length_z};
-  std::vector<int> interval_lengths = {static_cast<int>(interval_length_x),
-                                       static_cast<int>(interval_length_y),
-                                       static_cast<int>(interval_length_z)};
+  vector<int> szs = {(int)this->image_lengths[0], (int)this->image_lengths[1],
+                     (int)this->image_lengths[2]};
+  std::vector<int> interval_lengths = {static_cast<int>(this->interval_lengths[0]),
+                                       static_cast<int>(this->interval_lengths[1]),
+                                       static_cast<int>(this->interval_lengths[2])};
   // don't constrain the extents to actual image
   // mcp3d pads with zero if requests go beyond memory
   // global command line extents have already been factored
@@ -2426,8 +2420,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   assertm(this->topology_grid, "topology grid not initialized");
   auto vdb_const_accessor = this->topology_grid->getConstAccessor();
   auto vdb_accessor = this->topology_grid->getAccessor();
-  // print_vdb(vdb_accessor, {image_length_x, image_length_y,
-  // image_length_y});
+  // print_vdb(vdb_accessor, {this->image_lengths[0], this->image_lengths[1],
+  // this->image_lengths[1]});
   //}
 #endif
 
@@ -2570,7 +2564,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           vector<int> buffer_offsets =
               params->force_regenerate_image ? interval_offsets : no_offsets;
           vector<int> buffer_extents = params->force_regenerate_image
-                                           ? this->image_extents
+                                           ? this->image_lengths
                                            : interval_extents;
 
           convert_buffer_to_vdb(tile, vdb_accessor, buffer_extents,
@@ -2635,7 +2629,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 template <class image_t>
 inline VID_t Recut<image_t>::get_img_vid(const VID_t i, const VID_t j,
                                          const VID_t k) {
-  return k * image_length_xy + j * image_length_x + i;
+  return k * this->image_lengths[0] * this->image_lengths[1] + j * this->image_lengths[0] + i;
 }
 
 /*
@@ -2668,9 +2662,9 @@ inline VID_t Recut<image_t>::get_block_id(const VID_t iblock,
 template <class image_t>
 inline void Recut<image_t>::get_img_subscript(const VID_t id, VID_t &i,
                                               VID_t &j, VID_t &k) {
-  i = id % image_length_x;
-  j = (id / image_length_x) % image_length_y;
-  k = (id / image_length_xy) % image_length_z;
+  i = id % this->image_lengths[0];
+  j = (id / this->image_lengths[0]) % this->image_lengths[1];
+  k = (id / this->image_lengths[0] * this->image_lengths[1]) % this->image_lengths[2];
 }
 
 // Wrap-around rotate all values forward one
@@ -2856,10 +2850,10 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   std::vector<int> input_image_extents;
   // auto get_input_image_extents = [this&]() {
   if (this->params->force_regenerate_image) {
-    // for generated image runs trust the args->image_extents
+    // for generated image runs trust the args->image_lengths
     // to reflect the total global image domain
     // see get_args() in utils.hpp
-    input_image_extents = args->image_extents;
+    input_image_extents = args->image_lengths;
 
     // FIXME placeholder grid
     this->topology_grid =
@@ -2924,7 +2918,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     }
   };
 
-  // account and check requested args->image_offsets and args->image_extents
+  // account and check requested args->image_offsets and args->image_lengths
   // extents are always the side length of the domain on each dim, in x y z
   // order
   check_input_offsets(args->image_offsets, input_image_extents);
@@ -2942,27 +2936,27 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     // domain of full image
     auto max_extent = input_image_extents[i] - this->image_offsets[i];
 
-    if (args->image_extents[i]) {
+    if (args->image_lengths[i]) {
       // use the input extent if possible, or maximum otherwise
-      this->image_extents[i] = min(args->image_extents[i], max_extent);
+      this->image_lengths[i] = min(args->image_lengths[i], max_extent);
     } else {
-      // image_extents is set to grid_size for force_regenerate_image option,
+      // image_lengths is set to grid_size for force_regenerate_image option,
       // otherwise 0,0,0 means use to the end of input image
-      this->image_extents[i] = max_extent;
+      this->image_lengths[i] = max_extent;
       // extents are now sanitized in each dimension
       // and protected from faulty offset values
     }
+  }
+
+  auto coord_prod = [](const auto coord) -> VID_t {
+    static_cast<VID_t>(coord[0]) * coord[1] * coord[2];
   }
 
   // save to globals the actual size of the full image
   // accounting for the input offsets and extents
   // these will be used throughout the rest of the program
   // for convenience
-  this->image_length_x = this->image_extents[0];
-  this->image_length_y = this->image_extents[1];
-  this->image_length_z = this->image_extents[2];
-  this->image_length_xy = image_length_x * image_length_y;
-  this->image_size = image_length_x * image_length_y * image_length_z;
+  this->image_size = coord_prod(this->image_lengths);
 
   // Determine the size of each interval in each dim
   // the image size and offsets override the user inputted interval size
@@ -2972,62 +2966,62 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     // images are saved in separate z-planes, so conversion should respect
     // that for best performance constrict so less data is allocated
     // especially in z dimension
-    this->interval_length_x = image_length_x;
-    this->interval_length_y = image_length_y;
+    this->this->interval_lengths[0] = this->image_lengths[0];
+    this->this->interval_lengths[1] = this->image_lengths[1];
     auto recommended_max_mem = GetAvailMem() / 64;
     // guess how many z-depth tiles will fit before a bad_alloc is likely
     auto simultaneous_tiles =
         static_cast<double>(recommended_max_mem) /
-        (sizeof(image_t) * image_length_x * image_length_y);
+        (sizeof(image_t) * this->image_lengths[0] * this->image_lengths[1]);
     // assertm(simultaneous_tiles >= 1, "Tile x and y size too large to fit in
     // system memory (DRAM)");
-    this->interval_length_z =
-        std::min(simultaneous_tiles, static_cast<double>(image_length_z));
+    this->this->interval_lengths[2] =
+        std::min(simultaneous_tiles, static_cast<double>(this->image_lengths[2]));
   } else if (this->input_is_vdb) {
-    this->interval_length_x = image_length_x;
-    this->interval_length_y = image_length_y;
-    this->interval_length_z = image_length_z;
+    this->this->interval_lengths[0] = this->image_lengths[0];
+    this->this->interval_lengths[1] = this->image_lengths[1];
+    this->this->interval_lengths[2] = this->image_lengths[2];
   } else {
-    this->interval_length_x =
-        min((VID_t)params->interval_size(), image_length_x);
-    this->interval_length_y =
-        min((VID_t)params->interval_size(), image_length_y);
-    this->interval_length_z =
-        min((VID_t)params->interval_size(), image_length_z);
+    this->this->interval_lengths[0] =
+        min((VID_t)params->interval_size(), this->image_lengths[0]);
+    this->this->interval_lengths[1] =
+        min((VID_t)params->interval_size(), this->image_lengths[1]);
+    this->this->interval_lengths[2] =
+        min((VID_t)params->interval_size(), this->image_lengths[2]);
   }
 
   // determine the length of intervals in each dim
   // rounding up (ceil)
   grid_interval_length_x =
-      (image_length_x + interval_length_x - 1) / interval_length_x;
+      (this->image_lengths[0] + this->interval_lengths[0] - 1) / this->interval_lengths[0];
   grid_interval_length_y =
-      (image_length_y + interval_length_y - 1) / interval_length_y;
+      (this->image_lengths[1] + this->interval_lengths[1] - 1) / this->interval_lengths[1];
   grid_interval_length_z =
-      (image_length_z + interval_length_z - 1) / interval_length_z;
+      (this->image_lengths[2] + this->interval_lengths[2] - 1) / this->interval_lengths[2];
 
   // the resulting interval size override the user inputted block size
   if (this->params->convert_only_) {
-    block_length_x = interval_length_x;
-    block_length_y = interval_length_y;
-    block_length_z = interval_length_z;
+    this->block_lengths[0] = this->interval_lengths[0];
+    this->block_lengths[1] = this->interval_lengths[1];
+    this->block_lengths[2] = this->interval_lengths[2];
   } else {
-    block_length_x = min(interval_length_x, user_def_block_size);
-    block_length_y = min(interval_length_y, user_def_block_size);
-    block_length_z = min(interval_length_z, user_def_block_size);
+    this->block_lengths[0] = min(this->interval_lengths[0], user_def_block_size);
+    this->block_lengths[1] = min(this->interval_lengths[1], user_def_block_size);
+    this->block_lengths[2] = min(this->interval_lengths[2], user_def_block_size);
   }
 
   // determine length of blocks that span an interval for each dim
   // this rounds up
   interval_block_len_x =
-      (interval_length_x + block_length_x - 1) / block_length_x;
+      (this->interval_lengths[0] + this->block_lengths[0] - 1) / this->block_lengths[0];
   interval_block_len_y =
-      (interval_length_y + block_length_y - 1) / block_length_y;
+      (this->interval_lengths[1] + this->block_lengths[1] - 1) / this->block_lengths[1];
   interval_block_len_z =
-      (interval_length_z + block_length_z - 1) / block_length_z;
+      (this->interval_lengths[2] + this->block_lengths[2] - 1) / this->block_lengths[2];
 
-  auto image_x_len_pad = interval_block_len_x * block_length_x;
-  auto image_y_len_pad = interval_block_len_y * block_length_y;
-  auto image_z_len_pad = interval_block_len_z * block_length_z;
+  auto image_x_len_pad = interval_block_len_x * this->block_lengths[0];
+  auto image_y_len_pad = interval_block_len_y * this->block_lengths[1];
+  auto image_z_len_pad = interval_block_len_z * this->block_lengths[2];
   auto image_xy_len_pad =
       image_x_len_pad * image_y_len_pad; // saves recomputation occasionally
 
@@ -3035,23 +3029,20 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
       grid_interval_length_x * grid_interval_length_y * grid_interval_length_z;
   this->interval_block_size =
       interval_block_len_x * interval_block_len_y * interval_block_len_z;
-  pad_block_length_x = block_length_x + 2;
-  pad_block_length_y = block_length_y + 2;
-  pad_block_length_z = block_length_z + 2;
+  pad_block_length_x = this->block_lengths[0] + 2;
+  pad_block_length_y = this->block_lengths[1] + 2;
+  pad_block_length_z = this->block_lengths[2] + 2;
   pad_block_offset =
       pad_block_length_x * pad_block_length_y * pad_block_length_z;
   const VID_t grid_vertex_pad_size =
       pad_block_offset * interval_block_size * grid_interval_size;
 
 #ifdef LOG
-  cout << "block x, y, z size: " << block_length_x << ", " << block_length_y
-       << ", " << block_length_z << " interval x, y, z size "
-       << interval_length_x << ", " << interval_length_y << ", "
-       << interval_length_z << " intervals: " << grid_interval_size
+  print_sub(this->image_lengths, "image");
+  print_sub(this->interval_lengths, "interval");
+  print_sub(this->block_lengths, "block");
+  std::cout << "total intervals: " << grid_interval_size
        << " blocks per interval: " << interval_block_size << '\n';
-  cout << "image_length_x: " << image_length_x
-       << " image_length_y: " << image_length_y
-       << " image_length_z: " << image_length_z << '\n';
   cout << "interval_block_len_x: " << interval_block_len_x
        << " interval_block_len_y: " << interval_block_len_y
        << " interval_block_len_z: " << interval_block_len_z << '\n';
@@ -3114,12 +3105,12 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     // of the image, currently assuming all test images
     // are cubes
     // sets all to 0 for tcase 4 and 5
-    assertm(this->image_length_y == this->image_length_z,
+    assertm(this->image_lengths[1] == this->image_lengths[2],
             "change create_image implementation to support non-cube images");
-    assertm(this->image_length_x == this->image_length_y,
+    assertm(this->image_lengths[0] == this->image_lengths[1],
             "change create_image implementation to support non-cube images");
     auto selected = create_image(this->params->tcase, this->generated_image,
-                                 this->image_length_x, this->params->selected,
+                                 this->image_lengths[0], this->params->selected,
                                  this->params->root_vid);
     if (this->params->tcase == 3 || this->params->tcase == 5) {
       // only tcase 3 and 5 doens't have a total select count not known
@@ -3182,14 +3173,14 @@ Recut<image_t>::get_vertex_vid(const VID_t interval_id, const VID_t block_id,
   get_img_subscript(img_vid, i, j, k);
   // in case interval_length isn't evenly divisible by block size
   // mod out any contributions from the interval
-  auto ia = i % interval_length_x;
-  auto ja = j % interval_length_y;
-  auto ka = k % interval_length_z;
+  auto ia = i % this->interval_lengths[0];
+  auto ja = j % this->interval_lengths[1];
+  auto ka = k % this->interval_lengths[2];
   // these are subscripts within the non-padded block domain
   // these values will be modified by rotate_index to account for padding
-  img_block_i = ia % block_length_x;
-  img_block_j = ja % block_length_y;
-  img_block_k = ka % block_length_z;
+  img_block_i = ia % this->block_lengths[0];
+  img_block_j = ja % this->block_lengths[1];
+  img_block_k = ka % this->block_lengths[2];
   // cout << "\timg vid: " << img_vid << " img_block_i " << img_block_i
   //<< " img_block_j " << img_block_j << " img_block_k " << img_block_k<<'\n';
 
@@ -3224,11 +3215,11 @@ Recut<image_t>::get_vertex_vid(const VID_t interval_id, const VID_t block_id,
               "ghost "
               "regions greater that 1");
       pad_img_block_i = rotate_index(img_block_i, iblock, nb_iblock,
-                                     block_length_x, pad_block_length_x);
+                                     this->block_lengths[0], pad_block_length_x);
       pad_img_block_j = rotate_index(img_block_j, jblock, nb_jblock,
-                                     block_length_y, pad_block_length_y);
+                                     this->block_lengths[1], pad_block_length_y);
       pad_img_block_k = rotate_index(img_block_k, kblock, nb_kblock,
-                                     block_length_z, pad_block_length_z);
+                                     this->block_lengths[2], pad_block_length_z);
     }
   } else { // ignore block info, adjust based on interval
     // the interval_id is also linear index into the 3D row-wise arrangement
@@ -3275,11 +3266,11 @@ Recut<image_t>::get_vertex_vid(const VID_t interval_id, const VID_t block_id,
 #endif
     // checked by rotate that subscript is 1 away
     pad_img_block_i = rotate_index(img_block_i, iinterval, nb_iinterval,
-                                   block_length_x, pad_block_length_x);
+                                   this->block_lengths[0], pad_block_length_x);
     pad_img_block_j = rotate_index(img_block_j, jinterval, nb_jinterval,
-                                   block_length_y, pad_block_length_y);
+                                   this->block_lengths[1], pad_block_length_y);
     pad_img_block_k = rotate_index(img_block_k, kinterval, nb_kinterval,
-                                   block_length_z, pad_block_length_z);
+                                   this->block_lengths[2], pad_block_length_z);
   }
 
   // offset with respect to the padded block

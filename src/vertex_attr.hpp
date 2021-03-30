@@ -55,35 +55,41 @@ struct bitfield {
   bitfield(uint8_t field) : field_(field) {}
 };
 
+#ifdef USE_OPENVDB
+  using CoordType = openvdb::Vec3<uint8_t>;
+#else
+  using CoordType = uint8_t[3];
+#endif
+
 struct VertexAttr {
   VID_t vid; // 4 bytes or 8 bytes depending on environment VID variable
-  VID_t parent;
-  struct bitfield
-      edge_state; // most sig. bits (little-endian) refer to state : 1 bytes
+  CoordType parent;
   uint8_t radius = std::numeric_limits<uint8_t>::max();
+// most sig. bits (little-endian) refer to state : 1 bytes
+  struct bitfield edge_state; 
 
   // constructors
   // defaults as 192 i.e. 1100 0000 unvisited with no connections
   VertexAttr()
       : edge_state(192), 
         vid(numeric_limits<VID_t>::max()),
-        radius(numeric_limits<uint8_t>::max()) ,
-        parent(numeric_limits<VID_t>::max()) {}
+        radius(numeric_limits<uint8_t>::max()) 
+         {}
 
   VertexAttr(VID_t vid)
       : edge_state(192), vid(vid),
         radius(numeric_limits<uint8_t>::max()),
-        parent(numeric_limits<VID_t>::max()) {}
+         {}
 
   // copy constructor
   VertexAttr(const VertexAttr &a)
       : edge_state(a.edge_state), vid(a.vid), radius(a.radius), parent(a.parent) {
   }
 
-  VertexAttr(uint8_t edge_state, VID_t vid, VID_t parent)
+  VertexAttr(uint8_t edge_state, VID_t vid, CoordType parent)
       : edge_state(edge_state), vid(vid), parent(parent) {}
 
-  VertexAttr(struct bitfield edge_state, VID_t vid, uint8_t radius, VID_t parent)
+  VertexAttr(struct bitfield edge_state, VID_t vid, uint8_t radius, CoordType parent)
       : edge_state(edge_state), vid(vid), radius(radius), parent(parent) {}
 
   bool root() const {
@@ -95,11 +101,11 @@ struct VertexAttr {
     std::string descript = "vid:" + std::to_string(vid);
     descript += '\n';
     descript += "parent vid:";
-    auto parent_vid = std::string("-");
+    auto parent_str = std::string("-");
     if (valid_parent()) {
-      parent_vid = std::to_string(parent);
+      parent_str = parent.str();
     }
-    descript += parent_vid;
+    descript += parent_str;
     descript += '\n';
     descript += '\n';
     descript += "state:";
@@ -116,7 +122,7 @@ struct VertexAttr {
 
   /* returns whether this vertex has been added to a heap
    */
-  bool valid_parent() const { return parent != numeric_limits<VID_t>::max(); }
+  bool valid_parent() const { return ! parent.isZero(); }
 
   /* returns whether this vertex has had its radius updated from the default max
    */
@@ -149,8 +155,10 @@ struct VertexAttr {
     return edge_state.test(4);
   }
 
-  void set_parent(VID_t vid) {
-    this->parent = vid;
+  void set_parent(auto coord) {
+    this->parent[0] = coord[0];
+    this->parent[1] = coord[1];
+    this->parent[2] = coord[2];
   }
 
   // unsets any previous marked connect

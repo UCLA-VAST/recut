@@ -836,7 +836,7 @@ auto sub_to_vid = [](auto xyz, auto extents) {
 };
 
 auto vid_to_sub = [](auto id, auto extents) {
-  std::vector<VID_t> subscripts(3);
+  std::vector<int> subscripts(3);
   subscripts[0] = id % extents[0];
   subscripts[1] = (id / extents[0]) % extents[1];
   subscripts[2] = (id / (extents[0] * extents[1])) % extents[3];
@@ -850,7 +850,10 @@ auto sub_to_str = [](auto subscripts) {
   return sub_str.str();
 };
 
-const auto print_sub = [](auto subscripts) {
+const auto print_sub = [](auto subscripts, std::string name="") {
+  if (! name.empty()) {
+    std::cout << name << ": ";
+  }
   std::cout << sub_to_str(subscripts) << '\n';
 };
 
