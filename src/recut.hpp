@@ -3694,7 +3694,7 @@ void Recut<image_t>::brute_force_extract(vector<vertex_t> &outtree,
           outtree.push_back(marker);
         } else {
           // check that all copied across blocks and intervals of a
-          // single vertex all match same values other than handle
+          // single vertex all match same values 
           // FIXME this needs to be moved to recut_test.cpp
           // auto previous_match = vid_to_marker_ptr[vertex->vid];
           // assert(*previous_match == *vertex);
@@ -3708,7 +3708,7 @@ void Recut<image_t>::brute_force_extract(vector<vertex_t> &outtree,
     if (filter_by_vid(vid, interval_id, block_id)) {
       auto vertex = get_vertex_vid(interval_id, block_id, vid, nullptr);
       if (filter_by_label(vertex, accept_band)) {
-        // different copies have same values other than handle
+        // different copies have same values 
         if (!(vertex->valid_parent()) && !(vertex->root())) {
           std::cout << "could not find a valid connection for non-root node: "
                     << vertex->description() << '\n';
@@ -3871,7 +3871,7 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
         if (filter_by_label(vertex, accept_band)) {
           // don't create redundant copies of same vid
           // check that all copied across blocks and intervals of a
-          // single vertex all match same values other than handle
+          // single vertex all match same values 
           // FIXME this needs to be moved to recut_test.cpp
           // auto previous_match = vid_to_marker_ptr[vertex->vid];
           // assert(*previous_match == *vertex);

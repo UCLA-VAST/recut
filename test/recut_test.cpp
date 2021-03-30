@@ -451,7 +451,6 @@ TEST(Install, DISABLED_CreateIntervalBase) {
         auto v = ptr[i];
         v.edge_state = 192;
         v.vid = numeric_limits<VID_t>::max();
-        v.handle = numeric_limits<VID_t>::max();
         // cout << i << endl << v.description() << endl;
       }
 
@@ -463,7 +462,6 @@ TEST(Install, DISABLED_CreateIntervalBase) {
       cout << v->description() << endl;
       v->edge_state = 192;
       v->vid = numeric_limits<VID_t>::max();
-      v->handle = numeric_limits<VID_t>::max();
       for (VID_t i = 0; i < nvid; i++) {
         // write struct to file
         ofile.write((char *)v, sizeof(VertexAttr));
@@ -1110,12 +1108,10 @@ TEST(VertexAttr, CopyOp) {
   auto v2 = new VertexAttr();
   v1->vid = 1;
   v1->edge_state.reset();
-  v1->handle = 1;
   ASSERT_NE(*v1, *v2);
   *v2 = *v1;
   ASSERT_EQ(*v1, *v2);             // same values
   ASSERT_EQ(v1->vid, v2->vid);
-  ASSERT_NE(v1->handle, v2->handle); // handles should never be copied
   ASSERT_EQ(v1->edge_state.field_, v2->edge_state.field_);
   ASSERT_NE(v1, v2); // make sure they not just the same obj
 }

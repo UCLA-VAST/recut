@@ -55,15 +55,8 @@ struct bitfield {
   bitfield(uint8_t field) : field_(field) {}
 };
 
-typedef VID_t handle_t; // FIXME switch to from VID_t
-
 struct VertexAttr {
   VID_t vid; // 4 bytes or 8 bytes depending on environment VID variable
-  // heap implementation
-  // stores block id to handle id in that thread blocks heap
-  // size of this map is max 4 since a corner voxel can it at most
-  // 3 other blocks ghost zones
-  handle_t handle; // same type as VID_t
   VID_t parent;
   struct bitfield
       edge_state; // most sig. bits (little-endian) refer to state : 1 bytes
@@ -74,13 +67,11 @@ struct VertexAttr {
   VertexAttr()
       : edge_state(192), 
         vid(numeric_limits<VID_t>::max()),
-        handle(numeric_limits<handle_t>::max()),
         radius(numeric_limits<uint8_t>::max()) ,
         parent(numeric_limits<VID_t>::max()) {}
 
   VertexAttr(VID_t vid)
       : edge_state(192), vid(vid),
-        handle(numeric_limits<handle_t>::max()),
         radius(numeric_limits<uint8_t>::max()),
         parent(numeric_limits<VID_t>::max()) {}
 
@@ -126,10 +117,6 @@ struct VertexAttr {
   /* returns whether this vertex has been added to a heap
    */
   bool valid_parent() const { return parent != numeric_limits<VID_t>::max(); }
-
-  /* returns whether this vertex has been added to a heap
-   */
-  bool valid_handle() const { return (handle != numeric_limits<handle_t>::max()); }
 
   /* returns whether this vertex has had its radius updated from the default max
    */
@@ -203,7 +190,6 @@ struct VertexAttr {
     vid = a.vid;
     radius = a.radius;
     parent = a.parent;
-    // do not copy handle_t
     return *this;
   }
 
