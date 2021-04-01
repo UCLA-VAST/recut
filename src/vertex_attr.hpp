@@ -55,15 +55,9 @@ struct bitfield {
   bitfield(uint8_t field) : field_(field) {}
 };
 
-#ifdef USE_OPENVDB
-  using CoordType = openvdb::Vec3<uint8_t>;
-#else
-  using CoordType = uint8_t[3];
-#endif
-
 struct VertexAttr {
-  VID_t vid; // 4 bytes or 8 bytes depending on environment VID variable
-  CoordType parent;
+  OffsetCoord offsets;
+  OffsetCoord parent;
   uint8_t radius = std::numeric_limits<uint8_t>::max();
 // most sig. bits (little-endian) refer to state : 1 bytes
   struct bitfield edge_state; 
@@ -72,25 +66,16 @@ struct VertexAttr {
   // defaults as 192 i.e. 1100 0000 unvisited with no connections
   VertexAttr()
       : edge_state(192), 
-        vid(numeric_limits<VID_t>::max()),
         radius(numeric_limits<uint8_t>::max()) 
-         {}
-
-  VertexAttr(VID_t vid)
-      : edge_state(192), vid(vid),
-        radius(numeric_limits<uint8_t>::max()),
          {}
 
   // copy constructor
   VertexAttr(const VertexAttr &a)
-      : edge_state(a.edge_state), vid(a.vid), radius(a.radius), parent(a.parent) {
+      : edge_state(a.edge_state), offsets(a.offsets), radius(a.radius), parent(a.parent) {
   }
 
-  VertexAttr(uint8_t edge_state, VID_t vid, CoordType parent)
-      : edge_state(edge_state), vid(vid), parent(parent) {}
-
-  VertexAttr(struct bitfield edge_state, VID_t vid, uint8_t radius, CoordType parent)
-      : edge_state(edge_state), vid(vid), radius(radius), parent(parent) {}
+  VertexAttr(uint8_t edge_state, OffsetCoord offsets, OffsetCoord parent)
+      : edge_state(edge_state), offsets(offsets), parent(parent) {}
 
   bool root() const {
     return (!edge_state.test(7) && !edge_state.test(6)); // 00XX XXXX ROOT
@@ -98,12 +83,12 @@ struct VertexAttr {
 
   // you can pipe the output directly to std::cout
   std::string description() const {
-    std::string descript = "vid:" + std::to_string(vid);
+    std::string descript = "offsets:" + coord_to_str(offsets);
     descript += '\n';
-    descript += "parent vid:";
+    descript += "parent offsets:";
     auto parent_str = std::string("-");
     if (valid_parent()) {
-      parent_str = parent.str();
+      parent_str = coord_to_str(parent);
     }
     descript += parent_str;
     descript += '\n';
@@ -122,20 +107,17 @@ struct VertexAttr {
 
   /* returns whether this vertex has been added to a heap
    */
-  bool valid_parent() const { return ! parent.isZero(); }
+  bool valid_parent() const { 
+    return parent[0] || parent[1] || parent[2];
+  }
 
   /* returns whether this vertex has had its radius updated from the default max
    */
   bool valid_radius() const { return radius != numeric_limits<uint8_t>::max(); }
 
-  /* returns whether this vertex has been added to a heap
+  /* returns whether this vertex has had its radius updated from the default max
    */
-  bool valid_vid() const { 
-    //std::cout << "valid vid\n";
-    //std::cout << vid << '\n';
-    //std::cout << numeric_limits<VID_t>::max() << '\n';
-    //std::cout << "valid ? " << (vid != numeric_limits<VID_t>::max()) << '\n';
-    return (vid != numeric_limits<VID_t>::max()); }
+  bool valid_vid() const { return true; }
 
   bool selected() const {
     return (edge_state.test(7) && !edge_state.test(6)); // 10XX XXXX KNOWN NEW
@@ -155,7 +137,7 @@ struct VertexAttr {
     return edge_state.test(4);
   }
 
-  void set_parent(auto coord) {
+  void set_parent(OffsetCoord coord) {
     this->parent[0] = coord[0];
     this->parent[1] = coord[1];
     this->parent[2] = coord[2];
@@ -188,27 +170,27 @@ struct VertexAttr {
   }
 
   friend std::ostream &operator<<(std::ostream &os, const VertexAttr &v) {
-    os << "{vid: " << v.vid 
+    os << "{offsets: " << coord_to_str(v.offsets )
        << ", radius: " << +(v.radius) << ", label: " << v.label() << '}';
     return os;
   }
 
   VertexAttr &operator=(const VertexAttr &a) {
     edge_state.field_ = a.edge_state.field_;
-    vid = a.vid;
+    offsets = a.offsets;
     radius = a.radius;
     parent = a.parent;
     return *this;
   }
 
   bool operator==(const VertexAttr &a) const {
-    return (vid == a.vid) &&
+    return (offsets == a.offsets) &&
            (edge_state.field_ == a.edge_state.field_) && (radius == a.radius)
            && (parent == a.parent);
   }
 
   bool operator!=(const VertexAttr &a) const {
-    return (vid != a.vid) ||
+    return (offsets != a.offsets) ||
            (edge_state.field_ != a.edge_state.field_) || (radius != a.radius)
            || (parent != a.parent);
   }
@@ -269,20 +251,10 @@ struct VertexAttr {
     edge_state.unset(6);
   }
 
-  void mark_root(VID_t set_vid) {
-    this->mark_root();
-    vid = set_vid;
-  }
-
   void mark_band() {
     // add to band (01XX XXXX)
     edge_state.unset(7);
     edge_state.set(6);
-  }
-
-  void mark_band(VID_t set_vid) {
-    this->mark_band();
-    vid = set_vid;
   }
 
   bool surface() const { // XX1X XXXX
@@ -291,42 +263,6 @@ struct VertexAttr {
 
   bool band() const { // 01XX XXXX
     return edge_state.test(6) && !(edge_state.test(7));
-  }
-
-  /**
-   *  remaining 6 bits indicate connections with neighbors:
-   *  each value is a boolean indicating a connection with that neighbor
-   *  from least sig. to most sig bit the connections are ordered as follows:
-   *  bit | connection
-   *  ----------------
-   *  0   | x - 1
-   *  1   | x + 1
-   *  2   | y - 1
-   *  3   | y + 1
-   *  4   | z - 1
-   *  5   | z + 1
-   */
-  template <typename T> std::vector<VID_t> connections(T nxpad, T nxypad) const {
-    std::vector<VID_t> connect;
-    connect.reserve(6);
-    // returns vid of itself if there are no connections
-    if (!edge_state.test(5) && !edge_state.test(4) && !edge_state.test(3) &&
-        !edge_state.test(2) && !edge_state.test(1) && !edge_state.test(0))
-      connect.push_back(vid);
-    // accessed from lowest to highest address to faciliate coalescing
-    if (edge_state.test(4))
-      connect.push_back(vid - nxypad);
-    if (edge_state.test(2))
-      connect.push_back(vid - nxpad);
-    if (edge_state.test(0))
-      connect.push_back(vid - 1);
-    if (edge_state.test(1))
-      connect.push_back(vid + 1);
-    if (edge_state.test(3))
-      connect.push_back(vid + nxpad);
-    if (edge_state.test(5))
-      connect.push_back(vid + nxypad);
-    return connect;
   }
 
   // remaining 6 bits indicate connections with neighbors:

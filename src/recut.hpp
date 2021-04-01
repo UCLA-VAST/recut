@@ -58,7 +58,7 @@ public:
   // size: number of total items within that unit, typically this number
   //    is fixed / const and represents the product of various length variables
   //    and is used as short hand to prevent recomputation of same values
-  // subscripts: come at the end of variable name to aid discoverability and
+  // coordinates: come at the end of variable name to aid discoverability and
   //    auto-complete
   // hierarchical: if the variable represents the number of item2 per item1
   //    then the naming follows item1_item2_... descending in precedence
@@ -70,35 +70,39 @@ public:
   // idx: index for example in looping variables
   //
   // Example:
-  // A 3D image has a dimension of this->image_lengths[0], this->image_lengths[1],
-  // this->image_lengths[2]. Therefore image_size = this->image_lengths[0] * this->image_lengths[1] *
-  // this->image_lengths[2]. If the program were keeping track of multiple images then
-  // the variable image_count would record that number
-  VID_t image_size, interval_block_len_x, interval_block_len_y,
-      interval_block_len_z, user_def_block_size, pad_block_length_x,
-      pad_block_length_y, pad_block_length_z, pad_block_offset, 
-      grid_interval_length_x, grid_interval_length_y,
-      grid_interval_length_z, grid_interval_size, interval_block_size;
+  // A 3D image has a dimension of this->image_lengths[0],
+  // this->image_lengths[1], this->image_lengths[2]. Therefore image_size =
+  // this->image_lengths[0] * this->image_lengths[1] * this->image_lengths[2].
+  // If the program were keeping track of multiple images then the variable
+  // image_count would record that number
+  VID_t image_size, grid_interval_size, interval_block_size;
 
-  std::vector<int> image_lengths = {0, 0, 0};
-  std::vector<int> image_offsets = {0, 0, 0};
-  std::vector<int> interval_lengths = {0, 0, 0};
-  std::vector<int> block_lengths = {0, 0, 0};
-  std::ofstream out;
-  image_t *generated_image = nullptr;
-  bool mmap_;
+  std::vector<int> image_lengths;
+  std::vector<int> image_offsets;
+  std::vector<int> interval_lengths;
+  std::vector<int> block_lengths;
+  std::vector<int> grid_interval_lengths;
+  std::vector<int> interval_block_lengths;
+
+#ifdef DENSE
+  Grid grid;
+  VID_t pad_block_length_x, pad_block_length_y, pad_block_length_z,
+      pad_block_offset,
+#ifdef USE_MMAP
+      bool mmap_ = true;
+#else
+      bool mmap_ = false;
+#endif
+#endif
+
   bool input_is_vdb;
 #ifdef USE_VDB
   openvdb::v8_0::TopologyGrid::Ptr topology_grid;
 #endif
-  size_t iteration;
-  float bound_band;
-  float stride;
-  double restart_factor;
-  bool restart_bool;
+
+  std::ofstream out;
+  image_t *generated_image = nullptr;
   atomic<VID_t> global_revisits;
-  VID_t vertex_issue; // default heuristic per thread for roughly best
-  // performance
   RecutCommandLineArgs *args;
   RecutParameters *params;
   std::vector<std::vector<std::deque<VertexAttr>>> global_fifo;
@@ -117,29 +121,16 @@ public:
   vector<vector<vector<vector<VertexAttr>>>> updated_ghost_vec;
 #endif
 
-  Recut() : mmap_(false){};
   Recut(RecutCommandLineArgs &args)
-      : args(&args), params(&(args.recut_parameters())), global_revisits(0),
-        user_def_block_size(args.recut_parameters().block_size()),
-        mmap_(false) {
+      : args(&args), params(&(args.recut_parameters())) {}
 
-#ifdef USE_MMAP
-    this->mmap_ = true;
-#endif
-    this->restart_bool = params->restart();
-    this->restart_factor = params->restart_factor();
-  }
-
-  void run_pipeline();
-
-  void operator()() { run_pipeline(); }
+  void operator()();
 
   // to destroy the information for this run
   // so that it doesn't affect the next run
   // the vertices must be unmapped
   // done via `release()`
 #ifdef DENSE
-  Grid grid;
   inline void release() { grid.Release(); }
   inline VertexAttr *get_vertex_vid(VID_t interval_id, VID_t block_id,
                                     VID_t vid, VID_t *output_offset);
@@ -154,75 +145,79 @@ public:
   bool filter_by_label(VertexAttr *v, bool accept_band);
   void adjust_parent(bool print);
 
-  image_t get_img_val(const image_t *tile, VID_t vid);
-  template <typename T> bool get_vdb_val(T accessor, VID_t vid);
-  inline VID_t rotate_index(VID_t img_sub, const VID_t current,
+  image_t get_img_val(const image_t *tile, GridCoord coord);
+  template <typename T> bool get_vdb_val(T accessor, GridCoord coord);
+  inline VID_t rotate_index(VID_t img_coord, const VID_t current,
                             const VID_t neighbor,
                             const VID_t interval_block_size,
                             const VID_t pad_block_size);
   int get_bkg_threshold(const image_t *tile, VID_t interval_vertex_size,
                         const double foreground_percent);
-  inline VertexAttr *get_or_set_active_vertex(VID_t interval_id, VID_t block_id,
-                                              VID_t vid, bool &found);
-  inline VertexAttr *get_active_vertex(VID_t interval_id, VID_t block_id,
-                                       VID_t vid);
+  inline VertexAttr *get_or_set_active_vertex(const VID_t interval_id,
+                                              const VID_t block_id,
+                                              const OffsetCoord offset,
+                                              bool &found);
+  inline VertexAttr *get_active_vertex(const VID_t interval_id,
+                                       const VID_t block_id,
+                                       const OffsetCoord offset);
   void place_vertex(const VID_t nb_interval_id, VID_t block_id, VID_t nb,
                     struct VertexAttr *dst, std::string stage);
   bool check_blocks_finish(VID_t interval_id);
   bool are_intervals_finished();
   void activate_all_intervals();
-  inline VID_t get_img_vid(VID_t i, VID_t j, VID_t k);
-  inline VID_t get_interval_id_vert_sub(const VID_t i, const VID_t j,
-                                        const VID_t k);
-  inline VID_t get_interval_id(const VID_t i, const VID_t j, const VID_t k);
-  void get_interval_offsets(const VID_t interval_id,
-                            vector<int> &interval_offsets,
-                            vector<int> &interval_extents);
-  void get_interval_subscript(const VID_t id, VID_t &i, VID_t &j, VID_t &k);
-  inline void get_img_subscript(const VID_t id, VID_t &i, VID_t &j, VID_t &k);
-  inline void get_block_subscript(const VID_t id, VID_t &i, VID_t &j, VID_t &k);
-  inline VID_t get_block_id(const VID_t id);
-  VID_t get_interval_id(VID_t vid);
-  VID_t get_sub_to_interval_id(VID_t i, VID_t j, VID_t k);
+
+  GridCoord id_interval_to_img_offsets(const VID_t interval_id);
+  GridCoord id_block_to_interval_offsets(const VID_t block_id);
+  void get_interval_coord(const VID_t id, VID_t &i, VID_t &j, VID_t &k);
+  inline void get_img_coord(const VID_t id, VID_t &i, VID_t &j, VID_t &k);
+  inline void get_block_coord(const VID_t id, VID_t &i, VID_t &j, VID_t &k);
+  inline VID_t id_img_to_block_id(const VID_t id);
+  VID_t id_img_to_interval_id(const VID_t id);
+  template <typename T> VID_t coord_img_to_block_id(T coord);
+  template <typename T> VID_t coord_img_to_interval_id(T coord);
+  GridCoord id_interval_block_to_img_offsets(VID_t interval_id, VID_t block_id);
+  GridCoord v_to_img_id(VID_t interval_id, VID_t block_id, VertexAttr *v);
+
   void check_ghost_update(VID_t interval_id, VID_t block_id,
-                          struct VertexAttr *dst, std::string stage);
+                          GridCoord dst_coord, VertexAttr *dst,
+                          std::string stage);
   int get_parent_code(VID_t dst_id, VID_t src_id);
   template <typename T>
   bool accumulate_connected(const image_t *tile, VID_t interval_id,
-                            VID_t dst_id, VID_t block_id, VID_t current_vid,
-                            VID_t &revisits,
+                            VID_t block_id, GridCoord dst_coord,
+                            OffsetCoord offset_to_current, VID_t &revisits,
                             const TileThresholds<image_t> *tile_thresholds,
                             bool &found_background, T vdb_accessor);
-  bool accumulate_value(const image_t *tile, VID_t interval_id, VID_t dst_id,
-                        VID_t block_id, struct VertexAttr *current,
-                        VID_t &revisits,
+  bool accumulate_value(const image_t *tile, VID_t interval_id,
+                        GridCoord dst_coord, VID_t block_id,
+                        struct VertexAttr *current, VID_t &revisits,
                         const TileThresholds<image_t> *tile_thresholds,
                         bool &found_background);
   bool is_covered_by_parent(VID_t interval_id, VID_t block_id,
                             VertexAttr *current);
   template <class Container, typename T, typename T2>
-  void accumulate_prune(VID_t interval_id, VID_t dst_id, VID_t block_id,
+  void accumulate_prune(VID_t interval_id, GridCoord dst_coord, VID_t block_id,
                         T current, T2 current_vid, bool current_unvisited,
                         Container &fifo);
   template <class Container, typename T>
-  void accumulate_radius(VID_t interval_id, VID_t dst_id, VID_t block_id,
+  void accumulate_radius(VID_t interval_id, GridCoord dst_coord, VID_t block_id,
                          T current_radius, VID_t &revisits, int stride,
-                         int pad_stride, Container &fifo);
+                         Container &fifo);
   template <class Container, typename T>
   void update_neighbors(const image_t *tile, VID_t interval_id, VID_t block_id,
-                        VertexAttr *current, VID_t current_vid, VID_t &revisits,
-                        std::string stage,
+                        VertexAttr *current, GridCoord current_coord,
+                        VID_t &revisits, std::string stage,
                         const TileThresholds<image_t> *tile_thresholds,
                         bool &found_adjacent_invalid,
                         VertexAttr &found_higher_parent, Container &fifo,
-                        bool &covered, T vdb_accessor, current_coord,
+                        bool &covered, T vdb_accessor,
                         bool current_outside_domain = false,
                         bool enqueue_dsts = false);
   template <class Container>
   void integrate_updated_ghost(const VID_t interval_id, const VID_t block_id,
                                std::string stage, Container &fifo);
   template <class Container> void dump_buffer(Container buffer);
-  void adjust_vertex_parent(VertexAttr *vertex);
+  void adjust_vertex_parent(VertexAttr *vertex, GridCoord start_offsets);
   template <class Container>
   bool integrate_vertex(const VID_t interval_id, const VID_t block_id,
                         struct VertexAttr *updated_vertex,
@@ -235,17 +230,17 @@ public:
                          Container &fifo, T vdb_accessor);
   template <class Container, typename T>
   void connected_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
-                      std::string stage,
+                      GridCoord offsets, std::string stage,
                       const TileThresholds<image_t> *tile_thresholds,
                       Container &fifo, VID_t revisits, T vdb_accessor);
   template <class Container, typename T>
   void radius_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
-                   std::string stage,
+                   GridCoord offsets, std::string stage,
                    const TileThresholds<image_t> *tile_thresholds,
                    Container &fifo, VID_t revisits, T vdb_accessor);
   template <class Container, typename T>
   void prune_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
-                  std::string stage,
+                  GridCoord offsets, std::string stage,
                   const TileThresholds<image_t> *tile_thresholds,
                   Container &fifo, VID_t revisits, T vdb_accessor);
   void create_march_thread(VID_t interval_id, VID_t block_id);
@@ -262,11 +257,14 @@ public:
   std::unique_ptr<InstrumentedUpdateStatistics>
   update(std::string stage, Container &fifo = nullptr,
          TileThresholds<image_t> *tile_thresholds = nullptr);
+  std::vector<int> get_input_image_extents(bool force_regenerate_image,
+                                           RecutCommandLineArgs *args);
+  std::vector<int> get_input_image_lengths(bool force_regenerate_image,
+                                           RecutCommandLineArgs *args);
   const std::vector<VID_t> initialize();
   template <typename vertex_t>
   void convert_to_markers(vector<vertex_t> &outtree, bool accept_band = false);
-  VID_t parentToVID(struct VertexAttr *vertex);
-  inline VID_t get_block_id(VID_t iblock, VID_t jblock, VID_t kblock);
+  inline VID_t sub_block_to_block_id(VID_t iblock, VID_t jblock, VID_t kblock);
   template <class Container>
   void print_interval(VID_t interval_id, std::string stage, Container &fifo);
   template <class Container>
@@ -277,7 +275,8 @@ public:
                      Container &fifo);
   std::vector<VID_t> process_marker_dir(vector<int> grid_offsets,
                                         vector<int> grid_extents);
-  void print_vertex(VertexAttr *current);
+  void print_vertex(VID_t interval_id, VID_t block_id, VertexAttr *current,
+                    GridCoord offsets);
   void set_parent_non_branch(const VID_t interval_id, const VID_t block_id,
                              VertexAttr *dst, VertexAttr *potential_new_parent);
   ~Recut<image_t>();
@@ -293,26 +292,118 @@ template <class image_t> Recut<image_t>::~Recut<image_t>() {
   }
 }
 
+/* intervals are arranged in c-order in 3D, therefore each
+ * intervals can be accessed via it's intervals coord or by a linear idx
+ * id : the linear idx of this interval in the entire domain
+ * i, j, k : the coord to this interval
+ */
+template <class image_t>
+void Recut<image_t>::get_interval_coord(const VID_t id, VID_t &i, VID_t &j,
+                                        VID_t &k) {
+  i = id % this->grid_interval_lengths[0];
+  j = (id / this->grid_interval_lengths[0]) % this->grid_interval_lengths[1];
+  k = (id / (this->grid_interval_lengths[0] * this->grid_interval_lengths[1])) %
+      this->grid_interval_lengths[2];
+}
+
+template <class image_t>
+GridCoord Recut<image_t>::id_interval_to_img_offsets(const VID_t interval_id) {
+  // return coord_add(
+  // this->image_offsets,
+  return coord_prod(id_to_coord(interval_id, this->grid_interval_lengths),
+                    this->interval_lengths);
+}
+
+template <class image_t>
+GridCoord Recut<image_t>::id_block_to_interval_offsets(const VID_t block_id) {
+  // return coord_add(
+  // this->image_offsets,
+  return coord_prod(id_to_coord(block_id, this->interval_block_lengths),
+                    this->block_lengths);
+}
+
+/**
+ * returns interval_id, the interval domain this vertex belongs to
+ * does not consider overlap of ghost regions
+ */
+template <class image_t>
+template <typename T>
+VID_t Recut<image_t>::coord_img_to_interval_id(T coord) {
+  return coord_to_id(coord_div(coord, this->interval_lengths),
+                     this->grid_interval_lengths);
+}
+
+/**
+ * id : linear idx relative to unpadded image
+ * returns interval_id, the interval domain this vertex belongs to
+ * with respect to the original unpadded image
+ * does not consider overlap of ghost regions
+ */
+template <class image_t>
+VID_t Recut<image_t>::id_img_to_interval_id(const VID_t id) {
+  return coord_img_to_interval_id(id_to_coord(id, this->image_lengths));
+}
+
+template <class image_t>
+template <typename T>
+VID_t Recut<image_t>::coord_img_to_block_id(T coord) {
+  return coord_to_id(
+      coord_div(coord_mod(coord, this->interval_lengths), this->block_lengths),
+      this->interval_block_lengths);
+}
+
+/**
+ * all block_nums are a linear row-wise idx, relative to current interval
+ * vid : linear idx into the full domain inimg1d
+ * the interval contributions are modded away
+ * such that all block_nums are relative to a single
+ * interval
+ * returns block_id, the block domain this vertex belongs
+ * in one of the intervals
+ * Note: block_nums are renumbered within each interval
+ * does not consider overlap of ghost regions
+ */
+template <class image_t>
+VID_t Recut<image_t>::id_img_to_block_id(const VID_t vid) {
+  return coord_img_to_block_id(id_to_coord(vid, this->image_lengths));
+}
+
+  // first coord of block with respect to whole image
+template <typename image_t>
+GridCoord Recut<image_t>::id_interval_block_to_img_offsets(VID_t interval_id,
+                                                           VID_t block_id) {
+  return coord_add(id_interval_to_img_offsets(interval_id),
+                   id_block_to_interval_offsets(block_id));
+}
+
+// recompute the vertex vid
+template <typename image_t>
+GridCoord Recut<image_t>::v_to_img_id(VID_t interval_id, VID_t block_id,
+                                      VertexAttr *v) {
+  return coord_add(v->offsets,
+                   id_interval_block_to_img_offsets(interval_id, block_id));
+}
+
 /*
- * Does this subscript belong in the full image
+ * Does this coord belong in the full image
  * accounting for the input offsets and extents
- * i, j, k : subscript of vertex in question
+ * i, j, k : coord of vertex in question
  * off : offsets in x y z
  * end : sanitized end pixels order
  */
 template <typename T, typename T2>
-bool is_in_bounds(T i, T j, T k, T2 off, T2 end) {
-  if (i < off[0])
+bool is_in_bounds(T adjusted, T2 off, T2 end) {
+  if (adjusted[0] < off[0])
     return false;
-  if (j < off[1])
+  if (adjusted[1] < off[1])
     return false;
-  if (k < off[2])
+  if (adjusted[2] < off[2])
     return false;
-  if (i > (off[0] + end[0]))
+  if (adjusted[0] > (off[0] + end[0]))
     return false;
-  if (j > (off[1] + end[1]))
+  if (adjusted[1] > (off[1] + end[1]))
     return false;
-  if (k > (off[2] + end[2]))
+  if (adjusted[2] > (off[2] + end[2]))
     return false;
   return true;
 }
@@ -345,27 +436,18 @@ Recut<image_t>::process_marker_dir(const vector<int> grid_offsets,
 
     // set intervals with root present as active
     for (auto &root : inmarkers) {
-      // init state and phi for root
-      VID_t i, j, k, x, y, z;
-      x = root.x + 1;
-      y = root.y + 1;
-      z = root.z + 1;
+      auto orig = std::vector<int>{root.x, root.y, root.z};
+      auto ones = std::vector<int>(3, 1);
+      auto adjusted = coord_add(orig, ones);
 
-      if (!(is_in_bounds(x, y, z, grid_offsets, grid_extents)))
+      if (!(is_in_bounds(adjusted, grid_offsets, grid_extents)))
         continue;
-      // adjust the vid according to the region of the image we are processing
-      i = x - grid_offsets[0];
-      j = y - grid_offsets[1];
-      k = z - grid_offsets[2];
-      auto vid = get_img_vid(i, j, k);
-      root_vids.push_back(vid);
+
+      root_vids.push_back(coord_to_id(adjusted, this->image_lengths));
 
 #ifdef FULL_PRINT
-      cout << "Read marker at x " << x << " y " << y << " z " << z
-           << " adjust to subscripts, i " << i << " j " << j << " k " << k
-           << " vid " << vid << '\n';
+      cout << "Using marker at " << coord_to_str(adjusted) << '\n';
 #endif
-
     }
   }
   return root_vids;
@@ -401,35 +483,40 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
                                    std::string stage, Container &fifo) {
   assertm(!(root_vids.empty()), "Must have at least one root");
   for (const auto &vid : root_vids) {
-    auto interval_id = get_interval_id(vid);
-    auto block_id = get_block_id(vid);
+    auto interval_id = id_img_to_interval_id(vid);
+    auto block_id = id_img_to_block_id(vid);
 
 #ifdef FULL_PRINT
     cout << "activate_vids(): setting interval " << interval_id << " block "
          << block_id << " to active ";
     cout << "for marker vid " << vid << '\n';
 #endif
+    auto coord = id_to_coord(vid, this->image_lengths);
 
     active_intervals[interval_id] = true;
     active_blocks[interval_id][block_id].store(true);
 
     VertexAttr *msg_vertex;
+    auto zeros = OffsetCoord{0, 0, 0};
+    auto offsets = coord_mod(coord, this->block_lengths);
     if (stage == "connected") {
       // place a root with proper vid and parent of itself
       msg_vertex = &(this->active_vertices[interval_id][block_id].emplace_back(
-          0, vid, vid));
-      this->local_fifo[interval_id][block_id].emplace_back(0, vid, vid);
+          /*edge_state*/ 0, offsets, zeros));
+      this->local_fifo[interval_id][block_id].emplace_back(/*edge_state*/ 0,
+                                                           offsets, zeros);
     } else if (stage == "prune") {
 
 #ifdef DENSE
-      msg_vertex = get_vertex_vid(interval_id, block_id, vid, nullptr);
+      msg_vertex = get_vertex_vid(interval_id, block_id, coord, nullptr);
 #else
-      msg_vertex = get_active_vertex(interval_id, block_id, vid);
+      msg_vertex = get_active_vertex(interval_id, block_id, offsets);
 #endif
       assertm(msg_vertex->valid_radius(),
               "activate vids didn't find valid radius");
       assertm(msg_vertex != nullptr, "get_active_vertex yielded nullptr");
-      fifo[interval_id][block_id].emplace_back(0, vid, vid);
+      fifo[interval_id][block_id].emplace_back(/*edge_state*/ 0, offsets,
+                                               zeros);
     } else {
       assertm(false, "stage behavior not yet specified");
     }
@@ -438,7 +525,8 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
     // edges of intervals in addition to blocks
     // this only adds to update_ghost_vec if the root happens
     // to be on a boundary
-    check_ghost_update(interval_id, block_id, msg_vertex,
+    check_ghost_update(interval_id, block_id,
+                       coord_add(msg_vertex->offsets, offsets), msg_vertex,
                        stage); // add to any other ghost zone blocks
   }
 }
@@ -483,7 +571,7 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
 
   // these looping vars below are over the non-padded lengths of each interval
   VID_t i, j, k, xadjust, yadjust, zadjust;
-  get_interval_subscript(interval_id, i, j, k);
+  get_interval_coord(interval_id, i, j, k);
   xadjust = i * this->interval_lengths[0];
   yadjust = j * this->interval_lengths[1];
   zadjust = k * this->interval_lengths[2];
@@ -501,22 +589,15 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
     for (int yi = yadjust; yi < yadjust + this->interval_lengths[1]; yi++) {
       cout << yi << " | ";
       for (int xi = xadjust; xi < xadjust + this->interval_lengths[0]; xi++) {
-        auto vid = xi + static_cast<VID_t>(yi) * this->image_lengths[0] + static_cast<VID_t>(zi) * this->image_lengths[0] * this->image_lengths[1];
-        auto block_id = get_block_id(vid);
-        get_img_subscript(vid, i, j, k);
-        assertm(xi == i, "i mismatch");
-        assertm(yi == j, "j mismatch");
-        assertm(zi == k, "k mismatch");
-#ifdef FULL_PRINT
-        // std::cout << "\nvid " << vid << " block " << block_id << " xi " <<
-        // xi
-        // << " yi " << yi << " zi " << zi << '\n';
-#endif
+        auto coord = new_grid_coord(xi, yi, zi);
+        auto block_id = coord_img_to_block_id(coord);
 
 #ifdef DENSE
+        auto vid = coord_to_id(coord, this->image_lengths);
         auto v = get_vertex_vid(interval_id, block_id, vid, nullptr);
 #else
-        auto v = get_active_vertex(interval_id, block_id, vid);
+        auto offsets = coord_mod(coord, this->block_lengths);
+        auto v = get_active_vertex(interval_id, block_id, offsets);
         if (v == nullptr) {
           cout << "- ";
           continue;
@@ -578,156 +659,50 @@ template <typename T, typename T2> T absdiff(const T &lhs, const T2 &rhs) {
   return lhs > rhs ? lhs - rhs : rhs - lhs;
 }
 
-template <typename T, typename T2, typename T3>
-T3 min(const T &lhs, const T2 &rhs) {
-  return lhs < rhs ? lhs : rhs;
-}
-
-/**
- * vid : linear idx relative to unpadded image
- * returns interval_id, the interval domain this vertex belongs to
- * with respect to the original unpadded image
- * does not consider overlap of ghost regions
- * uses get_sub_to_interval_id() to calculate
- */
-template <class image_t> VID_t Recut<image_t>::get_interval_id(VID_t vid) {
-  // get the subscripts
-  VID_t i, j, k;
-  i = j = k = 0;
-  get_img_subscript(vid, i, j, k);
-  // cout << "i " << i << " j " << j << " k " << k << '\n';
-  return get_sub_to_interval_id(i, j, k);
-}
-
-/**
- * i, j, k : subscripts of vertex relative to entire image
- * returns interval_id, the interval domain this vertex belongs to
- * does not consider overlap of ghost regions
- */
-template <class image_t>
-VID_t Recut<image_t>::get_sub_to_interval_id(VID_t i, VID_t j, VID_t k) {
-  auto i_interval = i / this->interval_lengths[0];
-  auto j_interval = j / this->interval_lengths[1];
-  auto k_interval = k / this->interval_lengths[2];
-  auto interval_id =
-      i_interval + j_interval * grid_interval_length_x +
-      k_interval * grid_interval_length_x * grid_interval_length_y;
-  // cout << "i_interval " << i_interval << " j_interval " << j_interval
-  //<< " k_interval " << k_interval << '\n';
-  assert(interval_id < grid_interval_size);
-  return interval_id;
-}
-
-/**
- * all block_nums are a linear row-wise idx, relative to current interval
- * vid : linear idx into the full domain inimg1d
- * the interval contributions are modded away
- * such that all block_nums are relative to a single
- * interval
- * returns block_id, the block domain this vertex belongs
- * in one of the intervals
- * Note: block_nums are renumbered within each interval
- * does not consider overlap of ghost regions
- */
-template <class image_t> VID_t Recut<image_t>::get_block_id(const VID_t vid) {
-  VID_t i, j, k;
-  i = j = k = 0;
-  get_img_subscript(vid, i, j, k);
-  // subtract away the interval influence on the block num
-  auto ia = i % this->interval_lengths[0];
-  auto ja = j % this->interval_lengths[1];
-  auto ka = k % this->interval_lengths[2];
-  // block in this interval
-  auto i_block = ia / this->block_lengths[0];
-  auto j_block = ja / this->block_lengths[1];
-  auto k_block = ka / this->block_lengths[2];
-  return i_block + j_block * interval_block_len_x +
-         k_block * interval_block_len_x * interval_block_len_y;
-}
-
-/* get the interval linear idx from it's subscripts
- * not all linear indices are row-ordered and specific
- * to their hierarchical arrangment
- */
-template <class image_t>
-inline VID_t Recut<image_t>::get_interval_id(const VID_t i, const VID_t j,
-                                             const VID_t k) {
-  return k * (grid_interval_length_x * grid_interval_length_y) +
-         j * grid_interval_length_x + i;
-}
-
-/* get the vid with respect to the entire image passed to the
- * recut program. Note this spans multiple tiles and blocks
- * Take the subscripts of the vertex or voxel
- * returns the linear idx into the entire domain
- */
-template <class image_t>
-inline VID_t Recut<image_t>::get_interval_id_vert_sub(const VID_t i,
-                                                      const VID_t j,
-                                                      const VID_t k) {
-  return k * (this->interval_lengths[0] * this->interval_lengths[1]) + j * this->interval_lengths[0] +
-         i;
-}
-
 template <class image_t>
 template <typename T>
-bool Recut<image_t>::get_vdb_val(T vdb_accessor, VID_t vid) {
-  VID_t x, y, z;
-  x = y = z = 0;
-  get_img_subscript(vid, x, y, z);
-  openvdb::Coord xyz(x, y, z);
+bool Recut<image_t>::get_vdb_val(T vdb_accessor, GridCoord coord) {
 #ifdef FULL_PRINT
-  cout << " x " << x << " y " << y << " z " << z << '\n';
+  cout << coord_to_str(coord) << '\n';
 #endif
-  return vdb_accessor.getValue(xyz);
+  return vdb_accessor.getValue(coord);
 }
 
 /*
- * Takes a global image vid
+ * Takes a grid coord
  * and converts it to linear index of current
- * tile of interval currently processed
- * returning the voxel value at that
- * location id -> sub_script i, j, k -> mod i, j, k against interval_length in
- * each dim -> convert modded subscripts to a new vid
+ * tile buffer of interval currently processed
+ * returning the value
  */
 template <class image_t>
-image_t Recut<image_t>::get_img_val(const image_t *tile, VID_t vid) {
+image_t Recut<image_t>::get_img_val(const image_t *tile, GridCoord coord) {
   // force_regenerate_image passes the whole image as the
   // tile so the img vid is the correct address regardless
   // of interval length sizes Note that force_regenerate_image
   // is mostly used in test cases to try different scenarios
   if (this->params->force_regenerate_image) {
-    return tile[vid];
+    return tile[coord_to_id(coord, this->image_lengths)];
   }
-  VID_t i, j, k;
-  i = j = k = 0;
-  get_img_subscript(vid, i, j, k);
-  // mod out any contributions from the interval
-  auto ia = i % this->interval_lengths[0];
-  auto ja = j % this->interval_lengths[1];
-  auto ka = k % this->interval_lengths[2];
-  auto interval_vid = get_interval_id_vert_sub(ia, ja, ka);
-#ifdef FULL_PRINT
-  // cout<< "\ti: "<<i<<" j: "<<j <<" k: "<< k<< " dst vid: " << vid << '\n';
-  // cout<< "\n\tia: "<<ia<<" ja: "<<ja <<" ka: "<< ka<< " interval vid: " <<
-  // interval_vid << '\n';
-#endif
-  return tile[interval_vid];
+
+  auto buffer_coord = coord_to_id(coord_mod(coord, this->interval_lengths),
+                                  this->interval_lengths);
+  return tile[buffer_coord];
 }
 
+/*
 template <typename image_t>
 bool Recut<image_t>::is_covered_by_parent(VID_t interval_id, VID_t block_id,
                                           VertexAttr *current) {
   VID_t i, j, k, pi, pj, pk;
-  get_img_subscript(current->vid, i, j, k);
-  get_img_subscript(current->parent, pi, pj, pk);
+  get_img_coord(current->vid, i, j, k);
+  get_img_coord(current->parent, pi, pj, pk);
   auto x = static_cast<double>(i) - pi;
   auto y = static_cast<double>(j) - pj;
   auto z = static_cast<double>(k) - pk;
   auto vdistance = sqrt(x * x + y * y + z * z);
 
-  auto parent_interval_id = get_interval_id(current->parent);
-  auto parent_block_id = get_block_id(current->parent);
+  auto parent_interval_id = id_img_to_interval_id(current->parent);
+  auto parent_block_id = id_img_to_block_id(current->parent);
 
 #ifdef DENSE
   auto parent = get_vertex_vid(parent_interval_id, parent_block_id,
@@ -771,7 +746,7 @@ void Recut<image_t>::set_parent_non_branch(const VID_t interval_id,
             "can not assign child to a vertex with already 2 children unless "
             "it is a root");
 
-    auto parent_coord = vid_to_sub(potential_new_parent->vid, image_lengths);
+    auto parent_coord = id_to_coord(potential_new_parent->vid, image_lengths);
     // new parent is guaranteed to not be a branch point now
     if (potential_new_parent->root()) {
       dst->set_parent(potential_new_parent->vid);
@@ -784,17 +759,18 @@ void Recut<image_t>::set_parent_non_branch(const VID_t interval_id,
     }
   }
 }
+*/
 
 template <class image_t>
 template <class Container, typename T, typename T2>
-void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
+void Recut<image_t>::accumulate_prune(VID_t interval_id, GridCoord dst_coord,
                                       VID_t block_id, T current, T2 current_vid,
                                       bool current_unvisited, Container &fifo) {
 
 #ifdef DENSE
   auto dst = get_vertex_vid(interval_id, block_id, dst_id, nullptr);
 #else
-  auto dst = get_active_vertex(interval_id, block_id, dst_id);
+  auto dst = get_active_vertex(interval_id, block_id, dst_coord);
 #endif
   if (dst == nullptr) { // never selected
     return;
@@ -803,9 +779,10 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
   auto add_prune_dst = [&]() {
     dst->prune_visit();
     fifo.push_back(*dst);
-    check_ghost_update(interval_id, block_id, dst, "prune");
+    check_ghost_update(interval_id, block_id, dst_coord, dst, "prune");
 #ifdef FULL_PRINT
-    std::cout << "  added dst " << dst_id << " rad " << +(dst->radius) << '\n';
+    std::cout << "  added dst " << dst_coord << " rad " << +(dst->radius)
+              << '\n';
 #endif
   };
 
@@ -836,7 +813,7 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
     if (dst_was_updated) {
 #ifdef FULL_PRINT
       std::cout << "current covers  radius of: " << +(dst->radius) << " at dst "
-                << dst_id << " " << dst->label();
+                << dst_coord << " " << dst->label();
 #endif
       add_prune_dst();
     }
@@ -858,16 +835,16 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t dst_id,
  * the edge but still within interval_id and block_id domain is updated it
  * is the responsibility of check_ghost_update to take note of the update such
  * that this update is propagated to the relevant interval and block see
- * integrate_updated_ghost(). dst_id : continuous vertex id VID_t of the dst
+ * integrate_updated_ghost(). dst_coord : continuous vertex id VID_t of the dst
  * vertex in question block_id : current block id current : minimum vertex
  * attribute selected
  */
 template <class image_t>
 template <class Container, typename T>
-void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t dst_id,
+void Recut<image_t>::accumulate_radius(VID_t interval_id, GridCoord dst_coord,
                                        VID_t block_id, T current_radius,
                                        VID_t &revisits, int stride,
-                                       int pad_stride, Container &fifo) {
+                                       Container &fifo) {
 
   // note the current vertex can belong in the boundary
   // region of a separate block /interval and is only
@@ -881,7 +858,7 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t dst_id,
 #ifdef DENSE
   auto dst = get_vertex_vid(interval_id, block_id, dst_id, nullptr);
 #else
-  auto dst = get_active_vertex(interval_id, block_id, dst_id);
+  auto dst = get_active_vertex(interval_id, block_id, dst_coord);
   if (dst == nullptr) {
     return;
   }
@@ -889,23 +866,20 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t dst_id,
 
   uint8_t updated_radius = 1 + current_radius;
   if (dst->selected() || dst->root()) {
-    assertm(dst->valid_vid(), "selected must have a valid vid");
-    assertm(dst->vid == dst_id,
-            "get_active_vertex failed getting correct vertex");
 
     // if radius not set yet it necessitates it is 1 higher than current OR an
     // update from another block / interval creates new lower updates
     if (!(dst->valid_radius()) || (dst->radius > updated_radius)) {
       dst->radius = updated_radius;
       fifo.push_back(*dst);
-      check_ghost_update(interval_id, block_id, dst, "radius");
+      check_ghost_update(interval_id, block_id, dst_coord, dst, "radius");
 
 #ifdef FULL_PRINT
-      cout << "\tAdjacent higher dst->vid " << dst->vid << " radius "
+      cout << "\tAdjacent higher dst->offset " << dst->offset << " radius "
            << +(dst->radius) << "current radius " << +(current_radius) << '\n';
       if (dst->root()) {
         cout << "root radius " << +(dst->radius) << ' ' << interval_id << ' '
-             << block_id << ' ' << dst->vid << '\n';
+             << block_id << ' ' << dst->offset << '\n';
       }
 #endif
     }
@@ -922,20 +896,19 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t dst_id,
  * the edge but still within interval_id and block_id domain is updated it
  * is the responsibility of check_ghost_update to take note of the update such
  * that this update is propagated to the relevant interval and block see
- * integrate_updated_ghost(). dst_id : continuous vertex id VID_t of the dst
  * vertex in question block_id : current block id current : minimum vertex
  * attribute selected
  */
 template <class image_t>
 template <typename T>
 bool Recut<image_t>::accumulate_connected(
-    const image_t *tile, VID_t interval_id, VID_t dst_id, VID_t block_id,
-    VID_t current_vid, VID_t &revisits,
+    const image_t *tile, VID_t interval_id, VID_t block_id, GridCoord dst_coord,
+    OffsetCoord offset_to_current, VID_t &revisits,
     const TileThresholds<image_t> *tile_thresholds, bool &found_background,
     T vdb_accessor) {
 
 #ifdef FULL_PRINT
-  cout << "\tcheck dst vid: " << dst_id;
+  cout << "\tcheck dst vid: " << dst_coord;
   cout << " bkg_thresh " << +(tile_thresholds->bkg_thresh) << '\n';
 #endif
 
@@ -943,11 +916,11 @@ bool Recut<image_t>::accumulate_connected(
   // the image voxel of this dst vertex is the primary method to exclude this
   // pixel/vertex for the remainder of all processing
   if (this->input_is_vdb) {
-    auto dst_vox = get_vdb_val(vdb_accessor, dst_id);
+    auto dst_vox = get_vdb_val(vdb_accessor, dst_coord);
     if (!dst_vox)
       found_background = true;
   } else {
-    auto dst_vox = get_img_val(tile, dst_id);
+    auto dst_vox = get_img_val(tile, dst_coord);
     if (dst_vox <= tile_thresholds->bkg_thresh) {
       found_background = true;
     }
@@ -968,7 +941,7 @@ bool Recut<image_t>::accumulate_connected(
   // new vertices automatically set as selected
   // this will invalidate any previous refs or iterators returned of active
   // vertices
-  auto dst = get_or_set_active_vertex(interval_id, block_id, dst_id, found);
+  auto dst = get_or_set_active_vertex(interval_id, block_id, dst_coord, found);
 
   // skip already selected vertices too
   if (found) {
@@ -977,16 +950,16 @@ bool Recut<image_t>::accumulate_connected(
   }
 
 #ifdef FULL_PRINT
-  cout << "\tadded new dst to active set, vid: " << dst_id << '\n';
+  cout << "\tadded new dst to active set, vid: " << dst_coord << '\n';
 #endif
 #endif
 
   // ensure traces a path back to root in case no prune stage
   // parent will likely be mutated during prune stage
-  dst->set_parent(current_vid);
+  dst->set_parent(offset_to_current);
   assertm(dst->valid_vid(), "selected must have a valid vid");
   local_fifo[interval_id][block_id].push_back(*dst);
-  check_ghost_update(interval_id, block_id, dst, "connected");
+  check_ghost_update(interval_id, block_id, dst_coord, dst, "connected");
 
   return true;
 }
@@ -1068,8 +1041,7 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
   if (!vec) {
     vec = new std::vector<struct VertexAttr>;
   }
-  vec->emplace_back(dst->edge_state, dst->vid, dst->radius,
-                    dst->parent);
+  vec->emplace_back(dst);
   // Note: this block is unique to a single thread, therefore no other
   // thread could have this same key, since the keys are unique with
   // respect to their permutation. This means that we do not need to
@@ -1085,18 +1057,17 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
   // incorrect, surprisingly this makes no difference for the correctness
   // since the block_id origination dimension is merely to prevent
   // race conditions
-  updated_ghost_vec[nb_interval_id][block_id][nb_block_id].emplace_back(
-      dst->edge_state, dst->vid, dst->radius, dst->parent);
+  updated_ghost_vec[nb_interval_id][block_id][nb_block_id].emplace_back(dst);
 #endif
   active_neighbors[nb_interval_id][nb_block_id][block_id] = true;
 
 #ifdef FULL_PRINT
   VID_t i, j, k;
-  get_block_subscript(nb_block_id, i, j, k);
+  get_block_coord(nb_block_id, i, j, k);
   cout << "\t\t\tghost update stage " << stage << " interval " << nb_interval_id
        << " nb block " << nb_block_id << " block_id " << block_id << " block i "
-       << i << " block j " << j << " block k " << k << " vid " << dst->vid
-       << '\n';
+       << i << " block j " << j << " block k " << k << " "
+       << coord_to_str(dst->offset) << '\n';
 #endif
 }
 
@@ -1114,13 +1085,15 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
  */
 template <class image_t>
 void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
-                                        struct VertexAttr *dst,
+                                        GridCoord dst_coord, VertexAttr *dst,
                                         std::string stage) {
   VID_t i, j, k, ii, jj, kk, iii, jjj, kkk;
-  vector<VID_t> interval_subs = {0, 0, 0};
-  i = j = k = ii = jj = kk = 0;
-  VID_t id = dst->vid;
-  get_img_subscript(id, i, j, k);
+  vector<VID_t> interval_coords = {0, 0, 0};
+  ii = jj = kk = 0;
+  i = dst_coord[0];
+  j = dst_coord[1];
+  k = dst_coord[2];
+
   ii = i % this->block_lengths[0];
   jj = j % this->block_lengths[1];
   kk = k % this->block_lengths[2];
@@ -1132,12 +1105,12 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
   VID_t nb; // determine neighbor block
   VID_t nb_interval_id;
   VID_t iblock, jblock, kblock;
-  get_block_subscript(block_id, iblock, jblock, kblock);
+  get_block_coord(block_id, iblock, jblock, kblock);
 
 #ifdef FULL_PRINT
-  cout << "\t\t\tcheck_ghost_update on vid " << dst->vid << " current block "
-       << block_id << " block i " << iblock << " block j " << jblock
-       << " block k " << kblock << '\n';
+  cout << "\t\t\tcheck_ghost_update on dst_coord " << coord_to_str(dst_coord)
+       << " current block " << block_id << " block i " << iblock << " block j "
+       << jblock << " block k " << kblock << '\n';
 #endif
 
   // check all six sides
@@ -1147,8 +1120,9 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
       nb_interval_id = interval_id; // defaults to current interval
       if (iii == 0) {
         nb_interval_id = interval_id - 1;
-        // Convert block subscripts into linear index row-ordered
-        nb = get_block_id(interval_block_len_x - 1, jblock, kblock);
+        // Convert block coordinates into linear index row-ordered
+        nb = sub_block_to_block_id(this->interval_block_lengths[0] - 1, jblock,
+                                   kblock);
       }
       if ((nb >= 0) && (nb < interval_block_size)) // within valid block bounds
         place_vertex(nb_interval_id, block_id, nb, dst, stage);
@@ -1156,11 +1130,12 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
   }
   if (jj == 0) {
     if (j > 0) { // protect from image out of bounds
-      nb = block_id - interval_block_len_x;
+      nb = block_id - this->interval_block_lengths[0];
       nb_interval_id = interval_id; // defaults to current interval
       if (jjj == 0) {
-        nb_interval_id = interval_id - grid_interval_length_x;
-        nb = get_block_id(iblock, interval_block_len_y - 1, kblock);
+        nb_interval_id = interval_id - this->grid_interval_lengths[0];
+        nb = sub_block_to_block_id(iblock, this->interval_block_lengths[1] - 1,
+                                   kblock);
       }
       if ((nb >= 0) && (nb < interval_block_size)) // within valid block bounds
         place_vertex(nb_interval_id, block_id, nb, dst, stage);
@@ -1168,12 +1143,14 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
   }
   if (kk == 0) {
     if (k > 0) { // protect from image out of bounds
-      nb = block_id - interval_block_len_x * interval_block_len_y;
+      nb = block_id -
+           this->interval_block_lengths[0] * this->interval_block_lengths[1];
       nb_interval_id = interval_id; // defaults to current interval
       if (kkk == 0) {
-        nb_interval_id =
-            interval_id - grid_interval_length_x * grid_interval_length_y;
-        nb = get_block_id(iblock, jblock, interval_block_len_z - 1);
+        nb_interval_id = interval_id - this->grid_interval_lengths[0] *
+                                           this->grid_interval_lengths[1];
+        nb = sub_block_to_block_id(iblock, jblock,
+                                   this->interval_block_lengths[2] - 1);
       }
       if ((nb >= 0) && (nb < interval_block_size)) // within valid block bounds
         place_vertex(nb_interval_id, block_id, nb, dst, stage);
@@ -1182,12 +1159,13 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
 
   if (kk == this->block_lengths[0] - 1) {
     if (k < this->image_lengths[2] - 1) { // protect from image out of bounds
-      nb = block_id + interval_block_len_x * interval_block_len_y;
+      nb = block_id +
+           this->interval_block_lengths[0] * this->interval_block_lengths[1];
       nb_interval_id = interval_id; // defaults to current interval
       if (kkk == this->interval_lengths[2] - 1) {
-        nb_interval_id =
-            interval_id + grid_interval_length_x * grid_interval_length_y;
-        nb = get_block_id(iblock, jblock, 0);
+        nb_interval_id = interval_id + this->grid_interval_lengths[0] *
+                                           this->grid_interval_lengths[1];
+        nb = sub_block_to_block_id(iblock, jblock, 0);
       }
       if ((nb >= 0) && (nb < interval_block_size)) // within valid block bounds
         place_vertex(nb_interval_id, block_id, nb, dst, stage);
@@ -1195,11 +1173,11 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
   }
   if (jj == this->block_lengths[1] - 1) {
     if (j < this->image_lengths[1] - 1) { // protect from image out of bounds
-      nb = block_id + interval_block_len_x;
+      nb = block_id + this->interval_block_lengths[0];
       nb_interval_id = interval_id; // defaults to current interval
       if (jjj == this->interval_lengths[1] - 1) {
-        nb_interval_id = interval_id + grid_interval_length_x;
-        nb = get_block_id(iblock, 0, kblock);
+        nb_interval_id = interval_id + this->grid_interval_lengths[0];
+        nb = sub_block_to_block_id(iblock, 0, kblock);
       }
       if ((nb >= 0) && (nb < interval_block_size)) // within valid block bounds
         place_vertex(nb_interval_id, block_id, nb, dst, stage);
@@ -1211,7 +1189,7 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
       nb_interval_id = interval_id; // defaults to current interval
       if (iii == this->interval_lengths[0] - 1) {
         nb_interval_id = interval_id + 1;
-        nb = get_block_id(0, jblock, kblock);
+        nb = sub_block_to_block_id(0, jblock, kblock);
       }
       if ((nb >= 0) && (nb < interval_block_size)) // within valid block bounds
         place_vertex(nb_interval_id, block_id, nb, dst, stage);
@@ -1255,47 +1233,31 @@ template <class image_t>
 template <class Container, typename T>
 void Recut<image_t>::update_neighbors(
     const image_t *tile, VID_t interval_id, VID_t block_id, VertexAttr *current,
-    VID_t current_vid, VID_t &revisits, std::string stage,
+    GridCoord current_coord, VID_t &revisits, std::string stage,
     const TileThresholds<image_t> *tile_thresholds,
     bool &found_adjacent_invalid, VertexAttr &found_higher_parent,
     Container &fifo, bool &covered, T vdb_accessor, bool current_outside_domain,
     bool enqueue_dsts) {
 
-  VID_t i, j, k;
-  i = j = k = 0;
-  get_img_subscript(current->vid, i, j, k);
-#ifdef FULL_PRINT
-  // all block ids are a linear row-wise idx, relative to current interval
-  VID_t block = get_block_id(current->vid);
-  cout << "\ni: " << i << " j: " << j << " k: " << k << " stage: " << stage
-       << " current vid: " << current->vid;
-  if (stage == "radius" || stage == "prune") {
-    std::cout << " radius: " << +(current->radius);
-  }
-  std::cout << " addr: " << static_cast<void *>(current) << " interval "
-            << interval_id << " block " << block_id << " label "
-            << current->label() << '\n';
-  //" for block " << block_id << " within domain of block " << block << '\n';
-#endif
-
-  if (stage == "radius") {
-    {
-      if (!(current->valid_radius())) {
-        cout << current->description();
-        dump_buffer(this->active_vertices);
-        assertm(current->valid_radius(),
-                "radius must march outward from known radii");
-      }
-    }
-  }
+  //#ifdef FULL_PRINT
+  //// all block ids are a linear row-wise idx, relative to current interval
+  // VID_t block = id_img_to_block_id(current->vid);
+  // cout << "\ni: " << i << " j: " << j << " k: " << k << " stage: " << stage
+  //<< " current vid: " << current->vid;
+  // if (stage == "radius" || stage == "prune") {
+  // std::cout << " radius: " << +(current->radius);
+  //}
+  // std::cout << " addr: " << static_cast<void *>(current) << " interval "
+  //<< interval_id << " block " << block_id << " label "
+  //<< current->label() << '\n';
+  //#endif
 
   // only supports +-1 in x, y, z
-  VID_t dst_id;
+  GridCoord dst_coord;
   int x, y, z;
   bool dst_outside_domain;
-  int stride, pad_stride;
-  int z_stride = this->this->block_lengths[0] * this->this->block_lengths[1];
-  int z_pad_stride = this->pad_block_length_x * this->pad_block_length_y;
+  int stride;
+  int z_stride = this->block_lengths[0] * this->block_lengths[1];
 
   // save current params before it possibly becomes undefined by iterator
   // invalidation
@@ -1304,35 +1266,34 @@ void Recut<image_t>::update_neighbors(
   auto current_parent = current->parent;
 
   for (int kk = -1; kk <= 1; kk++) {
-    z = ((int)k) + kk;
+    z = current_coord[2] + kk;
     if (z < 0 || z >= this->image_lengths[2]) {
       found_adjacent_invalid = true;
       continue;
     }
     for (int jj = -1; jj <= 1; jj++) {
-      y = ((int)j) + jj;
+      y = current_coord[1] + jj;
       if (y < 0 || y >= this->image_lengths[1]) {
         found_adjacent_invalid = true;
         continue;
       }
       for (int ii = -1; ii <= 1; ii++) {
-        x = ((int)i) + ii;
+        x = current_coord[0] + ii;
         if (x < 0 || x >= this->image_lengths[0]) {
           found_adjacent_invalid = true;
           continue;
         }
-        int offset = abs(ii) + abs(jj) + abs(kk);
+        int hop_offset = abs(ii) + abs(jj) + abs(kk);
         // this ensures a start stencil,
         // exclude current, exclude diagonals
-        if (offset == 0 || offset > 1) {
+        if (hop_offset == 0 || hop_offset > 1) {
           continue;
         }
-        dst_id = get_img_vid(x, y, z);
 
         // all block_nums and interval_nums are a linear
         // row-wise idx, relative to current interval
-        auto dst_block_id = get_block_id(dst_id);
-        auto dst_interval_id = get_sub_to_interval_id(x, y, z);
+        auto dst_block_id = coord_img_to_block_id(dst_coord);
+        auto dst_interval_id = coord_img_to_interval_id(dst_coord);
 
         // Filter all dsts that don't protude into current
         // block and interval region, ghost destinations
@@ -1375,10 +1336,10 @@ void Recut<image_t>::update_neighbors(
             // TODO refactor this into a function call from
             // accumulate_connected too
             if (this->input_is_vdb) {
-              if (!get_vdb_val(vdb_accessor, dst_id))
+              if (!get_vdb_val(vdb_accessor, dst_coord))
                 found_adjacent_invalid = true;
             } else {
-              auto dst_vox = get_img_val(tile, dst_id);
+              auto dst_vox = get_img_val(tile, dst_coord);
               if (dst_vox <= tile_thresholds->bkg_thresh) {
                 found_adjacent_invalid = true;
               }
@@ -1392,22 +1353,18 @@ void Recut<image_t>::update_neighbors(
 
         // note although this is summed only one of ii,jj,kk
         // will be not equal to 0
-        stride = ii + jj * this->this->block_lengths[0] + kk * z_stride;
-        pad_stride = ii + jj * this->pad_block_length_x + kk * z_pad_stride;
-#ifdef FULL_PRINT
-        cout << "x " << x << " y " << y << " z " << z << " dst_id " << dst_id
-             << " vid " << current->vid << '\n';
-#endif
+        stride = ii + jj * this->block_lengths[0] + kk * z_stride;
         if (stage == "connected") {
-          accumulate_connected(tile, interval_id, dst_id, block_id, current_vid,
-                               revisits, tile_thresholds,
+          OffsetCoord offset_to_current{ii, jj, kk};
+          accumulate_connected(tile, interval_id, block_id, dst_coord,
+                               offset_to_current, revisits, tile_thresholds,
                                found_adjacent_invalid, vdb_accessor);
         } else if (stage == "radius") {
-          accumulate_radius(interval_id, dst_id, block_id, current_radius,
-                            revisits, stride, pad_stride, fifo);
+          accumulate_radius(interval_id, dst_coord, block_id, current_radius,
+                            revisits, stride, fifo);
         } else if (stage == "prune") {
-          accumulate_prune(interval_id, dst_id, block_id, current, current_vid,
-                           current_unvisited, fifo);
+          accumulate_prune(interval_id, dst_coord, block_id, current,
+                           current_coord, current_unvisited, fifo);
         }
       }
     }
@@ -1629,45 +1586,57 @@ bool Recut<image_t>::check_blocks_finish(VID_t interval_id) {
 }
 
 template <typename image_t>
-void Recut<image_t>::print_vertex(VertexAttr *current) {
-  // n,type,x,y,z,radius,parent
-  // std::cout << current->description() << '\n';
-  VID_t i, j, k;
-  get_img_subscript(current->vid, i, j, k);
+void Recut<image_t>::print_vertex(VID_t interval_id, VID_t block_id,
+                                  VertexAttr *current, GridCoord offsets) {
+  auto coord = coord_add(current->offsets, offsets);
+  auto parent_coord = coord_add(coord, current->parent);
   auto parent_vid = std::string{"-"};
   if (current->valid_parent()) { // parent set properly
-    parent_vid = std::to_string(current->parent);
+    parent_vid = std::string(coord_to_id(parent_coord, this->image_lengths));
   }
   if (current->root()) {
     parent_vid = "-1";
   }
+  std::ostringstream line;
+  // n,type,x,y,z,radius,parent
+  line << coord_to_id(coord, this->image_lengths) << " " << coord[0] << " "
+       << coord[1] << " " << coord[2] << " " << +(current->radius) << " "
+       << parent_vid << '\n';
   if (this->out.is_open()) {
 #pragma omp critical
-    this->out << current->vid << " " << i << " " << j << " " << k << " "
-              << +(current->radius) << " " << parent_vid << '\n';
+    this->out << line.str();
   } else {
 #pragma omp critical
-    std::cout << current->vid << " " << i << " " << j << " " << k << " "
-              << +(current->radius) << " " << parent_vid << '\n';
+    std::cout << line.str();
   }
 }
 
 // if the parent has been pruned then set the current
-// parent further upstream,
+// parent further upstream
 template <typename image_t>
-void Recut<image_t>::adjust_vertex_parent(VertexAttr *vertex) {
+void Recut<image_t>::adjust_vertex_parent(VertexAttr *vertex,
+                                          GridCoord start_offsets) {
   VertexAttr *parent = vertex;
+  VID_t block_id, interval_id;
   do {
-    auto parent_vid = parent->parent;
-    // get actual interval and block
-    const auto block_id = get_block_id(parent_vid);
-    const auto interval_id = get_interval_id(parent_vid);
+    auto coord = coord_add(parent->offsets, start_offsets);
+    auto parent_coord = coord_add(coord, parent->parent);
 
-    parent = get_active_vertex(interval_id, block_id, parent_vid);
+    // get actual interval and block
+    block_id = coord_img_to_block_id(parent_coord);
+    interval_id = coord_img_to_interval_id(parent_coord);
+
+    auto parent_offset = coord_mod(parent_coord, this->block_lengths);
+
+    parent = get_active_vertex(interval_id, block_id, parent_offset);
     assertm(parent != nullptr, "parent must be active");
 
+    start_offsets = id_interval_block_to_img_offsets(interval_id, block_id);
+
   } while (parent->unvisited());
-  vertex->parent = parent->vid;
+  // auto new_offset = coord;
+  // check_lt();
+  vertex->parent = parent->parent;
 }
 
 template <class image_t>
@@ -1678,7 +1647,6 @@ void Recut<image_t>::dump_buffer(Container buffer) {
     for (auto block_id = 0; block_id < interval_block_size; ++block_id) {
       for (auto &v : buffer[interval_id][block_id]) {
         std::cout << v.description();
-        // print_vertex(&v);
       }
     }
   }
@@ -1688,9 +1656,9 @@ void Recut<image_t>::dump_buffer(Container buffer) {
 template <class image_t>
 template <class Container, typename T>
 void Recut<image_t>::connected_tile(
-    const image_t *tile, VID_t interval_id, VID_t block_id, std::string stage,
-    const TileThresholds<image_t> *tile_thresholds, Container &fifo,
-    VID_t revisits, T vdb_accessor) {
+    const image_t *tile, VID_t interval_id, VID_t block_id, GridCoord offsets,
+    std::string stage, const TileThresholds<image_t> *tile_thresholds,
+    Container &fifo, VID_t revisits, T vdb_accessor) {
 
   VertexAttr *current, *msg_vertex;
   VID_t visited = 0;
@@ -1703,25 +1671,26 @@ void Recut<image_t>::connected_tile(
     // msg_vertex might become undefined during call to update_neighbors
     msg_vertex = &(local_fifo[interval_id][block_id].front());
     const bool in_domain = msg_vertex->selected() || msg_vertex->root();
-    auto vid = msg_vertex->vid;
     auto surface = msg_vertex->surface();
+    auto current_coord = coord_add(msg_vertex->offsets, offsets);
 
     // invalid can either be out of range of the entire global image or it
     // can be a background vertex which occurs due to pixel value below the
     // threshold, previously selected vertices are considered valid
     auto found_adjacent_invalid = false;
     auto covered = false;
-    update_neighbors(tile, interval_id, block_id, msg_vertex, vid, revisits,
-                     stage, tile_thresholds, found_adjacent_invalid,
+    update_neighbors(tile, interval_id, block_id, msg_vertex, current_coord,
+                     revisits, stage, tile_thresholds, found_adjacent_invalid,
                      *msg_vertex, fifo, covered, vdb_accessor);
 
     // protect from message values not inside
     // this block or interval such as roots from activate_vids
 #ifdef DENSE
+    auto vid = msg_vertex->vid;
     current = get_vertex_vid(interval_id, block_id, vid, nullptr);
 #else
     if (in_domain) {
-      current = get_active_vertex(interval_id, block_id, vid);
+      current = get_active_vertex(interval_id, block_id, current_coord);
       assertm(current != nullptr, "connected can't be passed a null");
       // msg_vertex aleady aware it is a surface
       if (surface) {
@@ -1747,7 +1716,8 @@ void Recut<image_t>::connected_tile(
     if (found_adjacent_invalid && !(current->surface())) {
 #ifdef FULL_PRINT
       std::cout << "found surface vertex " << interval_id << " " << block_id
-                << " " << current->vid << " label " << current->label() << '\n';
+                << " " << coord_to_str(current_coord) << " label "
+                << current->label() << '\n';
 #endif
       current->mark_surface();
 
@@ -1765,19 +1735,19 @@ void Recut<image_t>::connected_tile(
         // at this stage
         // goes into updated_ghost_vec of neighbors if its on the edge with
         // them these then get added into neighbor local_fifo
-        check_ghost_update(interval_id, block_id, current, stage);
+        check_ghost_update(interval_id, block_id, current_coord, current,
+                           stage);
 #endif
       } else {
         // a message from an outside leaf is actually a surface and was
         // unaware so send a message directly to that leaf
-        const auto check_block_id = get_block_id(current->vid);
-        const auto check_interval_id = get_interval_id(current->vid);
+        const auto check_block_id = coord_img_to_block_id(current_coord);
+        const auto check_interval_id = coord_img_to_interval_id(current_coord);
 
         // leverage updated_ghost_vec to avoid race conditions
         // check_ghost_update never applies to vertices outside this leaf
         updated_ghost_vec[check_interval_id][block_id][check_block_id]
-            .emplace_back(current->edge_state, current->vid,
-                          current->radius, current->parent);
+            .emplace_back(current);
         active_neighbors[check_interval_id][check_block_id][block_id] = true;
       }
     }
@@ -1790,7 +1760,8 @@ void Recut<image_t>::connected_tile(
 template <class image_t>
 template <class Container, typename T>
 void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
-                                 VID_t block_id, std::string stage,
+                                 VID_t block_id, GridCoord offsets,
+                                 std::string stage,
                                  const TileThresholds<image_t> *tile_thresholds,
                                  Container &fifo, VID_t revisits,
                                  T vdb_accessor) {
@@ -1806,7 +1777,7 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
       current = msg_vertex;
     } else {
       // current is safe during call to update_neighbors
-      current = get_active_vertex(interval_id, block_id, msg_vertex->vid);
+      current = get_active_vertex(interval_id, block_id, msg_vertex->offsets);
       assertm(current != nullptr,
               "get_active_vertex yielded nullptr radius_tile");
     }
@@ -1817,13 +1788,12 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
     // to the known radius of 1
     // if (current->surface() && (current->radius != 1)) {
     if (current->surface()) {
-#ifdef FULL_PRINT
-      cout << "radius_tile surface " << current->vid << '\n';
-#endif
       current->radius = 1;
       // if in domain notify potential outside domains
       if (!(msg_vertex->band())) {
-        check_ghost_update(interval_id, block_id, current, stage);
+        check_ghost_update(interval_id, block_id,
+                           coord_add(current->offsets, offsets), current,
+                           stage);
       }
     }
 
@@ -1832,16 +1802,17 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
 #endif
 
     bool _ = false;
-    update_neighbors(tile, interval_id, block_id, current, current->vid,
-                     revisits, stage, tile_thresholds, _, *current, fifo, _,
-                     vdb_accessor);
+    update_neighbors(tile, interval_id, block_id, current,
+                     coord_add(current->offsets, offsets), revisits, stage,
+                     tile_thresholds, _, *current, fifo, _, vdb_accessor);
   }
 }
 
 template <class image_t>
 template <class Container, typename T>
 void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
-                                VID_t block_id, std::string stage,
+                                VID_t block_id, GridCoord offsets,
+                                std::string stage,
                                 const TileThresholds<image_t> *tile_thresholds,
                                 Container &fifo, VID_t revisits,
                                 T vdb_accessor) {
@@ -1862,7 +1833,7 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
       current = msg_vertex;
       current_outside_domain = true;
     } else {
-      current = get_active_vertex(interval_id, block_id, msg_vertex->vid);
+      current = get_active_vertex(interval_id, block_id, msg_vertex->offsets);
       assertm(current != nullptr,
               "get_active_vertex yielded nullptr radius_tile");
     }
@@ -1874,11 +1845,12 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
     visited += 1;
 #endif
 
-    auto current_coord = vid_to_sub(current->vid);
+    auto current_coord = coord_add(current->offsets, offsets);
     // Parent
     // by default current will have a root of itself
     if (current->root()) {
-      current->set_parent(current_coord);
+      OffsetCoord zeros{0, 0, 0};
+      current->set_parent(zeros);
       current->prune_visit();
     }
 
@@ -1887,7 +1859,7 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
 
     bool _ = false;
     auto enqueue_dsts = true;
-    update_neighbors(nullptr, interval_id, block_id, current, current->vid,
+    update_neighbors(nullptr, interval_id, block_id, current, current_coord,
                      revisits, "prune", nullptr, _, found_higher_parent, fifo,
                      covered, vdb_accessor, current_outside_domain,
                      enqueue_dsts);
@@ -1901,39 +1873,34 @@ void Recut<image_t>::march_narrow_band(
     const TileThresholds<image_t> *tile_thresholds, Container &fifo,
     T vdb_accessor) {
 #ifdef LOG_FULL
-  struct timespec time0, time1;
   VID_t visited = 0;
-  clock_gettime(CLOCK_REALTIME, &time0);
+  auto timer = new high_resolution_timer();
   cout << "Start marching interval: " << interval_id << " block: " << block_id
        << '\n';
 #endif
 
+  // first coord of block with respect to whole image
+  auto block_img_offsets = id_interval_block_to_img_offsets(interval_id, block_id);
+
   VID_t revisits = 0;
 
   if (stage == "connected") {
-    connected_tile(tile, interval_id, block_id, stage, tile_thresholds, fifo,
-                   revisits, vdb_accessor);
+    connected_tile(tile, interval_id, block_id, block_img_offsets, stage,
+                   tile_thresholds, fifo, revisits, vdb_accessor);
   } else if (stage == "radius") {
-    radius_tile(tile, interval_id, block_id, stage, tile_thresholds, fifo,
-                revisits, vdb_accessor);
+    radius_tile(tile, interval_id, block_id, block_img_offsets, stage,
+                tile_thresholds, fifo, revisits, vdb_accessor);
   } else if (stage == "prune") {
-    prune_tile(tile, interval_id, block_id, stage, tile_thresholds, fifo,
-               revisits, vdb_accessor);
+    prune_tile(tile, interval_id, block_id, block_img_offsets, stage,
+               tile_thresholds, fifo, revisits, vdb_accessor);
   } else {
     assertm(false, "Stage name not recognized");
   }
 
 #ifdef LOG_FULL
-  clock_gettime(CLOCK_REALTIME, &time1);
   cout << "Marched interval: " << interval_id << " block: " << block_id
        << " visiting " << visited << " revisits " << revisits << " in "
-       << diff_time(time0, time1) << " s" << '\n';
-#endif
-
-#ifdef RV
-  // warning this is an atomic variable, which may incur costs such as
-  // unwanted or unexpected serial behavior between blocks
-  global_revisits += revisits;
+       << time.elapsed() << " s" << '\n';
 #endif
 
   // Note: could set explicit memory ordering on atomic
@@ -1941,57 +1908,6 @@ void Recut<image_t>::march_narrow_band(
   processing_blocks[interval_id][block_id].store(
       false); // release block_id heap
 } // end march_narrow_band
-
-/* intervals are arranged in c-order in 3D, therefore each
- * intervals can be accessed via it's intervals subscript or by a linear idx
- * id : the linear idx of this interval in the entire domain
- * i, j, k : the subscript to this interval
- */
-template <class image_t>
-void Recut<image_t>::get_interval_subscript(const VID_t id, VID_t &i, VID_t &j,
-                                            VID_t &k) {
-  i = id % grid_interval_length_x;
-  j = (id / grid_interval_length_x) % grid_interval_length_y;
-  k = (id / (grid_interval_length_x * grid_interval_length_y)) %
-      grid_interval_length_z;
-}
-
-template <class image_t>
-void Recut<image_t>::get_interval_offsets(const VID_t interval_id,
-                                          vector<int> &interval_offsets,
-                                          vector<int> &interval_extents) {
-  VID_t i, j, k;
-  get_interval_subscript(interval_id, i, j, k);
-  vector<int> subs = {static_cast<int>(i), static_cast<int>(j),
-                      static_cast<int>(k)};
-  interval_offsets = {0, 0, 0};
-  interval_extents = {static_cast<int>(this->interval_lengths[0]),
-                      static_cast<int>(this->interval_lengths[1]),
-                      static_cast<int>(this->interval_lengths[2])};
-  // increment the offset location to extract
-  interval_offsets[0] += this->image_offsets[0];
-  interval_offsets[1] += this->image_offsets[1];
-  interval_offsets[2] += this->image_offsets[2];
-  vector<int> szs = {(int)this->image_lengths[0], (int)this->image_lengths[1],
-                     (int)this->image_lengths[2]};
-  std::vector<int> interval_lengths = {static_cast<int>(this->interval_lengths[0]),
-                                       static_cast<int>(this->interval_lengths[1]),
-                                       static_cast<int>(this->interval_lengths[2])};
-  // don't constrain the extents to actual image
-  // mcp3d pads with zero if requests go beyond memory
-  // global command line extents have already been factored
-  // into szs
-  for (int i = 0; i < 3; i++) {
-    interval_offsets[i] += subs[i] * interval_lengths[i];
-  }
-#ifdef LOG_FULL
-  cout << "interval_id: " << interval_id;
-  cout << " offset x " << interval_offsets[0] << " offset y "
-       << interval_offsets[1] << " offset z " << interval_offsets[2] << '\n';
-  cout << " extents x " << interval_extents[0] << " extents y "
-       << interval_extents[1] << " extents z " << interval_extents[2] << '\n';
-#endif
-}
 
 // return the nearest background threshold value that is closest to the
 // arg foreground_percent for the given image region
@@ -2100,8 +2016,6 @@ Recut<image_t>::process_interval(VID_t interval_id, const image_t *tile,
   while (true) {
     clock_gettime(CLOCK_REALTIME, &iter_start);
 
-    bound_band += stride;
-
 #ifdef ASYNC
 
 #ifdef TF
@@ -2175,9 +2089,6 @@ Recut<image_t>::process_interval(VID_t interval_id, const image_t *tile,
 #ifdef LOG_FULL
     cout << "Marched narrow band";
     clock_gettime(CLOCK_REALTIME, &postmarch_time);
-    if (restart_bool) {
-      cout << " with bound_band: " << bound_band;
-    }
     cout << " in " << diff_time(iter_start, postmarch_time) << " sec." << '\n';
 #endif
 
@@ -2223,9 +2134,11 @@ Recut<image_t>::process_interval(VID_t interval_id, const image_t *tile,
 #ifdef LOG_FULL
   cout << "Interval: " << interval_id << " (no I/O) within " << no_io_time
        << " sec." << '\n';
+#ifdef DENSE
   if (!(this->mmap_))
     cout << "Finished saving interval in "
          << diff_time(presave_time, postsave_time) << " sec." << '\n';
+#endif
 #endif
 
   active_intervals[interval_id] = false;
@@ -2254,8 +2167,7 @@ void Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
   clock_gettime(CLOCK_REALTIME, &start);
 #endif
 
-  vector<int> interval_offsets;
-  vector<int> interval_extents;
+  auto tile_extents = this->interval_lengths;
 
   // read image data
   // FIXME check that this has no state that can
@@ -2263,23 +2175,22 @@ void Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
   // otherwise just create copies of it if necessary
   assertm(!(this->params->force_regenerate_image),
           "If USE_MCP3D macro is set, this->params->force_regenerate_image "
-          "must be set "
-          "to False");
+          "must be set to False");
   // read data from channel
   mcp3d_tile.ReadImageInfo(args->resolution_level(), true);
   // read data
   try {
-    get_interval_offsets(interval_id, interval_offsets, interval_extents);
+    auto interval_offsets = id_interval_to_img_offsets(interval_id);
 #ifdef LOG_FULL
-    cout << "interval offsets x " << interval_offsets[0] << " y "
-         << interval_offsets[1] << " z " << interval_offsets[2] << '\n';
-    cout << "interval extents x " << interval_extents[0] << " y "
-         << interval_extents[1] << " z " << interval_extents[2] << '\n';
+    print_coord(interval_offsets, "interval_offsets");
 #endif
+
+    // mcp3d operates in z y x order
+    // but still returns x y z (c-order) buffers
     std::reverse(interval_offsets.begin(), interval_offsets.end());
-    std::reverse(interval_extents.begin(), interval_extents.end());
+    std::reverse(tile_extents.begin(), tile_extents.end());
     // use unit strides only
-    mcp3d::MImageBlock block(interval_offsets, interval_extents);
+    mcp3d::MImageBlock block(interval_offsets, tile_extents);
     mcp3d_tile.SelectView(block, args->resolution_level());
     mcp3d_tile.ReadData(true, "quiet");
   } catch (...) {
@@ -2287,7 +2198,7 @@ void Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
     throw;
   }
 #ifdef FULL_PRINT
-  // print_image_3D(mcp3d_tile.Volume<image_t>(0), interval_extents);
+  // print_image_3D(mcp3d_tile.Volume<image_t>(0), tile_extents);
 #endif
 
 #ifdef LOG
@@ -2398,6 +2309,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
   atomic<double> computation_time;
   computation_time = 0.0;
+  global_revisits = 0;
   auto interval_open_count = std::vector<uint16_t>(grid_interval_size, 0);
 #ifdef NO_INTERVAL_RV
   auto visited_intervals = std::make_unique<bool[]>(grid_interval_size, false);
@@ -2428,7 +2340,6 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   // Main march for loop
   // continue iterating until all intervals are finished
   // intervals can be (re)activated by neighboring intervals
-  bound_band = 0; // for restart
   int outer_iteration_idx;
   for (outer_iteration_idx = 0; !are_intervals_finished();
        outer_iteration_idx++) {
@@ -2556,10 +2467,9 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                   "input can't be vdb during convert stage");
           auto convert_start = timer->elapsed();
 
-          vector<int> interval_offsets;
           vector<int> no_offsets = {0, 0, 0};
           vector<int> interval_extents;
-          get_interval_offsets(interval_id, interval_offsets, interval_extents);
+          auto interval_offsets = id_interval_to_img_offsets(interval_id);
 
           vector<int> buffer_offsets =
               params->force_regenerate_image ? interval_offsets : no_offsets;
@@ -2621,80 +2531,73 @@ Recut<image_t>::update(std::string stage, Container &fifo,
       static_cast<double>(computation_time), io_time, interval_open_count);
 } // end update()
 
-/* get the vid with respect to the entire image passed to the
- * recut program. Note this spans multiple tiles and blocks
- * Take the subscripts of the vertex or voxel
- * returns the linear idx into the entire domain
- */
-template <class image_t>
-inline VID_t Recut<image_t>::get_img_vid(const VID_t i, const VID_t j,
-                                         const VID_t k) {
-  return k * this->image_lengths[0] * this->image_lengths[1] + j * this->image_lengths[0] + i;
-}
-
 /*
  * blocks are arranged in c-order in 3D, therefore each block can
- * be accessed via it's block subscript or by a linear idx
+ * be accessed via it's block coord or by a linear idx
  * id : the blocks linear idx with respect to the individual
  *      interval
- * i, j, k : the equivalent subscript to this block
+ * i, j, k : the equivalent coord to this block
  */
 template <class image_t>
-inline void Recut<image_t>::get_block_subscript(const VID_t id, VID_t &i,
-                                                VID_t &j, VID_t &k) {
-  i = id % interval_block_len_x;
-  j = (id / interval_block_len_x) % interval_block_len_y;
-  k = (id / (interval_block_len_x * interval_block_len_y)) %
-      interval_block_len_z;
+inline void Recut<image_t>::get_block_coord(const VID_t id, VID_t &i, VID_t &j,
+                                            VID_t &k) {
+  i = id % this->interval_block_lengths[0];
+  j = (id / this->interval_block_lengths[0]) % this->interval_block_lengths[1];
+  k = (id /
+       (this->interval_block_lengths[0] * this->interval_block_lengths[1])) %
+      this->interval_block_lengths[2];
 }
 
 /*
- * Convert block subscripts into linear index row-ordered
+ * Convert block coordinates into linear index row-ordered
  */
 template <class image_t>
-inline VID_t Recut<image_t>::get_block_id(const VID_t iblock,
-                                          const VID_t jblock,
-                                          const VID_t kblock) {
-  return iblock + jblock * interval_block_len_x +
-         kblock * interval_block_len_x * interval_block_len_y;
+inline VID_t Recut<image_t>::sub_block_to_block_id(const VID_t iblock,
+                                                   const VID_t jblock,
+                                                   const VID_t kblock) {
+  return iblock + jblock * this->interval_block_lengths[0] +
+         kblock * this->interval_block_lengths[0] *
+             this->interval_block_lengths[1];
 }
 
 template <class image_t>
-inline void Recut<image_t>::get_img_subscript(const VID_t id, VID_t &i,
-                                              VID_t &j, VID_t &k) {
+inline void Recut<image_t>::get_img_coord(const VID_t id, VID_t &i, VID_t &j,
+                                          VID_t &k) {
   i = id % this->image_lengths[0];
   j = (id / this->image_lengths[0]) % this->image_lengths[1];
-  k = (id / this->image_lengths[0] * this->image_lengths[1]) % this->image_lengths[2];
+  k = (id / this->image_lengths[0] * this->image_lengths[1]) %
+      this->image_lengths[2];
 }
 
 // Wrap-around rotate all values forward one
 // This logic disentangles 0 % 32 from 32 % 32 results
-// This function is abstract in that it can adjust subscripts
+// This function is abstract in that it can adjust coordinates
 // of vid, block or interval
 template <class image_t>
-inline VID_t Recut<image_t>::rotate_index(VID_t img_sub, const VID_t current,
+inline VID_t Recut<image_t>::rotate_index(VID_t img_coord, const VID_t current,
                                           const VID_t neighbor,
                                           const VID_t interval_block_size,
                                           const VID_t pad_block_size) {
   // when they are in the same block or index
   // then you simply need to account for the 1
-  // voxel border region to get the correct subscript
+  // voxel border region to get the correct coord
   // for this dimension
   if (current == neighbor) {
-    return img_sub + 1; // adjust to padded block idx
+    return img_coord + 1; // adjust to padded block idx
   }
   // if it's in another block/interval it can only be 1 vox away
-  // so make sure the subscript itself is on the correct edge of its block
+  // so make sure the coord itself is on the correct edge of its block
   // domain
   if (current == (neighbor + 1)) {
-    assertm(img_sub == interval_block_size - 1,
+    assertm(img_coord == interval_block_size - 1,
             "Does not currently support diagonal connections or any ghost "
             "regions greater that 1");
     return 0;
   }
   if (current == (neighbor - 1)) {
-    assertm(img_sub == 0, "Does not currently support diagonal connections or "
-                          "any ghost regions greater that 1");
+    assertm(img_coord == 0,
+            "Does not currently support diagonal connections or "
+            "any ghost regions greater that 1");
     return pad_block_size - 1;
   }
 
@@ -2710,11 +2613,10 @@ inline VID_t Recut<image_t>::rotate_index(VID_t img_sub, const VID_t current,
  * if not found, creates a new active vertex marked as selected
  */
 template <class image_t>
-inline VertexAttr *
-Recut<image_t>::get_or_set_active_vertex(const VID_t interval_id,
-                                         const VID_t block_id,
-                                         const VID_t img_vid, bool &found) {
-  auto vertex = get_active_vertex(interval_id, block_id, img_vid);
+inline VertexAttr *Recut<image_t>::get_or_set_active_vertex(
+    const VID_t interval_id, const VID_t block_id, const OffsetCoord offsets,
+    bool &found) {
+  auto vertex = get_active_vertex(interval_id, block_id, offsets);
   if (vertex) {
     found = true;
     assertm(vertex->selected() || vertex->root(),
@@ -2723,7 +2625,7 @@ Recut<image_t>::get_or_set_active_vertex(const VID_t interval_id,
   } else {
     found = false;
     auto v =
-        &(this->active_vertices[interval_id][block_id].emplace_back(img_vid));
+        &(this->active_vertices[interval_id][block_id].emplace_back(offsets));
     v->mark_selected();
     return v;
   }
@@ -2734,11 +2636,11 @@ Recut<image_t>::get_or_set_active_vertex(const VID_t interval_id,
  * block_id, and img_vid (vid with respect to global image)
  */
 template <class image_t>
-inline VertexAttr *Recut<image_t>::get_active_vertex(const VID_t interval_id,
-                                                     const VID_t block_id,
-                                                     const VID_t img_vid) {
+inline VertexAttr *
+Recut<image_t>::get_active_vertex(const VID_t interval_id, const VID_t block_id,
+                                  const OffsetCoord offsets) {
   for (auto &v : this->active_vertices[interval_id][block_id]) {
-    if (v.vid == img_vid) {
+    if (v.offsets == offsets) {
       return &v;
     }
   }
@@ -2826,38 +2728,21 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
   }
 }
 
-template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
-
-#if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
-  omp_set_num_threads(params->user_thread_count());
-#ifdef LOG
-  cout << "User specific thread count " << params->user_thread_count() << '\n';
-  cout << "User specified image root dir " << args->image_root_dir() << '\n';
-#endif
-#endif
-  struct timespec time0, time1, time2, time3;
-  uint64_t root_64bit;
-
-  auto path_extension =
-      std::string(fs::path(args->image_root_dir()).extension());
-  this->input_is_vdb = path_extension == ".vdb" ? true : false;
-
-  if (params->convert_only_ || this->input_is_vdb) {
-    openvdb::initialize();
-  }
-
-  // Deduce extents from the various input options
-  std::vector<int> input_image_extents;
-  // auto get_input_image_extents = [this&]() {
+// Deduce lengths from the various input options
+template <class image_t>
+std::vector<int>
+Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
+                                        RecutCommandLineArgs *args) {
+  std::vector<int> input_image_lengths;
   if (this->params->force_regenerate_image) {
     // for generated image runs trust the args->image_lengths
     // to reflect the total global image domain
     // see get_args() in utils.hpp
-    input_image_extents = args->image_lengths;
+    input_image_lengths = args->image_lengths;
 
     // FIXME placeholder grid
     this->topology_grid =
-        create_vdb_grid(input_image_extents, this->params->background_thresh());
+        create_vdb_grid(input_image_lengths, this->params->background_thresh());
   } else if (this->input_is_vdb) {
 
     assertm(!params->convert_only_,
@@ -2877,7 +2762,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     cout << "Read grid in: " << timer->elapsed() << " s\n";
 #endif
 
-    input_image_extents = get_grid_original_extents(topology_grid);
+    input_image_lengths = get_grid_original_lengths(topology_grid);
 
   } else {
     // read from image use mcp3d library
@@ -2904,59 +2789,75 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     // global_image.SaveImageInfo();
 
     // reflects the total global image domain
-    input_image_extents = global_image.xyz_dims(args->resolution_level());
-    // reverse mcp3d's z y x order for offsets and extents
-    std::reverse(input_image_extents.begin(), input_image_extents.end());
+    input_image_lengths = global_image.xyz_dims(args->resolution_level());
+    // reverse mcp3d's z y x order for offsets and lengths
+    std::reverse(input_image_lengths.begin(), input_image_lengths.end());
 
-    this->topology_grid = create_vdb_grid(input_image_extents);
+    this->topology_grid = create_vdb_grid(input_image_lengths);
+  }
+  return input_image_lengths;
+}
+
+template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
+
+#if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
+  omp_set_num_threads(params->user_thread_count());
+#ifdef LOG
+  cout << "User specific thread count " << params->user_thread_count() << '\n';
+  cout << "User specified image root dir " << args->image_root_dir() << '\n';
+#endif
+#endif
+  struct timespec time0, time1, time2, time3;
+  uint64_t root_64bit;
+
+  // input type
+  {
+    auto path_extension =
+        std::string(fs::path(args->image_root_dir()).extension());
+    this->input_is_vdb = path_extension == ".vdb" ? true : false;
+    if (params->convert_only_ || this->input_is_vdb) {
+      openvdb::initialize();
+    }
   }
 
-  const auto check_input_offsets = [](auto offsets, auto extents) {
-    auto z = rng::views::zip(offsets, extents);
-    for (auto &&[first, second] : z) {
-      assertm(first < second, "input offset can not exceed dimension of image");
-    }
-  };
+  // actual possible lengths
+  auto input_image_lengths =
+      get_input_image_lengths(this->params->force_regenerate_image, args);
 
   // account and check requested args->image_offsets and args->image_lengths
   // extents are always the side length of the domain on each dim, in x y z
   // order
-  check_input_offsets(args->image_offsets, input_image_extents);
-    // default image_offsets is {0, 0, 0}
-    // which means start at the beginning of the image
-    // this enforces the minimum extent to be 1 in each dim
+  assertm(coord_all_lt(args->image_offsets, input_image_lengths),
+          "input offset can not exceed dimension of image");
+
+  // default image_offsets is {0, 0, 0}
+  // which means start at the beginning of the image
+  // this enforces the minimum extent to be 1 in each dim
   // set and no longer refer to args->image_offsets
   this->image_offsets = args->image_offsets;
 
+  // protect faulty out of bounds input if extents goes beyond
+  // domain of full image
+  auto max_len_after_off = coord_sub(input_image_lengths, this->image_offsets);
+
+  // sanitize in each dimension
+  // and protected from faulty offset values
   for (int i = 0; i < 3; i++) {
-    assertm(this->image_offsets[i] < input_image_extents[i],
-            "input offset can not exceed dimension of image");
-
-    // protect faulty out of bounds input if extents goes beyond
-    // domain of full image
-    auto max_extent = input_image_extents[i] - this->image_offsets[i];
-
-    if (args->image_lengths[i]) {
-      // use the input extent if possible, or maximum otherwise
-      this->image_lengths[i] = min(args->image_lengths[i], max_extent);
+    // -1,-1,-1 means use to the end of input image
+    if (args->image_lengths[i] > 0) {
+      // use the input length if possible, or maximum otherwise
+      this->image_lengths[i] =
+          std::min(args->image_lengths[i], max_len_after_off[i]);
     } else {
-      // image_lengths is set to grid_size for force_regenerate_image option,
-      // otherwise 0,0,0 means use to the end of input image
-      this->image_lengths[i] = max_extent;
-      // extents are now sanitized in each dimension
-      // and protected from faulty offset values
+      this->image_lengths[i] = max_len_after_off[i];
     }
-  }
-
-  auto coord_prod = [](const auto coord) -> VID_t {
-    static_cast<VID_t>(coord[0]) * coord[1] * coord[2];
   }
 
   // save to globals the actual size of the full image
   // accounting for the input offsets and extents
   // these will be used throughout the rest of the program
   // for convenience
-  this->image_size = coord_prod(this->image_lengths);
+  this->image_size = coord_prod_accum(this->image_lengths);
 
   // Determine the size of each interval in each dim
   // the image size and offsets override the user inputted interval size
@@ -2966,8 +2867,8 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     // images are saved in separate z-planes, so conversion should respect
     // that for best performance constrict so less data is allocated
     // especially in z dimension
-    this->this->interval_lengths[0] = this->image_lengths[0];
-    this->this->interval_lengths[1] = this->image_lengths[1];
+    this->interval_lengths[0] = this->image_lengths[0];
+    this->interval_lengths[1] = this->image_lengths[1];
     auto recommended_max_mem = GetAvailMem() / 64;
     // guess how many z-depth tiles will fit before a bad_alloc is likely
     auto simultaneous_tiles =
@@ -2975,29 +2876,32 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
         (sizeof(image_t) * this->image_lengths[0] * this->image_lengths[1]);
     // assertm(simultaneous_tiles >= 1, "Tile x and y size too large to fit in
     // system memory (DRAM)");
-    this->this->interval_lengths[2] =
-        std::min(simultaneous_tiles, static_cast<double>(this->image_lengths[2]));
+    this->interval_lengths[2] = std::min(
+        simultaneous_tiles, static_cast<double>(this->image_lengths[2]));
   } else if (this->input_is_vdb) {
-    this->this->interval_lengths[0] = this->image_lengths[0];
-    this->this->interval_lengths[1] = this->image_lengths[1];
-    this->this->interval_lengths[2] = this->image_lengths[2];
+    this->interval_lengths[0] = this->image_lengths[0];
+    this->interval_lengths[1] = this->image_lengths[1];
+    this->interval_lengths[2] = this->image_lengths[2];
   } else {
-    this->this->interval_lengths[0] =
-        min((VID_t)params->interval_size(), this->image_lengths[0]);
-    this->this->interval_lengths[1] =
-        min((VID_t)params->interval_size(), this->image_lengths[1]);
-    this->this->interval_lengths[2] =
-        min((VID_t)params->interval_size(), this->image_lengths[2]);
+    this->interval_lengths[0] =
+        std::min((int)params->interval_size(), this->image_lengths[0]);
+    this->interval_lengths[1] =
+        std::min((int)params->interval_size(), this->image_lengths[1]);
+    this->interval_lengths[2] =
+        std::min((int)params->interval_size(), this->image_lengths[2]);
   }
 
   // determine the length of intervals in each dim
   // rounding up (ceil)
-  grid_interval_length_x =
-      (this->image_lengths[0] + this->interval_lengths[0] - 1) / this->interval_lengths[0];
-  grid_interval_length_y =
-      (this->image_lengths[1] + this->interval_lengths[1] - 1) / this->interval_lengths[1];
-  grid_interval_length_z =
-      (this->image_lengths[2] + this->interval_lengths[2] - 1) / this->interval_lengths[2];
+  this->grid_interval_lengths[0] =
+      (this->image_lengths[0] + this->interval_lengths[0] - 1) /
+      this->interval_lengths[0];
+  this->grid_interval_lengths[1] =
+      (this->image_lengths[1] + this->interval_lengths[1] - 1) /
+      this->interval_lengths[1];
+  this->grid_interval_lengths[2] =
+      (this->image_lengths[2] + this->interval_lengths[2] - 1) /
+      this->interval_lengths[2];
 
   // the resulting interval size override the user inputted block size
   if (this->params->convert_only_) {
@@ -3005,30 +2909,40 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     this->block_lengths[1] = this->interval_lengths[1];
     this->block_lengths[2] = this->interval_lengths[2];
   } else {
-    this->block_lengths[0] = min(this->interval_lengths[0], user_def_block_size);
-    this->block_lengths[1] = min(this->interval_lengths[1], user_def_block_size);
-    this->block_lengths[2] = min(this->interval_lengths[2], user_def_block_size);
+    auto user_def_block_size = args->recut_parameters().block_size();
+    this->block_lengths[0] =
+        std::min(this->interval_lengths[0], user_def_block_size);
+    this->block_lengths[1] =
+        std::min(this->interval_lengths[1], user_def_block_size);
+    this->block_lengths[2] =
+        std::min(this->interval_lengths[2], user_def_block_size);
   }
 
   // determine length of blocks that span an interval for each dim
   // this rounds up
-  interval_block_len_x =
-      (this->interval_lengths[0] + this->block_lengths[0] - 1) / this->block_lengths[0];
-  interval_block_len_y =
-      (this->interval_lengths[1] + this->block_lengths[1] - 1) / this->block_lengths[1];
-  interval_block_len_z =
-      (this->interval_lengths[2] + this->block_lengths[2] - 1) / this->block_lengths[2];
+  this->interval_block_lengths[0] =
+      (this->interval_lengths[0] + this->block_lengths[0] - 1) /
+      this->block_lengths[0];
+  this->interval_block_lengths[1] =
+      (this->interval_lengths[1] + this->block_lengths[1] - 1) /
+      this->block_lengths[1];
+  this->interval_block_lengths[2] =
+      (this->interval_lengths[2] + this->block_lengths[2] - 1) /
+      this->block_lengths[2];
 
-  auto image_x_len_pad = interval_block_len_x * this->block_lengths[0];
-  auto image_y_len_pad = interval_block_len_y * this->block_lengths[1];
-  auto image_z_len_pad = interval_block_len_z * this->block_lengths[2];
-  auto image_xy_len_pad =
-      image_x_len_pad * image_y_len_pad; // saves recomputation occasionally
+  this->grid_interval_size = coord_prod_accum(this->grid_interval_lengths);
+  this->interval_block_size = coord_prod_accum(this->interval_block_lengths);
 
-  this->grid_interval_size =
-      grid_interval_length_x * grid_interval_length_y * grid_interval_length_z;
-  this->interval_block_size =
-      interval_block_len_x * interval_block_len_y * interval_block_len_z;
+#ifdef LOG
+  print_coord(this->image_lengths, "image");
+  print_coord(this->interval_lengths, "interval");
+  print_coord(this->block_lengths, "block");
+  print_coord(this->interval_block_lengths, "interval block lengths");
+  std::cout << "intervals per grid: " << grid_interval_size
+            << " blocks per interval: " << interval_block_size << '\n';
+#endif
+
+#ifdef DENSE
   pad_block_length_x = this->block_lengths[0] + 2;
   pad_block_length_y = this->block_lengths[1] + 2;
   pad_block_length_z = this->block_lengths[2] + 2;
@@ -3036,23 +2950,6 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
       pad_block_length_x * pad_block_length_y * pad_block_length_z;
   const VID_t grid_vertex_pad_size =
       pad_block_offset * interval_block_size * grid_interval_size;
-
-#ifdef LOG
-  print_sub(this->image_lengths, "image");
-  print_sub(this->interval_lengths, "interval");
-  print_sub(this->block_lengths, "block");
-  std::cout << "total intervals: " << grid_interval_size
-       << " blocks per interval: " << interval_block_size << '\n';
-  cout << "interval_block_len_x: " << interval_block_len_x
-       << " interval_block_len_y: " << interval_block_len_y
-       << " interval_block_len_z: " << interval_block_len_z << '\n';
-  cout << "image_x_len_pad: " << image_x_len_pad
-       << " image_y_len_pad: " << image_y_len_pad
-       << " image_z_len_pad: " << image_z_len_pad << " image_xy_len_pad "
-       << image_xy_len_pad << '\n';
-#endif
-
-#ifdef DENSE
   // we cast the interval id and block id to uint16 for use as a key
   // in the global variables maps, if total intervals or blocks exceed this
   // there would be overflow
@@ -3126,7 +3023,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
       return {0}; // dummy root vid
     } else {
       // adds all valid markers to root_vids vector and returns
-      return process_marker_dir(this->image_offsets, input_image_extents);
+      return process_marker_dir(this->image_offsets, this->image_lengths);
     }
   }
 }
@@ -3169,14 +3066,14 @@ Recut<image_t>::get_vertex_vid(const VID_t interval_id, const VID_t block_id,
 
   // Find correct offset into block
 
-  // first convert from tile id to non- padded block subs
-  get_img_subscript(img_vid, i, j, k);
+  // first convert from tile id to non- padded block coords
+  get_img_coord(img_vid, i, j, k);
   // in case interval_length isn't evenly divisible by block size
   // mod out any contributions from the interval
   auto ia = i % this->interval_lengths[0];
   auto ja = j % this->interval_lengths[1];
   auto ka = k % this->interval_lengths[2];
-  // these are subscripts within the non-padded block domain
+  // these are coordinates within the non-padded block domain
   // these values will be modified by rotate_index to account for padding
   img_block_i = ia % this->block_lengths[0];
   img_block_j = ja % this->block_lengths[1];
@@ -3188,12 +3085,12 @@ Recut<image_t>::get_vertex_vid(const VID_t interval_id, const VID_t block_id,
   // ignoring ghost regions denoted nb_* since it may belong in the domain
   // of a neighbors block or interval all block ids are a linear row-wise
   // idx, relative to current interval
-  int nb_block = (int)get_block_id(img_vid);
-  int nb_interval = (int)get_interval_id(img_vid);
+  int nb_block = (int)id_img_to_block_id(img_vid);
+  int nb_interval = (int)id_img_to_interval_id(img_vid);
   // cout << "nb_interval " << nb_interval << " nb_block " << nb_block <<
   // '\n';
 
-  // adjust block subscripts so they reflect the interval or block they belong
+  // adjust block coordinates so they reflect the interval or block they belong
   // to also adjust based on actual 3D padding of block Rotate all values
   // forward one This logic disentangles 0 % 32 from 32 % 32 results within a
   // block, where ghost region is index -1 and interval_block_size
@@ -3205,30 +3102,32 @@ Recut<image_t>::get_vertex_vid(const VID_t interval_id, const VID_t block_id,
     } else {
       VID_t iblock, jblock, kblock, nb_iblock, nb_jblock, nb_kblock;
       // the block_id is a linear index into the 3D row-wise arrangement of
-      // blocks, converting to subscript makes adjustments easier
-      get_block_subscript(block_id, iblock, jblock, kblock);
-      get_block_subscript(nb_block, nb_iblock, nb_jblock, nb_kblock);
+      // blocks, converting to coord makes adjustments easier
+      get_block_coord(block_id, iblock, jblock, kblock);
+      get_block_coord(nb_block, nb_iblock, nb_jblock, nb_kblock);
       assertm(absdiff(iblock, nb_iblock) + absdiff(jblock, nb_jblock) +
                       absdiff(kblock, nb_kblock) ==
                   1,
               "Does not currently support diagonal connections or any "
               "ghost "
               "regions greater that 1");
-      pad_img_block_i = rotate_index(img_block_i, iblock, nb_iblock,
-                                     this->block_lengths[0], pad_block_length_x);
-      pad_img_block_j = rotate_index(img_block_j, jblock, nb_jblock,
-                                     this->block_lengths[1], pad_block_length_y);
-      pad_img_block_k = rotate_index(img_block_k, kblock, nb_kblock,
-                                     this->block_lengths[2], pad_block_length_z);
+      pad_img_block_i =
+          rotate_index(img_block_i, iblock, nb_iblock, this->block_lengths[0],
+                       pad_block_length_x);
+      pad_img_block_j =
+          rotate_index(img_block_j, jblock, nb_jblock, this->block_lengths[1],
+                       pad_block_length_y);
+      pad_img_block_k =
+          rotate_index(img_block_k, kblock, nb_kblock, this->block_lengths[2],
+                       pad_block_length_z);
     }
   } else { // ignore block info, adjust based on interval
     // the interval_id is also linear index into the 3D row-wise arrangement
-    // of intervals, converting to subscript makes adjustments easier
+    // of intervals, converting to coord makes adjustments easier
     VID_t iinterval, jinterval, kinterval, nb_iinterval, nb_jinterval,
         nb_kinterval;
-    get_interval_subscript(interval_id, iinterval, jinterval, kinterval);
-    get_interval_subscript(nb_interval, nb_iinterval, nb_jinterval,
-                           nb_kinterval);
+    get_interval_coord(interval_id, iinterval, jinterval, kinterval);
+    get_interval_coord(nb_interval, nb_iinterval, nb_jinterval, nb_kinterval);
     // can only be 1 interval away
     assertm(absdiff(iinterval, nb_iinterval) +
                     absdiff(jinterval, nb_jinterval) +
@@ -3238,18 +3137,18 @@ Recut<image_t>::get_vertex_vid(const VID_t interval_id, const VID_t block_id,
             "regions greater that 1");
     // check that its in correct block of other interval, can only be 1 block
     // over note that all block ids are relative to their interval so this
-    // requires a bit more logic to check, even when converting to subs
+    // requires a bit more logic to check, even when converting to coords
 #ifndef NDEBUG
     VID_t iblock, jblock, kblock, nb_iblock, nb_jblock, nb_kblock;
-    get_block_subscript(block_id, iblock, jblock, kblock);
-    get_block_subscript(nb_block, nb_iblock, nb_jblock, nb_kblock);
+    get_block_coord(block_id, iblock, jblock, kblock);
+    get_block_coord(nb_block, nb_iblock, nb_jblock, nb_kblock);
     // overload rotate_index simply for the assert checks
-    rotate_index(nb_iblock, iinterval, nb_iinterval, interval_block_len_x,
-                 pad_block_length_x);
-    rotate_index(nb_jblock, jinterval, nb_jinterval, interval_block_len_y,
-                 pad_block_length_y);
-    rotate_index(nb_kblock, kinterval, nb_kinterval, interval_block_len_z,
-                 pad_block_length_z);
+    rotate_index(nb_iblock, iinterval, nb_iinterval,
+                 this->interval_block_lengths[0], pad_block_length_x);
+    rotate_index(nb_jblock, jinterval, nb_jinterval,
+                 this->interval_block_lengths[1], pad_block_length_y);
+    rotate_index(nb_kblock, kinterval, nb_kinterval,
+                 this->interval_block_lengths[2], pad_block_length_z);
     // do any block dimensions differ than current
     auto idiff = absdiff(iblock, nb_iblock) != 0;
     auto jdiff = absdiff(jblock, nb_jblock) != 0;
@@ -3264,7 +3163,7 @@ Recut<image_t>::get_vertex_vid(const VID_t interval_id, const VID_t block_id,
               "regions greater that 1");
     }
 #endif
-    // checked by rotate that subscript is 1 away
+    // checked by rotate that coord is 1 away
     pad_img_block_i = rotate_index(img_block_i, iinterval, nb_iinterval,
                                    this->block_lengths[0], pad_block_length_x);
     pad_img_block_j = rotate_index(img_block_j, jinterval, nb_jinterval,
@@ -3339,13 +3238,7 @@ void Recut<image_t>::brute_force_extract(vector<vertex_t> &outtree,
           VID_t i, j, k;
           i = j = k = 0;
           // get original i, j, k
-          get_img_subscript(vertex->vid, i, j, k);
-          // FIXME
-          // set vid to be in context of entire domain of image
-          // i += image_offsets[2]; // x
-          // j += image_offsets[1]; // y
-          // k += image_offsets[0]; // z
-          // vertex->vid = get_img_vid(i, j, k);
+          get_img_coord(vertex->vid, i, j, k);
           auto marker = new MyMarker(i, j, k);
           if (vertex->root()) {
             marker->type = 0;
@@ -3356,7 +3249,7 @@ void Recut<image_t>::brute_force_extract(vector<vertex_t> &outtree,
           outtree.push_back(marker);
         } else {
           // check that all copied across blocks and intervals of a
-          // single vertex all match same values 
+          // single vertex all match same values
           // FIXME this needs to be moved to recut_test.cpp
           // auto previous_match = vid_to_marker_ptr[vertex->vid];
           // assert(*previous_match == *vertex);
@@ -3370,7 +3263,7 @@ void Recut<image_t>::brute_force_extract(vector<vertex_t> &outtree,
     if (filter_by_vid(vid, interval_id, block_id)) {
       auto vertex = get_vertex_vid(interval_id, block_id, vid, nullptr);
       if (filter_by_label(vertex, accept_band)) {
-        // different copies have same values 
+        // different copies have same values
         if (!(vertex->valid_parent()) && !(vertex->root())) {
           std::cout << "could not find a valid connection for non-root node: "
                     << vertex->description() << '\n';
@@ -3400,7 +3293,7 @@ void Recut<image_t>::brute_force_extract(vector<vertex_t> &outtree,
             // failure condition
             std::cout << "\ninterval vid " << interval_id << '\n';
             std::cout << "block vid " << block_id << '\n';
-            print_vertex(vertex);
+            print_vertex(interval_id, block_id, vertex);
             assertm(marker->parent != 0,
                     "a non root marker must have a valid parent");
           }
@@ -3442,11 +3335,14 @@ template <class image_t> void Recut<image_t>::adjust_parent(bool print) {
     this->out.open(this->args->swc_path());
 
   for (auto interval_id = 0; interval_id < grid_interval_size; ++interval_id) {
+    auto interval_img_offsets = id_interval_to_img_offsets(interval_id);
     for (auto block_id = 0; block_id < interval_block_size; ++block_id) {
+      auto block_img_offsets = id_block_to_interval_offsets(block_id);
       for (auto &v : this->active_vertices[interval_id][block_id]) {
+        // FIXME
         adjust_vertex_parent(&v);
         if (print)
-          print_vertex(&v);
+          print_vertex(interval_id, block_id, &v, block_img_offsets);
       }
     }
   }
@@ -3458,11 +3354,11 @@ template <class image_t> void Recut<image_t>::adjust_parent(bool print) {
 template <class image_t>
 bool Recut<image_t>::filter_by_vid(VID_t vid, VID_t find_interval_id,
                                    VID_t find_block_id) {
-  find_interval_id = get_interval_id(vid);
+  find_interval_id = id_img_to_interval_id(vid);
   if (find_interval_id >= grid_interval_size) {
     return false;
   }
-  find_block_id = get_block_id(vid);
+  find_block_id = id_img_to_block_id(vid);
   if (find_block_id >= interval_block_size) {
     return false;
   }
@@ -3521,45 +3417,46 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
   // can have a pointer to it's parent marker
   for (auto interval_id = 0; interval_id < grid_interval_size; ++interval_id) {
     for (auto block_id = 0; block_id < interval_block_size; ++block_id) {
+      auto block_img_offsets = id_block_to_interval_offsets(block_id);
       for (auto &vertex_value : this->active_vertices[interval_id][block_id]) {
+        // FIXME add interval offset too
         auto vertex = &vertex_value;
+        auto vid = coord_add(vertex->offsets, block_img_offsets);
 #ifdef FULL_PRINT
-        print_vertex(vertex);
+        print_vertex(interval_id, block_id, vertex, block_img_offsets);
 #endif
         assertm(vertex->valid_vid(), "no valid vid");
-        assertm(filter_by_vid(vertex->vid, interval_id, block_id),
+        assertm(filter_by_vid(vid, interval_id, block_id),
                 "added to wrong container");
         // create all valid new marker objects
         if (filter_by_label(vertex, accept_band)) {
           // don't create redundant copies of same vid
           // check that all copied across blocks and intervals of a
-          // single vertex all match same values 
+          // single vertex all match same values
           // FIXME this needs to be moved to recut_test.cpp
-          // auto previous_match = vid_to_marker_ptr[vertex->vid];
+          // auto previous_match = vid_to_marker_ptr[vid];
           // assert(*previous_match == *vertex);
-          if (vid_to_marker_ptr.count(vertex->vid)) {
-            std::cout << interval_id << ' ' << block_id << ' ' << vertex->vid
+          if (vid_to_marker_ptr.count(vid)) {
+            std::cout << interval_id << ' ' << block_id << ' ' << vid
                       << " has parent " << vertex->parent << '\n';
           }
-          assertm(vid_to_marker_ptr.count(vertex->vid) == 0,
+          assertm(vid_to_marker_ptr.count(vid) == 0,
                   "Can't have two matching vids");
 #ifdef FULL_PRINT
-          // cout << "\tadding vertex " << vertex->vid << '\n';
+          // cout << "\tadding vertex " << vid << '\n';
 #endif
-          VID_t i, j, k;
-          i = j = k = 0;
           // get original i, j, k
-          get_img_subscript(vertex->vid, i, j, k);
-          auto marker = new MyMarker(i, j, k);
+          auto coord = id_to_coord(vid, this->image_lengths);
+          auto marker = new MyMarker(coord[0], coord[1], coord[2]);
           if (vertex->root()) {
             // a marker with a type of 0, must be a root
             marker->type = 0;
           }
           marker->radius = vertex->radius;
           // save this marker ptr to a map
-          vid_to_marker_ptr[vertex->vid] = marker;
-          std::cout << "Added " << interval_id << ' ' << block_id << ' '
-                    << vertex->vid << " has parent " << vertex->parent << '\n';
+          vid_to_marker_ptr[vid] = marker;
+          std::cout << "Added " << interval_id << ' ' << block_id << ' ' << vid
+                    << " has parent " << vertex->parent << '\n';
           outtree.push_back(marker);
         }
       }
@@ -3570,26 +3467,28 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
   // iterate and complete the marker definition
   for (auto interval_id = 0; interval_id < grid_interval_size; ++interval_id) {
     for (auto block_id = 0; block_id < interval_block_size; ++block_id) {
+      auto block_img_offsets = id_block_to_interval_offsets(block_id);
       for (auto &vertex_value : this->active_vertices[interval_id][block_id]) {
         auto vertex = &vertex_value;
+        auto vid = coord_add(vertex->offsets, block_img_offsets);
         assertm(vertex->valid_vid(), "no valid vid");
-        assertm(filter_by_vid(vertex->vid, interval_id, block_id),
+        assertm(filter_by_vid(vid, interval_id, block_id),
                 "added to wrong container");
         // only consider the same vertices as above
         if (filter_by_label(vertex, accept_band)) {
-          auto parent_vid = vertex->parent;
-          assertm(vid_to_marker_ptr.count(vertex->vid),
+          auto parent_vid = coord_to_id(vertex->parent, this->image_lengths);
+          assertm(vid_to_marker_ptr.count(vid),
                   "did not find vertex in marker map");
-          auto marker = vid_to_marker_ptr[vertex->vid]; // get the ptr
+          auto marker = vid_to_marker_ptr[vid]; // get the ptr
           if (vertex->root()) {
             // a marker with a parent of 0, must be a root
             marker->parent = 0;
             //#ifdef FULL_PRINT
-            // cout << "found root at " << vertex->vid << '\n';
+            // cout << "found root at " << vid << '\n';
             // printf("with address of %p\n", (void *)vertex);
             //#endif
           } else {
-            assertm(vid_to_marker_ptr.count(vertex->vid),
+            assertm(vid_to_marker_ptr.count(vid),
                     "did not find vertex in marker map");
             auto parent = vid_to_marker_ptr[parent_vid]; // adjust
             marker->parent = parent;
@@ -3597,7 +3496,7 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
               // failure condition
               std::cout << "interval vid " << interval_id << '\n';
               std::cout << "block vid " << block_id << '\n';
-              print_vertex(vertex);
+              print_vertex(interval_id, block_id, vertex, block_img_offsets);
               assertm(marker->parent != 0,
                       "a non root marker must have a valid parent");
             }
@@ -3620,7 +3519,7 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
 #endif
 }
 
-template <class image_t> void Recut<image_t>::run_pipeline() {
+template <class image_t> void Recut<image_t>::operator()() {
   std::string stage;
   // create a list of root vids
   auto root_vids = this->initialize();

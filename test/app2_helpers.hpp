@@ -535,15 +535,14 @@ template <class T>
 uint16_t get_radius_accurate(const T *inimg1d, int grid_size, VID_t current_vid,
                              T thresh) {
   std::vector<int> sz = {grid_size, grid_size, grid_size};
-  VID_t current_x, current_y, current_z;
-  get_img_subscript(current_vid, current_x, current_y, current_z, grid_size);
+  auto coord = id_to_coord(current_vid, sz);
 
   int max_r = grid_size / 2 - 1;
   int r;
   double tol_num, bak_num;
-  int mx = current_x + 0.5;
-  int my = current_y + 0.5;
-  int mz = current_z + 0.5;
+  int mx = coord[0] + 0.5;
+  int my = coord[1] + 0.5;
+  int mz = coord[2] + 0.5;
   // cout<<"mx = "<<mx<<" my = "<<my<<" mz = "<<mz<<'\n';
   int64_t x[2], y[2], z[2];
 
@@ -598,8 +597,8 @@ template <typename T>
 uint16_t get_radius_hanchuan_XY(const T *inimg1d, int grid_size, VID_t vid,
                                 T thresh) {
   std::vector<int> sz = {grid_size, grid_size, grid_size};
-  VID_t x, y, z;
-  get_img_subscript(vid, x, y, z, grid_size);
+  auto lengths = std::vector<int>{grid_size, grid_size, grid_size};
+  auto coord = id_to_coord(vid, lengths);
 
   long sz0 = sz[0];
   long sz01 = sz[0] * sz[1];
@@ -621,13 +620,13 @@ uint16_t get_radius_hanchuan_XY(const T *inimg1d, int grid_size, VID_t vid,
 
           double r = sqrt(dx * dx + dy * dy + dz * dz);
           if (r > ir - 1 && r <= ir) {
-            int64_t i = x + dx;
+            int64_t i = coord[0] + dx;
             if (i < 0 || i >= sz[0])
               goto end1;
-            int64_t j = y + dy;
+            int64_t j = coord[1] + dy;
             if (j < 0 || j >= sz[1])
               goto end1;
-            int64_t k = z + dz;
+            int64_t k = coord[2] + dz;
             if (k < 0 || k >= sz[2])
               goto end1;
 
@@ -979,7 +978,7 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
   // calculate radius for every node
   {
     cout << "Calculating radius for every node" << endl;
-    int64_t in_sz[4] = {sz0, sz1, sz2, 1};
+    std::vector<int> in_sz{sz0, sz1, sz2};
     assertm((sz0 == sz1) && (sz1 == sz2),
             "happ() wasn't extended to handle different dimensions yet");
     for (int64_t i = 0; i < filter_segs.size(); i++) {
@@ -989,7 +988,8 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
       MyMarker *p = leaf_marker;
       while (true) {
         // assumes dim sizes are equal for now, can be easily switchd
-        auto vid = get_img_vid(p->x, p->y, p->z, sz0, sz1);
+        std::vector<int> coord{p->x, p->y, p->z};
+        auto vid = coord_to_id(coord, in_sz);
         p->radius = get_radius_hanchuan_XY(inimg1d, sz0, vid, bkg_thresh);
         if (p == root_marker)
           break;

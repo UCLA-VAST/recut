@@ -17,6 +17,14 @@
 namespace fs = std::filesystem;
 namespace rng = ranges;
 
+//#ifdef USE_VDB
+// using OffsetCoord = openvdb::Vec3<int8_t>;
+// using GridCoord = openvdb::Vec3<uint32_t>;
+//#else
+using OffsetCoord = std::vector<int8_t>;
+using GridCoord = std::vector<int32_t>;
+//#endif
+
 #ifdef USE_MCP3D
 #include <common/mcp3d_common.hpp>
 #include <common/mcp3d_utility.hpp> // PadNumStr
@@ -86,26 +94,28 @@ std::string get_parent_dir() {
 
 std::string get_data_dir() { return CMAKE_INSTALL_DATADIR; }
 
-VID_t get_central_sub(int grid_size) {
+VID_t get_central_coord(int grid_size) {
   return grid_size / 2 - 1; // place at center
 }
 
 VID_t get_central_vid(int grid_size) {
-  auto sub = get_central_sub(grid_size);
-  auto root_vid = (VID_t)sub * grid_size * grid_size + sub * grid_size + sub;
+  auto coord = get_central_coord(grid_size);
+  auto root_vid =
+      (VID_t)coord * grid_size * grid_size + coord * grid_size + coord;
   return root_vid; // place at center
 }
 
 VID_t get_central_diag_vid(int grid_size) {
-  auto sub = get_central_sub(grid_size);
-  sub++; // add 1 to all x, y, z
-  auto root_vid = (VID_t)sub * grid_size * grid_size + sub * grid_size + sub;
+  auto coord = get_central_coord(grid_size);
+  coord++; // add 1 to all x, y, z
+  auto root_vid =
+      (VID_t)coord * grid_size * grid_size + coord * grid_size + coord;
   return root_vid; // place at center diag
 }
 
 MyMarker *get_central_root(int grid_size) {
   VID_t x, y, z;
-  x = y = z = get_central_sub(grid_size); // place at center
+  x = y = z = get_central_coord(grid_size); // place at center
   auto root = new MyMarker();
   root->x = x;
   root->y = y;
@@ -113,8 +123,7 @@ MyMarker *get_central_root(int grid_size) {
   return root;
 }
 
-void get_img_subscript(VID_t id, VID_t &i, VID_t &j, VID_t &k,
-                       VID_t grid_size) {
+void get_img_coord(VID_t id, VID_t &i, VID_t &j, VID_t &k, VID_t grid_size) {
   i = id % grid_size;
   j = (id / grid_size) % grid_size;
   k = (id / (grid_size * grid_size)) % grid_size;
@@ -125,7 +134,7 @@ std::vector<MyMarker *> vids_to_markers(std::vector<VID_t> vids,
   std::vector<MyMarker *> markers;
   for (const auto &vid : vids) {
     VID_t x, y, z;
-    get_img_subscript(vid, x, y, z, grid_size);
+    get_img_coord(vid, x, y, z, grid_size);
     auto root = new MyMarker();
     root->x = x;
     root->y = y;
@@ -149,22 +158,22 @@ VID_t get_used_vertex_size(VID_t grid_size, VID_t block_size) {
   return interval_vert_num;
 }
 
-auto print_marker_3D = [](auto markers, auto interval_extents,
+auto print_marker_3D = [](auto markers, auto interval_lengths,
                           std::string stage) {
-  for (int zi = 0; zi < interval_extents[2]; zi++) {
+  for (int zi = 0; zi < interval_lengths[2]; zi++) {
     cout << "y | Z=" << zi << '\n';
-    for (int xi = 0; xi < 2 * interval_extents[0] + 4; xi++) {
+    for (int xi = 0; xi < 2 * interval_lengths[0] + 4; xi++) {
       cout << "-";
     }
     cout << '\n';
-    for (int yi = 0; yi < interval_extents[1]; yi++) {
+    for (int yi = 0; yi < interval_lengths[1]; yi++) {
       cout << yi << " | ";
-      for (int xi = 0; xi < interval_extents[0]; xi++) {
-        VID_t index = ((VID_t)xi) + yi * interval_extents[0] +
-                      zi * interval_extents[1] * interval_extents[0];
+      for (int xi = 0; xi < interval_lengths[0]; xi++) {
+        VID_t index = ((VID_t)xi) + yi * interval_lengths[0] +
+                      zi * interval_lengths[1] * interval_lengths[0];
         auto value = std::string{"-"};
         for (const auto &m : markers) {
-          if (m->vid(interval_extents[0], interval_extents[1]) == index) {
+          if (m->vid(interval_lengths[0], interval_lengths[1]) == index) {
             if (stage == "label") {
               value = "B";
             } else if (stage == "radius") {
@@ -185,18 +194,18 @@ auto print_marker_3D = [](auto markers, auto interval_extents,
 
 // only values strictly greater than bkg_thresh are valid
 template <typename T>
-void print_vdb(T vdb_accessor, const std::vector<VID_t> extents,
+void print_vdb(T vdb_accessor, const std::vector<VID_t> lengths,
                const int bkg_thresh = -1) {
   cout << "Print VDB grid: \n";
-  for (int z = 0; z < extents[2]; z++) {
+  for (int z = 0; z < lengths[2]; z++) {
     cout << "y | Z=" << z << '\n';
-    for (int x = 0; x < 2 * extents[0] + 4; x++) {
+    for (int x = 0; x < 2 * lengths[0] + 4; x++) {
       cout << "-";
     }
     cout << '\n';
-    for (int y = 0; y < extents[1]; y++) {
+    for (int y = 0; y < lengths[1]; y++) {
       cout << y << " | ";
-      for (int x = 0; x < extents[0]; x++) {
+      for (int x = 0; x < lengths[0]; x++) {
         openvdb::Coord xyz(x, y, z);
         auto val = vdb_accessor.getValue(xyz);
         // if ((bkg_thresh > -1) && (val <= bkg_thresh)) {
@@ -218,19 +227,19 @@ auto print_iter = [](auto iterable) {
 };
 
 template <typename T>
-void print_image_3D(T *inimg1d, std::vector<VID_t> interval_extents,
+void print_image_3D(T *inimg1d, std::vector<VID_t> interval_lengths,
                     const T bkg_thresh = 0) {
-  for (int zi = 0; zi < interval_extents[2]; zi++) {
+  for (int zi = 0; zi < interval_lengths[2]; zi++) {
     cout << "y | Z=" << zi << '\n';
-    for (int xi = 0; xi < 2 * interval_extents[0] + 4; xi++) {
+    for (int xi = 0; xi < 2 * interval_lengths[0] + 4; xi++) {
       cout << "-";
     }
     cout << '\n';
-    for (int yi = 0; yi < interval_extents[1]; yi++) {
+    for (int yi = 0; yi < interval_lengths[1]; yi++) {
       cout << yi << " | ";
-      for (int xi = 0; xi < interval_extents[0]; xi++) {
-        VID_t index = ((VID_t)xi) + yi * interval_extents[0] +
-                      zi * interval_extents[0] * interval_extents[1];
+      for (int xi = 0; xi < interval_lengths[0]; xi++) {
+        VID_t index = ((VID_t)xi) + yi * interval_lengths[0] +
+                      zi * interval_lengths[0] * interval_lengths[1];
         auto val = inimg1d[index];
         if (val > bkg_thresh) {
           cout << +(val) << " ";
@@ -264,7 +273,7 @@ VID_t trace_mesh_image(VID_t id, uint16_t *inimg1d,
   VID_t actual = 1; // count root
   srand(time(NULL));
   while (actual < desired_selected) {
-    // calc i, j, k subs
+    // calc i, j, k coords
     i = id % grid_size;
     j = (id / grid_size) % grid_size;
     k = (id / (grid_size * grid_size)) % grid_size;
@@ -273,7 +282,7 @@ VID_t trace_mesh_image(VID_t id, uint16_t *inimg1d,
 
     // try to find a suitable next location in one of the
     // six directions, if a proper direction was found
-    // update the id and the subscripts to reflect
+    // update the id and the coords to reflect
     // if this iterations direction is invalid skip to next
     long dir = rand() % 6;
     if (dir == 4) {
@@ -321,7 +330,7 @@ VID_t trace_mesh_image(VID_t id, uint16_t *inimg1d,
     // surrounded on all 6 sides, in practice however, this can
     // make high slt_pct very inefficient since, it's hard to find
     // last unselected pixels randomly
-    get_img_subscript(id, ic, jc, kc, grid_size);
+    get_img_coord(id, ic, jc, kc, grid_size);
     assert(ic == i);
     assert(jc == j);
     assert(kc == k);
@@ -337,8 +346,8 @@ VID_t trace_mesh_image(VID_t id, uint16_t *inimg1d,
 bool is_covered_by_parent(VID_t index, VID_t root_vid, int radius,
                           VID_t grid_size) {
   VID_t i, j, k, pi, pj, pk;
-  get_img_subscript(index, i, j, k, grid_size);
-  get_img_subscript(root_vid, pi, pj, pk, grid_size);
+  get_img_coord(index, i, j, k, grid_size);
+  get_img_coord(root_vid, pi, pj, pk, grid_size);
   auto x = static_cast<double>(i) - pi;
   auto y = static_cast<double>(j) - pj;
   auto z = static_cast<double>(k) - pk;
@@ -350,28 +359,31 @@ bool is_covered_by_parent(VID_t index, VID_t root_vid, int radius,
   return false;
 }
 
-auto create_vdb_grid = [](auto extents, float bkg_thresh = 0.) {
+auto create_vdb_grid = [](auto lengths, float bkg_thresh = 0.) {
   auto topology_grid = openvdb::TopologyGrid::create();
   topology_grid->setName("topology");
   topology_grid->setCreator("recut");
   topology_grid->setGridClass(openvdb::GRID_FOG_VOLUME);
 
-  // topology_grid->insertMeta("original_bounding_extents",
+  // topology_grid->insertMeta("original_bounding_lengths",
   // openvdb::Vec3SMetadata(openvdb::v8_0::Vec3S(
-  // extents[0], extents[1], extents[2])));
-  topology_grid->insertMeta("original_bounding_extent_x",
-                            openvdb::FloatMetadata(static_cast<float>(extents[0])));
-  topology_grid->insertMeta("original_bounding_extent_y",
-                            openvdb::FloatMetadata(static_cast<float>(extents[1])));
-  topology_grid->insertMeta("original_bounding_extent_z",
-                            openvdb::FloatMetadata(static_cast<float>(extents[2])));
+  // lengths[0], lengths[1], lengths[2])));
+  topology_grid->insertMeta(
+      "original_bounding_extent_x",
+      openvdb::FloatMetadata(static_cast<float>(lengths[0])));
+  topology_grid->insertMeta(
+      "original_bounding_extent_y",
+      openvdb::FloatMetadata(static_cast<float>(lengths[1])));
+  topology_grid->insertMeta(
+      "original_bounding_extent_z",
+      openvdb::FloatMetadata(static_cast<float>(lengths[2])));
 
   topology_grid->insertMeta("bkg_thresh", openvdb::FloatMetadata(bkg_thresh));
   return topology_grid;
 };
 
-template <typename T> std::vector<int> get_grid_original_extents(T vdb_grid) {
-  std::vector image_extents = {0, 0, 0};
+template <typename T> std::vector<int> get_grid_original_lengths(T vdb_grid) {
+  std::vector image_lengths = {0, 0, 0};
   for (openvdb::MetaMap::MetaIterator iter = vdb_grid->beginMeta();
        iter != vdb_grid->endMeta(); ++iter) {
     // name and val
@@ -379,14 +391,14 @@ template <typename T> std::vector<int> get_grid_original_extents(T vdb_grid) {
     openvdb::Metadata::Ptr value = iter->second;
 
     if (name == "original_bounding_extent_x") {
-      image_extents[0] = static_cast<openvdb::FloatMetadata &>(*value).value();
+      image_lengths[0] = static_cast<openvdb::FloatMetadata &>(*value).value();
     } else if (name == "original_bounding_extent_y") {
-      image_extents[1] = static_cast<openvdb::FloatMetadata &>(*value).value();
+      image_lengths[1] = static_cast<openvdb::FloatMetadata &>(*value).value();
     } else if (name == "original_bounding_extent_z") {
-      image_extents[2] = static_cast<openvdb::FloatMetadata &>(*value).value();
+      image_lengths[2] = static_cast<openvdb::FloatMetadata &>(*value).value();
     }
   }
-  return image_extents;
+  return image_lengths;
 }
 
 template <typename T> void print_grid_metadata(T vdb_grid) {
@@ -513,9 +525,9 @@ VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
 
   assertm(grid_size / 2 >= radius,
           "Can't specify a radius larger than grid_size / 2");
-  auto root_x = static_cast<int>(get_central_sub(grid_size));
-  auto root_y = static_cast<int>(get_central_sub(grid_size));
-  auto root_z = static_cast<int>(get_central_sub(grid_size));
+  auto root_x = static_cast<int>(get_central_coord(grid_size));
+  auto root_y = static_cast<int>(get_central_coord(grid_size));
+  auto root_z = static_cast<int>(get_central_coord(grid_size));
   auto xmin = std::clamp(root_x - radius, 0, grid_size - 1);
   auto xmax = std::clamp(root_x + radius, 0, grid_size - 1);
   auto ymin = std::clamp(root_y - radius, 0, grid_size - 1);
@@ -669,7 +681,7 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
     z.push_back(count);
     std::cout << "Count " << count << '\n';
   }
-  get_img_subscript(start, i, j, k, grid_size);
+  get_img_coord(start, i, j, k, grid_size);
   x.push_back(i);
   y.push_back(j);
   z.push_back(k);
@@ -738,7 +750,7 @@ RecutCommandLineArgs get_args(int grid_size, int interval_size, int block_size,
 
     // first marker is at 58, 230, 111 : 7333434
     args.set_image_offsets({57, 228, 110});
-    args.set_image_extents({grid_size, grid_size, grid_size});
+    args.set_image_lengths({grid_size, grid_size, grid_size});
 
     if (const char *env_p = std::getenv("TEST_IMAGE")) {
       std::cout << "Using $TEST_IMAGE environment variable: " << env_p << '\n';
@@ -787,8 +799,8 @@ RecutCommandLineArgs get_args(int grid_size, int interval_size, int block_size,
   params.slt_pct = slt_pct;
   params.selected = img_vox_num * (slt_pct / (float)100);
   params.root_vid = get_central_vid(grid_size);
-  std::vector<int> extents = {grid_size, grid_size, grid_size};
-  args.set_image_extents(extents);
+  std::vector<int> lengths = {grid_size, grid_size, grid_size};
+  args.set_image_lengths(lengths);
   args.set_image_offsets({0, 0, 0});
 
   // For now, params are only saved if this
@@ -825,62 +837,101 @@ void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
   }
 }
 
-// template <typename T1, typename T2> VID_t sub_to_vid(T1 xyz, T2 extents) {
-// return static_cast<VID_t>(xyz[2]) * (extents[0] * extents[1]) +
-// xyz[1] * extents[0] + xyz[0];
-//}
-
-auto sub_to_vid = [](auto xyz, auto extents) {
-  return static_cast<VID_t>(xyz[2]) * (extents[0] * extents[1]) +
-         xyz[1] * extents[0] + xyz[0];
+auto coord_to_id = [](auto xyz, auto lengths) {
+  return static_cast<VID_t>(xyz[2]) * (lengths[0] * lengths[1]) +
+         xyz[1] * lengths[0] + xyz[0];
 };
 
-auto vid_to_sub = [](auto id, auto extents) {
-  std::vector<int> subscripts(3);
-  subscripts[0] = id % extents[0];
-  subscripts[1] = (id / extents[0]) % extents[1];
-  subscripts[2] = (id / (extents[0] * extents[1])) % extents[3];
-  return subscripts;
+auto new_grid_coord = [](auto x, auto y, auto z) -> GridCoord {
+  return GridCoord{x, y, z};
 };
 
-auto sub_to_str = [](auto subscripts) {
-  std::ostringstream sub_str;
-  sub_str << '[' << subscripts[0] << ',' << subscripts[1] << ','
-          << subscripts[2] << "]";
-  return sub_str.str();
+auto new_offset_coord = [](auto x, auto y, auto z) -> OffsetCoord {
+  return OffsetCoord{x, y, z};
 };
 
-const auto print_sub = [](auto subscripts, std::string name="") {
-  if (! name.empty()) {
+auto id_to_coord = [](auto id, auto lengths) {
+  std::vector<int> coords(3);
+  coords[0] = id % lengths[0];
+  coords[1] = (id / lengths[0]) % lengths[1];
+  coords[2] = (id / (lengths[0] * lengths[1])) % lengths[3];
+  return coords;
+};
+
+auto coord_to_str = [](auto coords) {
+  std::ostringstream coord_str;
+  coord_str << '[' << coords[0] << ',' << coords[1] << ',' << coords[2] << "]";
+  return coord_str.str();
+};
+
+const auto print_coord = [](auto coords, std::string name = "") {
+  if (!name.empty()) {
     std::cout << name << ": ";
   }
-  std::cout << sub_to_str(subscripts) << '\n';
+  std::cout << coord_to_str(coords) << '\n';
 };
 
-auto sub_add = [](auto first, auto second) {
-  return openvdb::Coord(first[0] + second[0], first[1] + second[1],
-                        first[2] + second[2]);
+auto coord_add = [](auto x, auto y) {
+  return std::vector<int>{x[0] + y[0], x[1] + y[1], x[2] + y[2]};
+};
+
+auto coord_sub = [](auto x, auto y) {
+  return std::vector<int>{x[0] - y[0], x[1] - y[1], x[2] - y[2]};
+};
+
+auto coord_div = [](auto x, auto y) {
+  return std::vector<int>{x[0] / y[0], x[1] / y[1], x[2] / y[2]};
+};
+
+auto coord_prod_accum = [](const auto coord) -> VID_t {
+  return static_cast<VID_t>(coord[0]) * coord[1] * coord[2];
+};
+
+auto coord_prod = [](const auto x, const auto y) {
+  auto prod = std::vector<int>(3);
+  prod[0] = x[0] * y[0];
+  prod[1] = x[1] * y[1];
+  prod[2] = x[2] * y[2];
+  return prod;
+};
+
+auto coord_mod = [](auto x, auto y) {
+  return std::vector<int>{x[0] % y[0], x[1] % y[1], x[2] % y[2]};
+};
+
+const auto coord_all_lt = [](auto x, auto y) {
+  auto z = rng::views::zip(x, y);
+  for (auto &&[first, second] : z) {
+    if (first >= second)
+      return false;
+  }
+  return true;
+};
+
+const auto coord_to_vdb = [](auto coord) {
+  return new openvdb::Coord(coord[0], coord[1], coord[2]);
 };
 
 // keep only voxels strictly greater than bkg_thresh
-auto convert_buffer_to_vdb = [](auto buffer, auto vdb_accessor,
-                                std::vector<int> buffer_extents, std::vector<int> buffer_offsets,
-                                std::vector<int> image_offsets, auto bkg_thresh = 0) {
-  for (auto z : rng::views::iota(0, buffer_extents[2])) {
-    for (auto y : rng::views::iota(0, buffer_extents[1])) {
-      for (auto x : rng::views::iota(0, buffer_extents[0])) {
-        openvdb::Coord xyz(x, y, z);
-        openvdb::Coord buffer_xyz = sub_add(xyz, buffer_offsets);
-        openvdb::Coord grid_xyz = sub_add(xyz, image_offsets);
-        auto val = buffer[sub_to_vid(buffer_xyz, buffer_extents)];
-        // voxels equal to bkg_thresh are always discarded
-        if (val > bkg_thresh) {
-          vdb_accessor.setValue(grid_xyz, true);
+auto convert_buffer_to_vdb =
+    [](auto buffer, auto vdb_accessor, std::vector<int> buffer_lengths,
+       std::vector<int> buffer_offsets, std::vector<int> image_offsets,
+       auto bkg_thresh = 0) {
+      for (auto z : rng::views::iota(0, buffer_lengths[2])) {
+        for (auto y : rng::views::iota(0, buffer_lengths[1])) {
+          for (auto x : rng::views::iota(0, buffer_lengths[0])) {
+            openvdb::Coord xyz(x, y, z);
+            openvdb::Coord buffer_xyz = coord_add(xyz, buffer_offsets);
+            openvdb::Coord grid_xyz = coord_add(xyz, image_offsets);
+            auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
+            // voxels equal to bkg_thresh are always discarded
+            if (val > bkg_thresh) {
+              vdb_accessor.setValue(grid_xyz, true);
+            }
+          }
         }
       }
-    }
-  }
-};
+    };
 
 #ifdef USE_MCP3D
 void write_tiff(uint16_t *inimg1d, std::string base, int grid_size,
@@ -923,14 +974,14 @@ void write_tiff(uint16_t *inimg1d, std::string base, int grid_size,
   }
 }
 
-auto read_tiff = [](std::string fn, auto image_offsets, auto image_extents,
+auto read_tiff = [](std::string fn, auto image_offsets, auto image_lengths,
                     mcp3d::MImage &image) {
   cout << "Read: " << fn << '\n';
   // read data from channel 0
   image.ReadImageInfo({0}, true);
   try {
     // use unit strides only
-    mcp3d::MImageBlock block(image_offsets, image_extents);
+    mcp3d::MImageBlock block(image_offsets, image_lengths);
     image.SelectView(block, 0);
     image.ReadData(true, "quiet");
   } catch (...) {
@@ -1027,19 +1078,19 @@ template <typename T> struct CompareResults {
         duplicate_count(duplicate_count), match_count(match_count) {}
 };
 
-auto get_vids = [](auto tree, auto extents) {
+auto get_vids = [](auto tree, auto lengths) {
   return tree | rng::views::transform([&](auto v) {
-           return v->vid(extents[0], extents[1]);
+           return v->vid(lengths[0], lengths[1]);
          }) |
          rng::to_vector;
 };
 
-auto get_vids_sorted = [](auto tree, auto extents) {
-  return get_vids(tree, extents) | rng::action::sort;
+auto get_vids_sorted = [](auto tree, auto lengths) {
+  return get_vids(tree, lengths) | rng::action::sort;
 };
 
 // prints mismatches between two trees in uid sorted order no assertions
-auto compare_tree = [](auto truth_tree, auto check_tree, auto extents) {
+auto compare_tree = [](auto truth_tree, auto check_tree, auto lengths) {
   bool print = false;
 #ifdef LOG
   print = true;
@@ -1052,8 +1103,8 @@ auto compare_tree = [](auto truth_tree, auto check_tree, auto extents) {
   duplicate_count += truth_tree.size() - unique_count(truth_tree);
   duplicate_count += check_tree.size() - unique_count(check_tree);
 
-  auto truth_vids = get_vids_sorted(truth_tree, extents);
-  auto check_vids = get_vids_sorted(check_tree, extents);
+  auto truth_vids = get_vids_sorted(truth_tree, lengths);
+  auto check_vids = get_vids_sorted(check_tree, lengths);
 
   // std::cout << "truth_vids\n";
   // print_iter(truth_vids);
@@ -1071,7 +1122,7 @@ auto compare_tree = [](auto truth_tree, auto check_tree, auto extents) {
            rng::views::transform([&](auto vid) {
              if (print)
                std::cout << "false " << specifier
-                         << " at: " << sub_to_str(vid_to_sub(vid, extents))
+                         << " at: " << coord_to_str(id_to_coord(vid, lengths))
                          << '\n';
              return std::make_pair(vid, std::string(specifier));
            }) |
@@ -1148,10 +1199,10 @@ auto get_img_vid = [](const VID_t i, const VID_t j, const VID_t k,
 
 // see DILATION_FACTOR definition or accumulate_prune() implementation
 auto create_coverage_mask_accurate = [](std::vector<MyMarker *> &markers,
-                                        auto mask, auto extents) {
-  auto sz0 = extents[0];
-  auto sz1 = extents[1];
-  auto sz2 = extents[2];
+                                        auto mask, auto lengths) {
+  auto sz0 = lengths[0];
+  auto sz1 = lengths[1];
+  auto sz2 = lengths[2];
   assertm(sz0 == sz1, "must matching sizes for now");
   assertm(sz1 == sz2, "must matching sizes for now");
   auto sz01 = static_cast<VID_t>(sz0 * sz1);
@@ -1173,10 +1224,10 @@ auto create_coverage_mask_accurate = [](std::vector<MyMarker *> &markers,
 };
 
 auto create_coverage_mask = [](std::vector<MyMarker *> &markers, auto mask,
-                               auto extents) {
-  auto sz0 = extents[0];
-  auto sz1 = extents[1];
-  auto sz2 = extents[2];
+                               auto lengths) {
+  auto sz0 = lengths[0];
+  auto sz1 = lengths[1];
+  auto sz2 = lengths[2];
   auto sz01 = static_cast<VID_t>(sz0 * sz1);
   for (const auto &marker : markers) {
     int32_t r = marker->radius;

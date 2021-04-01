@@ -31,7 +31,7 @@ void RecutCommandLineArgs::PrintUsage() {
           "[--convert <vdb_file>] "
           "[--outswc <swc_file>] "
           "[--resolution-level <int>] [--image-offsets <int> [<int>] [<int>]] "
-          "[--image-extents <int> [<int>] [<int>]] "
+          "[--image-lengths <int> [<int>] [<int>]] "
           "[--bkg-thresh <int>] [--fg-percent <double>]\n\n";
 
   cout << "<image_root_dir>     directory for input image\n";
@@ -52,9 +52,9 @@ void RecutCommandLineArgs::PrintUsage() {
           "default is 0, ie original resolution\n";
   cout << "--image-offsets      [-io] offsets of subvolume, in x y z order "
           "default 0 0 0\n";
-  cout << "--image-extents      [-ie] extents of subvolume, in x y z order "
+  cout << "--image-lengths      [-ie] lengths of subvolume, in x y z order "
           "defaults"
-          " to max range from offset start to max length in each axis\n";
+          " to max range from offset start to max length in each axis (-1, -1, -1)\n";
   cout << "--bg-thresh          [-bt] background threshold value desired\n";
   cout << "--fg-percent         [-fp] default 0.01, percent of voxels to be "
           "considered foreground. overrides --bg-thresh\n";
@@ -75,8 +75,8 @@ string RecutCommandLineArgs::MetaString() {
   meta_stream << "# resolution level = " << resolution_level_ << '\n';
   meta_stream << "# offsets (xyz) = " << image_offsets[0] << " "
               << image_offsets[1] << " " << image_offsets[2] << '\n';
-  meta_stream << "# extents (xyz) = " << image_extents[0] << " "
-              << image_extents[1] << " " << image_extents[2] << '\n';
+  meta_stream << "# lengths (xyz) = " << image_lengths[0] << " "
+              << image_lengths[1] << " " << image_lengths[2] << '\n';
   meta_stream << recut_parameters_.MetaString();
   return meta_stream.str();
 }
@@ -119,15 +119,15 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
           ++i;
         }
         args.set_image_offsets(offsets);
-      } else if (strcmp(argv[i], "--image-extents") == 0 ||
+      } else if (strcmp(argv[i], "--image-lengths") == 0 ||
                  strcmp(argv[i], "-ie") == 0) {
-        vector<int> extents;
+        vector<int> lengths;
         for (int j = 0; j < 3; ++j) {
           int extent = atoi(argv[i + 1]);
-          extents.push_back(extent);
+          lengths.push_back(extent);
           ++i;
         }
-        args.set_image_extents(extents);
+        args.set_image_lengths(lengths);
       } else if (strcmp(argv[i], "--outswc") == 0 ||
                  strcmp(argv[i], "-os") == 0) {
         args.set_swc_path(argv[i + 1]);
@@ -222,9 +222,9 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
       string z_start = to_string(args.image_offsets[0]),
              y_start = to_string(args.image_offsets[1]),
              x_start = to_string(args.image_offsets[2]);
-      string z_end = to_string(args.image_offsets[0] + args.image_extents[0]),
-             y_end = to_string(args.image_offsets[1] + args.image_extents[1]),
-             x_end = to_string(args.image_offsets[2] + args.image_extents[2]);
+      string z_end = to_string(args.image_offsets[0] + args.image_lengths[0]),
+             y_end = to_string(args.image_offsets[1] + args.image_lengths[1]),
+             x_end = to_string(args.image_offsets[2] + args.image_lengths[2]);
       args.set_swc_path(args.image_root_dir() + "tracing_z" + z_start + "_" +
                         z_end + "_y" + y_start + "_" + y_end + "_x" + x_start +
                         "_" + x_end + ".swc");

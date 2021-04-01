@@ -149,7 +149,7 @@ class RecutCommandLineArgs {
     RecutCommandLineArgs()
       : recut_parameters_(RecutParameters{}), image_root_dir_(std::string()),
       swc_path_("out.swc"), channel_("ch0"), resolution_level_(0),
-      image_offsets({0, 0, 0}), image_extents({0, 0, 0}) {}
+      image_offsets({0, 0, 0}), image_lengths({-1, -1, -1}) {}
     static void PrintUsage();
     std::string MetaString();
     void PrintParameters() { std::cout << MetaString() << std::endl; }
@@ -161,7 +161,7 @@ class RecutCommandLineArgs {
     std::string channel() const { return channel_; }
     int resolution_level() const { return resolution_level_; }
     // std::vector<int> image_offsets() const { return image_offsets; }
-    // std::vector<int> image_extents() const { return image_extents; }
+    // std::vector<int> image_lengths() const { return image_lengths; }
 
     // setters
     void set_recut_parameters(RecutParameters &params) {
@@ -187,14 +187,14 @@ class RecutCommandLineArgs {
       }
     }
 
-    void set_image_extents(const std::vector<int> &image_extents) {
-      for (size_t i = 0; i < std::min((size_t)3, image_extents.size()); ++i) {
-        this->image_extents[i] = image_extents[i];
+    void set_image_lengths(const std::vector<int> &image_lengths) {
+      for (size_t i = 0; i < std::min((size_t)3, image_lengths.size()); ++i) {
+        this->image_lengths[i] = image_lengths[i];
       }
     }
 
     std::vector<MyMarker *> output_tree;
-    std::vector<int> image_offsets, image_extents;
+    std::vector<int> image_offsets, image_lengths;
 
   private:
     RecutParameters recut_parameters_;
