@@ -647,7 +647,7 @@ TEST(VDBConvertOnly, Any) {
                         recut.params->selected, /*strict_match=*/true));
   ASSERT_NEAR(write_error_rate, 0., NUMERICAL_ERROR);
 
-  // test reading from a pre-generated vdb file of exact same as
+  // test reading from a pre-generated image file of exact same as
   // recut.generated_image as long as tcase != 4
   {
     args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,

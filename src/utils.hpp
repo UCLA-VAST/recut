@@ -937,6 +937,9 @@ void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
 auto convert_buffer_to_vdb =
     [](auto buffer, auto vdb_accessor, GridCoord buffer_lengths,
        GridCoord buffer_offsets, GridCoord image_offsets, auto bkg_thresh = 0) {
+      print_coord(buffer_lengths, "buffer_lengths");
+      print_coord(buffer_offsets, "buffer_offsets");
+      print_coord(image_offsets, "image_offsets");
       for (auto z : rng::views::iota(0, buffer_lengths[2])) {
         for (auto y : rng::views::iota(0, buffer_lengths[1])) {
           for (auto x : rng::views::iota(0, buffer_lengths[0])) {

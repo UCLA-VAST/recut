@@ -2215,9 +2215,9 @@ void Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
     MCP3D_MESSAGE("error in mcp3d_tile io. neuron tracing not performed")
     throw;
   }
-#ifdef FULL_PRINT
-  // print_image_3D(mcp3d_tile.Volume<image_t>(0), tile_extents);
-#endif
+//#ifdef FULL_PRINT
+   //print_image_3D(mcp3d_tile.Volume<image_t>(0), {tile_extents[0], tile_extents[1], tile_extents[2]});
+//#endif
 
 #ifdef LOG
   clock_gettime(CLOCK_REALTIME, &image_load);
@@ -2486,14 +2486,13 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           auto convert_start = timer->elapsed();
 
           GridCoord no_offsets = {0, 0, 0};
-          GridCoord interval_extents;
           auto interval_offsets = id_interval_to_img_offsets(interval_id);
 
           GridCoord buffer_offsets =
               params->force_regenerate_image ? interval_offsets : no_offsets;
           GridCoord buffer_extents = params->force_regenerate_image
                                            ? this->image_lengths
-                                           : interval_extents;
+                                           : this->interval_lengths;
 
           convert_buffer_to_vdb(tile, vdb_accessor, buffer_extents,
                                 /*buffer_offsets=*/buffer_offsets,
