@@ -112,19 +112,17 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
         ++i;
       } else if (strcmp(argv[i], "--image-offsets") == 0 ||
                  strcmp(argv[i], "-io") == 0) {
-        vector<int> offsets;
+        GridCoord offsets(3);
         for (int j = 0; j < 3; ++j) {
-          int offset = atoi(argv[i + 1]);
-          offsets.push_back(offset);
+          offsets[j] = atoi(argv[i + 1]);
           ++i;
         }
         args.set_image_offsets(offsets);
       } else if (strcmp(argv[i], "--image-lengths") == 0 ||
                  strcmp(argv[i], "-ie") == 0) {
-        vector<int> lengths;
+        GridCoord lengths(3);
         for (int j = 0; j < 3; ++j) {
-          int extent = atoi(argv[i + 1]);
-          lengths.push_back(extent);
+          lengths[j] = atoi(argv[i + 1]);
           ++i;
         }
         args.set_image_lengths(lengths);

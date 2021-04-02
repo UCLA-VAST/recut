@@ -57,13 +57,15 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
     for (int yi = 0; yi < recut.image_lengths[1]; yi++) {
       for (int xi = 0; xi < recut.image_lengths[0]; xi++) {
         // iteration vars
-        std::vector<int> coord{xi, yi, zi};
+        auto coord = new_grid_coord(xi, yi, zi);
+        auto correct_offset = coord_mod(recut.block_lengths);
         VID_t vid = coord_to_id(coord, recut.image_lengths);
         auto interval_id = recut.id_img_to_interval_id(vid);
         auto block_id = recut.id_img_to_block_id(vid);
         auto find_vid = [&]() {
           for (const auto &local_vertex : fifo[interval_id][block_id]) {
-            if (vid == local_vertex.vid)
+            //if (vid == recut.v_to_img_coord(interval_id, block_id, local_vertex))
+            if (coord_eq(correct_offset, local_vertex->offset))
               return true;
           }
           return false;
@@ -77,11 +79,10 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
         // selected vertex with ground truth is also not valid
         if (!(interval->IsInMemory())) {
           interval->LoadFromDisk();
-        }
-        v = recut.get_attr_vid(interval_id, block_id, vid, nullptr);
+        } v = recut.get_attr_vid(interval_id, block_id, vid, nullptr);
 #else
         if (stage != "convert") {
-          v = recut.get_active_vertex(interval_id, block_id, vid);
+          v = recut.get_active_vertex(interval_id, block_id, correct_offset);
         }
 #endif
 
@@ -707,7 +708,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
 #endif
 
   for (auto &grid_size : grid_sizes) {
-    auto grid_extents = std::vector<int>(3, grid_size);
+    auto grid_extents = new_grid_coord(grid_size, grid_size, grid_size);
     if (print)
       cout << "Create grids of " << grid_size << endl;
     auto root_vid = get_central_vid(grid_size);
@@ -796,7 +797,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         auto topology_grid = create_vdb_grid(grid_extents);
         std::cout << "created vdb grid\n";
         convert_buffer_to_vdb(inimg1d, topology_grid->getAccessor(),
-                              grid_extents, no_offsets, no_offsets, 0);
+                              grid_extents, zeros(), zeros(), 0);
         std::cout << "converted to vdb grid\n";
 
 #ifdef USE_MCP3D
@@ -1266,20 +1267,21 @@ TEST(CheckGlobals, ActiveVertices) {
   bool found;
   for (VID_t vid : l) {
     auto coord = id_to_coord(vid, recut.image_lengths);
-    auto vertex = recut.get_or_set_active_vertex(0, 0, vid, found);
+    auto vertex = recut.get_or_set_active_vertex(0, 0, coord, found);
     ASSERT_FALSE(found);
     ASSERT_TRUE(vertex->selected());
     vertex->mark_root();
     vertex->radius = 1;
-    ASSERT_TRUE(vertex->valid_vid()) << "vid: " << vertex->vid;
+    ASSERT_TRUE(vertex->valid_vid()) << "coord: " << coord_to_str(vertex->offsets);
     ASSERT_TRUE(vertex->root());
     ASSERT_FALSE(vertex->selected());
     ASSERT_EQ(vertex->offsets, vid);
   }
 
   for (auto vid : l) {
-    cout << "check vid: " << vid << '\n';
-    auto vertex = recut.get_or_set_active_vertex(0, 0, vid, found);
+    auto coord = id_to_coord(vid, recut.image_lengths);
+    cout << "check vid: " << vid << ' ' << coord_to_str(coord) << '\n';
+    auto vertex = recut.get_or_set_active_vertex(0, 0, coord, found);
     ASSERT_TRUE(found);
     ASSERT_EQ(vertex->radius, 1);
     ASSERT_TRUE(vertex->root());
@@ -1292,16 +1294,16 @@ TEST(CheckGlobals, SurfacePassed) {
   auto args = get_args(max_size, max_size, max_size, 100, 0, true);
   auto recut = Recut<uint16_t>(args);
   auto root_vids = recut.initialize();
-  auto vid = 0;
+  auto offsets = new_offset_coord(0, 0, 0);
 
   bool found;
   {
-    auto vertex = recut.get_or_set_active_vertex(0, 0, vid, found);
+    auto vertex = recut.get_or_set_active_vertex(0, 0, offsets, found);
     ASSERT_FALSE(found);
   }
 
   {
-    auto vertex = recut.get_active_vertex(0, 0, vid);
+    auto vertex = recut.get_active_vertex(0, 0, offsets);
     ASSERT_NE(vertex, nullptr);
     vertex->mark_surface();
     recut.global_fifo[0][0].push_back(*vertex);
@@ -1309,7 +1311,7 @@ TEST(CheckGlobals, SurfacePassed) {
 
   {
     auto msg_vertex = recut.global_fifo[0][0].front();
-    auto vertex = recut.get_active_vertex(0, 0, msg_vertex.vid);
+    auto vertex = recut.get_active_vertex(0, 0, msg_vertex.offsets);
     ASSERT_NE(vertex, nullptr);
     ASSERT_TRUE(msg_vertex.surface());
     ASSERT_TRUE(vertex->surface());
@@ -1327,12 +1329,13 @@ TEST(CheckGlobals, AllFifo) {
 
   bool found;
   for (auto vid : l) {
-    auto vertex = recut.get_or_set_active_vertex(0, 0, vid, found);
+    auto offsets = id_to_coord(vid, recut.image_lengths);
+    auto vertex = recut.get_or_set_active_vertex(0, 0, offsets, found);
     ASSERT_FALSE(found);
     ASSERT_FALSE(vertex->surface());
     ASSERT_TRUE(vertex->selected());
-    ASSERT_TRUE(vertex->valid_vid()) << "vid: " << vertex->vid;
-    ASSERT_EQ(vertex->vid, vid);
+    ASSERT_TRUE(vertex->valid_vid()) << "offset: " << coord_to_str(vertex->offsets);
+    ASSERT_TRUE(coord_all_eq(vertex->offsets, offsets));
 
     vertex->mark_root();
     vertex->mark_surface();
@@ -1341,13 +1344,13 @@ TEST(CheckGlobals, AllFifo) {
     ASSERT_TRUE(vertex->surface());
     ASSERT_FALSE(vertex->selected());
 
-    auto gvertex = recut.get_active_vertex(0, 0, vid);
+    auto gvertex = recut.get_active_vertex(0, 0, offsets);
     ASSERT_TRUE(gvertex->root());
     ASSERT_TRUE(gvertex->surface());
     ASSERT_FALSE(gvertex->selected());
 
     gvertex->mark_selected();
-    auto g2vertex = recut.get_active_vertex(0, 0, vid);
+    auto g2vertex = recut.get_active_vertex(0, 0, offsets);
     ASSERT_TRUE(g2vertex->selected());
     gvertex->mark_root();
 
@@ -1358,8 +1361,9 @@ TEST(CheckGlobals, AllFifo) {
   for (auto vid : l) {
     cout << "check vid: " << vid << '\n';
     cout << "fifo size: " << recut.local_fifo[0][0].size() << '\n';
-    auto vertex = recut.get_or_set_active_vertex(0, 0, vid, found);
-    auto gvertex = recut.get_active_vertex(0, 0, vid);
+    auto offsets = id_to_coord(vid, recut.image_lengths);
+    auto vertex = recut.get_or_set_active_vertex(0, 0, offsets, found);
+    auto gvertex = recut.get_active_vertex(0, 0, offsets);
     ASSERT_NE(gvertex, nullptr);
     ASSERT_TRUE(gvertex->surface());
     ASSERT_TRUE(found);
@@ -1369,8 +1373,8 @@ TEST(CheckGlobals, AllFifo) {
     auto msg_vertex = &(recut.local_fifo[0][0].front());
     recut.local_fifo[0][0].pop_front(); // remove it
 
-    ASSERT_EQ(msg_vertex->vid, vid);
-    ASSERT_EQ(msg_vertex->vid, vertex->vid);
+    ASSERT_TRUE(coord_all_eq(msg_vertex->offsets, offsets));
+    ASSERT_TRUE(coord_all_eq(msg_vertex->offsets, vertex->offsets));
 
     ASSERT_TRUE(msg_vertex->root());
     ASSERT_TRUE(msg_vertex->surface());
@@ -1378,8 +1382,8 @@ TEST(CheckGlobals, AllFifo) {
     auto global_vertex = &(recut.global_fifo[0][0].front());
     recut.global_fifo[0][0].pop_front(); // remove it
 
-    ASSERT_EQ(global_vertex->vid, vid);
-    ASSERT_EQ(global_vertex->vid, vertex->vid);
+    ASSERT_TRUE(coord_all_eq(global_vertex->offsets, offsets));
+    ASSERT_TRUE(coord_all_eq(global_vertex->offsets, vertex->offsets));
 
     ASSERT_TRUE(global_vertex->root());
     ASSERT_TRUE(global_vertex->surface());
@@ -1521,12 +1525,10 @@ TEST(Update, EachStageIteratively) {
                       std::cout << " Block " << j << '\n';
                       for (auto &vertex : inner) {
                         total++;
-                        // cout << "\t" << vertex.vid << '\n';
                         cout << "\t" << vertex.description() << '\n';
                         ASSERT_TRUE(vertex.surface());
                         ASSERT_TRUE(vertex.root() || vertex.selected());
-                        ASSERT_NE(nullptr,
-                                  recut.get_active_vertex(i, j, vertex.vid));
+                        ASSERT_NE(nullptr, recut.get_active_vertex(i, j, recut.v_to_off(vertex)));
                       }
                     }
                   }
@@ -1648,7 +1650,8 @@ TEST(Update, EachStageIteratively) {
                   // this is only done for the full domain case so interval and
                   // block are known
                   // if v is not active it is a nullptr
-                  auto v = recut.get_active_vertex(0, 0, vid);
+                  auto offsets = id_to_coord(vid,recut.image_lengths);
+                  auto v = recut.get_active_vertex(0, 0, offsets);
                   seq_radii_grid[vid] = v ? v->radius : 0;
                 }
               } else {

@@ -5,6 +5,7 @@
 #include "range/v3/all.hpp"
 #include "recut_parameters.hpp"
 #include <algorithm> //min
+#include <stdlib.h> // ultoa
 #include <atomic>
 #include <chrono>
 #include <cstdlib> //rand srand
@@ -12,18 +13,9 @@
 #include <filesystem>
 #include <math.h>
 #include <numeric>
-#include <openvdb/openvdb.h>
 
 namespace fs = std::filesystem;
 namespace rng = ranges;
-
-//#ifdef USE_VDB
-// using OffsetCoord = openvdb::Vec3<int8_t>;
-// using GridCoord = openvdb::Vec3<uint32_t>;
-//#else
-using OffsetCoord = std::vector<int8_t>;
-using GridCoord = std::vector<int32_t>;
-//#endif
 
 #ifdef USE_MCP3D
 #include <common/mcp3d_common.hpp>
@@ -39,6 +31,110 @@ using GridCoord = std::vector<int32_t>;
 // be able to change pp values into std::string
 #define XSTR(x) STR(x)
 #define STR(x) #x
+
+
+auto coord_to_id = [](auto xyz, auto lengths) {
+  return static_cast<VID_t>(xyz[2]) * (lengths[0] * lengths[1]) +
+         xyz[1] * lengths[0] + xyz[0];
+};
+
+auto new_grid_coord = [](auto x, auto y, auto z) -> GridCoord {
+  return GridCoord(x, y, z);
+};
+
+auto new_offset_coord = [](auto x, auto y, auto z) -> OffsetCoord {
+  return OffsetCoord(x, y, z);
+};
+
+auto zeros = []() { return new_grid_coord(0, 0, 0); };
+
+auto ones = []() { return new_grid_coord(1, 1, 1); };
+
+auto zeros_off = []() { return new_offset_coord(0, 0, 0); };
+
+auto id_to_coord = [](auto id, auto lengths) {
+  GridCoord coords(3);
+  coords[0] = id % lengths[0];
+  coords[1] = (id / lengths[0]) % lengths[1];
+  coords[2] = (id / (lengths[0] * lengths[1])) % lengths[3];
+  return coords;
+};
+
+//auto id_to_string = [](VID_t id) {
+   //char buffer [sizeof(VID_t)*8+1];
+    //ultoa (id,buffer,DECIMAL);
+  //return buffer;
+//}
+
+auto id_to_off_coord = [](auto id, auto lengths) {
+  auto coord = id_to_coord(id, lengths);
+  return new_offset_coord(coord[0], coord[1], coord[2]);
+};
+
+auto coord_to_str = [](auto coords) {
+  std::ostringstream coord_str;
+  coord_str << '[' << coords[0] << ',' << coords[1] << ',' << coords[2] << "]";
+  return coord_str.str();
+};
+
+const auto print_coord = [](auto coords, std::string name = "") {
+  if (!name.empty()) {
+    std::cout << name << ": ";
+  }
+  std::cout << coord_to_str(coords) << '\n';
+};
+
+auto coord_add = [](auto x, auto y) {
+  return GridCoord(x[0] + y[0], x[1] + y[1], x[2] + y[2]);
+};
+
+auto coord_sub = [](auto x, auto y) {
+  return GridCoord(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
+};
+
+auto coord_div = [](auto x, auto y) {
+  return GridCoord(x[0] / y[0], x[1] / y[1], x[2] / y[2]);
+};
+
+auto coord_prod_accum = [](const auto coord) -> VID_t {
+  return static_cast<VID_t>(coord[0]) * coord[1] * coord[2];
+};
+
+auto coord_prod = [](const auto x, const auto y) {
+  auto prod = GridCoord(3);
+  prod[0] = x[0] * y[0];
+  prod[1] = x[1] * y[1];
+  prod[2] = x[2] * y[2];
+  return prod;
+};
+
+auto coord_mod = [](auto x, auto y) {
+  return GridCoord(x[0] % y[0], x[1] % y[1], x[2] % y[2]);
+};
+
+const auto coord_all_eq = [](auto x, auto y) {
+  if (x[0] == y[0]) return false;
+  if (x[1] == y[1]) return false;
+  if (x[2] == y[2]) return false;
+  return true;
+};
+
+const auto coord_all_lt = [](auto x, auto y) {
+  if (x[0] >= y[0]) return false;
+  if (x[1] >= y[1]) return false;
+  if (x[2] >= y[2]) return false;
+  return true;
+};
+
+const auto coord_reverse = [](auto& coord) {
+  auto z = coord[0];
+  coord[0] = coord[2];
+  coord[2] = z;
+};
+
+const auto coord_to_vdb = [](auto coord) {
+  return new openvdb::Coord(coord[0], coord[1], coord[2]);
+};
 
 // the MyMarker operator< provided by library doesn't work
 static const auto lt = [](const MyMarker *lhs, const MyMarker *rhs) {
@@ -382,8 +478,8 @@ auto create_vdb_grid = [](auto lengths, float bkg_thresh = 0.) {
   return topology_grid;
 };
 
-template <typename T> std::vector<int> get_grid_original_lengths(T vdb_grid) {
-  std::vector image_lengths = {0, 0, 0};
+template <typename T> GridCoord get_grid_original_lengths(T vdb_grid) {
+  GridCoord image_lengths(0, 0, 0);
   for (openvdb::MetaMap::MetaIterator iter = vdb_grid->beginMeta();
        iter != vdb_grid->endMeta(); ++iter) {
     // name and val
@@ -799,9 +895,9 @@ RecutCommandLineArgs get_args(int grid_size, int interval_size, int block_size,
   params.slt_pct = slt_pct;
   params.selected = img_vox_num * (slt_pct / (float)100);
   params.root_vid = get_central_vid(grid_size);
-  std::vector<int> lengths = {grid_size, grid_size, grid_size};
+  auto lengths = new_grid_coord(grid_size, grid_size, grid_size);
   args.set_image_lengths(lengths);
-  args.set_image_offsets({0, 0, 0});
+  args.set_image_offsets(zeros());
 
   // For now, params are only saved if this
   // function is called, in the future
@@ -813,6 +909,7 @@ RecutCommandLineArgs get_args(int grid_size, int interval_size, int block_size,
 
   return args;
 }
+
 
 void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
   auto print = false;
@@ -836,93 +933,16 @@ void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
       cout << "      Wrote marker: " << fn << '\n';
   }
 }
-
-auto coord_to_id = [](auto xyz, auto lengths) {
-  return static_cast<VID_t>(xyz[2]) * (lengths[0] * lengths[1]) +
-         xyz[1] * lengths[0] + xyz[0];
-};
-
-auto new_grid_coord = [](auto x, auto y, auto z) -> GridCoord {
-  return GridCoord{x, y, z};
-};
-
-auto new_offset_coord = [](auto x, auto y, auto z) -> OffsetCoord {
-  return OffsetCoord{x, y, z};
-};
-
-auto id_to_coord = [](auto id, auto lengths) {
-  std::vector<int> coords(3);
-  coords[0] = id % lengths[0];
-  coords[1] = (id / lengths[0]) % lengths[1];
-  coords[2] = (id / (lengths[0] * lengths[1])) % lengths[3];
-  return coords;
-};
-
-auto coord_to_str = [](auto coords) {
-  std::ostringstream coord_str;
-  coord_str << '[' << coords[0] << ',' << coords[1] << ',' << coords[2] << "]";
-  return coord_str.str();
-};
-
-const auto print_coord = [](auto coords, std::string name = "") {
-  if (!name.empty()) {
-    std::cout << name << ": ";
-  }
-  std::cout << coord_to_str(coords) << '\n';
-};
-
-auto coord_add = [](auto x, auto y) {
-  return std::vector<int>{x[0] + y[0], x[1] + y[1], x[2] + y[2]};
-};
-
-auto coord_sub = [](auto x, auto y) {
-  return std::vector<int>{x[0] - y[0], x[1] - y[1], x[2] - y[2]};
-};
-
-auto coord_div = [](auto x, auto y) {
-  return std::vector<int>{x[0] / y[0], x[1] / y[1], x[2] / y[2]};
-};
-
-auto coord_prod_accum = [](const auto coord) -> VID_t {
-  return static_cast<VID_t>(coord[0]) * coord[1] * coord[2];
-};
-
-auto coord_prod = [](const auto x, const auto y) {
-  auto prod = std::vector<int>(3);
-  prod[0] = x[0] * y[0];
-  prod[1] = x[1] * y[1];
-  prod[2] = x[2] * y[2];
-  return prod;
-};
-
-auto coord_mod = [](auto x, auto y) {
-  return std::vector<int>{x[0] % y[0], x[1] % y[1], x[2] % y[2]};
-};
-
-const auto coord_all_lt = [](auto x, auto y) {
-  auto z = rng::views::zip(x, y);
-  for (auto &&[first, second] : z) {
-    if (first >= second)
-      return false;
-  }
-  return true;
-};
-
-const auto coord_to_vdb = [](auto coord) {
-  return new openvdb::Coord(coord[0], coord[1], coord[2]);
-};
-
 // keep only voxels strictly greater than bkg_thresh
 auto convert_buffer_to_vdb =
-    [](auto buffer, auto vdb_accessor, std::vector<int> buffer_lengths,
-       std::vector<int> buffer_offsets, std::vector<int> image_offsets,
-       auto bkg_thresh = 0) {
+    [](auto buffer, auto vdb_accessor, GridCoord buffer_lengths,
+       GridCoord buffer_offsets, GridCoord image_offsets, auto bkg_thresh = 0) {
       for (auto z : rng::views::iota(0, buffer_lengths[2])) {
         for (auto y : rng::views::iota(0, buffer_lengths[1])) {
           for (auto x : rng::views::iota(0, buffer_lengths[0])) {
-            openvdb::Coord xyz(x, y, z);
-            openvdb::Coord buffer_xyz = coord_add(xyz, buffer_offsets);
-            openvdb::Coord grid_xyz = coord_add(xyz, image_offsets);
+            GridCoord xyz(x, y, z);
+            GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
+            GridCoord grid_xyz = coord_add(xyz, image_offsets);
             auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
             // voxels equal to bkg_thresh are always discarded
             if (val > bkg_thresh) {
@@ -981,7 +1001,7 @@ auto read_tiff = [](std::string fn, auto image_offsets, auto image_lengths,
   image.ReadImageInfo({0}, true);
   try {
     // use unit strides only
-    mcp3d::MImageBlock block(image_offsets, image_lengths);
+    mcp3d::MImageBlock block({ image_offsets[0], image_offsets[1], image_offsets[2] }, { image_lengths[0], image_lengths[1], image_lengths[2] });
     image.SelectView(block, 0);
     image.ReadData(true, "quiet");
   } catch (...) {

@@ -63,19 +63,29 @@ struct VertexAttr {
   struct bitfield edge_state; 
 
   // constructors
-  // defaults as 192 i.e. 1100 0000 unvisited with no connections
+  // defaults as 192 i.e. 1100 0000 unvisited
   VertexAttr()
       : edge_state(192), 
         radius(numeric_limits<uint8_t>::max()) 
          {}
+
+  // constructors
+  // defaults as selected
+  VertexAttr(OffsetCoord offsets)
+      : offsets(offsets), 
+        radius(numeric_limits<uint8_t>::max()) 
+         { this->mark_selected(); }
 
   // copy constructor
   VertexAttr(const VertexAttr &a)
       : edge_state(a.edge_state), offsets(a.offsets), radius(a.radius), parent(a.parent) {
   }
 
-  VertexAttr(uint8_t edge_state, OffsetCoord offsets, OffsetCoord parent)
+  VertexAttr(bitfield edge_state, OffsetCoord offsets, OffsetCoord parent)
       : edge_state(edge_state), offsets(offsets), parent(parent) {}
+
+  VertexAttr(bitfield edge_state, OffsetCoord offsets, OffsetCoord parent, uint8_t radius)
+      : edge_state(edge_state), offsets(offsets), parent(parent), radius (radius) {}
 
   bool root() const {
     return (!edge_state.test(7) && !edge_state.test(6)); // 00XX XXXX ROOT

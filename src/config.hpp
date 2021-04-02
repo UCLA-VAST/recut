@@ -1,3 +1,4 @@
+#pragma once
 // Define preprocessor macros, templates and types to be used for
 // configuration and compile time behavior
 // Note it is preferred to pass this macros to `cmake ..
@@ -7,6 +8,17 @@
 // typedef uint32_t VID_t; // overflows after ~2e9 ~= 2 1024^3 tiles
 #include <cstdint>
 typedef uint64_t VID_t; // for multi-interval runs
+
+#ifdef USE_VDB
+#include <openvdb/openvdb.h>
+//using OffsetCoord = openvdb::Vec3<int8_t>;
+//using GridCoord = openvdb::Vec3<int32_t>;
+using OffsetCoord = openvdb::Coord;
+using GridCoord = openvdb::Coord;
+#else
+using OffsetCoord = std::vector<int8_t>;
+using GridCoord = std::vector<int32_t>;
+#endif
 
 // pre-generated array of vertices initialized wth desired default values,
 // useful for mmap
