@@ -524,10 +524,10 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
       msg_vertex = get_vertex_vid(interval_id, block_id, coord, nullptr);
 #else
       msg_vertex = get_active_vertex(interval_id, block_id, offsets);
+      assertm(msg_vertex != nullptr, "get_active_vertex yielded nullptr");
 #endif
       assertm(msg_vertex->valid_radius(),
               "activate vids didn't find valid radius");
-      assertm(msg_vertex != nullptr, "get_active_vertex yielded nullptr");
       fifo[interval_id][block_id].emplace_back(/*edge_state*/ 0, offsets,
                                                zeros_off());
     } else {
@@ -783,7 +783,7 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, GridCoord dst_coord,
 #ifdef DENSE
   auto dst = get_vertex_vid(interval_id, block_id, dst_id, nullptr);
 #else
-  auto dst = get_active_vertex(interval_id, block_id, dst_coord);
+  auto dst = get_active_vertex(interval_id, block_id, coord_mod(dst_coord, this->block_lengths));
 #endif
   if (dst == nullptr) { // never selected
     return;
@@ -871,7 +871,7 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, GridCoord dst_coord,
 #ifdef DENSE
   auto dst = get_vertex_vid(interval_id, block_id, dst_id, nullptr);
 #else
-  auto dst = get_active_vertex(interval_id, block_id, dst_coord);
+  auto dst = get_active_vertex(interval_id, block_id, coord_mod(dst_coord, this->block_lengths));
   if (dst == nullptr) {
     return;
   }
@@ -954,7 +954,7 @@ bool Recut<image_t>::accumulate_connected(
   // new vertices automatically set as selected
   // this will invalidate any previous refs or iterators returned of active
   // vertices
-  auto dst = get_or_set_active_vertex(interval_id, block_id, dst_coord, found);
+  auto dst = get_or_set_active_vertex(interval_id, block_id, coord_mod(dst_coord, this->block_lengths), found);
 
   // skip already selected vertices too
   if (found) {
@@ -1692,6 +1692,7 @@ void Recut<image_t>::connected_tile(
     const bool in_domain = msg_vertex->selected() || msg_vertex->root();
     auto surface = msg_vertex->surface();
     auto current_coord = coord_add(msg_vertex->offsets, offsets);
+    auto current_off = coord_mod(current_coord, this->block_lengths);
 
     // invalid can either be out of range of the entire global image or it
     // can be a background vertex which occurs due to pixel value below the
@@ -1709,7 +1710,7 @@ void Recut<image_t>::connected_tile(
     current = get_vertex_vid(interval_id, block_id, vid, nullptr);
 #else
     if (in_domain) {
-      current = get_active_vertex(interval_id, block_id, current_coord);
+      current = get_active_vertex(interval_id, block_id, current_off);
       assertm(current != nullptr, "connected can't be passed a null");
       // msg_vertex aleady aware it is a surface
       if (surface) {
@@ -3440,13 +3441,12 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
       for (auto &vertex_value : this->active_vertices[interval_id][block_id]) {
         // FIXME add interval offset too
         auto vertex = &vertex_value;
-        auto vid = coord_add(vertex->offsets, offsets);
+        auto coord = coord_add(vertex->offsets, offsets);
+        auto vid = coord_to_id(coord, this->image_lengths);
 #ifdef FULL_PRINT
         print_vertex(interval_id, block_id, vertex, offsets);
 #endif
         assertm(vertex->valid_vid(), "no valid vid");
-        assertm(filter_by_vid(vid, interval_id, block_id),
-                "added to wrong container");
         // create all valid new marker objects
         if (filter_by_label(vertex, accept_band)) {
           // don't create redundant copies of same vid
@@ -3457,7 +3457,7 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
           // assert(*previous_match == *vertex);
           if (vid_to_marker_ptr.count(vid)) {
             std::cout << interval_id << ' ' << block_id << ' ' << vid
-                      << " has parent " << vertex->parent << '\n';
+                      << " has parent " << coord_to_str(vertex->parent) << '\n';
           }
           assertm(vid_to_marker_ptr.count(vid) == 0,
                   "Can't have two matching vids");
@@ -3465,7 +3465,6 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
           // cout << "\tadding vertex " << vid << '\n';
 #endif
           // get original i, j, k
-          auto coord = id_to_coord(vid, this->image_lengths);
           auto marker = new MyMarker(coord[0], coord[1], coord[2]);
           if (vertex->root()) {
             // a marker with a type of 0, must be a root
@@ -3491,13 +3490,12 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
       auto offsets = coord_add(interval_img_offsets, block_img_offsets);
       for (auto &vertex_value : this->active_vertices[interval_id][block_id]) {
         auto vertex = &vertex_value;
-        auto vid = coord_add(vertex->offsets, offsets);
+        auto coord = coord_add(vertex->offsets, offsets);
+        auto vid = coord_to_id(coord, this->image_lengths);
         assertm(vertex->valid_vid(), "no valid vid");
-        assertm(filter_by_vid(vid, interval_id, block_id),
-                "added to wrong container");
         // only consider the same vertices as above
         if (filter_by_label(vertex, accept_band)) {
-          auto parent_vid = coord_to_id(vertex->parent, this->image_lengths);
+          auto parent_vid = coord_to_id(coord_add(coord, vertex->parent), this->image_lengths);
           assertm(vid_to_marker_ptr.count(vid),
                   "did not find vertex in marker map");
           auto marker = vid_to_marker_ptr[vid]; // get the ptr

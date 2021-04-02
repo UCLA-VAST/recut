@@ -56,7 +56,7 @@ auto id_to_coord = [](auto id, auto lengths) {
   GridCoord coords(3);
   coords[0] = id % lengths[0];
   coords[1] = (id / lengths[0]) % lengths[1];
-  coords[2] = (id / (lengths[0] * lengths[1])) % lengths[3];
+  coords[2] = (id / (lengths[0] * lengths[1])) % lengths[2];
   return coords;
 };
 

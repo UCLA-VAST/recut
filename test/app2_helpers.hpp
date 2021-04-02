@@ -978,7 +978,7 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
   // calculate radius for every node
   {
     cout << "Calculating radius for every node" << endl;
-    std::vector<int> in_sz{sz0, sz1, sz2};
+    auto in_sz = new_grid_coord(sz0, sz1, sz2);
     assertm((sz0 == sz1) && (sz1 == sz2),
             "happ() wasn't extended to handle different dimensions yet");
     for (int64_t i = 0; i < filter_segs.size(); i++) {
@@ -988,7 +988,7 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
       MyMarker *p = leaf_marker;
       while (true) {
         // assumes dim sizes are equal for now, can be easily switchd
-        std::vector<int> coord{p->x, p->y, p->z};
+        auto coord = new_grid_coord(p->x, p->y, p->z);
         auto vid = coord_to_id(coord, in_sz);
         p->radius = get_radius_hanchuan_XY(inimg1d, sz0, vid, bkg_thresh);
         if (p == root_marker)

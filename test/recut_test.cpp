@@ -58,14 +58,14 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
       for (int xi = 0; xi < recut.image_lengths[0]; xi++) {
         // iteration vars
         auto coord = new_grid_coord(xi, yi, zi);
-        auto correct_offset = coord_mod(recut.block_lengths);
+        auto correct_offset = coord_mod(coord, recut.block_lengths);
         VID_t vid = coord_to_id(coord, recut.image_lengths);
         auto interval_id = recut.id_img_to_interval_id(vid);
         auto block_id = recut.id_img_to_block_id(vid);
         auto find_vid = [&]() {
           for (const auto &local_vertex : fifo[interval_id][block_id]) {
             //if (vid == recut.v_to_img_coord(interval_id, block_id, local_vertex))
-            if (coord_eq(correct_offset, local_vertex->offset))
+            if (coord_all_eq(correct_offset, local_vertex.offsets))
               return true;
           }
           return false;
@@ -849,9 +849,9 @@ TEST(Install, DISABLED_ImageReadWrite) {
 
   // run recut over the image, force it to run in read image
   // non-generated mode since MCP3D is guaranteed here
-  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, false);
-  auto recut = Recut<uint16_t>(args);
-  recut();
+  //auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, false);
+  //auto recut = Recut<uint16_t>(args);
+  //recut();
 
   // check again
   cout << "second read\n";
@@ -1275,7 +1275,7 @@ TEST(CheckGlobals, ActiveVertices) {
     ASSERT_TRUE(vertex->valid_vid()) << "coord: " << coord_to_str(vertex->offsets);
     ASSERT_TRUE(vertex->root());
     ASSERT_FALSE(vertex->selected());
-    ASSERT_EQ(vertex->offsets, vid);
+    ASSERT_TRUE(coord_all_eq(vertex->offsets, coord));
   }
 
   for (auto vid : l) {
@@ -1285,6 +1285,7 @@ TEST(CheckGlobals, ActiveVertices) {
     ASSERT_TRUE(found);
     ASSERT_EQ(vertex->radius, 1);
     ASSERT_TRUE(vertex->root());
+    ASSERT_TRUE(coord_all_eq(vertex->offsets, coord));
   }
 }
 
@@ -1521,14 +1522,14 @@ TEST(Update, EachStageIteratively) {
                     std::cout << "Interval " << i << '\n';
                     const auto outer = recut.global_fifo[i];
                     for (int j = 0; j < outer.size(); ++j) {
-                      const auto inner = outer[j];
+                      auto inner = outer[j];
                       std::cout << " Block " << j << '\n';
                       for (auto &vertex : inner) {
                         total++;
                         cout << "\t" << vertex.description() << '\n';
                         ASSERT_TRUE(vertex.surface());
                         ASSERT_TRUE(vertex.root() || vertex.selected());
-                        ASSERT_NE(nullptr, recut.get_active_vertex(i, j, recut.v_to_off(vertex)));
+                        ASSERT_NE(nullptr, recut.get_active_vertex(i, j, recut.v_to_off(i, j, &vertex)));
                       }
                     }
                   }
