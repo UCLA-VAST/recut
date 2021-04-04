@@ -5,7 +5,6 @@
 #include "range/v3/all.hpp"
 #include "recut_parameters.hpp"
 #include <algorithm> //min
-#include <stdlib.h> // ultoa
 #include <atomic>
 #include <chrono>
 #include <cstdlib> //rand srand
@@ -13,6 +12,7 @@
 #include <filesystem>
 #include <math.h>
 #include <numeric>
+#include <stdlib.h> // ultoa
 
 namespace fs = std::filesystem;
 namespace rng = ranges;
@@ -32,7 +32,6 @@ namespace rng = ranges;
 #define XSTR(x) STR(x)
 #define STR(x) #x
 
-
 auto coord_to_id = [](auto xyz, auto lengths) {
   return static_cast<VID_t>(xyz[2]) * (lengths[0] * lengths[1]) +
          xyz[1] * lengths[0] + xyz[0];
@@ -43,7 +42,8 @@ auto new_grid_coord = [](auto x, auto y, auto z) -> GridCoord {
 };
 
 auto new_offset_coord = [](auto x, auto y, auto z) -> OffsetCoord {
-  return OffsetCoord(x, y, z);
+  OffsetCoord offset{x, y, z};
+  return offset;
 };
 
 auto zeros = []() { return new_grid_coord(0, 0, 0); };
@@ -51,6 +51,10 @@ auto zeros = []() { return new_grid_coord(0, 0, 0); };
 auto ones = []() { return new_grid_coord(1, 1, 1); };
 
 auto zeros_off = []() { return new_offset_coord(0, 0, 0); };
+
+auto coord_invert = [](auto coord) {
+  return new_offset_coord(-coord[0], -coord[1], -coord[2]);
+};
 
 auto id_to_coord = [](auto id, auto lengths) {
   GridCoord coords(3);
@@ -60,10 +64,10 @@ auto id_to_coord = [](auto id, auto lengths) {
   return coords;
 };
 
-//auto id_to_string = [](VID_t id) {
-   //char buffer [sizeof(VID_t)*8+1];
-    //ultoa (id,buffer,DECIMAL);
-  //return buffer;
+// auto id_to_string = [](VID_t id) {
+// char buffer [sizeof(VID_t)*8+1];
+// ultoa (id,buffer,DECIMAL);
+// return buffer;
 //}
 
 auto id_to_off_coord = [](auto id, auto lengths) {
@@ -74,6 +78,12 @@ auto id_to_off_coord = [](auto id, auto lengths) {
 auto coord_to_str = [](auto coords) {
   std::ostringstream coord_str;
   coord_str << '[' << coords[0] << ',' << coords[1] << ',' << coords[2] << "]";
+  return coord_str.str();
+};
+
+auto tree_to_str = [](auto id1, auto id2) {
+  std::ostringstream coord_str;
+  coord_str << '{' << id1 << ',' << id2 << "}";
   return coord_str.str();
 };
 
@@ -113,20 +123,26 @@ auto coord_mod = [](auto x, auto y) {
 };
 
 const auto coord_all_eq = [](auto x, auto y) {
-  if (x[0] == y[0]) return false;
-  if (x[1] == y[1]) return false;
-  if (x[2] == y[2]) return false;
+  if (x[0] != y[0])
+    return false;
+  if (x[1] != y[1])
+    return false;
+  if (x[2] != y[2])
+    return false;
   return true;
 };
 
 const auto coord_all_lt = [](auto x, auto y) {
-  if (x[0] >= y[0]) return false;
-  if (x[1] >= y[1]) return false;
-  if (x[2] >= y[2]) return false;
+  if (x[0] >= y[0])
+    return false;
+  if (x[1] >= y[1])
+    return false;
+  if (x[2] >= y[2])
+    return false;
   return true;
 };
 
-const auto coord_reverse = [](auto& coord) {
+const auto coord_reverse = [](auto &coord) {
   auto z = coord[0];
   coord[0] = coord[2];
   coord[2] = z;
@@ -910,7 +926,6 @@ RecutCommandLineArgs get_args(int grid_size, int interval_size, int block_size,
   return args;
 }
 
-
 void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
   auto print = false;
 #ifdef LOG
@@ -933,13 +948,14 @@ void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
       cout << "      Wrote marker: " << fn << '\n';
   }
 }
+
 // keep only voxels strictly greater than bkg_thresh
 auto convert_buffer_to_vdb =
     [](auto buffer, auto vdb_accessor, GridCoord buffer_lengths,
        GridCoord buffer_offsets, GridCoord image_offsets, auto bkg_thresh = 0) {
-      print_coord(buffer_lengths, "buffer_lengths");
-      print_coord(buffer_offsets, "buffer_offsets");
-      print_coord(image_offsets, "image_offsets");
+      // print_coord(buffer_lengths, "buffer_lengths");
+      // print_coord(buffer_offsets, "buffer_offsets");
+      // print_coord(image_offsets, "image_offsets");
       for (auto z : rng::views::iota(0, buffer_lengths[2])) {
         for (auto y : rng::views::iota(0, buffer_lengths[1])) {
           for (auto x : rng::views::iota(0, buffer_lengths[0])) {
@@ -1004,7 +1020,9 @@ auto read_tiff = [](std::string fn, auto image_offsets, auto image_lengths,
   image.ReadImageInfo({0}, true);
   try {
     // use unit strides only
-    mcp3d::MImageBlock block({ image_offsets[0], image_offsets[1], image_offsets[2] }, { image_lengths[0], image_lengths[1], image_lengths[2] });
+    mcp3d::MImageBlock block(
+        {image_offsets[0], image_offsets[1], image_offsets[2]},
+        {image_lengths[0], image_lengths[1], image_lengths[2]});
     image.SelectView(block, 0);
     image.ReadData(true, "quiet");
   } catch (...) {

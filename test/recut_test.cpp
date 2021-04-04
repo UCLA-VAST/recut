@@ -1023,7 +1023,6 @@ TEST(Install, DISABLED_ReadWriteInterval) {
 TEST(VertexAttr, Defaults) {
   auto v1 = new VertexAttr();
   ASSERT_FALSE(v1->root());
-  ASSERT_FALSE(v1->valid_vid());
   ASSERT_EQ(v1->edge_state.field_, 192);
   ASSERT_TRUE(v1->unselected());
   ASSERT_TRUE(v1->unvisited());
@@ -1267,15 +1266,15 @@ TEST(CheckGlobals, ActiveVertices) {
   bool found;
   for (VID_t vid : l) {
     auto coord = id_to_coord(vid, recut.image_lengths);
+    cout << "check vid: " << vid << ' ' << coord_to_str(coord) << '\n';
     auto vertex = recut.get_or_set_active_vertex(0, 0, coord, found);
     ASSERT_FALSE(found);
     ASSERT_TRUE(vertex->selected());
     vertex->mark_root();
     vertex->radius = 1;
-    ASSERT_TRUE(vertex->valid_vid()) << "coord: " << coord_to_str(vertex->offsets);
     ASSERT_TRUE(vertex->root());
     ASSERT_FALSE(vertex->selected());
-    ASSERT_TRUE(coord_all_eq(vertex->offsets, coord));
+    ASSERT_TRUE(coord_all_eq(vertex->offsets, coord)) << coord << ' ' << *vertex;
   }
 
   for (auto vid : l) {
@@ -1285,7 +1284,7 @@ TEST(CheckGlobals, ActiveVertices) {
     ASSERT_TRUE(found);
     ASSERT_EQ(vertex->radius, 1);
     ASSERT_TRUE(vertex->root());
-    ASSERT_TRUE(coord_all_eq(vertex->offsets, coord));
+    ASSERT_TRUE(coord_all_eq(vertex->offsets, coord)) << coord << ' ' << vertex << '\n';
   }
 }
 
@@ -1335,7 +1334,6 @@ TEST(CheckGlobals, AllFifo) {
     ASSERT_FALSE(found);
     ASSERT_FALSE(vertex->surface());
     ASSERT_TRUE(vertex->selected());
-    ASSERT_TRUE(vertex->valid_vid()) << "offset: " << coord_to_str(vertex->offsets);
     ASSERT_TRUE(coord_all_eq(vertex->offsets, offsets));
 
     vertex->mark_root();

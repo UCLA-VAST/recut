@@ -125,10 +125,6 @@ struct VertexAttr {
    */
   bool valid_radius() const { return radius != numeric_limits<uint8_t>::max(); }
 
-  /* returns whether this vertex has had its radius updated from the default max
-   */
-  bool valid_vid() const { return true; }
-
   bool selected() const {
     return (edge_state.test(7) && !edge_state.test(6)); // 10XX XXXX KNOWN NEW
   }
