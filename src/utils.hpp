@@ -472,7 +472,7 @@ bool is_covered_by_parent(VID_t index, VID_t root_vid, int radius,
 }
 
 auto create_vdb_grid = [](auto lengths, float bkg_thresh = 0.) {
-  auto topology_grid = openvdb::TopologyGrid::create();
+  auto topology_grid = openvdb::points::PointDataGrid::create();
   topology_grid->setName("topology");
   topology_grid->setCreator("recut");
   topology_grid->setGridClass(openvdb::GRID_FOG_VOLUME);

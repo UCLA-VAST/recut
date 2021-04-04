@@ -97,7 +97,7 @@ public:
 
   bool input_is_vdb;
 #ifdef USE_VDB
-  openvdb::v8_0::TopologyGrid::Ptr topology_grid;
+  openvdb::points::PointDataGrid::Ptr topology_grid;
 #endif
 
   std::ofstream out;
@@ -2680,7 +2680,7 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     auto timer = new high_resolution_timer();
     auto base_grid = read_vdb_file(args->image_root_dir(), grid_name);
     this->topology_grid =
-        openvdb::gridPtrCast<openvdb::v8_0::TopologyGrid>(base_grid);
+        openvdb::gridPtrCast<openvdb::points::PointDataGrid>(base_grid);
 #ifdef LOG
     cout << "Read grid in: " << timer->elapsed() << " s\n";
 #endif

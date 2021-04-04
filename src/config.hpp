@@ -11,6 +11,8 @@ typedef uint64_t VID_t; // for multi-interval runs
 
 #ifdef USE_VDB
 #include <openvdb/openvdb.h>
+#include <openvdb/points/PointConversion.h>
+#include <openvdb/points/PointCount.h>
 //using OffsetCoord = openvdb::Vec3<int8_t>;
 //using GridCoord = openvdb::Vec3<int32_t>;
 using OffsetCoord = openvdb::Coord;
