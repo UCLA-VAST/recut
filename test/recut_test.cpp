@@ -865,117 +865,6 @@ TEST(Install, DISABLED_ImageReadWrite) {
 }
 #endif
 
-TEST(Helpers, DISABLED_DoublePackKey) {
-  {
-    VID_t block_num = 5;
-    VID_t nb_block_num = 13;
-    uint32_t result = double_pack_key(block_num, nb_block_num);
-    uint32_t actual = (uint32_t)block_num << 16;
-    actual |= (uint32_t)nb_block_num;
-    ASSERT_EQ(actual, result);
-    // check a switch
-    result = double_pack_key(nb_block_num, block_num);
-    ASSERT_NE(actual, result);
-  }
-  {
-    VID_t block_num = 1;
-    VID_t nb_block_num = 1;
-    uint32_t result = double_pack_key(block_num, nb_block_num);
-    uint32_t actual = (uint32_t)1 << 16 | 1;
-    ASSERT_EQ(actual, result);
-  }
-}
-
-TEST(Helpers, DISABLED_TriplePackKey) {
-  {
-    VID_t interval_num = 2;
-    VID_t block_num = 5;
-    VID_t nb_block_num = 13;
-    uint64_t result = triple_pack_key(interval_num, block_num, nb_block_num);
-    uint64_t actual = (uint64_t)interval_num << 32;
-    actual |= (uint64_t)block_num << 16;
-    actual |= (uint64_t)nb_block_num;
-    ASSERT_EQ(actual, result);
-  }
-  {
-    VID_t interval_num = 1;
-    VID_t block_num = 1;
-    VID_t nb_block_num = 1;
-    uint64_t result = triple_pack_key(interval_num, block_num, nb_block_num);
-    uint64_t actual = (uint64_t)1 << 32 | 1 << 16 | 1;
-    ASSERT_EQ(actual, result);
-  }
-}
-
-#ifdef CONCURRENT_MAP
-TEST(Helpers, DISABLED_ConcurrentMap) {
-  // auto surface_map = std::make_unique<junction::ConcurrentMap_Leapfrog<
-  // uint32_t, std::vector<VertexAttr *> *>>();
-  // FIXME could be due to wrong type, std::vector in particular not allowed
-  // no call to the destructor
-
-  auto surface_map = std::make_unique<
-      junction::ConcurrentMap_Leapfrog<uint32_t, VertexAttr *>>();
-
-  std::vector<int> dim_range(2, 0);
-  std::transform(dim_range.begin(), dim_range.end(), ++dim_range.begin(),
-                 std::bind2nd(plus<int>(), 1));
-
-  for (VID_t interval_num : dim_range) {
-    for (VID_t block_num : dim_range) {
-
-      uint32_t key = double_pack_key(interval_num, block_num);
-      cout << "interval_num " << interval_num << " block_num " << block_num
-           << "key " << key << '\n';
-      //{
-      auto mutator = surface_map->insertOrFind(key);
-      auto v = mutator.getValue();
-      ASSERT_EQ(v, nullptr);
-      // std::vector<struct VertexAttr *> *vec = mutator.getValue();
-      // ASSERT_EQ(vec, nullptr);
-      // if (!vec) {
-      // vec = new std::vector<struct VertexAttr *>;
-      //}
-      v = new VertexAttr();
-      v->vid = static_cast<VID_t>(key);
-      // vec->push_back(v);
-      // Note: this block is unique to a single thread, therefore no other
-      // thread could have this same key, since the keys are unique with
-      // respect to their permutation. This means that we do not need to
-      // protect from two threads modifying the same key simultaneously
-      // in this design. If this did need to protected from see documentation
-      // at preshing.com/20160201/new-concurrent-hash-maps-for-cpp/ for
-      // details
-      mutator.exchangeValue(v); // assign via mutator vs. relookup
-      // auto post = new std::vector<VertexAttr *>();
-      // surface_map->assign(key, &(std::move(*post)));
-      //}
-
-      // std::vector<VertexAttr *> *check = surface_map->get(key);
-      auto mutator2 = surface_map->insertOrFind(key);
-      auto check = mutator2.getValue();
-      ASSERT_NE(check, nullptr);
-      ASSERT_EQ(check->vid, static_cast<VID_t>(key));
-    }
-  }
-
-  for (VID_t interval_num : dim_range) {
-    for (VID_t block_num : dim_range) {
-      uint32_t key = double_pack_key(interval_num, block_num);
-      cout << "interval_num " << interval_num << " block_num " << block_num
-           << "key " << key << '\n';
-      auto mutator = surface_map->insertOrFind(key);
-      auto v = mutator.getValue();
-      // std::vector<VertexAttr *> *vec = mutator.getValue();
-      // ASSERT_NE(vec, nullptr);
-      // VertexAttr *v = vec->back();
-      ASSERT_NE(v, nullptr);
-      ASSERT_EQ(v->vid, static_cast<VID_t>(key));
-    }
-  }
-}
-#endif
-
 TEST(Install, DISABLED_ReadWriteInterval) {
   auto nvid = 4;
   auto ptr = new VertexAttr[nvid];
@@ -2372,9 +2261,6 @@ int main(int argc, char **argv) {
 #endif
 #ifdef NO_RV
   testing::Test::RecordProperty("NO_RV", 1);
-#endif
-#ifdef CONCURRENT_MAP
-  testing::Test::RecordProperty("CONCURRENT_MAP", 1);
 #endif
 #ifdef FULL_PRINT
   // this significantly slows performance so it should be stamped to any

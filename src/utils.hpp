@@ -1056,10 +1056,6 @@ void print_macros() {
   cout << "TF" << '\n';
 #endif
 
-#ifdef CONCURRENT_MAP
-  cout << "CONCURRENT_MAP" << '\n';
-#endif
-
 #ifdef USE_HUGE_PAGE
   cout << "USE_HUGE_PAGE" << '\n';
 #endif

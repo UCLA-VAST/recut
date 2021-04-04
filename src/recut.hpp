@@ -114,12 +114,7 @@ public:
   vector<vector<atomwrapper<bool>>> active_blocks;
   vector<vector<atomwrapper<bool>>> processing_blocks;
   vector<vector<vector<bool>>> active_neighbors;
-#ifdef CONCURRENT_MAP
-  // runtime global data structures
-  std::unique_ptr<ConcurrentMap64> updated_ghost_vec;
-#else
   vector<vector<vector<vector<VertexAttr>>>> updated_ghost_vec;
-#endif
 
   Recut(RecutCommandLineArgs &args)
       : args(&args), params(&(args.recut_parameters())) {}
@@ -636,29 +631,6 @@ void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
   }
 }
 
-/* Note: this assumes all values are below 2<<16 - 1
- * otherwise they will overflow when cast to uint16 for
- * packing. Ordered such that one is placed at higher
- * bits than two
- */
-uint32_t double_pack_key(const VID_t one, const VID_t two) {
-  uint32_t final = (uint32_t)two;
-  final |= (uint32_t)one << 16;
-  return final;
-}
-
-/* Note: this assumes all values are below 2<<16 - 1
- * otherwise they will overflow when cast to uint16 for
- * packing. ordered such that one is placed at the highest
- * bit location, left to right while ascending.
- */
-uint64_t triple_pack_key(const VID_t one, const VID_t two, const VID_t three) {
-  uint64_t final = (uint64_t)three;
-  final |= (uint64_t)two << 16;
-  final |= (uint64_t)one << 32;
-  return final;
-}
-
 template <typename T, typename T2> T absdiff(const T &lhs, const T2 &rhs) {
   return lhs > rhs ? lhs - rhs : rhs - lhs;
 }
@@ -1037,22 +1009,6 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
   // interval, this is because there is no need to separate updates based on
   // interval saving overhead
   active_intervals[nb_interval_id] = true;
-#ifdef CONCURRENT_MAP
-  auto key = triple_pack_key(nb_interval_id, block_id, nb_block_id);
-  auto mutator = updated_ghost_vec->insertOrFind(key);
-  std::vector<struct VertexAttr> *vec = mutator.getValue();
-  if (!vec) {
-    vec = new std::vector<struct VertexAttr>;
-  }
-  vec->emplace_back(dst);
-  // Note: this block is unique to a single thread, therefore no other
-  // thread could have this same key, since the keys are unique with
-  // respect to their permutation. This means that we do not need to
-  // protect from two threads modifying the same key simultaneously
-  // in this design. If this did need to protected from see documentation
-  // at preshing.com/20160201/new-concurrent-hash-maps-for-cpp/ for details
-  mutator.assignValue(vec); // assign via mutator vs. relookup
-#else
   if (stage == "prune") {
     assertm(dst->valid_radius(), "selected must have a valid radius");
   }
@@ -1062,7 +1018,6 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
   // race conditions
   updated_ghost_vec[nb_interval_id][block_id][nb_block_id].emplace_back(
       dst->edge_state, msg_offsets, dst->parent, dst->radius);
-#endif
   active_neighbors[nb_interval_id][nb_block_id][block_id] = true;
 
 #ifdef FULL_PRINT
@@ -1454,26 +1409,10 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id,
     if (active_neighbors[interval_id][block_id][nb]) {
       // updated ghost cleared in march_narrow_band
       // iterate over all ghost points of block_id inside domain of block nb
-#ifdef CONCURRENT_MAP
-      auto key = triple_pack_key(interval_id, nb, block_id);
-      // get mutator so that doesn't have to reloaded when assigning
-      auto mutator = updated_ghost_vec->find(key);
-      std::vector<struct VertexAttr> *vec = mutator.getValue();
-      // nullptr if not found, continuing saves a redundant mutator assign
-      if (!vec) {
-        active_neighbors[interval_id][nb][block_id] = false; // reset to false
-        continue; // FIXME this should never occur because of active_neighbor
-        // right?
-      }
-      assertm(false, "not implemented");
-
-      for (struct VertexAttr updated_vertex : *vec) {
-#else
 
       // updated_ghost_vec[x][a][b] in domain of a, in ghost of block b
       for (VertexAttr updated_vertex :
            updated_ghost_vec[interval_id][nb][block_id]) {
-#endif
 
 #ifdef FULL_PRINT
         cout << "integrate(): " << coord_to_str(updated_vertex.offsets)
@@ -1493,14 +1432,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id,
       active_neighbors[interval_id][block_id][nb] = false; // reset to false
       // clear sets for all possible block connections of block_id from this
       // iter
-#ifdef CONCURRENT_MAP
-      vec->clear();
-      // assign directly to the mutator to save a lookup
-      mutator.assignValue(
-          vec); // keep the same pointer just make sure it's empty
-#else
       updated_ghost_vec[interval_id][nb][block_id].clear();
-#endif
     } // for all active neighbor blocks of block_id
   }
   if (stage == "connected") {
@@ -2656,17 +2588,12 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
                            vector<bool>(interval_block_size)));
 
   if (!(params->convert_only_)) {
-#ifdef CONCURRENT_MAP
-    updated_ghost_vec = std::make_unique<ConcurrentMap64>();
-#else
     updated_ghost_vec = vector<vector<vector<vector<struct VertexAttr>>>>(
         grid_interval_size,
         vector<vector<vector<struct VertexAttr>>>(
             interval_block_size,
             vector<vector<struct VertexAttr>>(interval_block_size,
                                               vector<struct VertexAttr>())));
-#endif
-
 #ifdef LOG_FULL
     cout << "Created updated ghost vec" << '\n';
 #endif
@@ -2946,9 +2873,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
       pad_block_length_x * pad_block_length_y * pad_block_length_z;
   const VID_t grid_vertex_pad_size =
       pad_block_offset * interval_block_size * grid_interval_size;
-  // we cast the interval id and block id to uint16 for use as a key
-  // in the global variables maps, if total intervals or blocks exceed this
-  // there would be overflow
+
   if (grid_interval_size > (2 << 16) - 1) {
     cout << "Number of intervals too high: " << grid_interval_size
          << " try increasing interval size";
