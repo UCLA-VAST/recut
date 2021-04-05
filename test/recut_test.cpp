@@ -89,7 +89,7 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
         if (stage == "convert") {
 #ifdef USE_VDB
           openvdb::Coord xyz(xi, yi, zi);
-          auto val = vdb_accessor.getValue(xyz);
+          auto val = vdb_accessor.isValueOn(xyz);
           // std::cout << "type: " << typeid(val).name() << '\n';
           auto int_val = val ? 1 : 0;
           if (ground_truth[vid]) {
@@ -605,9 +605,9 @@ TEST(VDBConvertOnly, Any) {
   auto tcase = 7;
   double slt_pct = 100;
   bool print_all = false;
-#ifdef LOG_FULL
+//#ifdef LOG_FULL
   print_all = true;
-#endif
+//#endif
   auto str_path = get_data_dir();
   // auto fn = str_path + "/test_convert_only.vdb";
 
@@ -796,9 +796,12 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
 
         auto topology_grid = create_vdb_grid(grid_extents);
         std::cout << "created vdb grid\n";
+        std::vector<Coord> positions;
         convert_buffer_to_vdb(inimg1d, topology_grid->getAccessor(),
-                              grid_extents, zeros(), zeros(), 0);
-        std::cout << "converted to vdb grid\n";
+                              grid_extents, zeros(), zeros(), positions, 0);
+        if (print) {
+           print_vdb(topology_grid->getConstAccessor(), coord_to_vec(grid_extents));
+        }
 
 #ifdef USE_MCP3D
         write_tiff(inimg1d, fn, grid_size);

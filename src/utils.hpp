@@ -122,6 +122,12 @@ auto coord_mod = [](auto x, auto y) {
   return GridCoord(x[0] % y[0], x[1] % y[1], x[2] % y[2]);
 };
 
+auto coord_to_vec = [](auto coord) {
+  return std::vector<VID_t>{static_cast<VID_t>(coord[0]),
+                            static_cast<VID_t>(coord[1]),
+                            static_cast<VID_t>(coord[2])};
+};
+
 const auto coord_all_eq = [](auto x, auto y) {
   if (x[0] != y[0])
     return false;
@@ -319,7 +325,7 @@ void print_vdb(T vdb_accessor, const std::vector<VID_t> lengths,
       cout << y << " | ";
       for (int x = 0; x < lengths[0]; x++) {
         openvdb::Coord xyz(x, y, z);
-        auto val = vdb_accessor.getValue(xyz);
+        auto val = vdb_accessor.isValueOn(xyz);
         // if ((bkg_thresh > -1) && (val <= bkg_thresh)) {
         if (val) {
           cout << val << " ";
@@ -475,8 +481,8 @@ auto create_vdb_grid = [](auto lengths, float bkg_thresh = 0.) {
   auto topology_grid = openvdb::points::PointDataGrid::create();
   topology_grid->setName("topology");
   topology_grid->setCreator("recut");
-  topology_grid->setGridClass(openvdb::GRID_FOG_VOLUME);
 
+  // topology_grid->setGridClass(openvdb::GRID_FOG_VOLUME);
   // topology_grid->insertMeta("original_bounding_lengths",
   // openvdb::Vec3SMetadata(openvdb::v8_0::Vec3S(
   // lengths[0], lengths[1], lengths[2])));
@@ -952,7 +958,8 @@ void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
 // keep only voxels strictly greater than bkg_thresh
 auto convert_buffer_to_vdb =
     [](auto buffer, auto vdb_accessor, GridCoord buffer_lengths,
-       GridCoord buffer_offsets, GridCoord image_offsets, auto bkg_thresh = 0) {
+       GridCoord buffer_offsets, GridCoord image_offsets,
+       std::vector<Coord> &positions, auto bkg_thresh = 0) {
       // print_coord(buffer_lengths, "buffer_lengths");
       // print_coord(buffer_offsets, "buffer_offsets");
       // print_coord(image_offsets, "image_offsets");
@@ -965,6 +972,7 @@ auto convert_buffer_to_vdb =
             auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
             // voxels equal to bkg_thresh are always discarded
             if (val > bkg_thresh) {
+              positions.push_back(Coord(x, y, z));
               vdb_accessor.setValue(grid_xyz, true);
             }
           }

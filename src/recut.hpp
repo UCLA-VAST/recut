@@ -641,7 +641,7 @@ bool Recut<image_t>::get_vdb_val(T vdb_accessor, GridCoord coord) {
 #ifdef FULL_PRINT
   cout << coord_to_str(coord) << '\n';
 #endif
-  return vdb_accessor.getValue(coord);
+  return vdb_accessor.isValueOn(coord);
 }
 
 /*
@@ -2282,6 +2282,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   auto timer = new high_resolution_timer();
 
 #ifdef USE_VDB
+  std::vector<Coord> positions;
   // note openvdb::initialize() must have been called before this point
   // otherewise seg faults will occur
   // if (this->input_is_vdb || params->convert_only_) {
@@ -2434,7 +2435,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
           convert_buffer_to_vdb(tile, vdb_accessor, buffer_extents,
                                 /*buffer_offsets=*/buffer_offsets,
-                                /*image_offsets=*/interval_offsets,
+                                /*image_offsets=*/interval_offsets, positions,
                                 local_tile_thresholds->bkg_thresh);
 
           active_intervals[interval_id] = false;
@@ -2457,7 +2458,39 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
   if (stage == "convert") {
     auto finalize_start = timer->elapsed();
-    print_grid_metadata(topology_grid);
+
+    // The VDB Point-Partioner is used when bucketing points and requires a
+    // specific interface. For convenience, we use the PointAttributeVector
+    // wrapper around an stl vector wrapper here, however it is also possible to
+    // write one for a custom data structure in order to match the interface
+    // required.
+    openvdb::points::PointAttributeVector<Coord> positionsWrapper(positions);
+
+    // This method computes a voxel-size to match the number of
+    // points / voxel requested. Although it won't be exact, it typically offers
+    // a good balance of memory against performance.
+    int pointsPerVoxel = 1;
+    //float voxelSize = openvdb::points::computeVoxelSize(positionsWrapper, pointsPerVoxel);
+    float voxelSize = 1.;
+
+    // Print the voxel-size to cout
+    std::cout << "VoxelSize=" << voxelSize << std::endl;
+    // Create a transform using this voxel-size.
+    openvdb::math::Transform::Ptr transform =
+        openvdb::math::Transform::createLinearTransform(voxelSize);
+
+    // Create a PointDataGrid containing these four points and using the
+    // transform given. This function has two template parameters, (1) the codec
+    // to use for storing the position, (2) the grid we want to create
+    // (ie a PointDataGrid).
+    // We use no compression here for the positions.
+    openvdb::points::PointDataGrid::Ptr grid =
+        openvdb::points::createPointDataGrid<openvdb::points::NullCodec,
+                                             openvdb::points::PointDataGrid>(
+            positions, *transform);
+
+    print_grid_metadata(grid);
+    this->topology_grid = grid;
     computation_time = computation_time + (finalize_start - timer->elapsed());
   } else {
 #ifdef RV

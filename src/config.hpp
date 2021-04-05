@@ -17,6 +17,8 @@ typedef uint64_t VID_t; // for multi-interval runs
 //using GridCoord = openvdb::Vec3<int32_t>;
 using OffsetCoord = openvdb::Coord;
 using GridCoord = openvdb::Coord;
+using Coord = openvdb::Vec3I;
+//using Coord = openvdb::Vec3U16;
 #else
 using OffsetCoord = std::vector<int8_t>;
 using GridCoord = std::vector<int32_t>;
