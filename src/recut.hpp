@@ -100,6 +100,11 @@ public:
   openvdb::points::PointDataGrid::Ptr topology_grid;
 #endif
 
+  std::vector<OffsetCoord> const stencil{
+      new_offset_coord(0, 0, -1), new_offset_coord(0, 0, 1),
+      new_offset_coord(0, -1, 0), new_offset_coord(0, 1, 0),
+      new_offset_coord(-1, 0, 0), new_offset_coord(1, 0, 0)};
+
   std::ofstream out;
   image_t *generated_image = nullptr;
   atomic<VID_t> global_revisits;
@@ -186,7 +191,7 @@ public:
                             VID_t block_id, GridCoord dst_coord,
                             OffsetCoord offset_to_current, VID_t &revisits,
                             const TileThresholds<image_t> *tile_thresholds,
-                            bool &found_background, T vdb_accessor);
+                            bool &found_adjacent_invalid, T vdb_accessor);
   bool accumulate_value(const image_t *tile, VID_t interval_id,
                         GridCoord dst_coord, VID_t block_id,
                         struct VertexAttr *current, VID_t &revisits,
@@ -222,26 +227,29 @@ public:
                         struct VertexAttr *updated_vertex,
                         bool ignore_KNOWN_NEW, std::string stage,
                         Container &fifo);
-  template <class Container, typename T>
+  template <class Container, typename T, typename T2>
   void march_narrow_band(const image_t *tile, VID_t interval_id, VID_t block_id,
                          std::string stage,
                          const TileThresholds<image_t> *tile_thresholds,
-                         Container &fifo, T vdb_accessor);
-  template <class Container, typename T>
+                         Container &fifo, T vdb_accessor, T2 leaf_iter);
+  template <class Container, typename T, typename T2>
   void connected_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
                       GridCoord offsets, std::string stage,
                       const TileThresholds<image_t> *tile_thresholds,
-                      Container &fifo, VID_t revisits, T vdb_accessor);
-  template <class Container, typename T>
+                      Container &fifo, VID_t revisits, T vdb_accessor,
+                      T2 leaf_iter);
+  template <class Container, typename T, typename T2>
   void radius_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
                    GridCoord offsets, std::string stage,
                    const TileThresholds<image_t> *tile_thresholds,
-                   Container &fifo, VID_t revisits, T vdb_accessor);
-  template <class Container, typename T>
+                   Container &fifo, VID_t revisits, T vdb_accessor,
+                   T2 leaf_iter);
+  template <class Container, typename T, typename T2>
   void prune_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
                   GridCoord offsets, std::string stage,
                   const TileThresholds<image_t> *tile_thresholds,
-                  Container &fifo, VID_t revisits, T vdb_accessor);
+                  Container &fifo, VID_t revisits, T vdb_accessor,
+                  T2 leaf_iter);
   void create_march_thread(VID_t interval_id, VID_t block_id);
 #ifdef USE_MCP3D
   void load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile);
@@ -385,30 +393,6 @@ OffsetCoord Recut<image_t>::v_to_off(VID_t interval_id, VID_t block_id,
                    this->block_lengths);
 }
 
-/*
- * Does this coord belong in the full image
- * accounting for the input offsets and extents
- * i, j, k : coord of vertex in question
- * off : offsets in x y z
- * end : sanitized end pixels order
- */
-template <typename T, typename T2>
-bool is_in_bounds(T adjusted, T2 off, T2 end) {
-  if (adjusted[0] < off[0])
-    return false;
-  if (adjusted[1] < off[1])
-    return false;
-  if (adjusted[2] < off[2])
-    return false;
-  if (adjusted[0] > (off[0] + end[0]))
-    return false;
-  if (adjusted[1] > (off[1] + end[1]))
-    return false;
-  if (adjusted[2] > (off[2] + end[2]))
-    return false;
-  return true;
-}
-
 // adds all markers to root_vids
 //
 template <class image_t>
@@ -481,6 +465,12 @@ template <class Container>
 void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
                                    std::string stage, Container &fifo) {
   assertm(!(root_vids.empty()), "Must have at least one root");
+
+  if (stage == "connected") {
+    init_root_attributes(this->topology_grid,
+                         ids_to_coords(root_vids, this->image_lengths));
+  }
+
   for (const auto &vid : root_vids) {
     auto interval_id = id_img_to_interval_id(vid);
     auto block_id = id_img_to_block_id(vid);
@@ -878,7 +868,7 @@ template <typename T>
 bool Recut<image_t>::accumulate_connected(
     const image_t *tile, VID_t interval_id, VID_t block_id, GridCoord dst_coord,
     OffsetCoord offset_to_current, VID_t &revisits,
-    const TileThresholds<image_t> *tile_thresholds, bool &found_background,
+    const TileThresholds<image_t> *tile_thresholds, bool &found_adjacent_invalid,
     T vdb_accessor) {
 
 #ifdef FULL_PRINT
@@ -889,6 +879,7 @@ bool Recut<image_t>::accumulate_connected(
   // skip backgrounds
   // the image voxel of this dst vertex is the primary method to exclude this
   // pixel/vertex for the remainder of all processing
+  auto found_background = false;
   if (this->input_is_vdb) {
     auto dst_vox = get_vdb_val(vdb_accessor, dst_coord);
     if (!dst_vox)
@@ -901,6 +892,7 @@ bool Recut<image_t>::accumulate_connected(
   }
 
   if (found_background) {
+    found_adjacent_invalid = true;
 #ifdef FULL_PRINT
     cout << "\t\tfailed tile_thresholds->bkg_thresh" << '\n';
 #endif
@@ -1609,11 +1601,23 @@ void Recut<image_t>::dump_buffer(Container buffer) {
 }
 
 template <class image_t>
-template <class Container, typename T>
+template <class Container, typename T, typename T2>
 void Recut<image_t>::connected_tile(
     const image_t *tile, VID_t interval_id, VID_t block_id, GridCoord offsets,
     std::string stage, const TileThresholds<image_t> *tile_thresholds,
-    Container &fifo, VID_t revisits, T vdb_accessor) {
+    Container &fifo, VID_t revisits, T vdb_accessor, T2 leaf_iter) {
+
+  if (local_fifo[interval_id][block_id].empty())
+    return;
+
+  // load flags
+  // if (input_is_vdb) {
+  //openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
+      //leaf_iter->attributeArray("flags"));
+  // parent
+  //openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
+      //leaf_iter->attributeArray("parent"));
+  //}
 
   VertexAttr *current, *msg_vertex;
   VID_t visited = 0;
@@ -1635,10 +1639,50 @@ void Recut<image_t>::connected_tile(
     // can be a background vertex which occurs due to pixel value below the
     // threshold, previously selected vertices are considered valid
     auto found_adjacent_invalid = false;
-    auto covered = false;
-    update_neighbors(tile, interval_id, block_id, msg_vertex, current_coord,
-                     revisits, stage, tile_thresholds, found_adjacent_invalid,
-                     *msg_vertex, fifo, covered, vdb_accessor);
+    //auto covered = false;
+    //update_neighbors(tile, interval_id, block_id, msg_vertex, current_coord,
+                     //revisits, stage, tile_thresholds, found_adjacent_invalid,
+                     //*msg_vertex, fifo, covered, vdb_accessor);
+
+    auto valids =
+        // star stencil offsets to img coords 
+        this->stencil |
+        rng::views::transform([&current_coord](auto stencil_offset) {
+          return coord_add(current_coord, stencil_offset);
+        }) | 
+        // within image?
+        rng::views::remove_if([this, &found_adjacent_invalid](auto coord_img) {
+          if (is_in_bounds(coord_img, zeros(), this->image_lengths))
+            return false;
+          found_adjacent_invalid = true;
+          return true;
+        }) |
+        // within leaf?
+        rng::views::remove_if([&](auto coord_img) {
+          auto mismatch = block_id != coord_img_to_block_id(coord_img);
+          if (mismatch) {
+            if (this->input_is_vdb) {
+              if (!get_vdb_val(vdb_accessor, coord_img))
+                found_adjacent_invalid = true;
+            } else {
+              auto dst_vox = get_img_val(tile, coord_img);
+              if (dst_vox <= tile_thresholds->bkg_thresh) {
+                found_adjacent_invalid = true;
+              }
+            }
+          }
+          return mismatch;
+        }) |
+        // visit valid voxels
+        rng::views::remove_if([&](auto coord_img) {
+          auto offset_to_current = coord_sub(current_coord, coord_img);
+          // is background?  ...has side-effects
+          return !accumulate_connected(
+              tile, interval_id, block_id, coord_img, offset_to_current,
+              revisits, tile_thresholds, found_adjacent_invalid, vdb_accessor);
+        }) | 
+    // force evaluation by inputing to a vector
+    rng::to_vector;
 
     // protect from message values not inside
     // this block or interval such as roots from activate_vids
@@ -1652,6 +1696,7 @@ void Recut<image_t>::connected_tile(
       // msg_vertex aleady aware it is a surface
       if (surface) {
         current->mark_surface();
+        //set_surface(flags_handle, leaf_iter->beginIndexVoxel(current_coord));
         // save all surface vertices for the radius stage
         // each fifo corresponds to a specific interval_id and block_id
         // so there are no race conditions
@@ -1677,6 +1722,7 @@ void Recut<image_t>::connected_tile(
                 << current->label() << '\n';
 #endif
       current->mark_surface();
+      //set_surface(flags_handle, leaf_iter->beginIndexVoxel(current_coord));
 
       if (in_domain) {
         // save all surface vertices for the radius stage
@@ -1716,13 +1762,13 @@ void Recut<image_t>::connected_tile(
 }
 
 template <class image_t>
-template <class Container, typename T>
+template <class Container, typename T, typename T2>
 void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
                                  VID_t block_id, GridCoord offsets,
                                  std::string stage,
                                  const TileThresholds<image_t> *tile_thresholds,
                                  Container &fifo, VID_t revisits,
-                                 T vdb_accessor) {
+                                 T vdb_accessor, T2 leaf_iter) {
   VertexAttr *current; // for performance
   VID_t visited = 0;
   while (!(fifo.empty())) {
@@ -1766,13 +1812,13 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
 }
 
 template <class image_t>
-template <class Container, typename T>
+template <class Container, typename T, typename T2>
 void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
                                 VID_t block_id, GridCoord offsets,
                                 std::string stage,
                                 const TileThresholds<image_t> *tile_thresholds,
-                                Container &fifo, VID_t revisits,
-                                T vdb_accessor) {
+                                Container &fifo, VID_t revisits, T vdb_accessor,
+                                T2 leaf_iter) {
   VertexAttr *current;
   bool current_outside_domain, covered;
   VID_t visited = 0;
@@ -1823,11 +1869,11 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
 } // end prune_tile
 
 template <class image_t>
-template <class Container, typename T>
+template <class Container, typename T, typename T2>
 void Recut<image_t>::march_narrow_band(
     const image_t *tile, VID_t interval_id, VID_t block_id, std::string stage,
     const TileThresholds<image_t> *tile_thresholds, Container &fifo,
-    T vdb_accessor) {
+    T vdb_accessor, T2 leaf_iter) {
   // first coord of block with respect to whole image
   auto block_img_offsets =
       id_interval_block_to_img_offsets(interval_id, block_id);
@@ -1843,13 +1889,13 @@ void Recut<image_t>::march_narrow_band(
 
   if (stage == "connected") {
     connected_tile(tile, interval_id, block_id, block_img_offsets, stage,
-                   tile_thresholds, fifo, revisits, vdb_accessor);
+                   tile_thresholds, fifo, revisits, vdb_accessor, leaf_iter);
   } else if (stage == "radius") {
     radius_tile(tile, interval_id, block_id, block_img_offsets, stage,
-                tile_thresholds, fifo, revisits, vdb_accessor);
+                tile_thresholds, fifo, revisits, vdb_accessor, leaf_iter);
   } else if (stage == "prune") {
     prune_tile(tile, interval_id, block_id, block_img_offsets, stage,
-               tile_thresholds, fifo, revisits, vdb_accessor);
+               tile_thresholds, fifo, revisits, vdb_accessor, leaf_iter);
   } else {
     assertm(false, "Stage name not recognized");
   }
@@ -2032,12 +2078,20 @@ Recut<image_t>::process_interval(VID_t interval_id, const image_t *tile,
 
 #else // OMP or sequential strategy
 
+    // assertm(this->topology_grid, "Block count and size must match topology
+    // grid leaf size at compile time");
+    auto leaf_iter = this->topology_grid->tree().beginLeaf();
 #ifdef USE_OMP_BLOCK
 #pragma omp parallel for
 #endif
     for (VID_t block_id = 0; block_id < interval_block_size; ++block_id) {
+      if (input_is_vdb)
+        assertm(leaf_iter, "Block count and size must match topology grid leaf "
+                           "size at compile time");
       march_narrow_band(tile, interval_id, block_id, stage, tile_thresholds,
-                        fifo[block_id], vdb_accessor);
+                        fifo[block_id], vdb_accessor, leaf_iter);
+      if (input_is_vdb)
+        ++leaf_iter;
     }
 
 #endif // ASYNC
@@ -2267,6 +2321,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   computation_time = 0.0;
   global_revisits = 0;
   auto interval_open_count = std::vector<uint16_t>(grid_interval_size, 0);
+  TileThresholds<image_t> *local_tile_thresholds;
 #ifdef NO_INTERVAL_RV
   auto visited_intervals = std::make_unique<bool[]>(grid_interval_size, false);
 #endif
@@ -2360,7 +2415,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
         // tile_thresholds defaults to nullptr
         // local_tile_thresholds will be set explicitly
         // if user did not pass in valid tile_thresholds value
-        TileThresholds<image_t> *local_tile_thresholds = tile_thresholds;
+        local_tile_thresholds = tile_thresholds;
 
         if (this->input_is_vdb && !local_tile_thresholds) {
           local_tile_thresholds = new TileThresholds<image_t>(
@@ -2433,7 +2488,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                                          ? this->image_lengths
                                          : this->interval_lengths;
 
-          convert_buffer_to_vdb(tile, vdb_accessor, buffer_extents,
+          convert_buffer_to_vdb(tile, buffer_extents,
                                 /*buffer_offsets=*/buffer_offsets,
                                 /*image_offsets=*/interval_offsets, positions,
                                 local_tile_thresholds->bkg_thresh);
@@ -2459,38 +2514,12 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   if (stage == "convert") {
     auto finalize_start = timer->elapsed();
 
-    // The VDB Point-Partioner is used when bucketing points and requires a
-    // specific interface. For convenience, we use the PointAttributeVector
-    // wrapper around an stl vector wrapper here, however it is also possible to
-    // write one for a custom data structure in order to match the interface
-    // required.
-    openvdb::points::PointAttributeVector<Coord> positionsWrapper(positions);
-
-    // This method computes a voxel-size to match the number of
-    // points / voxel requested. Although it won't be exact, it typically offers
-    // a good balance of memory against performance.
-    int pointsPerVoxel = 1;
-    //float voxelSize = openvdb::points::computeVoxelSize(positionsWrapper, pointsPerVoxel);
-    float voxelSize = 1.;
-
-    // Print the voxel-size to cout
-    std::cout << "VoxelSize=" << voxelSize << std::endl;
-    // Create a transform using this voxel-size.
-    openvdb::math::Transform::Ptr transform =
-        openvdb::math::Transform::createLinearTransform(voxelSize);
-
-    // Create a PointDataGrid containing these four points and using the
-    // transform given. This function has two template parameters, (1) the codec
-    // to use for storing the position, (2) the grid we want to create
-    // (ie a PointDataGrid).
-    // We use no compression here for the positions.
-    openvdb::points::PointDataGrid::Ptr grid =
-        openvdb::points::createPointDataGrid<openvdb::points::NullCodec,
-                                             openvdb::points::PointDataGrid>(
-            positions, *transform);
-
-    print_grid_metadata(grid);
-    this->topology_grid = grid;
+    // use the last bkg_thresh calculated for metadata,
+    // bkg_thresh is constant for each interval unless a specific % is
+    // input by command line user
+    this->topology_grid =
+        create_point_grid(positions, this->image_lengths,
+                          /*bkg_thresh=*/local_tile_thresholds->bkg_thresh);
     computation_time = computation_time + (finalize_start - timer->elapsed());
   } else {
 #ifdef RV
@@ -2714,6 +2743,7 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     auto base_grid = read_vdb_file(args->image_root_dir(), grid_name);
     this->topology_grid =
         openvdb::gridPtrCast<openvdb::points::PointDataGrid>(base_grid);
+    append_attributes(this->topology_grid);
 #ifdef LOG
     cout << "Read grid in: " << timer->elapsed() << " s\n";
 #endif

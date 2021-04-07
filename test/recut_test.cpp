@@ -64,7 +64,8 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
         auto block_id = recut.id_img_to_block_id(vid);
         auto find_vid = [&]() {
           for (const auto &local_vertex : fifo[interval_id][block_id]) {
-            //if (vid == recut.v_to_img_coord(interval_id, block_id, local_vertex))
+            // if (vid == recut.v_to_img_coord(interval_id, block_id,
+            // local_vertex))
             if (coord_all_eq(correct_offset, local_vertex.offsets))
               return true;
           }
@@ -79,7 +80,8 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
         // selected vertex with ground truth is also not valid
         if (!(interval->IsInMemory())) {
           interval->LoadFromDisk();
-        } v = recut.get_attr_vid(interval_id, block_id, vid, nullptr);
+        }
+        v = recut.get_attr_vid(interval_id, block_id, vid, nullptr);
 #else
         if (stage != "convert") {
           v = recut.get_active_vertex(interval_id, block_id, correct_offset);
@@ -370,13 +372,19 @@ void test_get_attr_vid(bool mmap, int grid_size, int interval_size,
       // blocks, converting to subscript makes adjustments easier
       recut.get_block_subscript(current_block_id, iblock, jblock, kblock);
       if (vid == root_vid) {
-        test_blocks.push_back(recut.sub_block_to_block_id(iblock + 1, jblock, kblock));
-        test_blocks.push_back(recut.sub_block_to_block_id(iblock, jblock + 1, kblock));
-        test_blocks.push_back(recut.sub_block_to_block_id(iblock, jblock, kblock + 1));
+        test_blocks.push_back(
+            recut.sub_block_to_block_id(iblock + 1, jblock, kblock));
+        test_blocks.push_back(
+            recut.sub_block_to_block_id(iblock, jblock + 1, kblock));
+        test_blocks.push_back(
+            recut.sub_block_to_block_id(iblock, jblock, kblock + 1));
       } else if (vid == root_diag_vid) {
-        test_blocks.push_back(recut.sub_block_to_block_id(iblock - 1, jblock, kblock));
-        test_blocks.push_back(recut.sub_block_to_block_id(iblock, jblock - 1, kblock));
-        test_blocks.push_back(recut.sub_block_to_block_id(iblock, jblock, kblock - 1));
+        test_blocks.push_back(
+            recut.sub_block_to_block_id(iblock - 1, jblock, kblock));
+        test_blocks.push_back(
+            recut.sub_block_to_block_id(iblock, jblock - 1, kblock));
+        test_blocks.push_back(
+            recut.sub_block_to_block_id(iblock, jblock, kblock - 1));
       }
     }
 
@@ -561,6 +569,54 @@ TEST(Interval, GetAttrVidMultiInterval) {
 #endif // DENSE
 
 #ifdef USE_VDB
+TEST(VDB, ActivateVids) {
+  VID_t grid_size = 8;
+  auto grid_extents = std::vector<VID_t>(3, grid_size);
+  // do no use tcase 4 since it is randomized and will not match
+  // for the second read test
+  auto tcase = 7;
+  double slt_pct = 100;
+  bool print_all = true;
+  // generate an image buffer on the fly
+  // then convert to vdb
+  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+                       /*force_regenerate_image=*/false,
+                       /*input_is_vdb=*/ true);
+  auto recut = Recut<uint16_t>(args);
+  auto root_vids = recut.initialize();
+  recut.activate_vids(root_vids, "connected", recut.global_fifo);
+
+  if (print_all) {
+    print_vdb(recut.topology_grid->getConstAccessor(), grid_extents);
+    print_all_points(recut.topology_grid);
+  }
+}
+
+TEST(VDB, Connected) {
+  VID_t grid_size = 8;
+  auto grid_extents = std::vector<VID_t>(3, grid_size);
+  // do no use tcase 4 since it is randomized and will not match
+  // for the second read test
+  auto tcase = 7;
+  double slt_pct = 100;
+  bool print_all = true;
+  // generate an image buffer on the fly
+  // then convert to vdb
+  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+                       /*force_regenerate_image=*/false,
+                       /*input_is_vdb=*/ true);
+  auto recut = Recut<uint16_t>(args);
+  auto root_vids = recut.initialize();
+  auto stage = "connected";
+  recut.activate_vids(root_vids, stage, recut.global_fifo);
+  recut.update(stage, recut.global_fifo);
+
+  if (print_all) {
+    print_vdb(recut.topology_grid->getConstAccessor(), grid_extents);
+    print_all_points(recut.topology_grid);
+  }
+}
+
 TEST(VDBWriteOnly, DISABLED_Any) {
   VID_t grid_size = 8;
   auto grid_extents = std::vector<VID_t>(3, grid_size);
@@ -605,9 +661,9 @@ TEST(VDBConvertOnly, Any) {
   auto tcase = 7;
   double slt_pct = 100;
   bool print_all = false;
-//#ifdef LOG_FULL
+  //#ifdef LOG_FULL
   print_all = true;
-//#endif
+  //#endif
   auto str_path = get_data_dir();
   // auto fn = str_path + "/test_convert_only.vdb";
 
@@ -794,13 +850,16 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
           ASSERT_NEAR(actual_slt_pct, slt_pct, 100 * EXP_DEV_LOW);
         }
 
-        auto topology_grid = create_vdb_grid(grid_extents);
         std::cout << "created vdb grid\n";
         std::vector<Coord> positions;
-        convert_buffer_to_vdb(inimg1d, topology_grid->getAccessor(),
-                              grid_extents, zeros(), zeros(), positions, 0);
+        convert_buffer_to_vdb(inimg1d, grid_extents, zeros(), zeros(),
+                              positions, 0);
+
+        auto topology_grid = create_point_grid(positions, grid_extents);
         if (print) {
-           print_vdb(topology_grid->getConstAccessor(), coord_to_vec(grid_extents));
+          print_vdb(topology_grid->getConstAccessor(),
+                    coord_to_vec(grid_extents));
+          //print_all_points(topology_grid);
         }
 
 #ifdef USE_MCP3D
@@ -852,9 +911,8 @@ TEST(Install, DISABLED_ImageReadWrite) {
 
   // run recut over the image, force it to run in read image
   // non-generated mode since MCP3D is guaranteed here
-  //auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, false);
-  //auto recut = Recut<uint16_t>(args);
-  //recut();
+  // auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+  // false); auto recut = Recut<uint16_t>(args); recut();
 
   // check again
   cout << "second read\n";
@@ -1002,7 +1060,7 @@ TEST(VertexAttr, MarkStatus) {
 TEST(VertexAttr, CopyOp) {
   auto v1 = new VertexAttr();
   auto v2 = new VertexAttr();
-  v1->offsets = new_offset_coord(1, 1,1 );
+  v1->offsets = new_offset_coord(1, 1, 1);
   v1->edge_state.reset();
   ASSERT_NE(*v1, *v2);
   *v2 = *v1;
@@ -1166,7 +1224,8 @@ TEST(CheckGlobals, ActiveVertices) {
     vertex->radius = 1;
     ASSERT_TRUE(vertex->root());
     ASSERT_FALSE(vertex->selected());
-    ASSERT_TRUE(coord_all_eq(vertex->offsets, coord)) << coord << ' ' << *vertex;
+    ASSERT_TRUE(coord_all_eq(vertex->offsets, coord))
+        << coord << ' ' << *vertex;
   }
 
   for (auto vid : l) {
@@ -1176,7 +1235,8 @@ TEST(CheckGlobals, ActiveVertices) {
     ASSERT_TRUE(found);
     ASSERT_EQ(vertex->radius, 1);
     ASSERT_TRUE(vertex->root());
-    ASSERT_TRUE(coord_all_eq(vertex->offsets, coord)) << coord << ' ' << vertex << '\n';
+    ASSERT_TRUE(coord_all_eq(vertex->offsets, coord))
+        << coord << ' ' << vertex << '\n';
   }
 }
 
@@ -1305,7 +1365,7 @@ TEST(Update, EachStageIteratively) {
   std::vector<int> grid_sizes = {max_size};
   std::vector<int> interval_sizes = {max_size};
   std::vector<int> block_sizes = {max_size, max_size / 2, max_size / 4};
-  std::vector<bool> input_is_vdbs = {false, true};
+  std::vector<bool> input_is_vdbs = {false};
   // tcase 5 is a sphere of radius grid_size / 4 centered
   // in the middle of an image
   // tcase 7 is a square radius grid_size / 4
@@ -1419,7 +1479,9 @@ TEST(Update, EachStageIteratively) {
                         cout << "\t" << vertex.description() << '\n';
                         ASSERT_TRUE(vertex.surface());
                         ASSERT_TRUE(vertex.root() || vertex.selected());
-                        ASSERT_NE(nullptr, recut.get_active_vertex(i, j, recut.v_to_off(i, j, &vertex)));
+                        ASSERT_NE(nullptr,
+                                  recut.get_active_vertex(
+                                      i, j, recut.v_to_off(i, j, &vertex)));
                       }
                     }
                   }
@@ -1541,7 +1603,7 @@ TEST(Update, EachStageIteratively) {
                   // this is only done for the full domain case so interval and
                   // block are known
                   // if v is not active it is a nullptr
-                  auto offsets = id_to_coord(vid,recut.image_lengths);
+                  auto offsets = id_to_coord(vid, recut.image_lengths);
                   auto v = recut.get_active_vertex(0, 0, offsets);
                   seq_radii_grid[vid] = v ? v->radius : 0;
                 }

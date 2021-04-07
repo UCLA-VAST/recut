@@ -121,8 +121,7 @@ struct VertexAttr {
     return parent[0] || parent[1] || parent[2];
   }
 
-  /* returns whether this vertex has had its radius updated from the default max
-   */
+  /* returns whether this vertex has had its radius updated from the default max */
   bool valid_radius() const { return radius != numeric_limits<uint8_t>::max(); }
 
   bool selected() const {
