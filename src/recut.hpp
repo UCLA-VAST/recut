@@ -186,12 +186,13 @@ public:
                           GridCoord dst_coord, VertexAttr *dst,
                           std::string stage);
   int get_parent_code(VID_t dst_id, VID_t src_id);
-  template <typename T>
+  template <typename T, typename T2, typename FlagsT, typename ParentsT>
   bool accumulate_connected(const image_t *tile, VID_t interval_id,
-                            VID_t block_id, GridCoord dst_coord,
+                            VID_t block_id, GridCoord dst_coord, T2 ind,
                             OffsetCoord offset_to_current, VID_t &revisits,
                             const TileThresholds<image_t> *tile_thresholds,
-                            bool &found_adjacent_invalid, T vdb_accessor);
+                            bool &found_adjacent_invalid, T vdb_accessor,
+                            FlagsT flags_handle, ParentsT parents_handle);
   bool accumulate_value(const image_t *tile, VID_t interval_id,
                         GridCoord dst_coord, VID_t block_id,
                         struct VertexAttr *current, VID_t &revisits,
@@ -864,12 +865,13 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, GridCoord dst_coord,
  * attribute selected
  */
 template <class image_t>
-template <typename T>
+template <typename T, typename T2, typename FlagsT, typename ParentsT>
 bool Recut<image_t>::accumulate_connected(
     const image_t *tile, VID_t interval_id, VID_t block_id, GridCoord dst_coord,
-    OffsetCoord offset_to_current, VID_t &revisits,
-    const TileThresholds<image_t> *tile_thresholds, bool &found_adjacent_invalid,
-    T vdb_accessor) {
+    T2 ind, OffsetCoord offset_to_current, VID_t &revisits,
+    const TileThresholds<image_t> *tile_thresholds,
+    bool &found_adjacent_invalid, T vdb_accessor, FlagsT flags_handle,
+    ParentsT parents_handle) {
 
 #ifdef FULL_PRINT
   cout << "\tcheck dst: " << coord_to_str(dst_coord);
@@ -909,6 +911,7 @@ bool Recut<image_t>::accumulate_connected(
   // vertices
   auto dst = get_or_set_active_vertex(
       interval_id, block_id, coord_mod(dst_coord, this->block_lengths), found);
+  set_selected(flags_handle, ind);
 
   // skip already selected vertices too
   if (found) {
@@ -924,6 +927,8 @@ bool Recut<image_t>::accumulate_connected(
   // ensure traces a path back to root in case no prune stage
   // parent will likely be mutated during prune stage
   dst->set_parent(offset_to_current);
+  parents_handle.set(*ind, offset_to_current);
+
   local_fifo[interval_id][block_id].push_back(*dst);
   check_ghost_update(interval_id, block_id, dst_coord, dst, "connected");
 
@@ -1269,34 +1274,6 @@ void Recut<image_t>::update_neighbors(
             if (dst_outside_domain)
               continue;
           }
-        } else if (stage == "connected") {
-          // FIXME multi-interval runs where !input_is_vdb &&
-          // !force_regenerate_image accessing outside interval image not in
-          // memory
-          if (outside_interval) {
-            assertm(false,
-                    "multi-interval not supported for this input image type "
-                    "yet, surface vertices can not be identified safely");
-          }
-          // for blocks it's safe to access the underlying image even in other
-          // domains since its const / static
-          if (outside_block) {
-            // read only image/topology checking for topology to another
-            // block within this interval is safe and necessary to get proper
-            // surface values
-            // TODO refactor this into a function call from
-            // accumulate_connected too
-            if (this->input_is_vdb) {
-              if (!get_vdb_val(vdb_accessor, dst_coord))
-                found_adjacent_invalid = true;
-            } else {
-              auto dst_vox = get_img_val(tile, dst_coord);
-              if (dst_vox <= tile_thresholds->bkg_thresh) {
-                found_adjacent_invalid = true;
-              }
-            }
-            continue;
-          }
         } else {
           if (dst_outside_domain)
             continue;
@@ -1305,11 +1282,7 @@ void Recut<image_t>::update_neighbors(
         // note although this is summed only one of ii,jj,kk
         // will be not equal to 0
         stride = ii + jj * this->block_lengths[0] + kk * z_stride;
-        if (stage == "connected") {
-          accumulate_connected(
-              tile, interval_id, block_id, dst_coord, coord_invert(dst_stencil),
-              revisits, tile_thresholds, found_adjacent_invalid, vdb_accessor);
-        } else if (stage == "radius") {
+        if (stage == "radius") {
           accumulate_radius(interval_id, dst_coord, block_id, current_radius,
                             revisits, stride, fifo);
         } else if (stage == "prune") {
@@ -1611,12 +1584,14 @@ void Recut<image_t>::connected_tile(
     return;
 
   // load flags
+  openvdb::points::AttributeWriteHandle<uint8_t> flags_handle =
+      leaf_iter->attributeArray("flags");
+  openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle =
+      leaf_iter->attributeArray("parents");
   // if (input_is_vdb) {
-  //openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
-      //leaf_iter->attributeArray("flags"));
-  // parent
-  //openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
-      //leaf_iter->attributeArray("parent"));
+  // flags_handle = leaf_iter->attributeArray("flags");
+
+  // parents_handle = leaf_iter->attributeArray("parents");
   //}
 
   VertexAttr *current, *msg_vertex;
@@ -1639,17 +1614,12 @@ void Recut<image_t>::connected_tile(
     // can be a background vertex which occurs due to pixel value below the
     // threshold, previously selected vertices are considered valid
     auto found_adjacent_invalid = false;
-    //auto covered = false;
-    //update_neighbors(tile, interval_id, block_id, msg_vertex, current_coord,
-                     //revisits, stage, tile_thresholds, found_adjacent_invalid,
-                     //*msg_vertex, fifo, covered, vdb_accessor);
-
     auto valids =
-        // star stencil offsets to img coords 
+        // star stencil offsets to img coords
         this->stencil |
         rng::views::transform([&current_coord](auto stencil_offset) {
           return coord_add(current_coord, stencil_offset);
-        }) | 
+        }) |
         // within image?
         rng::views::remove_if([this, &found_adjacent_invalid](auto coord_img) {
           if (is_in_bounds(coord_img, zeros(), this->image_lengths))
@@ -1676,13 +1646,15 @@ void Recut<image_t>::connected_tile(
         // visit valid voxels
         rng::views::remove_if([&](auto coord_img) {
           auto offset_to_current = coord_sub(current_coord, coord_img);
+          auto ind = leaf_iter->beginIndexVoxel(coord_img);
           // is background?  ...has side-effects
           return !accumulate_connected(
-              tile, interval_id, block_id, coord_img, offset_to_current,
-              revisits, tile_thresholds, found_adjacent_invalid, vdb_accessor);
-        }) | 
-    // force evaluation by inputing to a vector
-    rng::to_vector;
+              tile, interval_id, block_id, coord_img, ind, offset_to_current,
+              revisits, tile_thresholds, found_adjacent_invalid, vdb_accessor,
+              flags_handle, parents_handle);
+        }) |
+        // force evaluation by inputing to a vector
+        rng::to_vector;
 
     // protect from message values not inside
     // this block or interval such as roots from activate_vids
@@ -1696,7 +1668,9 @@ void Recut<image_t>::connected_tile(
       // msg_vertex aleady aware it is a surface
       if (surface) {
         current->mark_surface();
-        //set_surface(flags_handle, leaf_iter->beginIndexVoxel(current_coord));
+        if (this->input_is_vdb) {
+          set_surface(flags_handle, leaf_iter->beginIndexVoxel(current_coord));
+        }
         // save all surface vertices for the radius stage
         // each fifo corresponds to a specific interval_id and block_id
         // so there are no race conditions
@@ -1722,7 +1696,9 @@ void Recut<image_t>::connected_tile(
                 << current->label() << '\n';
 #endif
       current->mark_surface();
-      //set_surface(flags_handle, leaf_iter->beginIndexVoxel(current_coord));
+      if (this->input_is_vdb) {
+        set_surface(flags_handle, leaf_iter->beginIndexVoxel(current_coord));
+      }
 
       if (in_domain) {
         // save all surface vertices for the radius stage
@@ -2728,6 +2704,7 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     // FIXME placeholder grid
     this->topology_grid =
         create_vdb_grid(input_image_lengths, this->params->background_thresh());
+    append_attributes(this->topology_grid);
   } else if (this->input_is_vdb) {
 
     assertm(!params->convert_only_,
@@ -2757,7 +2734,6 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     assertm(false, "Input must either be regenerated, vdb or from image, "
                    "USE_MCP3D image reading library must be defined");
 #endif
-
     assertm(fs::exists(args->image_root_dir()),
             "Image root directory does not exist");
 
@@ -2778,8 +2754,9 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     auto temp = global_image.xyz_dims(args->resolution_level());
     // reverse mcp3d's z y x order for offsets and lengths
     input_image_lengths = new_grid_coord(temp[2], temp[1], temp[0]);
-
+    // FIXME remove this, don't require
     this->topology_grid = create_vdb_grid(input_image_lengths);
+    append_attributes(this->topology_grid);
   }
   return input_image_lengths;
 }
@@ -2804,6 +2781,8 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     if (params->convert_only_ || this->input_is_vdb) {
       openvdb::initialize();
     }
+    // FIXME should only apply to vdb
+    openvdb::initialize();
   }
 
   // actual possible lengths

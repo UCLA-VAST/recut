@@ -484,10 +484,10 @@ auto print_all_points = [](auto grid) {
       openvdb::Vec3f worldPosition =
           grid->transform().indexToWorld(voxelPosition + xyz);
       // Verify the index and world-space position of the point
-      std::cout << "* PointIndex=[" << *indexIter << "] ";
-      std::cout << "xyz: " << xyz << ' ';
-      std::cout << "WorldPosition=" << worldPosition << ' ';
-      std::cout << "par: " << coord_to_str(recv_parent) << ' ';
+      //std::cout << "* PointIndex=[" << *indexIter << "] ";
+      //std::cout << "xyz: " << xyz << ' ';
+      //std::cout << "WorldPosition=" << worldPosition << ' ';
+      std::cout << coord_to_str(xyz) " -> " << coord_to_str(recv_parent) << ' ';
       std::cout << +(recv_flags) << ' ';
       std::cout << +(radius) << '\n';
       // auto v = new VertexAttr(flags, zeros_off(), parent, radius);
