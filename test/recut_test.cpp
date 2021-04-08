@@ -71,6 +71,23 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
           return false;
         };
 
+#ifdef USE_VDB
+        auto leaf_iter = recut.topology_grid->tree().probeLeaf(coord);
+        auto ind = leaf_iter->beginIndexVoxel(coord);
+        auto value_on = leaf_iter->isValueOn(coord);
+        if (stage != "convert") {
+           openvdb::points::AttributeHandle<uint8_t> radius_handle(
+           leaf_iter->constAttributeArray("radius"));
+
+          openvdb::points::AttributeHandle<uint8_t> flags_handle(
+              leaf_iter->constAttributeArray("flags"));
+
+          openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
+              leaf_iter->constAttributeArray("parents"));
+        }
+
+#endif
+
         // get the active vertex from recut
 #ifdef DENSE
         auto interval = recut.grid.GetInterval(interval_id);
@@ -89,14 +106,13 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
 
         if (stage == "convert") {
 #ifdef USE_VDB
-          auto val = vdb_accessor.isValueOn(coord);
-          // std::cout << "type: " << typeid(val).name() << '\n';
-          auto int_val = val ? 1 : 0;
+          // std::cout << "type: " << typeid(value_on).name() << '\n';
+          auto int_val = value_on ? 1 : 0;
           if (ground_truth[vid]) {
-            ASSERT_TRUE(val) << coord;
+            ASSERT_TRUE(value_on) << coord;
             ++total_valid;
           }
-          if (val) {
+          if (value_on) {
             ASSERT_EQ(ground_truth[vid], 1) << coord;
             error_sum += absdiff(ground_truth[vid], int_val);
           }
@@ -104,6 +120,8 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
         } else if (stage == "radius") {
           if (ground_truth[vid]) {
             ASSERT_NE(v, nullptr) << coord;
+            ASSERT_TRUE(value_on) << coord;
+            ASSERT_TRUE(ind) << coord;
             ASSERT_TRUE(v->valid_radius())
                 << coord << " recut radius " << ground_truth[vid];
             error_sum += absdiff(ground_truth[vid], v->radius);
@@ -574,7 +592,7 @@ TEST(VDB, ActivateVids) {
   // then convert to vdb
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
                        /*force_regenerate_image=*/false,
-                       /*input_is_vdb=*/ true);
+                       /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   auto root_vids = recut.initialize();
   recut.activate_vids(root_vids, "connected", recut.global_fifo);
@@ -597,7 +615,7 @@ TEST(VDB, Connected) {
   // then convert to vdb
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
                        /*force_regenerate_image=*/false,
-                       /*input_is_vdb=*/ true);
+                       /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   auto root_vids = recut.initialize();
   auto stage = "connected";
@@ -852,7 +870,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         if (print) {
           print_vdb(topology_grid->getConstAccessor(),
                     coord_to_vec(grid_extents));
-          //print_all_points(topology_grid);
+          // print_all_points(topology_grid);
         }
 
 #ifdef USE_MCP3D

@@ -2810,7 +2810,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     // especially in z dimension
     this->interval_lengths[0] = this->image_lengths[0];
     this->interval_lengths[1] = this->image_lengths[1];
-    auto recommended_max_mem = GetAvailMem() / 64;
+    auto recommended_max_mem = GetAvailMem() / 16;
     // guess how many z-depth tiles will fit before a bad_alloc is likely
     auto simultaneous_tiles =
         static_cast<double>(recommended_max_mem) /

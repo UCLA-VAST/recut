@@ -23,7 +23,7 @@ in
   TEST_IMAGE = "/curr/kdmarrett/data/tcase6_image";
   TEST_MARKER = "/curr/kdmarrett/data/tcase6_marker";
 
-  cmakeFlags = ["-DUSE_VDB=ON -DLOG=ON -DLOG_FULL=ON -DFULL_PRINT=ON -DUSE_OMP_BLOCK=OFF -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MODULE_PATH=${openvdb}/lib/cmake/OpenVDB"];
+  cmakeFlags = ["-DUSE_VDB=ON -DLOG=ON -DLOG_FULL=OFF -DFULL_PRINT=OFF -DUSE_OMP_BLOCK=OFF -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MODULE_PATH=${openvdb}/lib/cmake/OpenVDB"];
 
   nativeBuildInputs = [ cmake ];
 

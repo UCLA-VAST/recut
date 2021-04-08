@@ -907,6 +907,7 @@ auto append_attributes = [](auto grid) {
   openvdb::NamePair parentAttribute =
       openvdb::points::TypedAttributeArray<OffsetCoord, Codec>::attributeType();
   openvdb::points::appendAttribute(grid->tree(), "parents", parentAttribute);
+  cout << "appended all attributes\n";
 };
 
 auto read_vdb_file(std::string fn, std::string grid_name) {
