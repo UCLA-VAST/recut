@@ -379,23 +379,60 @@ auto ids_to_coords = [](auto ids, auto lengths) {
          rng::to_vector;
 };
 
+auto testbit = [](auto field_, auto bit_offset) {
+  return static_cast<bool>(field_ & (1 << bit_offset));
+};
+
 auto setbit = [](auto field_, auto bit_offset) {
   return field_ | 1 << bit_offset;
 };
 
-auto set_root = [](auto handle, auto id) {
+auto set_root = [](auto handle, auto ind) {
   // ???? 1???
-  handle.set(*id, setbit(handle.get(*id), 3));
+  handle.set(*ind, setbit(handle.get(*ind), 3));
 };
 
-auto set_selected = [](auto handle, auto id) {
+auto is_root = [](auto handle, auto ind) {
+  return testbit(handle.get(*ind), 3);
+};
+
+auto set_selected = [](auto handle, auto ind) {
   // ???? ???1
-  handle.set(*id, setbit(handle.get(*id), 0));
+  handle.set(*ind, setbit(handle.get(*ind), 0));
 };
 
-auto set_surface = [](auto handle, auto id) {
+auto is_selected = [](auto handle, auto ind) {
+  return testbit(handle.get(*ind), 0);
+};
+
+auto set_surface = [](auto handle, auto ind) {
   // ???? ??1?
-  handle.set(*id, setbit(handle.get(*id), 1));
+  handle.set(*ind, setbit(handle.get(*ind), 1));
+};
+
+auto is_surface = [](auto handle, auto ind) {
+  // XXXX XX?X
+  return testbit(handle.get(*ind), 1);
+};
+
+auto valid_radius = [](auto handle, auto ind) {
+  // XXXX XX?X
+  return handle.get(*ind) != 0;
+};
+
+auto valid_parent = [](auto handle, auto ind) {
+  auto parent = handle.get(*ind);
+  return parent[0] || parent[1] || parent[2];
+};
+
+auto label = [](auto handle, auto ind) -> char {
+  if (is_root(handle, ind)) {
+    return 'R';
+  }
+  if (is_selected(handle, ind)) {
+    return 'V';
+  }
+  return '?';
 };
 
 auto init_root_attributes = [](auto grid, auto roots) {
@@ -444,10 +481,12 @@ auto print_point_count = [](auto grid) {
   std::cout << "Point count: " << count << '\n';
 };
 
-auto print_all_points = [](auto grid) {
+auto print_all_points = [](auto grid, std::string stage = "label",
+                           bool index_order = false) {
+  std::cout << "Print points " << stage << "\n";
   // Iterate over all the leaf nodes in the grid.
   for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
-    // openvdb::CoordBBox bbox;
+
     auto bbox = leaf_iter->getNodeBoundingBox();
     std::cout << bbox << std::endl;
 
@@ -463,35 +502,87 @@ auto print_all_points = [](auto grid) {
     openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
         leaf_iter->attributeArray("flags"));
 
-    openvdb::points::AttributeWriteHandle<OffsetCoord> parent_handle(
+    openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
         leaf_iter->attributeArray("parents"));
 
-    // Iterate over the point indices in the leaf.
-    for (auto indexIter = leaf_iter->beginIndexOn(); indexIter; ++indexIter) {
-      // Extract the voxel-space position of the point.
-      openvdb::Vec3f voxelPosition = positionHandle.get(*indexIter);
+    if (index_order) {
+      // Iterate over the point indices in the leaf.
+      for (auto indexIter = leaf_iter->beginIndexOn(); indexIter; ++indexIter) {
+        // Extract the voxel-space position of the point.
+        openvdb::Vec3f voxelPosition = positionHandle.get(*indexIter);
 
-      // radius_handle.set(*indexIter, static_cast<uint8_t>(*indexIter));
-      auto radius = radius_handle.get(*indexIter);
+        // radius_handle.set(*indexIter, static_cast<uint8_t>(*indexIter));
+        auto radius = radius_handle.get(*indexIter);
 
-      auto recv_flags = flags_handle.get(*indexIter);
+        auto recv_flags = flags_handle.get(*indexIter);
 
-      auto recv_parent = parent_handle.get(*indexIter);
+        auto recv_parent = parents_handle.get(*indexIter);
 
-      // Extract the world-space position of the voxel.
-      const openvdb::Vec3d xyz = indexIter.getCoord().asVec3d();
-      // Compute the world-space position of the point.
-      openvdb::Vec3f worldPosition =
-          grid->transform().indexToWorld(voxelPosition + xyz);
-      // Verify the index and world-space position of the point
-      //std::cout << "* PointIndex=[" << *indexIter << "] ";
-      //std::cout << "xyz: " << xyz << ' ';
-      //std::cout << "WorldPosition=" << worldPosition << ' ';
-      std::cout << coord_to_str(xyz) " -> " << coord_to_str(recv_parent) << ' ';
-      std::cout << +(recv_flags) << ' ';
-      std::cout << +(radius) << '\n';
-      // auto v = new VertexAttr(flags, zeros_off(), parent, radius);
-      // cout << v->description() << '\n';
+        // Extract the world-space position of the voxel.
+        const openvdb::Vec3d xyz = indexIter.getCoord().asVec3d();
+        // Compute the world-space position of the point.
+        openvdb::Vec3f worldPosition =
+            grid->transform().indexToWorld(voxelPosition + xyz);
+        // Verify the index and world-space position of the point
+        // std::cout << "* PointIndex=[" << *indexIter << "] ";
+        // std::cout << "xyz: " << xyz << ' ';
+        // std::cout << "WorldPosition=" << worldPosition << ' ';
+        std::cout << coord_to_str(xyz) << " -> " << coord_to_str(recv_parent)
+                  << ' ';
+        std::cout << +(recv_flags) << ' ';
+        std::cout << +(radius) << '\n';
+        // auto v = new VertexAttr(flags, zeros_off(), parent, radius);
+        // cout << v->description() << '\n';
+      }
+    } else {
+      // 3D visual
+      for (int z = bbox.min()[2]; z < bbox.max()[2]; z++) {
+        cout << "y | Z=" << z << '\n';
+        for (int x = 0; x < 2 * bbox.extents()[0] + 4; x++) {
+          cout << "-";
+        }
+        cout << '\n';
+        for (int y = bbox.min()[1]; y < bbox.max()[1]; y++) {
+          cout << y << " | ";
+          for (int x = bbox.min()[0]; x < bbox.max()[0]; x++) {
+            openvdb::Coord xyz(x, y, z);
+            auto ind = leaf_iter->beginIndexVoxel(xyz);
+            if (ind) {
+              if (stage == "radius") {
+                if (radius_handle.get(*ind) != 0) {
+                  // if (valid_radius(radius_handle, ind)) {
+                  cout << +(radius_handle.get(*ind)) << " ";
+                } else {
+                  cout << "- ";
+                }
+              } else if (stage == "parent") {
+                auto recv_parent = parents_handle.get(*ind);
+                std::cout << coord_to_str(recv_parent);
+                // if (valid_parent(parents_handle, ind)) {
+                // cout << parents_handle.get(*ind) << " ";
+                //} else {
+                // cout << "- ";
+                //}
+              } else if (stage == "surface") {
+                if (testbit(flags_handle.get(*ind), 1)) {
+                  // if (is_surface(flags_handle, ind)) {
+                  cout << "L "; // L for leaf and because disambiguates selected
+                                // S
+                } else {
+                  cout << "- ";
+                }
+              } else if (stage == "label" || stage == "connected") {
+                //cout << label(flags_handle, ind) << ' ';
+                cout << +(flags_handle.get(*ind)) << ' ';
+              }
+            } else {
+              cout << "- ";
+            }
+          }
+          cout << '\n';
+        }
+        cout << '\n';
+      }
     }
   }
 };

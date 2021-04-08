@@ -10,10 +10,10 @@ class Grid;
 #include "recut_parameters.hpp"
 #include "tile_thresholds.hpp"
 #include <algorithm>
+#include <bits/stdc++.h>
 #include <bitset>
 #include <cstdlib>
 #include <deque>
-
 #include <fstream>
 #include <future>
 #include <iostream>
@@ -200,14 +200,17 @@ public:
                         bool &found_background);
   bool is_covered_by_parent(VID_t interval_id, VID_t block_id,
                             VertexAttr *current);
-  template <class Container, typename T, typename T2>
-  void accumulate_prune(VID_t interval_id, GridCoord dst_coord, VID_t block_id,
-                        T current, T2 current_vid, bool current_unvisited,
-                        Container &fifo);
-  template <class Container, typename T>
-  void accumulate_radius(VID_t interval_id, GridCoord dst_coord, VID_t block_id,
-                         T current_radius, VID_t &revisits, int stride,
-                         Container &fifo);
+  template <class Container, typename T, typename T2, typename IndT,
+            typename RadiusT, typename FlagsT>
+  void accumulate_prune(VID_t interval_id, VID_t block_id, GridCoord dst_coord,
+                        IndT ind, T current, T2 current_vid,
+                        bool current_unvisited, Container &fifo,
+                        RadiusT radius_handle, FlagsT flags_handle);
+  template <class Container, typename T, typename T2, typename FlagsT,
+            typename RadiusT>
+  void accumulate_radius(VID_t interval_id, VID_t block_id, GridCoord dst_coord,
+                         T ind, T2 current_radius, Container &fifo,
+                         FlagsT flags_handle, RadiusT radius_handle);
   template <class Container, typename T>
   void update_neighbors(const image_t *tile, VID_t interval_id, VID_t block_id,
                         VertexAttr *current, GridCoord current_coord,
@@ -729,10 +732,13 @@ void Recut<image_t>::set_parent_non_branch(const VID_t interval_id,
 */
 
 template <class image_t>
-template <class Container, typename T, typename T2>
-void Recut<image_t>::accumulate_prune(VID_t interval_id, GridCoord dst_coord,
-                                      VID_t block_id, T current, T2 current_vid,
-                                      bool current_unvisited, Container &fifo) {
+template <class Container, typename T, typename T2, typename IndT,
+          typename RadiusT, typename FlagsT>
+void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t block_id,
+                                      GridCoord dst_coord, IndT ind, T current,
+                                      T2 current_vid, bool current_unvisited,
+                                      Container &fifo, RadiusT radius_handle,
+                                      FlagsT flags_handle) {
 
 #ifdef DENSE
   auto dst = get_vertex_vid(interval_id, block_id, dst_id, nullptr);
@@ -808,11 +814,13 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, GridCoord dst_coord,
  * attribute selected
  */
 template <class image_t>
-template <class Container, typename T>
-void Recut<image_t>::accumulate_radius(VID_t interval_id, GridCoord dst_coord,
-                                       VID_t block_id, T current_radius,
-                                       VID_t &revisits, int stride,
-                                       Container &fifo) {
+template <class Container, typename T, typename T2, typename FlagsT,
+          typename RadiusT>
+void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t block_id,
+                                       GridCoord dst_coord, T ind,
+                                       T2 current_radius, Container &fifo,
+                                       FlagsT flags_handle,
+                                       RadiusT radius_handle) {
 
   // note the current vertex can belong in the boundary
   // region of a separate block /interval and is only
@@ -826,25 +834,36 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, GridCoord dst_coord,
 #ifdef DENSE
   auto dst = get_vertex_vid(interval_id, block_id, dst_id, nullptr);
 #else
+  std::cout << "check dst: " << coord_to_str(dst_coord) << '\n';
   auto dst = get_active_vertex(interval_id, block_id,
                                coord_mod(dst_coord, this->block_lengths));
   if (dst == nullptr) {
     return;
   }
+  std::cout << "\tdst not background\n";
 #endif
 
   uint8_t updated_radius = 1 + current_radius;
+
+  assertm((is_selected(flags_handle, ind) || is_root(flags_handle, ind)) ==
+              ((dst->selected() || dst->root())),
+          "don't match");
+
   if (dst->selected() || dst->root()) {
 
     // if radius not set yet it necessitates it is 1 higher than current OR an
     // update from another block / interval creates new lower updates
-    if (!(dst->valid_radius()) || (dst->radius > updated_radius)) {
+    // if (!(dst->valid_radius()) || (dst->radius > updated_radius)) {
+    if (!(valid_radius(radius_handle, ind)) ||
+        (radius_handle.get(*ind) > updated_radius)) {
 #ifdef FULL_PRINT
       cout << "\tAdjacent higher at " << coord_to_str(dst_coord) << " label "
            << dst->label() << " radius " << +(dst->radius) << " current radius "
            << +(current_radius) << '\n';
 #endif
       dst->radius = updated_radius;
+      radius_handle.set(*ind, updated_radius);
+      // construct a dst message
       fifo.push_back(*dst);
       check_ghost_update(interval_id, block_id, dst_coord, dst, "radius");
     }
@@ -1274,6 +1293,8 @@ void Recut<image_t>::update_neighbors(
             if (dst_outside_domain)
               continue;
           }
+          // accumulate_radius(interval_id, dst_coord, block_id, current_radius,
+          // revisits, stride, fifo);
         } else {
           if (dst_outside_domain)
             continue;
@@ -1283,11 +1304,11 @@ void Recut<image_t>::update_neighbors(
         // will be not equal to 0
         stride = ii + jj * this->block_lengths[0] + kk * z_stride;
         if (stage == "radius") {
-          accumulate_radius(interval_id, dst_coord, block_id, current_radius,
-                            revisits, stride, fifo);
+          // accumulate_radius(interval_id, dst_coord, block_id, current_radius,
+          // revisits, stride, fifo);
         } else if (stage == "prune") {
-          accumulate_prune(interval_id, dst_coord, block_id, current,
-                           current_coord, current_unvisited, fifo);
+          // accumulate_prune(interval_id, dst_coord, block_id, current,
+          // current_coord, current_unvisited, fifo);
         }
       }
     }
@@ -1653,8 +1674,7 @@ void Recut<image_t>::connected_tile(
               revisits, tile_thresholds, found_adjacent_invalid, vdb_accessor,
               flags_handle, parents_handle);
         }) |
-        // force evaluation by inputing to a vector
-        rng::to_vector;
+        rng::to_vector; // force full evaluation via vector
 
     // protect from message values not inside
     // this block or interval such as roots from activate_vids
@@ -1745,6 +1765,17 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
                                  const TileThresholds<image_t> *tile_thresholds,
                                  Container &fifo, VID_t revisits,
                                  T vdb_accessor, T2 leaf_iter) {
+
+  if (fifo.empty())
+    return;
+
+  // load read-only flags
+  openvdb::points::AttributeHandle<uint8_t> flags_handle =
+      leaf_iter->constAttributeArray("flags");
+  // read-write radius
+  openvdb::points::AttributeWriteHandle<uint8_t> radius_handle =
+      leaf_iter->attributeArray("radius");
+
   VertexAttr *current; // for performance
   VID_t visited = 0;
   while (!(fifo.empty())) {
@@ -1762,16 +1793,19 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
               "get_active_vertex yielded nullptr radius_tile");
     }
 
+    auto current_coord = coord_add(current->offsets, offsets);
+    auto current_ind = leaf_iter->beginIndexVoxel(current_coord);
     // radius field can now be be mutated
     // set any vertex that shares a border with background
     // to the known radius of 1
-    // if (current->surface() && (current->radius != 1)) {
+    assertm(current->surface() == is_surface(flags_handle, current_ind),
+            "surfaces don't match");
     if (current->surface()) {
       current->radius = 1;
+      radius_handle.set(*current_ind, 1);
       // if in domain notify potential outside domains
       if (!(msg_vertex->band())) {
-        check_ghost_update(interval_id, block_id,
-                           coord_add(current->offsets, offsets), current,
+        check_ghost_update(interval_id, block_id, current_coord, current,
                            stage);
       }
     }
@@ -1779,11 +1813,41 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
 #ifdef LOG_FULL
     visited += 1;
 #endif
+    assertm(current->radius == radius_handle.get(*current_ind),
+            "radii don't match");
 
-    bool _ = false;
-    update_neighbors(tile, interval_id, block_id, current,
-                     coord_add(current->offsets, offsets), revisits, stage,
-                     tile_thresholds, _, *current, fifo, _, vdb_accessor);
+    // bool _ = false;
+    // update_neighbors(tile, interval_id, block_id, current,
+    // coord_add(current->offsets, offsets), revisits, stage,
+    // tile_thresholds, _, *current, fifo, _, vdb_accessor);
+
+    auto updated_inds =
+        // star stencil offsets to img coords
+        this->stencil |
+        rng::views::transform([&current_coord](auto stencil_offset) {
+          return coord_add(current_coord, stencil_offset);
+        }) |
+        // within image?
+        rng::views::remove_if([this](auto coord_img) {
+          return !is_in_bounds(coord_img, zeros(), this->image_lengths);
+        }) |
+        // within leaf?
+        rng::views::remove_if([&](auto coord_img) {
+          return block_id != coord_img_to_block_id(coord_img);
+        }) |
+        rng::views::transform([&](auto coord_img) {
+          print_coord(coord_img, "in leaf");
+          return coord_img;
+        }) |
+        // visit valid voxels
+        rng::views::transform([&](auto coord_img) {
+          auto ind = leaf_iter->beginIndexVoxel(coord_img);
+          // ...has side-effects
+          accumulate_radius(interval_id, block_id, coord_img, ind,
+                            current->radius, fifo, flags_handle, radius_handle);
+          return ind;
+        }) |
+        rng::to_vector; // force evaluation
   }
 }
 
@@ -1795,6 +1859,14 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
                                 const TileThresholds<image_t> *tile_thresholds,
                                 Container &fifo, VID_t revisits, T vdb_accessor,
                                 T2 leaf_iter) {
+  if (fifo.empty())
+    return;
+
+  openvdb::points::AttributeWriteHandle<uint8_t> radius_handle =
+      leaf_iter->attributeArray("radius");
+  openvdb::points::AttributeWriteHandle<uint8_t> flags_handle =
+      leaf_iter->attributeArray("flags");
+
   VertexAttr *current;
   bool current_outside_domain, covered;
   VID_t visited = 0;
@@ -1824,23 +1896,54 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
 #endif
 
     auto current_coord = coord_add(current->offsets, offsets);
+    auto current_ind = leaf_iter->beginIndexVoxel(current_coord);
+
+    assertm(current->root() == is_root(flags_handle, current_ind),
+            "roots don't match");
+
     // Parent
     // by default current will have a root of itself
     if (current->root()) {
-      OffsetCoord zeros{0, 0, 0};
-      current->set_parent(zeros);
+      // OffsetCoord zeros{0, 0, 0};
+      // current->set_parent(zeros);
+      // parent_handle.set(*ind, zeros);
       current->prune_visit();
     }
 
-    VID_t revisits;
-    VertexAttr found_higher_parent = *current;
+    // VID_t revisits;
+    // VertexAttr found_higher_parent = *current;
+    // bool _ = false;
+    // auto enqueue_dsts = true;
+    // update_neighbors(nullptr, interval_id, block_id, current, current_coord,
+    // revisits, "prune", nullptr, _, found_higher_parent, fifo,
+    // covered, vdb_accessor, current_outside_domain,
+    // enqueue_dsts);
 
-    bool _ = false;
-    auto enqueue_dsts = true;
-    update_neighbors(nullptr, interval_id, block_id, current, current_coord,
-                     revisits, "prune", nullptr, _, found_higher_parent, fifo,
-                     covered, vdb_accessor, current_outside_domain,
-                     enqueue_dsts);
+    // force full evaluation by saving to vector
+    auto updated_inds =
+        // star stencil offsets to img coords
+        this->stencil |
+        rng::views::transform([&current_coord](auto stencil_offset) {
+          return coord_add(current_coord, stencil_offset);
+        }) |
+        // within image?
+        rng::views::remove_if([this](auto coord_img) {
+          return !is_in_bounds(coord_img, zeros(), this->image_lengths);
+        }) |
+        // within leaf?
+        rng::views::remove_if([&](auto coord_img) {
+          return block_id != coord_img_to_block_id(coord_img);
+        }) |
+        // visit valid voxels
+        rng::views::transform([&](auto coord_img) {
+          auto ind = leaf_iter->beginIndexVoxel(coord_img);
+          // ...has side-effects
+          accumulate_prune(interval_id, block_id, coord_img, ind, current,
+                           current_coord, current->unvisited(), fifo,
+                           radius_handle, flags_handle);
+          return ind;
+        }) |
+        rng::to_vector;
   } // end while over fifo
 } // end prune_tile
 

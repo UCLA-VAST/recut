@@ -19,7 +19,7 @@ command=cd build && make -j 8 && make -j 8 install && make installcheck
 cwd=<root>
 
 [project-build:nix]
-command=nix-env -f . -i
+command=nix-env -f . -i && recut_test
 cwd=<root>
 
 [project-test]

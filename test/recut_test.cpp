@@ -1,7 +1,6 @@
 #include "app2_helpers.hpp"
 #include "recut.hpp"
 #include "gtest/gtest.h"
-#include <bits/stdc++.h>
 #include <cstdlib> //rand
 #include <ctime>   // for srand
 #include <fcntl.h>
@@ -90,32 +89,31 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
 
         if (stage == "convert") {
 #ifdef USE_VDB
-          openvdb::Coord xyz(xi, yi, zi);
-          auto val = vdb_accessor.isValueOn(xyz);
+          auto val = vdb_accessor.isValueOn(coord);
           // std::cout << "type: " << typeid(val).name() << '\n';
           auto int_val = val ? 1 : 0;
           if (ground_truth[vid]) {
-            ASSERT_TRUE(val) << xyz;
+            ASSERT_TRUE(val) << coord;
             ++total_valid;
           }
           if (val) {
-            ASSERT_EQ(ground_truth[vid], 1) << xyz;
+            ASSERT_EQ(ground_truth[vid], 1) << coord;
             error_sum += absdiff(ground_truth[vid], int_val);
           }
 #endif
         } else if (stage == "radius") {
           if (ground_truth[vid]) {
-            ASSERT_NE(v, nullptr);
+            ASSERT_NE(v, nullptr) << coord;
             ASSERT_TRUE(v->valid_radius())
-                << " vid " << vid << " recut radius " << ground_truth[vid];
+                << coord << " recut radius " << ground_truth[vid];
             error_sum += absdiff(ground_truth[vid], v->radius);
             ++total_valid;
           } else if (v) {
             if (v->valid_radius()) {
-              ASSERT_TRUE(ground_truth[vid] > 0);
+              ASSERT_TRUE(ground_truth[vid] > 0) << coord;
               error_sum += absdiff(ground_truth[vid], v->radius);
               if (strict_match) {
-                ASSERT_EQ(v->radius, ground_truth[vid]);
+                ASSERT_EQ(v->radius, ground_truth[vid]) << coord;
               }
             }
           }
@@ -125,40 +123,35 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
             // vertex, therefore fifo should also
             // contain this value
             if (ground_truth[vid] == 1) {
-              ASSERT_NE(v, nullptr);
+              ASSERT_NE(v, nullptr) << coord;
               // if truth shows a value of 1 it is a surface
               // vertex, therefore fifo should also
               // contain this value
-              ASSERT_TRUE(find_vid())
-                  << "vid " << vid << " x" << xi << " y " << yi << " z " << zi
-                  << " vid " << vid << '\n';
-              ASSERT_TRUE(v->surface());
+              ASSERT_TRUE(find_vid()) << coord;
+              ASSERT_TRUE(v->surface()) << coord;
             } else if (v) {
-              ASSERT_FALSE(find_vid())
-                  << "vid " << vid << " x" << xi << " y " << yi << " z " << zi
-                  << " vid " << vid << '\n';
-              ASSERT_FALSE(v->surface());
+              ASSERT_FALSE(find_vid()) << coord;
+              ASSERT_FALSE(v->surface()) << coord;
             }
           } else if (v) {
             // where strict_match=false all recut surface vertices will be in
             // ground truth, but not all ground_truth surfaces will in recut
             auto found = find_vid();
             if (v->surface()) {
-              ASSERT_TRUE(ground_truth[vid] == 1);
-              ASSERT_TRUE(found) << "vid " << vid << " x" << xi << " y " << yi
-                                 << " z " << zi << " vid " << vid << '\n';
+              ASSERT_TRUE(ground_truth[vid] == 1) << coord;
+              ASSERT_TRUE(found) << coord;
             }
             if (found) {
-              ASSERT_TRUE(ground_truth[vid] == 1);
-              ASSERT_TRUE(v->surface());
+              ASSERT_TRUE(ground_truth[vid] == 1) << coord;
+              ASSERT_TRUE(v->surface()) << coord;
             }
           }
         } else if (stage == "connected") {
           if (ground_truth[vid]) {
-            ASSERT_NE(v, nullptr);
+            ASSERT_NE(v, nullptr) << coord;
           }
           if (v) {
-            ASSERT_EQ(ground_truth[vid], 1);
+            ASSERT_EQ(ground_truth[vid], 1) << coord;
           }
         }
       }
@@ -1364,8 +1357,8 @@ TEST(Update, EachStageIteratively) {
   // max_size / 2, max_size};
   std::vector<int> grid_sizes = {max_size};
   std::vector<int> interval_sizes = {max_size};
-  std::vector<int> block_sizes = {max_size, max_size / 2, max_size / 4};
-  std::vector<bool> input_is_vdbs = {false};
+  std::vector<int> block_sizes = {max_size}; //, max_size / 2, max_size / 4};
+  std::vector<bool> input_is_vdbs = {true};
   // tcase 5 is a sphere of radius grid_size / 4 centered
   // in the middle of an image
   // tcase 7 is a square radius grid_size / 4
@@ -1462,9 +1455,11 @@ TEST(Update, EachStageIteratively) {
                 std::cout << "Recut connected\n";
                 std::cout << iteration_trace.str();
                 recut.print_grid(stage, recut.global_fifo);
+                print_all_points(recut.topology_grid, stage);
                 std::cout << "Recut surface\n";
                 std::cout << iteration_trace.str();
                 recut.print_grid("surface", recut.global_fifo);
+                print_all_points(recut.topology_grid, "surface");
                 auto total = 0;
                 if (false) {
                   std::cout << "All surface vids: \n";
@@ -1554,6 +1549,7 @@ TEST(Update, EachStageIteratively) {
                 std::cout << "Recut radii\n";
                 std::cout << iteration_trace.str();
                 recut.print_grid("radius", recut.global_fifo);
+                print_all_points(recut.topology_grid, "radius");
               }
 
               VID_t interval_num = 0;
@@ -1679,10 +1675,12 @@ TEST(Update, EachStageIteratively) {
                   std::cout << "Recut prune\n";
                   std::cout << iteration_trace.str();
                   recut.print_grid("label", recut.global_fifo);
+                  print_all_points(recut.topology_grid, "label");
 
                   std::cout << "Recut radii post prune\n";
                   std::cout << iteration_trace.str();
                   recut.print_grid("radius", recut.global_fifo);
+                  print_all_points(recut.topology_grid, "radius");
                 }
 
                 std::cout << iteration_trace.str();
