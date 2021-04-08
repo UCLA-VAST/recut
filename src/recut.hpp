@@ -211,16 +211,6 @@ public:
   void accumulate_radius(VID_t interval_id, VID_t block_id, GridCoord dst_coord,
                          T ind, T2 current_radius, Container &fifo,
                          FlagsT flags_handle, RadiusT radius_handle);
-  template <class Container, typename T>
-  void update_neighbors(const image_t *tile, VID_t interval_id, VID_t block_id,
-                        VertexAttr *current, GridCoord current_coord,
-                        VID_t &revisits, std::string stage,
-                        const TileThresholds<image_t> *tile_thresholds,
-                        bool &found_adjacent_invalid,
-                        VertexAttr &found_higher_parent, Container &fifo,
-                        bool &covered, T vdb_accessor,
-                        bool current_outside_domain = false,
-                        bool enqueue_dsts = false);
   template <class Container>
   void integrate_updated_ghost(const VID_t interval_id, const VID_t block_id,
                                std::string stage, Container &fifo);
@@ -830,7 +820,7 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t block_id,
   // the actual current block / interval region
   // current vertex is not always within this block and interval
   // and each block, interval have a ghost region
-  // after filter in update_neighbors this pointer arithmetic is always valid
+  // after filter in scatter this pointer arithmetic is always valid
 #ifdef DENSE
   auto dst = get_vertex_vid(interval_id, block_id, dst_id, nullptr);
 #else
@@ -1204,117 +1194,6 @@ int Recut<image_t>::get_parent_code(VID_t dst_id, VID_t src_id) {
   throw;
 }
 
-// check and add dst vertices in star stencil
-template <class image_t>
-template <class Container, typename T>
-void Recut<image_t>::update_neighbors(
-    const image_t *tile, VID_t interval_id, VID_t block_id, VertexAttr *current,
-    GridCoord current_coord, VID_t &revisits, std::string stage,
-    const TileThresholds<image_t> *tile_thresholds,
-    bool &found_adjacent_invalid, VertexAttr &found_higher_parent,
-    Container &fifo, bool &covered, T vdb_accessor, bool current_outside_domain,
-    bool enqueue_dsts) {
-
-#ifdef FULL_PRINT
-  // all block ids are a linear row-wise idx, relative to current interval
-  cout << '\n'
-       << coord_to_str(current_coord) << " interval " << interval_id
-       << " block " << block_id << " label " << current->label() << " radius "
-       << +(current->radius) << '\n';
-#endif
-
-  // only supports +-1 in x, y, z
-  GridCoord dst_coord, dst_stencil;
-  int x, y, z;
-  bool dst_outside_domain;
-  int stride;
-  int z_stride = this->block_lengths[0] * this->block_lengths[1];
-
-  // save current params before it possibly becomes undefined by iterator
-  // invalidation
-  auto current_radius = current->radius;
-  auto current_unvisited = current->unvisited();
-  auto current_parent = current->parent;
-
-  // 3D star stencil
-  for (int kk = -1; kk <= 1; kk++) {
-    z = current_coord[2] + kk;
-    if (z < 0 || z >= this->image_lengths[2]) {
-      found_adjacent_invalid = true;
-      continue;
-    }
-    for (int jj = -1; jj <= 1; jj++) {
-      y = current_coord[1] + jj;
-      if (y < 0 || y >= this->image_lengths[1]) {
-        found_adjacent_invalid = true;
-        continue;
-      }
-      for (int ii = -1; ii <= 1; ii++) {
-        x = current_coord[0] + ii;
-        if (x < 0 || x >= this->image_lengths[0]) {
-          found_adjacent_invalid = true;
-          continue;
-        }
-        int hop_offset = abs(ii) + abs(jj) + abs(kk);
-        // this ensures a start stencil,
-        // exclude current, exclude diagonals
-        if (hop_offset == 0 || hop_offset > 1) {
-          continue;
-        }
-
-        dst_stencil = new_grid_coord(ii, jj, kk);
-        dst_coord = coord_add(current_coord, dst_stencil);
-
-        // all block_nums and interval_nums are a linear
-        // row-wise idx, relative to current interval
-        auto dst_block_id = coord_img_to_block_id(dst_coord);
-        auto dst_interval_id = coord_img_to_interval_id(dst_coord);
-
-        // Filter all dsts that don't protude into current
-        // block and interval region, ghost destinations
-        // can not be added in to processing stack
-        // ghost vertices can only be added in to the stack
-        // during `integrate_updated_ghost()`
-        auto outside_interval = dst_interval_id != interval_id;
-        auto outside_block = dst_block_id != block_id;
-        dst_outside_domain = outside_interval || outside_block;
-
-        // only prune_assign_parent considers currents outside of the domain
-        // prune uses these ghost regions (+-1) to pass messages
-        // for example a root can be in the ghost region
-        // and the adjacent vertex in this block needs to know it's
-        // radius in order to be properly pruned
-        if (stage == "prune_assign_parent") {
-          // if current is already outside this block
-          // never take a dst unless it projects back into the current
-          // block and interval, otherwise you will go outside of the data
-          // race safe data region
-          if (current_outside_domain) {
-            if (dst_outside_domain)
-              continue;
-          }
-          // accumulate_radius(interval_id, dst_coord, block_id, current_radius,
-          // revisits, stride, fifo);
-        } else {
-          if (dst_outside_domain)
-            continue;
-        }
-
-        // note although this is summed only one of ii,jj,kk
-        // will be not equal to 0
-        stride = ii + jj * this->block_lengths[0] + kk * z_stride;
-        if (stage == "radius") {
-          // accumulate_radius(interval_id, dst_coord, block_id, current_radius,
-          // revisits, stride, fifo);
-        } else if (stage == "prune") {
-          // accumulate_prune(interval_id, dst_coord, block_id, current,
-          // current_coord, current_unvisited, fifo);
-        }
-      }
-    }
-  }
-} // end update_neighbors()
-
 /*
  * returns true if the vertex updated to the proper interval and block false
  * otherwise This function takes no responsibility for updating the interval
@@ -1623,7 +1502,7 @@ void Recut<image_t>::connected_tile(
     visited += 1;
 #endif
 
-    // msg_vertex might become undefined during call to update_neighbors
+    // msg_vertex might become undefined during scatter
     msg_vertex = &(local_fifo[interval_id][block_id].front());
     const bool in_domain = msg_vertex->selected() || msg_vertex->root();
     auto surface = msg_vertex->surface();
@@ -1779,7 +1658,7 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
   VertexAttr *current; // for performance
   VID_t visited = 0;
   while (!(fifo.empty())) {
-    // msg_vertex will be invalidated during call to update_neighbors
+    // msg_vertex will be invalidated during scatter
     auto msg_vertex = &(fifo.front());
     fifo.pop_front();
 
@@ -1787,7 +1666,7 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
       // current can be from ghost region in different interval or block
       current = msg_vertex;
     } else {
-      // current is safe during call to update_neighbors
+      // current is safe during scatter
       current = get_active_vertex(interval_id, block_id, msg_vertex->offsets);
       assertm(current != nullptr,
               "get_active_vertex yielded nullptr radius_tile");
@@ -1815,11 +1694,6 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
 #endif
     assertm(current->radius == radius_handle.get(*current_ind),
             "radii don't match");
-
-    // bool _ = false;
-    // update_neighbors(tile, interval_id, block_id, current,
-    // coord_add(current->offsets, offsets), revisits, stage,
-    // tile_thresholds, _, *current, fifo, _, vdb_accessor);
 
     auto updated_inds =
         // star stencil offsets to img coords
@@ -1910,14 +1784,13 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
       current->prune_visit();
     }
 
-    // VID_t revisits;
-    // VertexAttr found_higher_parent = *current;
-    // bool _ = false;
-    // auto enqueue_dsts = true;
-    // update_neighbors(nullptr, interval_id, block_id, current, current_coord,
-    // revisits, "prune", nullptr, _, found_higher_parent, fifo,
-    // covered, vdb_accessor, current_outside_domain,
-    // enqueue_dsts);
+#ifdef FULL_PRINT
+  // all block ids are a linear row-wise idx, relative to current interval
+  cout << '\n'
+       << coord_to_str(current_coord) << " interval " << interval_id
+       << " block " << block_id << " label " << current->label() << " radius "
+       << +(current->radius) << '\n';
+#endif
 
     // force full evaluation by saving to vector
     auto updated_inds =
