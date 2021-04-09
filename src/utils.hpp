@@ -791,7 +791,7 @@ template <typename T> void print_grid_metadata(T vdb_grid) {
   cout << '\n';
 }
 
-auto create_point_grid = [](auto positions, auto lengths,
+auto create_point_grid = [](auto &positions, auto lengths,
                             float bkg_thresh = 0.) {
   // The VDB Point-Partioner is used when bucketing points and requires a
   // specific interface. For convenience, we use the PointAttributeVector
@@ -809,7 +809,7 @@ auto create_point_grid = [](auto positions, auto lengths,
   float voxelSize = 1.;
 
   // Print the voxel-size to cout
-  std::cout << "VoxelSize=" << voxelSize << std::endl;
+  //std::cout << "VoxelSize=" << voxelSize << std::endl;
   // Create a transform using this voxel-size.
   openvdb::math::Transform::Ptr transform =
       openvdb::math::Transform::createLinearTransform(voxelSize);
@@ -819,10 +819,14 @@ auto create_point_grid = [](auto positions, auto lengths,
   // to use for storing the position, (2) the grid we want to create
   // (ie a PointDataGrid).
   // We use no compression here for the positions.
+  using FPCodec = openvdb::points::FixedPointCodec</*1-byte=*/true,
+            openvdb::points::UnitRange>;
+  //openvdb::points::NullCodec
   openvdb::points::PointDataGrid::Ptr grid =
-      openvdb::points::createPointDataGrid<openvdb::points::NullCodec,
+      openvdb::points::createPointDataGrid<FPCodec,
                                            openvdb::points::PointDataGrid>(
           positions, *transform);
+  grid->tree().prune();
 
   grid->setName("topology");
   grid->setCreator("recut");
@@ -1302,6 +1306,30 @@ void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
       cout << "      Wrote marker: " << fn << '\n';
   }
 }
+
+// keep only voxels strictly greater than bkg_thresh
+auto convert_buffer_to_vdb_acc =
+    [](auto buffer, GridCoord buffer_lengths, GridCoord buffer_offsets,
+       GridCoord image_offsets, auto accessor,
+       auto bkg_thresh = 0) {
+      // print_coord(buffer_lengths, "buffer_lengths");
+      // print_coord(buffer_offsets, "buffer_offsets");
+      // print_coord(image_offsets, "image_offsets");
+      for (auto z : rng::views::iota(0, buffer_lengths[2])) {
+        for (auto y : rng::views::iota(0, buffer_lengths[1])) {
+          for (auto x : rng::views::iota(0, buffer_lengths[0])) {
+            GridCoord xyz(x, y, z);
+            GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
+            GridCoord grid_xyz = coord_add(xyz, image_offsets);
+            auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
+            // voxels equal to bkg_thresh are always discarded
+            if (val > bkg_thresh) {
+              accessor.setValueOn(xyz);
+            }
+          }
+        }
+      }
+    };
 
 // keep only voxels strictly greater than bkg_thresh
 auto convert_buffer_to_vdb =

@@ -2429,7 +2429,6 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #ifdef USE_VDB
           assertm(!this->input_is_vdb,
                   "input can't be vdb during convert stage");
-          auto convert_start = timer->elapsed();
 
           GridCoord no_offsets = {0, 0, 0};
           auto interval_offsets = id_interval_to_img_offsets(interval_id);
@@ -2440,14 +2439,15 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                                          ? this->image_lengths
                                          : this->interval_lengths;
 
+          auto convert_start = timer->elapsed();
           convert_buffer_to_vdb(tile, buffer_extents,
                                 /*buffer_offsets=*/buffer_offsets,
                                 /*image_offsets=*/interval_offsets, positions,
                                 local_tile_thresholds->bkg_thresh);
-
-          active_intervals[interval_id] = false;
           computation_time =
               computation_time + (timer->elapsed() - convert_start);
+
+          active_intervals[interval_id] = false;
 #ifdef LOG
           cout << "Completed interval id: " << interval_id << '\n';
 #endif
@@ -2472,7 +2472,11 @@ Recut<image_t>::update(std::string stage, Container &fifo,
     this->topology_grid =
         create_point_grid(positions, this->image_lengths,
                           /*bkg_thresh=*/local_tile_thresholds->bkg_thresh);
-    computation_time = computation_time + (finalize_start - timer->elapsed());
+    auto finalize_time = timer->elapsed() - finalize_start;
+    computation_time = computation_time + finalize_time;
+#ifdef LOG
+    cout << "Grid finalize time: " << finalize_time << " s\n";
+#endif
   } else {
 #ifdef RV
     cout << "Total ";

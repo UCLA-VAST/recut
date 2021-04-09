@@ -577,6 +577,50 @@ TEST(Interval, GetAttrVidMultiInterval) {
   ASSERT_NO_FATAL_FAILURE(interval_base_immutable(interval_vert_num));
 }
 
+TEST(Install, DISABLED_ReadWriteInterval) {
+  auto nvid = 4;
+  auto ptr = new VertexAttr[nvid];
+  size_t size = sizeof(VertexAttr) * nvid;
+  // path logic
+  auto base = get_data_dir() + "/test_data/";
+  auto fn = base + "interval0.bin";
+  // fs::remove_all(fn); // make sure it's an overwrite
+  fs::create_directories(base);
+  cout << "fn: " << fn << endl;
+
+  // open output
+  std::ofstream ofile(fn, ios::out | ios::binary); // read-mode
+  ASSERT_TRUE(ofile.is_open());
+  ASSERT_TRUE(ofile.good());
+
+  // write struct to file
+  ofile.write((char *)ptr, size);
+  ASSERT_TRUE(ofile.good());
+
+  // close file
+  ofile.close();
+
+  VertexAttr *iptr = (VertexAttr *)malloc(size);
+  std::ifstream ifile(fn,
+                      ios::in | ios::binary | ios::ate); // write-mode, end
+  // open input
+  ASSERT_TRUE(ifile.is_open());
+  ASSERT_TRUE(ifile.good());
+  auto rsize = ifile.tellg();
+  ASSERT_EQ(rsize, size);
+
+  ifile.seekg(0, ios::beg); // back to beginning
+  ifile.read((char *)iptr, size);
+  for (int i = 0; i < nvid; i++) {
+    ASSERT_EQ(iptr[i], ptr[i]);
+  }
+  // close file
+  ifile.close();
+
+  delete[] ptr;
+  free(iptr);
+}
+
 #endif // DENSE
 
 #ifdef USE_VDB
@@ -768,11 +812,14 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
 
   std::vector<int> testcases = {7, 5, 4, 3, 2, 1, 0};
   std::vector<double> selected_percents = {1, 10, 50, 100};
+
+
+  //std::vector<int> grid_sizes = {2, 4, 8, 1024};
+  //std::vector<int> testcases = {7, 5, 4, 3, 2, 1, 0};
+  //std::vector<double> selected_percents = {.1, .5, 1, 10, 50, 100};
+
   std::vector<int> no_offsets{0, 0, 0};
   auto print = false;
-#ifdef LOG
-  print = true;
-#endif
 
   for (auto &grid_size : grid_sizes) {
     auto grid_extents = new_grid_coord(grid_size, grid_size, grid_size);
@@ -807,6 +854,10 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
           continue;
         // never allow an image with less than 1 selected exist
         if ((tcase == 4) && (grid_size < 8) && (slt_pct < 10))
+          continue;
+        if ((grid_size > 8) && (tcase != 4))
+          continue;
+        if ((tcase == 4) && (slt_pct > 5))
           continue;
 
         std::string base(get_data_dir());
@@ -862,15 +913,21 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         }
 
         std::cout << "created vdb grid\n";
+
+        //auto topology_grid = create_vdb_grid(grid_extents, 0);
+        //convert_buffer_to_vdb_acc(inimg1d, grid_extents, zeros(), zeros(),
+                              //topology_grid->getAccessor(), 0);
+        //print_grid_metadata(topology_grid); // already in create_point_grid
+
         std::vector<Coord> positions;
         convert_buffer_to_vdb(inimg1d, grid_extents, zeros(), zeros(),
                               positions, 0);
-
         auto topology_grid = create_point_grid(positions, grid_extents);
+        topology_grid->tree().prune();
         if (print) {
           print_vdb(topology_grid->getConstAccessor(),
                     coord_to_vec(grid_extents));
-          // print_all_points(topology_grid);
+          print_all_points(topology_grid);
         }
 
 #ifdef USE_MCP3D
@@ -892,23 +949,18 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
 TEST(Install, DISABLED_ImageReadWrite) {
   auto grid_size = 2;
   auto grid_extents = std::vector<VID_t>(3, grid_size);
-  auto tcase = 0;
+  auto tcase = 7;
   double slt_pct = 100;
-  long sz0 = (long)grid_size;
-  long sz1 = (long)grid_size;
-  long sz2 = (long)grid_size;
-  VID_t tol_sz = sz0 * sz1 * sz2;
+  auto lengths = new_grid_coord(grid_size, grid_size, grid_size);
+  auto tol_sz = coord_prod_accum(lengths);
+
   std::string fn(get_data_dir());
   // Warning: do not use directory names postpended with slash
   fn = fn + "/test_images/ReadWriteTest";
   auto image_lengths = std::vector<int>(3, grid_size);
   auto image_offsets = std::vector<int>(3, 0);
 
-  VID_t selected = tol_sz * (slt_pct / 100); // for tcase 4
-  // always select at least the root
-  if (selected == 0) {
-    selected = 1;
-  }
+  VID_t selected = tol_sz; // for tcase 4
   uint16_t *inimg1d = new uint16_t[tol_sz];
   create_image(tcase, inimg1d, grid_size, selected, get_central_vid(grid_size));
   write_tiff(inimg1d, fn, grid_size);
@@ -935,51 +987,8 @@ TEST(Install, DISABLED_ImageReadWrite) {
 
   delete[] inimg1d;
 }
-#endif
 
-TEST(Install, DISABLED_ReadWriteInterval) {
-  auto nvid = 4;
-  auto ptr = new VertexAttr[nvid];
-  size_t size = sizeof(VertexAttr) * nvid;
-  // path logic
-  auto base = get_data_dir() + "/test_data/";
-  auto fn = base + "interval0.bin";
-  // fs::remove_all(fn); // make sure it's an overwrite
-  fs::create_directories(base);
-  cout << "fn: " << fn << endl;
-
-  // open output
-  std::ofstream ofile(fn, ios::out | ios::binary); // read-mode
-  ASSERT_TRUE(ofile.is_open());
-  ASSERT_TRUE(ofile.good());
-
-  // write struct to file
-  ofile.write((char *)ptr, size);
-  ASSERT_TRUE(ofile.good());
-
-  // close file
-  ofile.close();
-
-  VertexAttr *iptr = (VertexAttr *)malloc(size);
-  std::ifstream ifile(fn,
-                      ios::in | ios::binary | ios::ate); // write-mode, end
-  // open input
-  ASSERT_TRUE(ifile.is_open());
-  ASSERT_TRUE(ifile.good());
-  auto rsize = ifile.tellg();
-  ASSERT_EQ(rsize, size);
-
-  ifile.seekg(0, ios::beg); // back to beginning
-  ifile.read((char *)iptr, size);
-  for (int i = 0; i < nvid; i++) {
-    ASSERT_EQ(iptr[i], ptr[i]);
-  }
-  // close file
-  ifile.close();
-
-  delete[] ptr;
-  free(iptr);
-}
+#endif // USE_MCP3D
 
 TEST(VertexAttr, Defaults) {
   auto v1 = new VertexAttr();
