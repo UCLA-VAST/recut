@@ -2368,6 +2368,7 @@ int main(int argc, char **argv) {
   // warning: needs to be called once per executable before any related
   // function is called otherwise confusing seg faults ensue
   openvdb::initialize();
+  //EnlargedPointDataGrid::registerGrid();
 #endif
 
   return RUN_ALL_TESTS();

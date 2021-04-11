@@ -97,7 +97,7 @@ public:
 
   bool input_is_vdb;
 #ifdef USE_VDB
-  openvdb::points::PointDataGrid::Ptr topology_grid;
+  EnlargedPointDataGrid::Ptr topology_grid;
 #endif
 
   std::vector<OffsetCoord> const stencil{
@@ -119,7 +119,7 @@ public:
   vector<vector<atomwrapper<bool>>> active_blocks;
   vector<vector<atomwrapper<bool>>> processing_blocks;
   vector<vector<vector<bool>>> active_neighbors;
-  vector<vector<vector<vector<VertexAttr>>>> updated_ghost_vec;
+  vector<vector<map<VID_t, vector<VertexAttr>>>> updated_ghost_vec;
 
   Recut(RecutCommandLineArgs &args)
       : args(&args), params(&(args.recut_parameters())) {}
@@ -1022,6 +1022,10 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
   // incorrect, surprisingly this makes no difference for the correctness
   // since the block_id origination dimension is merely to prevent
   // race conditions
+  // updated_ghost_vec[nb_interval_id][block_id][nb_block_id].emplace_back(
+  // dst->edge_state, msg_offsets, dst->parent, dst->radius);
+  // updated_ghost_vec[nb_interval_id][block_id].emplace(
+  // nb_block_id, dst->edge_state, msg_offsets, dst->parent, dst->radius);
   updated_ghost_vec[nb_interval_id][block_id][nb_block_id].emplace_back(
       dst->edge_state, msg_offsets, dst->parent, dst->radius);
   active_neighbors[nb_interval_id][nb_block_id][block_id] = true;
@@ -1276,8 +1280,7 @@ void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id,
       // iterate over all ghost points of block_id inside domain of block nb
 
       // updated_ghost_vec[x][a][b] in domain of a, in ghost of block b
-      for (VertexAttr updated_vertex :
-           updated_ghost_vec[interval_id][nb][block_id]) {
+      for (auto updated_vertex : updated_ghost_vec[interval_id][nb][block_id]) {
 
 #ifdef FULL_PRINT
         cout << "integrate(): " << coord_to_str(updated_vertex.offsets)
@@ -1624,6 +1627,12 @@ void Recut<image_t>::connected_tile(
 
         // leverage updated_ghost_vec to avoid race conditions
         // check_ghost_update never applies to vertices outside this leaf
+        // updated_ghost_vec[check_interval_id][block_id][check_block_id]
+        //.emplace_back(current->edge_state, current->offsets,
+        // current->parent, current->radius);
+        // updated_ghost_vec[check_interval_id][block_id].emplace(
+        // check_block_id, current->edge_state, current->offsets,
+        // current->parent, current->radius);
         updated_ghost_vec[check_interval_id][block_id][check_block_id]
             .emplace_back(current->edge_state, current->offsets,
                           current->parent, current->radius);
@@ -1785,11 +1794,11 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
     }
 
 #ifdef FULL_PRINT
-  // all block ids are a linear row-wise idx, relative to current interval
-  cout << '\n'
-       << coord_to_str(current_coord) << " interval " << interval_id
-       << " block " << block_id << " label " << current->label() << " radius "
-       << +(current->radius) << '\n';
+    // all block ids are a linear row-wise idx, relative to current interval
+    cout << '\n'
+         << coord_to_str(current_coord) << " interval " << interval_id
+         << " block " << block_id << " label " << current->label() << " radius "
+         << +(current->radius) << '\n';
 #endif
 
     // force full evaluation by saving to vector
@@ -2606,12 +2615,10 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
                            vector<bool>(interval_block_size)));
 
   if (!(params->convert_only_)) {
-    updated_ghost_vec = vector<vector<vector<vector<struct VertexAttr>>>>(
+    updated_ghost_vec = vector<vector<map<VID_t, vector<VertexAttr>>>>(
         grid_interval_size,
-        vector<vector<vector<struct VertexAttr>>>(
-            interval_block_size,
-            vector<vector<struct VertexAttr>>(interval_block_size,
-                                              vector<struct VertexAttr>())));
+        vector<map<VID_t, vector<VertexAttr>>>(
+            interval_block_size, map<VID_t, vector<VertexAttr>>()));
 #ifdef LOG_FULL
     cout << "Created updated ghost vec" << '\n';
 #endif
@@ -2698,8 +2705,7 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     std::string grid_name = "topology";
     auto timer = new high_resolution_timer();
     auto base_grid = read_vdb_file(args->image_root_dir(), grid_name);
-    this->topology_grid =
-        openvdb::gridPtrCast<openvdb::points::PointDataGrid>(base_grid);
+    this->topology_grid = openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
     append_attributes(this->topology_grid);
 #ifdef LOG
     cout << "Read grid in: " << timer->elapsed() << " s\n";
@@ -2758,11 +2764,13 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     auto path_extension =
         std::string(fs::path(args->image_root_dir()).extension());
     this->input_is_vdb = path_extension == ".vdb" ? true : false;
-    if (params->convert_only_ || this->input_is_vdb) {
-      openvdb::initialize();
-    }
+    // if (params->convert_only_ || this->input_is_vdb) {
+    // openvdb::initialize();
+    //}
     // FIXME should only apply to vdb
     openvdb::initialize();
+    // throws if run more than once
+    //EnlargedPointDataGrid::registerGrid();
   }
 
   // actual possible lengths

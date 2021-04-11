@@ -13,17 +13,24 @@ typedef uint64_t VID_t; // for multi-interval runs
 #include <openvdb/openvdb.h>
 #include <openvdb/points/PointConversion.h>
 #include <openvdb/points/PointCount.h>
-//using OffsetCoord = openvdb::Vec3<int8_t>;
-//using GridCoord = openvdb::Vec3<int32_t>;
+// using OffsetCoord = openvdb::Vec3<int8_t>;
+// using GridCoord = openvdb::Vec3<int32_t>;
 using OffsetCoord = openvdb::Coord;
 using GridCoord = openvdb::Coord;
-//using Coord = openvdb::Vec3I;
+// using Coord = openvdb::Vec3I;
 using Coord = openvdb::Vec3U16;
-//using Coord = openvdb::Vec3U8;
+// using Coord = openvdb::Vec3U8;
 #else
 using OffsetCoord = std::vector<int8_t>;
 using GridCoord = std::vector<int32_t>;
 #endif
+
+namespace vb = openvdb::v8_0;
+namespace vt = openvdb::tree;
+namespace vp = openvdb::v8_0::points;
+using EnlargedPointDataTree = vt::Tree<vt::RootNode<vt::InternalNode<
+    vt::InternalNode<vp::PointDataLeafNode<vb::PointDataIndex32, 3>, 4>, 5>>>;
+using EnlargedPointDataGrid = openvdb::Grid<EnlargedPointDataTree>;
 
 // pre-generated array of vertices initialized wth desired default values,
 // useful for mmap
@@ -43,7 +50,7 @@ using GridCoord = std::vector<int32_t>;
 // size 4 : 3623878656 Vertices needed for a 2048^3 interval block size 4 :
 // 28991029248 Vertices needed for a 8^3 interval block size 2 : 4096
 #ifdef TEST_ALL_BENCHMARKS
-                        // const VID_t MAX_INTERVAL_VERTICES =  3623878656;
+// const VID_t MAX_INTERVAL_VERTICES =  3623878656;
 const VID_t MAX_INTERVAL_VERTICES = 4096;
 #else
 const VID_t MAX_INTERVAL_VERTICES = 4096;

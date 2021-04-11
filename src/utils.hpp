@@ -439,7 +439,7 @@ auto init_root_attributes = [](auto grid, auto roots) {
   // Iterate over the leaf nodes in the point tree.
   for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
     auto bbox = leaf_iter->getNodeBoundingBox();
-    std::cout << "Leaf BBox: " << bbox << '\n';
+    // std::cout << "Leaf BBox: " << bbox << '\n';
 
     auto leaf_roots = roots | rng::views::remove_if([&](auto coord) {
                         return !is_in_bounds(coord, bbox.min(), bbox.max());
@@ -572,7 +572,7 @@ auto print_all_points = [](auto grid, std::string stage = "label",
                   cout << "- ";
                 }
               } else if (stage == "label" || stage == "connected") {
-                //cout << label(flags_handle, ind) << ' ';
+                // cout << label(flags_handle, ind) << ' ';
                 cout << +(flags_handle.get(*ind)) << ' ';
               }
             } else {
@@ -809,7 +809,7 @@ auto create_point_grid = [](auto &positions, auto lengths,
   float voxelSize = 1.;
 
   // Print the voxel-size to cout
-  //std::cout << "VoxelSize=" << voxelSize << std::endl;
+  // std::cout << "VoxelSize=" << voxelSize << std::endl;
   // Create a transform using this voxel-size.
   openvdb::math::Transform::Ptr transform =
       openvdb::math::Transform::createLinearTransform(voxelSize);
@@ -820,21 +820,16 @@ auto create_point_grid = [](auto &positions, auto lengths,
   // (ie a PointDataGrid).
   // We use no compression here for the positions.
   using FPCodec = openvdb::points::FixedPointCodec</*1-byte=*/true,
-            openvdb::points::UnitRange>;
-  //openvdb::points::NullCodec
-  openvdb::points::PointDataGrid::Ptr grid =
-      openvdb::points::createPointDataGrid<FPCodec,
-                                           openvdb::points::PointDataGrid>(
+                                                   openvdb::points::UnitRange>;
+
+  EnlargedPointDataGrid::Ptr grid =
+      openvdb::points::createPointDataGrid<FPCodec, EnlargedPointDataGrid>(
           positions, *transform);
   grid->tree().prune();
 
   grid->setName("topology");
   grid->setCreator("recut");
-
   // grid->setGridClass(openvdb::GRID_FOG_VOLUME);
-  // grid->insertMeta("original_bounding_lengths",
-  // openvdb::Vec3SMetadata(openvdb::v8_0::Vec3S(
-  // lengths[0], lengths[1], lengths[2])));
   grid->insertMeta("original_bounding_extent_x",
                    openvdb::FloatMetadata(static_cast<float>(lengths[0])));
   grid->insertMeta("original_bounding_extent_y",
@@ -848,7 +843,7 @@ auto create_point_grid = [](auto &positions, auto lengths,
 };
 
 auto create_vdb_grid = [](auto lengths, float bkg_thresh = 0.) {
-  auto topology_grid = openvdb::points::PointDataGrid::create();
+  auto topology_grid = EnlargedPointDataGrid::create();
   topology_grid->setName("topology");
   topology_grid->setCreator("recut");
   topology_grid->setIsInWorldSpace(true);
@@ -925,6 +920,7 @@ auto read_vdb_file(std::string fn, std::string grid_name) {
   openvdb::io::File file(fn);
   file.open();
   openvdb::GridBase::Ptr base_grid = file.readGrid(grid_name);
+  //EnlargedPointDataGrid grid = openvdb::gridPtrCast<EnlargedPointDataGrid>(file.readGrid(grid_name));
   file.close();
 
 #ifdef LOG
@@ -1310,8 +1306,7 @@ void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
 // keep only voxels strictly greater than bkg_thresh
 auto convert_buffer_to_vdb_acc =
     [](auto buffer, GridCoord buffer_lengths, GridCoord buffer_offsets,
-       GridCoord image_offsets, auto accessor,
-       auto bkg_thresh = 0) {
+       GridCoord image_offsets, auto accessor, auto bkg_thresh = 0) {
       // print_coord(buffer_lengths, "buffer_lengths");
       // print_coord(buffer_offsets, "buffer_offsets");
       // print_coord(image_offsets, "image_offsets");
@@ -1333,6 +1328,30 @@ auto convert_buffer_to_vdb_acc =
 
 // keep only voxels strictly greater than bkg_thresh
 auto convert_buffer_to_vdb =
+    [](auto buffer, GridCoord buffer_lengths, GridCoord buffer_offsets,
+       GridCoord image_offsets, std::vector<Coord> &positions,
+       auto bkg_thresh = 0) {
+      // print_coord(buffer_lengths, "buffer_lengths");
+      // print_coord(buffer_offsets, "buffer_offsets");
+      // print_coord(image_offsets, "image_offsets");
+      for (auto z : rng::views::iota(0, buffer_lengths[2])) {
+        for (auto y : rng::views::iota(0, buffer_lengths[1])) {
+          for (auto x : rng::views::iota(0, buffer_lengths[0])) {
+            GridCoord xyz(x, y, z);
+            GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
+            GridCoord grid_xyz = coord_add(xyz, image_offsets);
+            auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
+            // voxels equal to bkg_thresh are always discarded
+            if (val > bkg_thresh) {
+              positions.push_back(Coord(x, y, z));
+            }
+          }
+        }
+      }
+    };
+
+// keep only voxels strictly greater than bkg_thresh
+auto convert_buffer_leaf =
     [](auto buffer, GridCoord buffer_lengths, GridCoord buffer_offsets,
        GridCoord image_offsets, std::vector<Coord> &positions,
        auto bkg_thresh = 0) {
