@@ -18,6 +18,7 @@ class Grid;
 #include <future>
 #include <iostream>
 #include <map>
+#include <openvdb/tools/Composite.h>
 #include <set>
 #include <type_traits>
 #include <unistd.h>
@@ -2298,7 +2299,6 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   auto timer = new high_resolution_timer();
 
 #ifdef USE_VDB
-  std::vector<Coord> positions;
   // note openvdb::initialize() must have been called before this point
   // otherewise seg faults will occur
   // if (this->input_is_vdb || params->convert_only_) {
@@ -2308,6 +2308,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   // print_vdb(vdb_accessor, {this->image_lengths[0], this->image_lengths[1],
   // this->image_lengths[1]});
   //}
+  std::vector<EnlargedPointDataGrid::Ptr> grids(this->grid_interval_size);
 #endif
 
   // Main march for loop
@@ -2449,10 +2450,19 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                                          : this->interval_lengths;
 
           auto convert_start = timer->elapsed();
+          std::vector<Coord> positions;
+          print_image_3D(tile, coord_to_vec(buffer_extents)); 
+          // use the last bkg_thresh calculated for metadata,
+          // bkg_thresh is constant for each interval unless a specific % is
+          // input by command line user
           convert_buffer_to_vdb(tile, buffer_extents,
                                 /*buffer_offsets=*/buffer_offsets,
                                 /*image_offsets=*/interval_offsets, positions,
                                 local_tile_thresholds->bkg_thresh);
+          grids[interval_id] =
+              create_point_grid(positions, this->image_lengths,
+                                local_tile_thresholds->bkg_thresh);
+          print_vdb(grids[interval_id]->getConstAccessor(), coord_to_vec(this->image_lengths));
           computation_time =
               computation_time + (timer->elapsed() - convert_start);
 
@@ -2475,12 +2485,16 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   if (stage == "convert") {
     auto finalize_start = timer->elapsed();
 
-    // use the last bkg_thresh calculated for metadata,
-    // bkg_thresh is constant for each interval unless a specific % is
-    // input by command line user
-    this->topology_grid =
-        create_point_grid(positions, this->image_lengths,
-                          /*bkg_thresh=*/local_tile_thresholds->bkg_thresh);
+    assertm(params->convert_only_,
+            "reduce grids only possible for convert_only stage");
+    for (int i = 0; i < (this->grid_interval_size - 1); ++i) {
+      // default op is copy
+      // leaves grids[i] empty, copies all to grids[i+1]
+      vb::tools::compActiveLeafVoxels(grids[i]->tree(), grids[i + 1]->tree());
+    }
+
+    this->topology_grid = grids[this->grid_interval_size - 1];
+
     auto finalize_time = timer->elapsed() - finalize_start;
     computation_time = computation_time + finalize_time;
 #ifdef LOG
@@ -2705,7 +2719,8 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     std::string grid_name = "topology";
     auto timer = new high_resolution_timer();
     auto base_grid = read_vdb_file(args->image_root_dir(), grid_name);
-    this->topology_grid = openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
+    this->topology_grid =
+        openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
     append_attributes(this->topology_grid);
 #ifdef LOG
     cout << "Read grid in: " << timer->elapsed() << " s\n";
@@ -2770,7 +2785,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     // FIXME should only apply to vdb
     openvdb::initialize();
     // throws if run more than once
-    //EnlargedPointDataGrid::registerGrid();
+    // EnlargedPointDataGrid::registerGrid();
   }
 
   // actual possible lengths
@@ -2816,7 +2831,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   // the image size and offsets override the user inputted interval size
   // continuous id's are the same for current or dst intervals
   // round up (pad)
-  if (this->params->convert_only_) {
+  if (this->params->convert_only_ && !this->params->force_regenerate_image) {
     // images are saved in separate z-planes, so conversion should respect
     // that for best performance constrict so less data is allocated
     // especially in z dimension

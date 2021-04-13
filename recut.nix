@@ -60,6 +60,11 @@ in
     echo; echo;
     mkdir $out/data;
     make installcheck;
+
+    cp ${openvdb}/bin/vdb_view $out/bin
+    cp ${openvdb}/bin/vdb_print $out/bin
+    cp ${openvdb}/bin/vdb_render $out/bin
+    cp ${openvdb}/bin/vdb_lod $out/bin
   '';
 
 }

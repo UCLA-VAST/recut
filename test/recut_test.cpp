@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <tbb/parallel_for.h>
 #include <tuple>
 #include <typeinfo>
 #include <vector>
@@ -76,8 +77,8 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
         auto ind = leaf_iter->beginIndexVoxel(coord);
         auto value_on = leaf_iter->isValueOn(coord);
         if (stage != "convert") {
-           openvdb::points::AttributeHandle<uint8_t> radius_handle(
-           leaf_iter->constAttributeArray("radius"));
+          openvdb::points::AttributeHandle<uint8_t> radius_handle(
+              leaf_iter->constAttributeArray("radius"));
 
           openvdb::points::AttributeHandle<uint8_t> flags_handle(
               leaf_iter->constAttributeArray("flags"));
@@ -624,6 +625,109 @@ TEST(Install, DISABLED_ReadWriteInterval) {
 #endif // DENSE
 
 #ifdef USE_VDB
+
+// template <typename image_t> struct WriteValueOp {
+
+// explicit WriteValueOp(openvdb::Index64 index, image_t *buffer)
+//: mIndex(index), buffer(buffer) {}
+
+// void operator()(const openvdb::tree::LeafManager<
+// openvdb::points::PointDataTree>::LeafRange &range) const {
+// for (auto leafIter = range.begin(); leafIter; ++leafIter) {
+// for (auto indexIter = leafIter->beginIndexAll(); indexIter; ++indexIter) {
+// const openvdb::points::AttributeArray &array =
+// leafIter->attributeArray(mIndex);
+// openvdb::points::AttributeHandle<Coord> handle(array);
+// handle.set(*indexIter, on);
+//}
+//}
+//}
+
+// openvdb::Index64 mIndex;
+// const Coord on = Coord(0, 0, 0);
+//};
+//
+
+//// Define a local function that retrieves a and b values from a CombineArgs
+//// struct and then sets the result member to the maximum of a and b.
+// struct Local {
+// static inline void max(CombineArgs<float>& args) {
+// if (args.b() > args.a()) {
+//// Transfer the B value and its active state.
+// args.setResult(args.b());
+// args.setResultIsActive(args.bIsActive());
+//} else {
+//// Preserve the A value and its active state.
+// args.setResult(args.a());
+// args.setResultIsActive(args.aIsActive());
+//}
+//}
+//};
+
+TEST(VDB, CreatePointDataGrid) {
+
+  std::vector<EnlargedPointDataGrid::Ptr> grids(2);
+  // openvdb::GridPtrVec grids(2);
+  auto size = 2;
+  auto lengths = new_grid_coord(size, size, size);
+  auto loc1 = Coord(0, 0, 0);
+  auto loc1v = openvdb::Coord(loc1[0], loc1[1], loc1[2]);
+  auto pos = 8192;
+  auto loc2 = Coord(pos, pos, pos);
+
+  {
+    std::vector<Coord> positions;
+    positions.push_back(loc1);
+    auto grid = create_point_grid(positions, lengths);
+    auto points_tree = grid->tree();
+    // Create a leaf iterator for the PointDataTree.
+    auto leafIter = points_tree.beginLeaf();
+    // Check that the tree has leaf nodes.
+    ASSERT_TRUE(leafIter) << "No Leaf Nodes";
+    // Retrieve the index from the descriptor.
+    auto descriptor = leafIter->attributeSet().descriptor();
+    openvdb::Index64 index = descriptor.find("P");
+    // Check that the attribute has been found.
+    ASSERT_NE(index, openvdb::points::AttributeSet::INVALID_POS)
+        << "Invalid Attribute";
+
+    // grids.push_back(grid);
+    grids[0] = grid;
+  }
+
+  {
+    std::vector<Coord> positions;
+    positions.push_back(loc2);
+    auto grid = create_point_grid(positions, lengths);
+    grids[1] = grid;
+    // grids.push_back(grid);
+  }
+
+  //EXPECT_FALSE(grids[1]->tree().isValueOn(loc1v));
+
+  // default op is copy
+  // leaves grids[0] empty, copies all to grids[1]
+  vb::tools::compActiveLeafVoxels(grids[0]->tree(), grids[1]->tree());
+
+  EXPECT_TRUE(grids[1]->tree().isValueOn(loc1v));
+  // EXPECT_EQ(loc1, grids[0]->tree().getValue(loc1v));
+
+  // do these have issue if the leaf doesn't already exist?
+  // leaves grids[1] empty
+  // grids[0]->tree().combineExtended(grids[1], Local::max);
+
+  // csgUnion
+  // compActiveLeafVoxels
+  // compReplace
+
+  //// Create a leaf manager for the points tree.
+  // openvdb::tree::LeafManager<vp::PointDataTree> leafManager(points_tree);
+  //// Create a new operator
+  // WriteValueOp op(index);
+  //// Evaluate in parallel
+  // tbb::parallel_for(leafManager.leafRange(), op);
+}
+
 TEST(VDB, ActivateVids) {
   VID_t grid_size = 8;
   auto grid_extents = std::vector<VID_t>(3, grid_size);
@@ -708,8 +812,9 @@ TEST(VDBWriteOnly, DISABLED_Any) {
   ASSERT_TRUE(fs::exists(fn));
 }
 
-TEST(VDBConvertOnly, Any) {
+TEST(VDBConvertOnly, MultiInterval7) {
   VID_t grid_size = 8;
+  auto interval_size = grid_size / 2;
   auto grid_extents = std::vector<VID_t>(3, grid_size);
   // do no use tcase 4 since it is randomized and will not match
   // for the second read test
@@ -724,7 +829,7 @@ TEST(VDBConvertOnly, Any) {
 
   // generate an image buffer on the fly
   // then convert to vdb
-  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+  auto args = get_args(grid_size, interval_size, interval_size, slt_pct, tcase,
                        /*force_regenerate_image=*/true);
   auto recut = Recut<uint16_t>(args);
   recut.params->convert_only_ = true;
@@ -755,13 +860,14 @@ TEST(VDBConvertOnly, Any) {
   EXPECT_NO_FATAL_FAILURE(
       check_recut_error(recut, /*ground_truth*/ recut.generated_image,
                         grid_size, stage, write_error_rate, recut.global_fifo,
-                        recut.params->selected, /*strict_match=*/true));
+                        recut.params->selected, /*strict_match=*/ true));
   ASSERT_NEAR(write_error_rate, 0., NUMERICAL_ERROR);
 
   // test reading from a pre-generated image file of exact same as
   // recut.generated_image as long as tcase != 4
+  // read from file and convert
   {
-    args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+    auto args = get_args(grid_size, interval_size, interval_size, slt_pct, tcase,
                     /*force_regenerate_image=*/false,
                     /*input_is_vdb=*/false);
 
@@ -813,10 +919,9 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
   std::vector<int> testcases = {7, 5, 4, 3, 2, 1, 0};
   std::vector<double> selected_percents = {1, 10, 50, 100};
 
-
-  //std::vector<int> grid_sizes = {2, 4, 8, 1024};
-  //std::vector<int> testcases = {7, 5, 4, 3, 2, 1, 0};
-  //std::vector<double> selected_percents = {.1, .5, 1, 10, 50, 100};
+  // std::vector<int> grid_sizes = {2, 4, 8, 1024};
+  // std::vector<int> testcases = {7, 5, 4, 3, 2, 1, 0};
+  // std::vector<double> selected_percents = {.1, .5, 1, 10, 50, 100};
 
   std::vector<int> no_offsets{0, 0, 0};
   auto print = false;
@@ -914,10 +1019,10 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
 
         std::cout << "created vdb grid\n";
 
-        //auto topology_grid = create_vdb_grid(grid_extents, 0);
-        //convert_buffer_to_vdb_acc(inimg1d, grid_extents, zeros(), zeros(),
-                              //topology_grid->getAccessor(), 0);
-        //print_grid_metadata(topology_grid); // already in create_point_grid
+        // auto topology_grid = create_vdb_grid(grid_extents, 0);
+        // convert_buffer_to_vdb_acc(inimg1d, grid_extents, zeros(), zeros(),
+        // topology_grid->getAccessor(), 0);
+        // print_grid_metadata(topology_grid); // already in create_point_grid
 
         std::vector<Coord> positions;
         convert_buffer_to_vdb(inimg1d, grid_extents, zeros(), zeros(),
@@ -2368,7 +2473,7 @@ int main(int argc, char **argv) {
   // warning: needs to be called once per executable before any related
   // function is called otherwise confusing seg faults ensue
   openvdb::initialize();
-  //EnlargedPointDataGrid::registerGrid();
+  // EnlargedPointDataGrid::registerGrid();
 #endif
 
   return RUN_ALL_TESTS();
