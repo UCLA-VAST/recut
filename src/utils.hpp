@@ -295,7 +295,7 @@ std::vector<MyMarker *> vids_to_markers(std::vector<VID_t> vids,
   return markers;
 }
 
-/* interval_size parameter is actually irrelevant due to
+/* interval_length parameter is actually irrelevant due to
  * copy on write, the chunk requested during reading
  * or mmapping is
  */
@@ -590,6 +590,7 @@ auto print_all_points = [](auto grid, std::string stage = "label",
 template <typename T>
 void print_image_3D(T *inimg1d, std::vector<VID_t> interval_lengths,
                     const T bkg_thresh = 0) {
+  cout << "Print image 3D:\n";
   for (int zi = 0; zi < interval_lengths[2]; zi++) {
     cout << "y | Z=" << zi << '\n';
     for (int xi = 0; xi < 2 * interval_lengths[0] + 4; xi++) {
@@ -1191,7 +1192,7 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
   return selected;
 }
 
-RecutCommandLineArgs get_args(int grid_size, int interval_size, int block_size,
+RecutCommandLineArgs get_args(int grid_size, int interval_length, int block_size,
                               int slt_pct, int tcase,
                               bool force_regenerate_image = false,
                               bool input_is_vdb = false) {
@@ -1259,8 +1260,7 @@ RecutCommandLineArgs get_args(int grid_size, int interval_size, int block_size,
 
   // the total number of blocks allows more parallelism
   // ideally intervals >> thread count
-  params.set_interval_size(interval_size);
-  params.set_block_size(block_size);
+  params.interval_length = interval_length;
   VID_t img_vox_num = grid_size * grid_size * grid_size;
   params.tcase = tcase;
   params.slt_pct = slt_pct;
@@ -1344,7 +1344,7 @@ auto convert_buffer_to_vdb =
             auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
             // voxels equal to bkg_thresh are always discarded
             if (val > bkg_thresh) {
-              positions.push_back(Coord(x, y, z));
+              positions.push_back(Coord(grid_xyz[0], grid_xyz[1], grid_xyz[2]));
             }
           }
         }

@@ -36,8 +36,6 @@ class RecutParameters {
       out_vdb_ = std::string();
       convert_only_ = false;
       parallel_num_ = 1; // default is the max hardware concurrency when not set
-      block_size_ = 512;
-      interval_size_ = 1024;
       max_intensity_ = -1;
       min_intensity_ = -1;
       user_thread_count_ = 1;
@@ -56,8 +54,6 @@ class RecutParameters {
     int prune() const { return prune_; }
     bool allow_gap() const { return allow_gap_; }
     int background_thresh() const { return background_thresh_; }
-    int block_size() const { return block_size_; }
-    int interval_size() const { return interval_size_; }
     double foreground_percent() const { return foreground_percent_; }
     double length_thresh() const { return length_thresh_; }
     int cnn_type() const { return cnn_type_; }
@@ -114,8 +110,6 @@ class RecutParameters {
       high_intensity_ = high_intensity;
     }
     void set_brightfield(bool brightfield) { brightfield_ = brightfield; }
-    void set_block_size(int block_size) { block_size_ = block_size; }
-    void set_interval_size(int interval_size) { interval_size_ = interval_size; }
     void set_marker_file_path(const std::string &marker_file_path) {
       marker_file_path_ = marker_file_path;
     }
@@ -139,7 +133,7 @@ class RecutParameters {
     bool gsdt_, coverage_prune_, allow_gap_, cube_256_, radius_from_2d_,
          swc_resample_, high_intensity_, brightfield_, restart_;
     int user_thread_count_, background_thresh_, cnn_type_, parallel_num_,
-        interval_size_, block_size_, prune_;
+        prune_, interval_length;
     double foreground_percent_, sr_ratio_, length_thresh_, restart_factor_,
            max_intensity_, min_intensity_;
     std::string marker_file_path_, out_vdb_;

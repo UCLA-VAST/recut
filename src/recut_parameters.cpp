@@ -17,8 +17,6 @@ string RecutParameters::MetaString() {
   meta_stream << "# max_int = " << max_intensity_ << '\n';
   meta_stream << "# min_int = " << min_intensity_ << '\n';
   meta_stream << "# parallel = " << parallel_num_ << '\n';
-  meta_stream << "# interval_size = " << interval_size_ << '\n';
-  meta_stream << "# block_size = " << block_size_ << '\n';
   meta_stream << "# marker_file_path = "
               << (marker_file_path_.empty() ? "none" : marker_file_path_)
               << '\n';
@@ -62,10 +60,6 @@ void RecutCommandLineArgs::PrintUsage() {
           "(automatically prunes)\n";
   cout << "--parallel           [-pl] thread count "
           "defaults to max hardware threads\n";
-  cout << "--interval-size      [-is] interval size length "
-          "defaults to interval cubes of edge length 1024\n";
-  cout << "--block-size         [-bs] block size length "
-          "defaults to block cubes of edge length 64\n";
 }
 
 string RecutCommandLineArgs::MetaString() {
@@ -183,26 +177,6 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
 #if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
         omp_set_num_threads(current_threads);
 #endif
-      } else if (strcmp(argv[i], "--interval-size") == 0 ||
-                 strcmp(argv[i], "-is") == 0) {
-        args.recut_parameters().set_interval_size(atoi(argv[i + 1]));
-        ++i;
-      } else if (strcmp(argv[i], "--block-size") == 0 ||
-                 strcmp(argv[i], "-bs") == 0) {
-        args.recut_parameters().set_block_size(atoi(argv[i + 1]));
-        ++i;
-        //} else if (strcmp(argv[i], "--restart") == 0 ||
-        // strcmp(argv[i], "-rs") == 0) {
-        // args.recut_parameters().set_restart(true);
-        // args.recut_parameters().set_restart_factor(4.0);
-        // if (!(i + 1 >= argc || argv[i + 1][0] == '-')) {
-        // args.recut_parameters().set_restart_factor(atof(argv[i + 1]));
-        // if (atof(argv[i + 1]) <=
-        // 0.00000001) { // parse double has issues with 0
-        // args.recut_parameters().set_restart(false);
-        //}
-        //++i;
-        //}
       } else if (strcmp(argv[i], "--gsdt") == 0 ||
                  strcmp(argv[i], "-gs") == 0) {
         args.recut_parameters().set_gsdt(true);

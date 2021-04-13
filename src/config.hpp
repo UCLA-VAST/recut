@@ -28,8 +28,9 @@ using GridCoord = std::vector<int32_t>;
 namespace vb = openvdb::v8_0;
 namespace vt = openvdb::tree;
 namespace vp = openvdb::v8_0::points;
+#define LEAF_LOG2DIM 3
 using EnlargedPointDataTree = vt::Tree<vt::RootNode<vt::InternalNode<
-    vt::InternalNode<vp::PointDataLeafNode<vb::PointDataIndex32, 3>, 4>, 5>>>;
+    vt::InternalNode<vp::PointDataLeafNode<vb::PointDataIndex32, LEAF_LOG2DIM>, 4>, 5>>>;
 using EnlargedPointDataGrid = openvdb::Grid<EnlargedPointDataTree>;
 
 // pre-generated array of vertices initialized wth desired default values,

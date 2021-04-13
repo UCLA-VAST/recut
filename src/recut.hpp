@@ -2451,7 +2451,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
           auto convert_start = timer->elapsed();
           std::vector<Coord> positions;
-          print_image_3D(tile, coord_to_vec(buffer_extents)); 
+          print_image_3D(tile, coord_to_vec(buffer_extents));
           // use the last bkg_thresh calculated for metadata,
           // bkg_thresh is constant for each interval unless a specific % is
           // input by command line user
@@ -2462,7 +2462,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           grids[interval_id] =
               create_point_grid(positions, this->image_lengths,
                                 local_tile_thresholds->bkg_thresh);
-          print_vdb(grids[interval_id]->getConstAccessor(), coord_to_vec(this->image_lengths));
+          print_vdb(grids[interval_id]->getConstAccessor(),
+                    coord_to_vec(this->image_lengths));
           computation_time =
               computation_time + (timer->elapsed() - convert_start);
 
@@ -2831,32 +2832,41 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   // the image size and offsets override the user inputted interval size
   // continuous id's are the same for current or dst intervals
   // round up (pad)
-  if (this->params->convert_only_ && !this->params->force_regenerate_image) {
-    // images are saved in separate z-planes, so conversion should respect
-    // that for best performance constrict so less data is allocated
-    // especially in z dimension
-    this->interval_lengths[0] = this->image_lengths[0];
-    this->interval_lengths[1] = this->image_lengths[1];
-    auto recommended_max_mem = GetAvailMem() / 16;
-    // guess how many z-depth tiles will fit before a bad_alloc is likely
-    auto simultaneous_tiles =
-        static_cast<double>(recommended_max_mem) /
-        (sizeof(image_t) * this->image_lengths[0] * this->image_lengths[1]);
-    // assertm(simultaneous_tiles >= 1, "Tile x and y size too large to fit in
-    // system memory (DRAM)");
-    this->interval_lengths[2] = std::min(
-        simultaneous_tiles, static_cast<double>(this->image_lengths[2]));
+  if (this->params->convert_only_) {
+    // explicitly set by get_args
+    if (params->interval_length) {
+      this->interval_lengths[0] = params->interval_length;
+      this->interval_lengths[1] = params->interval_length;
+      this->interval_lengths[2] = params->interval_length;
+    } else {
+      // images are saved in separate z-planes, so conversion should respect
+      // that for best performance constrict so less data is allocated
+      // especially in z dimension
+      this->interval_lengths[0] = this->image_lengths[0];
+      this->interval_lengths[1] = this->image_lengths[1];
+      auto recommended_max_mem = GetAvailMem() / 16;
+      // guess how many z-depth tiles will fit before a bad_alloc is likely
+      auto simultaneous_tiles =
+          static_cast<double>(recommended_max_mem) /
+          (sizeof(image_t) * this->image_lengths[0] * this->image_lengths[1]);
+      // assertm(simultaneous_tiles >= 1, "Tile x and y size too large to fit in
+      // system memory (DRAM)");
+      this->interval_lengths[2] = std::min(
+          simultaneous_tiles, static_cast<double>(this->image_lengths[2]));
+    }
   } else if (this->input_is_vdb) {
     this->interval_lengths[0] = this->image_lengths[0];
     this->interval_lengths[1] = this->image_lengths[1];
     this->interval_lengths[2] = this->image_lengths[2];
   } else {
-    this->interval_lengths[0] =
-        std::min((int)params->interval_size(), this->image_lengths[0]);
-    this->interval_lengths[1] =
-        std::min((int)params->interval_size(), this->image_lengths[1]);
-    this->interval_lengths[2] =
-        std::min((int)params->interval_size(), this->image_lengths[2]);
+    int default_size = 1024;
+    if (params->interval_length) {
+    // explicitly set by get_args
+      default_size = params->interval_length;
+    }
+    this->interval_lengths[0] = std::min(default_size, this->image_lengths[0]);
+    this->interval_lengths[1] = std::min(default_size, this->image_lengths[1]);
+    this->interval_lengths[2] = std::min(default_size, this->image_lengths[2]);
   }
 
   // determine the length of intervals in each dim
@@ -2877,13 +2887,10 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     this->block_lengths[1] = this->interval_lengths[1];
     this->block_lengths[2] = this->interval_lengths[2];
   } else {
-    auto user_def_block_size = args->recut_parameters().block_size();
-    this->block_lengths[0] =
-        std::min(this->interval_lengths[0], user_def_block_size);
-    this->block_lengths[1] =
-        std::min(this->interval_lengths[1], user_def_block_size);
-    this->block_lengths[2] =
-        std::min(this->interval_lengths[2], user_def_block_size);
+    auto block_length = static_cast<int>(std::pow(2, LEAF_LOG2DIM));
+    this->block_lengths[0] = std::min(this->interval_lengths[0], block_length);
+    this->block_lengths[1] = std::min(this->interval_lengths[1], block_length);
+    this->block_lengths[2] = std::min(this->interval_lengths[2], block_length);
   }
 
   // determine length of blocks that span an interval for each dim
@@ -3096,10 +3103,10 @@ Recut<image_t>::get_vertex_vid(const VID_t interval_id, const VID_t block_id,
   // cout << "nb_interval " << nb_interval << " nb_block " << nb_block <<
   // '\n';
 
-  // adjust block coordinates so they reflect the interval or block they belong
-  // to also adjust based on actual 3D padding of block Rotate all values
-  // forward one This logic disentangles 0 % 32 from 32 % 32 results within a
-  // block, where ghost region is index -1 and interval_block_size
+  // adjust block coordinates so they reflect the interval or block they
+  // belong to also adjust based on actual 3D padding of block Rotate all
+  // values forward one This logic disentangles 0 % 32 from 32 % 32 results
+  // within a block, where ghost region is index -1 and interval_block_size
   if (interval_id == nb_interval) { // common case first
     if (nb_block == block_id) {     // grab the second common case
       pad_img_block_i = img_block_i + 1;
@@ -3455,7 +3462,8 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
           marker->radius = vertex->radius;
           // save this marker ptr to a map
           vid_to_marker_ptr[vid] = marker;
-          // std::cout << "\t " << interval_id << ' ' << block_id << ' ' << vid
+          // std::cout << "\t " << interval_id << ' ' << block_id << ' ' <<
+          // vid
           std::cout << "\t " << coord_to_str(coord) << " -> " << vertex->parent
                     << '\n';
           outtree.push_back(marker);
