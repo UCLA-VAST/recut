@@ -670,15 +670,16 @@ TEST(VDB, CreatePointDataGrid) {
   // openvdb::GridPtrVec grids(2);
   auto size = 2;
   auto lengths = new_grid_coord(size, size, size);
-  auto loc1 = Coord(0, 0, 0);
+  auto loc1 = PositionT(0, 0, 0);
   auto loc1v = openvdb::Coord(loc1[0], loc1[1], loc1[2]);
   auto pos = 8192;
-  auto loc2 = Coord(pos, pos, pos);
+  auto loc2 = PositionT(pos, pos, pos);
+  auto grid_transform = openvdb::math::Transform::createLinearTransform(/*voxel_size*/ 1.f);
 
   {
-    std::vector<Coord> positions;
+    std::vector<PositionT> positions;
     positions.push_back(loc1);
-    auto grid = create_point_grid(positions, lengths);
+    auto grid = create_point_grid(positions, lengths, grid_transform);
     auto points_tree = grid->tree();
     // Create a leaf iterator for the PointDataTree.
     auto leafIter = points_tree.beginLeaf();
@@ -696,14 +697,14 @@ TEST(VDB, CreatePointDataGrid) {
   }
 
   {
-    std::vector<Coord> positions;
+    std::vector<PositionT> positions;
     positions.push_back(loc2);
-    auto grid = create_point_grid(positions, lengths);
+    auto grid = create_point_grid(positions, lengths, grid_transform);
     grids[1] = grid;
     // grids.push_back(grid);
   }
 
-  //EXPECT_FALSE(grids[1]->tree().isValueOn(loc1v));
+  // EXPECT_FALSE(grids[1]->tree().isValueOn(loc1v));
 
   // default op is copy
   // leaves grids[0] empty, copies all to grids[1]
@@ -829,8 +830,8 @@ TEST(VDBConvertOnly, MultiInterval7) {
 
   // generate an image buffer on the fly
   // then convert to vdb
-  auto args = get_args(grid_size, interval_size, interval_size, slt_pct, tcase,
-                       true);
+  auto args =
+      get_args(grid_size, interval_size, interval_size, slt_pct, tcase, true);
   auto recut = Recut<uint16_t>(args);
   recut.params->convert_only_ = true;
   // recut.params->out_vdb_ = fn;
@@ -869,9 +870,10 @@ TEST(VDBConvertOnly, MultiInterval7) {
   // recut.generated_image as long as tcase != 4
   // read from file and convert
   {
-    auto args = get_args(grid_size, interval_size, interval_size, slt_pct, tcase,
-                    /*force_regenerate_image=*/false,
-                    /*input_is_vdb=*/false);
+    auto args =
+        get_args(grid_size, interval_size, interval_size, slt_pct, tcase,
+                 /*force_regenerate_image=*/false,
+                 /*input_is_vdb=*/false);
 
     auto recut_from_vdb_file = Recut<uint16_t>(args);
     recut_from_vdb_file.params->convert_only_ = true;
@@ -1026,10 +1028,12 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         // topology_grid->getAccessor(), 0);
         // print_grid_metadata(topology_grid); // already in create_point_grid
 
-        std::vector<Coord> positions;
+        auto grid_transform = openvdb::math::Transform::createLinearTransform(/*voxel_size*/ 1.f);
+        std::vector<PositionT> positions;
         convert_buffer_to_vdb(inimg1d, grid_extents, zeros(), zeros(),
                               positions, 0);
-        auto topology_grid = create_point_grid(positions, grid_extents);
+        auto topology_grid =
+            create_point_grid(positions, grid_extents, grid_transform);
         topology_grid->tree().prune();
         if (print) {
           print_vdb(topology_grid->getConstAccessor(),

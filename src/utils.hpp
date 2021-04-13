@@ -792,28 +792,34 @@ template <typename T> void print_grid_metadata(T vdb_grid) {
   cout << '\n';
 }
 
-auto create_point_grid = [](auto &positions, auto lengths,
+auto get_grid_transform(auto positionsWrapper, int points_per_voxel = 8,
+                        float voxel_size = 0.f) {
+  if (voxel_size)
+    return openvdb::math::Transform::createLinearTransform(voxel_size);
+
+  // This method computes a voxel-size to match the number of
+  // points / voxel requested. Although it won't be exact, it typically offers
+  // a good balance of memory against performance.
+  voxel_size =
+      openvdb::points::computeVoxelSize(positionsWrapper, points_per_voxel);
+
+  // Print the voxel-size to cout
+#ifdef LOG
+  cout << "Requested points_per_voxel: " << points_per_voxel << '\n';
+  cout << "Voxel size: " << voxel_size << '\n';
+#endif
+  // Create a transform using this voxel-size.
+  return openvdb::math::Transform::createLinearTransform(voxel_size);
+};
+
+auto create_point_grid = [](auto &positions, auto lengths, auto transform_ptr,
                             float bkg_thresh = 0.) {
   // The VDB Point-Partioner is used when bucketing points and requires a
   // specific interface. For convenience, we use the PointAttributeVector
   // wrapper around an stl vector wrapper here, however it is also possible to
   // write one for a custom data structure in order to match the interface
   // required.
-  vp::PointAttributeVector<Coord> positionsWrapper(positions);
-
-  // This method computes a voxel-size to match the number of
-  // points / voxel requested. Although it won't be exact, it typically offers
-  // a good balance of memory against performance.
-  int pointsPerVoxel = 1;
-  // float voxelSize = openvdb::points::computeVoxelSize(positionsWrapper,
-  // pointsPerVoxel);
-  float voxelSize = 1.;
-
-  // Print the voxel-size to cout
-  // std::cout << "VoxelSize=" << voxelSize << std::endl;
-  // Create a transform using this voxel-size.
-  openvdb::math::Transform::Ptr transform =
-      openvdb::math::Transform::createLinearTransform(voxelSize);
+  vp::PointAttributeVector<PositionT> positionsWrapper(positions);
 
   // Create a PointDataGrid containing these four points and using the
   // transform given. This function has two template parameters, (1) the codec
@@ -839,7 +845,7 @@ auto create_point_grid = [](auto &positions, auto lengths,
                    openvdb::FloatMetadata(static_cast<float>(lengths[2])));
 
   grid->insertMeta("bkg_thresh", openvdb::FloatMetadata(bkg_thresh));
-  //print_grid_metadata(grid);
+  // print_grid_metadata(grid);
   return grid;
 };
 
@@ -1192,8 +1198,8 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
   return selected;
 }
 
-RecutCommandLineArgs get_args(int grid_size, int interval_length, int block_size,
-                              int slt_pct, int tcase,
+RecutCommandLineArgs get_args(int grid_size, int interval_length,
+                              int block_size, int slt_pct, int tcase,
                               bool force_regenerate_image = false,
                               bool input_is_vdb = false) {
 
@@ -1328,59 +1334,59 @@ auto convert_buffer_to_vdb_acc =
     };
 
 // keep only voxels strictly greater than bkg_thresh
-auto convert_buffer_to_vdb =
-    [](auto buffer, GridCoord buffer_lengths, GridCoord buffer_offsets,
-       GridCoord image_offsets, std::vector<Coord> &positions,
-       auto bkg_thresh = 0) {
-      // print_coord(buffer_lengths, "buffer_lengths");
-      // print_coord(buffer_offsets, "buffer_offsets");
-      // print_coord(image_offsets, "image_offsets");
-      for (auto z : rng::views::iota(0, buffer_lengths[2])) {
-        for (auto y : rng::views::iota(0, buffer_lengths[1])) {
-          for (auto x : rng::views::iota(0, buffer_lengths[0])) {
-            GridCoord xyz(x, y, z);
-            GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
-            GridCoord grid_xyz = coord_add(xyz, image_offsets);
-            auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
-            // voxels equal to bkg_thresh are always discarded
-            if (val > bkg_thresh) {
-              positions.push_back(Coord(grid_xyz[0], grid_xyz[1], grid_xyz[2]));
-            }
-          }
+auto convert_buffer_to_vdb = [](auto buffer, GridCoord buffer_lengths,
+                                GridCoord buffer_offsets,
+                                GridCoord image_offsets, auto &positions,
+                                auto bkg_thresh = 0) {
+  // print_coord(buffer_lengths, "buffer_lengths");
+  // print_coord(buffer_offsets, "buffer_offsets");
+  // print_coord(image_offsets, "image_offsets");
+  for (auto z : rng::views::iota(0, buffer_lengths[2])) {
+    for (auto y : rng::views::iota(0, buffer_lengths[1])) {
+      for (auto x : rng::views::iota(0, buffer_lengths[0])) {
+        GridCoord xyz(x, y, z);
+        GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
+        GridCoord grid_xyz = coord_add(xyz, image_offsets);
+        auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
+        // voxels equal to bkg_thresh are always discarded
+        if (val > bkg_thresh) {
+          positions.push_back(PositionT(grid_xyz[0], grid_xyz[1], grid_xyz[2]));
         }
       }
-    };
+    }
+  }
+};
 
 //// keep only voxels strictly greater than bkg_thresh
-//auto convert_buffer_leaf = [](auto buffer, GridCoord buffer_lengths,
-                              //GridCoord buffer_offsets, GridCoord image_offsets,
-                              //auto grid,
-                              //auto bkg_thresh = 0) {
-        //auto leaf_iter = grid->tree().probeLeaf(coord);
-        //auto ind = leaf_iter->beginIndexVoxel(coord);
-  //auto leaf_iter = grid->
-  //auto bbox = leaf_iter->getNodeBoundingBox();
-    //std::cout << "Leaf BBox: " << bbox << '\n';
-  //for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
-    //auto bbox = leaf_iter->getNodeBoundingBox();
-    //// print_coord(buffer_lengths, "buffer_lengths");
-    //// print_coord(buffer_offsets, "buffer_offsets");
-    //// print_coord(image_offsets, "image_offsets");
-    //for (auto z : rng::views::iota(0, buffer_lengths[2])) {
-      //for (auto y : rng::views::iota(0, buffer_lengths[1])) {
-        //for (auto x : rng::views::iota(0, buffer_lengths[0])) {
-          //GridCoord xyz(x, y, z);
-          //GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
-          //GridCoord grid_xyz = coord_add(xyz, image_offsets);
-          //auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
-          //// voxels equal to bkg_thresh are always discarded
-          //if (val > bkg_thresh) {
-            //position_handle.set(*ind, xyz);
-          //}
-        //}
-      //}
-    //}
-  //}
+// auto convert_buffer_leaf = [](auto buffer, GridCoord buffer_lengths,
+// GridCoord buffer_offsets, GridCoord image_offsets,
+// auto grid,
+// auto bkg_thresh = 0) {
+// auto leaf_iter = grid->tree().probeLeaf(coord);
+// auto ind = leaf_iter->beginIndexVoxel(coord);
+// auto leaf_iter = grid->
+// auto bbox = leaf_iter->getNodeBoundingBox();
+// std::cout << "Leaf BBox: " << bbox << '\n';
+// for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+// auto bbox = leaf_iter->getNodeBoundingBox();
+//// print_coord(buffer_lengths, "buffer_lengths");
+//// print_coord(buffer_offsets, "buffer_offsets");
+//// print_coord(image_offsets, "image_offsets");
+// for (auto z : rng::views::iota(0, buffer_lengths[2])) {
+// for (auto y : rng::views::iota(0, buffer_lengths[1])) {
+// for (auto x : rng::views::iota(0, buffer_lengths[0])) {
+// GridCoord xyz(x, y, z);
+// GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
+// GridCoord grid_xyz = coord_add(xyz, image_offsets);
+// auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
+//// voxels equal to bkg_thresh are always discarded
+// if (val > bkg_thresh) {
+// position_handle.set(*ind, xyz);
+//}
+//}
+//}
+//}
+//}
 //} ;
 
 #ifdef USE_MCP3D

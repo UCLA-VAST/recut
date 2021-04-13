@@ -13,13 +13,13 @@ typedef uint64_t VID_t; // for multi-interval runs
 #include <openvdb/openvdb.h>
 #include <openvdb/points/PointConversion.h>
 #include <openvdb/points/PointCount.h>
+
 // using OffsetCoord = openvdb::Vec3<int8_t>;
-// using GridCoord = openvdb::Vec3<int32_t>;
-using OffsetCoord = openvdb::Coord;
+using OffsetCoord = openvdb::Coord; // = Int32 = int32_t
 using GridCoord = openvdb::Coord;
-// using Coord = openvdb::Vec3I;
-using Coord = openvdb::Vec3U16;
-// using Coord = openvdb::Vec3U8;
+// position must be a openvdb::math:Vec?? type not a Coord
+// integer positions get cast to floats, half and doubles positions is acceptable
+using PositionT = openvdb::Vec3f; // equiv. to Vec3s, both are <float>
 #else
 using OffsetCoord = std::vector<int8_t>;
 using GridCoord = std::vector<int32_t>;

@@ -2450,7 +2450,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                                          : this->interval_lengths;
 
           auto convert_start = timer->elapsed();
-          std::vector<Coord> positions;
+          std::vector<PositionT> positions;
           print_image_3D(tile, coord_to_vec(buffer_extents));
           // use the last bkg_thresh calculated for metadata,
           // bkg_thresh is constant for each interval unless a specific % is
@@ -2459,8 +2459,11 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                                 /*buffer_offsets=*/buffer_offsets,
                                 /*image_offsets=*/interval_offsets, positions,
                                 local_tile_thresholds->bkg_thresh);
+          // grid_transform must use the same voxel size for all intervals
+          // and be identical
+  auto grid_transform = openvdb::math::Transform::createLinearTransform(/*voxel_size*/ 1.f);
           grids[interval_id] =
-              create_point_grid(positions, this->image_lengths,
+              create_point_grid(positions, this->image_lengths, grid_transform,
                                 local_tile_thresholds->bkg_thresh);
           print_vdb(grids[interval_id]->getConstAccessor(),
                     coord_to_vec(this->image_lengths));
@@ -2861,7 +2864,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
   } else {
     int default_size = 1024;
     if (params->interval_length) {
-    // explicitly set by get_args
+      // explicitly set by get_args
       default_size = params->interval_length;
     }
     this->interval_lengths[0] = std::min(default_size, this->image_lengths[0]);
