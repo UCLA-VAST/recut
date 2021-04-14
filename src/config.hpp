@@ -1,4 +1,15 @@
 #pragma once
+#include <cstdint>
+#include <utility>
+
+/// ex. power<int, 4, 2>::value
+template <typename T, T V, T N, typename I = std::make_integer_sequence<T, N>>
+struct power;
+template <typename T, T V, T N, T... Is>
+struct power<T, V, N, std::integer_sequence<T, Is...>> {
+   static constexpr T value = (static_cast<T>(1) * ... * (V * static_cast<bool>(Is + 1)));
+};
+
 // Define preprocessor macros, templates and types to be used for
 // configuration and compile time behavior
 // Note it is preferred to pass this macros to `cmake ..
@@ -6,7 +17,6 @@
 
 // uint32_t overflows at ~2e9 nodes, ~ 1024 * 1024 * 1024 * 2
 // typedef uint32_t VID_t; // overflows after ~2e9 ~= 2 1024^3 tiles
-#include <cstdint>
 typedef uint64_t VID_t; // for multi-interval runs
 
 #ifdef USE_VDB
@@ -18,20 +28,32 @@ typedef uint64_t VID_t; // for multi-interval runs
 using OffsetCoord = openvdb::Coord; // = Int32 = int32_t
 using GridCoord = openvdb::Coord;
 // position must be a openvdb::math:Vec?? type not a Coord
-// integer positions get cast to floats, half and doubles positions is acceptable
+// integer positions get cast to floats, half and doubles positions is
+// acceptable
 using PositionT = openvdb::Vec3f; // equiv. to Vec3s, both are <float>
-#else
-using OffsetCoord = std::vector<int8_t>;
-using GridCoord = std::vector<int32_t>;
-#endif
 
 namespace vb = openvdb::v8_0;
 namespace vt = openvdb::tree;
 namespace vp = openvdb::v8_0::points;
+
+#define VOXEL_SIZE 1.f
 #define LEAF_LOG2DIM 3
+#define INTER1_LOG2DIM 4
+#define INTER2_LOG2DIM 5
+
+// Length of a bound box edge in one dimension in image index space / world space units
+constexpr int LEAF_LENGTH = VOXEL_SIZE * power<int,2, LEAF_LOG2DIM>::value;
+constexpr int INTER1_LENGTH = LEAF_LENGTH * power<int,2, INTER1_LOG2DIM>::value;
+
 using EnlargedPointDataTree = vt::Tree<vt::RootNode<vt::InternalNode<
-    vt::InternalNode<vp::PointDataLeafNode<vb::PointDataIndex32, LEAF_LOG2DIM>, 4>, 5>>>;
+    vt::InternalNode<vp::PointDataLeafNode<vb::PointDataIndex32, LEAF_LOG2DIM>,
+                     INTER1_LOG2DIM>, INTER2_LOG2DIM>>>;
 using EnlargedPointDataGrid = openvdb::Grid<EnlargedPointDataTree>;
+
+#else // not VDB
+using OffsetCoord = std::vector<int8_t>;
+using GridCoord = std::vector<int32_t>;
+#endif
 
 // pre-generated array of vertices initialized wth desired default values,
 // useful for mmap

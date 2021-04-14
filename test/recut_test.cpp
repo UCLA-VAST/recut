@@ -674,7 +674,7 @@ TEST(VDB, CreatePointDataGrid) {
   auto loc1v = openvdb::Coord(loc1[0], loc1[1], loc1[2]);
   auto pos = 8192;
   auto loc2 = PositionT(pos, pos, pos);
-  auto grid_transform = openvdb::math::Transform::createLinearTransform(/*voxel_size*/ 1.f);
+  auto grid_transform = openvdb::math::Transform::createLinearTransform(VOXEL_SIZE);
 
   {
     std::vector<PositionT> positions;
@@ -1028,7 +1028,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         // topology_grid->getAccessor(), 0);
         // print_grid_metadata(topology_grid); // already in create_point_grid
 
-        auto grid_transform = openvdb::math::Transform::createLinearTransform(/*voxel_size*/ 1.f);
+        auto grid_transform = openvdb::math::Transform::createLinearTransform(VOXEL_SIZE);
         std::vector<PositionT> positions;
         convert_buffer_to_vdb(inimg1d, grid_extents, zeros(), zeros(),
                               positions, 0);

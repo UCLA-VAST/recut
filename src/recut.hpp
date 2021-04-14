@@ -2450,8 +2450,12 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                                          : this->interval_lengths;
 
           auto convert_start = timer->elapsed();
-          std::vector<PositionT> positions;
+
+#ifdef FULL_PRINT
           print_image_3D(tile, coord_to_vec(buffer_extents));
+#endif
+
+          std::vector<PositionT> positions;
           // use the last bkg_thresh calculated for metadata,
           // bkg_thresh is constant for each interval unless a specific % is
           // input by command line user
@@ -2461,12 +2465,14 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                                 local_tile_thresholds->bkg_thresh);
           // grid_transform must use the same voxel size for all intervals
           // and be identical
-  auto grid_transform = openvdb::math::Transform::createLinearTransform(/*voxel_size*/ 1.f);
+          auto grid_transform = openvdb::math::Transform::createLinearTransform(VOXEL_SIZE);
           grids[interval_id] =
               create_point_grid(positions, this->image_lengths, grid_transform,
                                 local_tile_thresholds->bkg_thresh);
+#ifdef FULL_PRINT
           print_vdb(grids[interval_id]->getConstAccessor(),
                     coord_to_vec(this->image_lengths));
+#endif
           computation_time =
               computation_time + (timer->elapsed() - convert_start);
 
@@ -2498,6 +2504,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
     }
 
     this->topology_grid = grids[this->grid_interval_size - 1];
+
+    //print_positions(this->topology_grid);
 
     auto finalize_time = timer->elapsed() - finalize_start;
     computation_time = computation_time + finalize_time;

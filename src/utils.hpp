@@ -481,9 +481,39 @@ auto print_point_count = [](auto grid) {
   std::cout << "Point count: " << count << '\n';
 };
 
+auto print_positions = [](auto grid) {
+  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+    auto bbox = leaf_iter->getNodeBoundingBox();
+    std::cout << bbox << std::endl;
+
+    // Extract the position attribute from the leaf by name (P is position).
+    const openvdb::points::AttributeArray &array =
+        leaf_iter->constAttributeArray("P");
+    // Create a read-only AttributeHandle. Position always uses Vec3f.
+    openvdb::points::AttributeHandle<PositionT> positionHandle(array);
+
+    // Iterate over the point indices in the leaf.
+    for (auto indexIter = leaf_iter->beginIndexOn(); indexIter; ++indexIter) {
+      // Extract the voxel-space position of the point.
+      openvdb::Vec3f voxelPosition = positionHandle.get(*indexIter);
+
+      // Extract the world-space position of the voxel.
+      const openvdb::Vec3d xyz = indexIter.getCoord().asVec3d();
+      // Compute the world-space position of the point.
+      openvdb::Vec3f worldPosition =
+          grid->transform().indexToWorld(voxelPosition + xyz);
+      // Verify the index and world-space position of the point
+      std::cout << "ind:" << *indexIter << " ";
+      std::cout << "xyz: " << xyz << ' ';
+      std::cout << "WorldPosition=" << worldPosition << ' ';
+      std::cout << coord_to_str(xyz) << '\n';
+    }
+  }
+};
+
 auto print_all_points = [](auto grid, std::string stage = "label",
                            bool index_order = false) {
-  std::cout << "Print points " << stage << "\n";
+  std::cout << "Print all points " << stage << "\n";
   // Iterate over all the leaf nodes in the grid.
   for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
 
@@ -494,7 +524,7 @@ auto print_all_points = [](auto grid, std::string stage = "label",
     const openvdb::points::AttributeArray &array =
         leaf_iter->constAttributeArray("P");
     // Create a read-only AttributeHandle. Position always uses Vec3f.
-    openvdb::points::AttributeHandle<openvdb::Vec3f> positionHandle(array);
+    openvdb::points::AttributeHandle<PositionT> positionHandle(array);
 
     openvdb::points::AttributeWriteHandle<uint8_t> radius_handle(
         leaf_iter->attributeArray("radius"));
@@ -524,9 +554,9 @@ auto print_all_points = [](auto grid, std::string stage = "label",
         openvdb::Vec3f worldPosition =
             grid->transform().indexToWorld(voxelPosition + xyz);
         // Verify the index and world-space position of the point
-        // std::cout << "* PointIndex=[" << *indexIter << "] ";
-        // std::cout << "xyz: " << xyz << ' ';
-        // std::cout << "WorldPosition=" << worldPosition << ' ';
+        //std::cout << "* PointIndex=[" << *indexIter << "] ";
+        std::cout << "xyz: " << xyz << ' ';
+        std::cout << "WorldPosition=" << worldPosition << ' ';
         std::cout << coord_to_str(xyz) << " -> " << coord_to_str(recv_parent)
                   << ' ';
         std::cout << +(recv_flags) << ' ';
@@ -792,24 +822,20 @@ template <typename T> void print_grid_metadata(T vdb_grid) {
   cout << '\n';
 }
 
-auto get_grid_transform(auto positionsWrapper, int points_per_voxel = 8,
-                        float voxel_size = 0.f) {
-  if (voxel_size)
-    return openvdb::math::Transform::createLinearTransform(voxel_size);
+auto set_grid_meta = [](auto grid, auto lengths, auto bkg_thresh) {
+  grid->setName("topology");
+  grid->setCreator("recut");
+  grid->setIsInWorldSpace(true);
+  // grid->setGridClass(openvdb::GRID_FOG_VOLUME);
+  grid->insertMeta("original_bounding_extent_x",
+                   openvdb::FloatMetadata(static_cast<float>(lengths[0])));
+  grid->insertMeta("original_bounding_extent_y",
+                   openvdb::FloatMetadata(static_cast<float>(lengths[1])));
+  grid->insertMeta("original_bounding_extent_z",
+                   openvdb::FloatMetadata(static_cast<float>(lengths[2])));
 
-  // This method computes a voxel-size to match the number of
-  // points / voxel requested. Although it won't be exact, it typically offers
-  // a good balance of memory against performance.
-  voxel_size =
-      openvdb::points::computeVoxelSize(positionsWrapper, points_per_voxel);
-
-  // Print the voxel-size to cout
-#ifdef LOG
-  cout << "Requested points_per_voxel: " << points_per_voxel << '\n';
-  cout << "Voxel size: " << voxel_size << '\n';
-#endif
-  // Create a transform using this voxel-size.
-  return openvdb::math::Transform::createLinearTransform(voxel_size);
+  grid->insertMeta("bkg_thresh", openvdb::FloatMetadata(bkg_thresh));
+  // print_grid_metadata(grid);
 };
 
 auto create_point_grid = [](auto &positions, auto lengths, auto transform_ptr,
@@ -831,45 +857,18 @@ auto create_point_grid = [](auto &positions, auto lengths, auto transform_ptr,
 
   EnlargedPointDataGrid::Ptr grid =
       openvdb::points::createPointDataGrid<FPCodec, EnlargedPointDataGrid>(
-          positions, *transform);
+          positions, *transform_ptr);
   grid->tree().prune();
 
-  grid->setName("topology");
-  grid->setCreator("recut");
-  // grid->setGridClass(openvdb::GRID_FOG_VOLUME);
-  grid->insertMeta("original_bounding_extent_x",
-                   openvdb::FloatMetadata(static_cast<float>(lengths[0])));
-  grid->insertMeta("original_bounding_extent_y",
-                   openvdb::FloatMetadata(static_cast<float>(lengths[1])));
-  grid->insertMeta("original_bounding_extent_z",
-                   openvdb::FloatMetadata(static_cast<float>(lengths[2])));
+  set_grid_meta(grid, lengths, bkg_thresh);
 
-  grid->insertMeta("bkg_thresh", openvdb::FloatMetadata(bkg_thresh));
-  // print_grid_metadata(grid);
   return grid;
 };
 
 auto create_vdb_grid = [](auto lengths, float bkg_thresh = 0.) {
   auto topology_grid = EnlargedPointDataGrid::create();
-  topology_grid->setName("topology");
-  topology_grid->setCreator("recut");
-  topology_grid->setIsInWorldSpace(true);
+  set_grid_meta(topology_grid, lengths, bkg_thresh);
 
-  // topology_grid->setGridClass(openvdb::GRID_FOG_VOLUME);
-  // topology_grid->insertMeta("original_bounding_lengths",
-  // openvdb::Vec3SMetadata(openvdb::v8_0::Vec3S(
-  // lengths[0], lengths[1], lengths[2])));
-  topology_grid->insertMeta(
-      "original_bounding_extent_x",
-      openvdb::FloatMetadata(static_cast<float>(lengths[0])));
-  topology_grid->insertMeta(
-      "original_bounding_extent_y",
-      openvdb::FloatMetadata(static_cast<float>(lengths[1])));
-  topology_grid->insertMeta(
-      "original_bounding_extent_z",
-      openvdb::FloatMetadata(static_cast<float>(lengths[2])));
-
-  topology_grid->insertMeta("bkg_thresh", openvdb::FloatMetadata(bkg_thresh));
   return topology_grid;
 };
 
