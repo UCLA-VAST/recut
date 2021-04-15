@@ -2505,7 +2505,9 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
     this->topology_grid = grids[this->grid_interval_size - 1];
 
-    //print_positions(this->topology_grid);
+#ifdef FULL_PRINT
+    print_positions(this->topology_grid);
+#endif
 
     auto finalize_time = timer->elapsed() - finalize_start;
     computation_time = computation_time + finalize_time;
