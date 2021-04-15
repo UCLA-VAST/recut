@@ -326,7 +326,7 @@ foreach(I ${ALL_TARGETS})
   endif()
 
   if (USE_VDB)
-    #message(STATUS "CMAKE_MODULE_PATH: ${CMAKE_MODULE_PATH}")
+    message(STATUS "CMAKE_MODULE_PATH: ${CMAKE_MODULE_PATH}")
     find_package(OpenVDB REQUIRED)
     target_link_libraries(${I} PRIVATE OpenVDB::openvdb)
     message(STATUS "Linked OpenVDB")

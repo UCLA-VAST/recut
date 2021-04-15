@@ -50,9 +50,9 @@ using GridCoord = openvdb::Coord;
 // acceptable
 using PositionT = openvdb::Vec3f; // equiv. to Vec3s, both are <float>
 
-namespace vb = openvdb::v8_0;
+namespace vb = openvdb::v8_1;
 namespace vt = openvdb::tree;
-namespace vp = openvdb::v8_0::points;
+namespace vp = vb::points;
 
 #define VOXEL_SIZE 1.f
 #define LEAF_LOG2DIM 3

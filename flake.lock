@@ -37,10 +37,32 @@
         "type": "github"
       }
     },
+    "openvdb": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1618491546,
+        "narHash": "sha256-AcaATcevNc8W1eBeaW2f3h88zTSYCMgq/K9Ga1090C4=",
+        "ref": "master",
+        "rev": "9f9e0fed8b17f64f229a82113f73ce3a09a74ae1",
+        "revCount": 2776,
+        "type": "git",
+        "url": "ssh://git@github.com/UCLA-VAST/openvdb"
+      },
+      "original": {
+        "ref": "master",
+        "type": "git",
+        "url": "ssh://git@github.com/UCLA-VAST/openvdb"
+      }
+    },
     "root": {
       "inputs": {
         "mcp3d": "mcp3d",
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "openvdb": "openvdb"
       }
     }
   },

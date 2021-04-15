@@ -1,8 +1,8 @@
-{ nixpkgs, mcp3d, ... }:
+{ nixpkgs, mcp3d, openvdb, ... }:
 let
   pkgs = import nixpkgs {
     system = "x86_64-linux";
-    overlays = [ (import ./overlay.nix) ];
+    #overlays = [ (import ./overlay.nix) ];
   };
 in
   with pkgs;
@@ -23,7 +23,7 @@ in
   TEST_IMAGE = "/curr/kdmarrett/data/tcase6_image";
   TEST_MARKER = "/curr/kdmarrett/data/tcase6_marker";
 
-  cmakeFlags = ["-DUSE_VDB=ON -DLOG=ON -DLOG_FULL=ON -DFULL_PRINT=ON -DUSE_OMP_BLOCK=OFF -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MODULE_PATH=${openvdb}/lib/cmake/OpenVDB"];
+  cmakeFlags = ["-DUSE_VDB=ON -DLOG=ON -DLOG_FULL=ON -DFULL_PRINT=ON -DUSE_OMP_BLOCK=OFF -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MODULE_PATH=${openvdb.defaultPackage.x86_64-linux}/lib/cmake/OpenVDB"];
 
   nativeBuildInputs = [ cmake ];
 
@@ -34,13 +34,14 @@ in
 
     # optional dependencies
     mcp3d.defaultPackage.x86_64-linux
+    openvdb.defaultPackage.x86_64-linux
     gbenchmark
 
     # OpenVDB dependencies
-    openvdb
-    openexr
-    tbb
-    c-blosc
+    # TODO add these as propagated build inputs to openvdb's declaration
+    #openexr
+    #tbb
+    #c-blosc
 
     # For debug purposes only:
     # warning leaving breakpointHook on
@@ -61,6 +62,7 @@ in
     mkdir $out/data;
     make installcheck;
 
+    # propagated binaries from openvdb
     cp ${openvdb}/bin/vdb_view $out/bin
     cp ${openvdb}/bin/vdb_print $out/bin
     cp ${openvdb}/bin/vdb_render $out/bin
