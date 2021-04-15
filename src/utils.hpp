@@ -41,6 +41,11 @@ auto print_iter = [](auto iterable) {
   std::cout << '\n';
 };
 
+auto print_iter_name = [](auto iterable, std::string name) {
+  std::cout << name << ": ";
+  print_iter(iterable);
+};
+
 auto coord_to_id = [](auto xyz, auto lengths) {
   return static_cast<VID_t>(xyz[2]) * (lengths[0] * lengths[1]) +
          xyz[1] * lengths[0] + xyz[0];
@@ -435,44 +440,72 @@ auto label = [](auto handle, auto ind) -> char {
   return '?';
 };
 
+//auto remove_outside_bound = [&](auto iter) {
+  //return iter | rng::views::remove_if([&bbox](auto coord) {
+           //return !is_in_bounds(coord, bbox.min(), bbox.extents());
+         //});
+//};
+
 auto init_root_attributes = [](auto grid, auto roots) {
-  // Iterate over the leaf nodes in the point tree.
-  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
-    auto bbox = leaf_iter->getNodeBoundingBox();
-    // std::cout << "Leaf BBox: " << bbox << '\n';
+  EnlargedPointDataGrid::TreeType::NodeIter iter(grid->tree());
+  iter.setMaxDepth(2);
+  iter.setMinDepth(2);
+  for (; iter; ++iter) {
+    // auto bbox = iter.getBoundingBox();
+    // std::cout << "Internode 1 BBox: " << bbox << '\n';
 
-    auto leaf_roots = roots | rng::views::remove_if([&](auto coord) {
-                        return !is_in_bounds(coord, bbox.min(), bbox.max());
-                      }) |
-                      rng::to_vector;
+    InternalNode1 *current_node;
+    iter.getNode(current_node);
 
-    if (leaf_roots.empty())
-      continue;
+    // Iterate over leaf nodes that contain topology (active)
+    // checking for roots within them
+    for (auto leaf_iter = current_node->beginChildOn(); leaf_iter;
+         ++leaf_iter) {
+      auto leaf_bbox = leaf_iter->getNodeBoundingBox();
+      //std::cout << "Leaf BBox: " << leaf_bbox << '\n';
 
-    print_iter(leaf_roots);
+       //auto leaf_roots = remove_outside_bound(roots, leaf_bbox) |
+       //auto leaf_roots = roots | remove_outside_bound | rng::to_vector;
+      auto leaf_roots =
+          roots | rng::views::remove_if([&](auto coord) {
+            return !is_in_bounds(coord, leaf_bbox.min(), leaf_bbox.extents());
+          }) |
+          rng::views::remove_if([&leaf_iter](auto coord) {
+            if (!leaf_iter->isValueOn(coord)) {
+              std::cout << "Warning: new image does not contain root at: "
+                        << coord << '\n';
+              return true;
+            }
+            return false;
+          }) |
+          rng::to_vector;
 
-    auto idxs =
-        leaf_roots | rng::views::transform([&leaf_iter](auto coord) {
-          assertm(leaf_iter->isValueOn(coord), "voxel of root must be on");
-          return leaf_iter->beginIndexVoxel(coord);
-        }) |
-        rng::to_vector;
+      if (leaf_roots.empty())
+        continue;
 
-    // print_iter(idxs);
-    rng::for_each(idxs, [](auto id) { std::cout << *id << '\n'; });
+      print_iter_name(leaf_roots, "\troots");
 
-    // set flags as root
-    openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
-        leaf_iter->attributeArray("flags"));
-    rng::for_each(idxs, [&](auto id) {
-      set_selected(flags_handle, id);
-      set_root(flags_handle, id);
-    });
+      auto idxs = leaf_roots | rng::views::transform([&leaf_iter](auto coord) {
+                    return leaf_iter->beginIndexVoxel(coord);
+                  }) |
+                  rng::to_vector;
 
-    // parent
-    openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
-        leaf_iter->attributeArray("parents"));
-    rng::for_each(idxs, [&](auto id) { parents_handle.set(*id, zeros_off()); });
+      // rng::for_each(idxs, [](auto id) { std::cout << *id << '\n'; });
+
+      // set flags as root
+      openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
+          leaf_iter->attributeArray("flags"));
+      rng::for_each(idxs, [&](auto id) {
+        set_selected(flags_handle, id);
+        set_root(flags_handle, id);
+      });
+
+      // parent
+      openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
+          leaf_iter->attributeArray("parents"));
+      rng::for_each(idxs,
+                    [&](auto id) { parents_handle.set(*id, zeros_off()); });
+    }
   }
 };
 
@@ -554,7 +587,7 @@ auto print_all_points = [](auto grid, std::string stage = "label",
         openvdb::Vec3f worldPosition =
             grid->transform().indexToWorld(voxelPosition + xyz);
         // Verify the index and world-space position of the point
-        //std::cout << "* PointIndex=[" << *indexIter << "] ";
+        // std::cout << "* PointIndex=[" << *indexIter << "] ";
         std::cout << "xyz: " << xyz << ' ';
         std::cout << "WorldPosition=" << worldPosition << ' ';
         std::cout << coord_to_str(xyz) << " -> " << coord_to_str(recv_parent)

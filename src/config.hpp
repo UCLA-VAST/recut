@@ -2,22 +2,21 @@
 #include <cstdint>
 #include <utility>
 
-// compile time error printing
-#define strcat_(x, y) x ## y
-#define strcat(x, y) strcat_(x, y)
-#define PRINT_ERROR(x) \
-    template <int> \
-    struct strcat(strcat(value_of_, x), _is); \
-    static_assert(strcat(strcat(value_of_, x), _is)<x>::x, "");
+//// compile time error printing
+//#define strcat_(x, y) x ## y
+//#define strcat(x, y) strcat_(x, y)
+//   #define PRINT_ERROR(x) \
+    //template <int> \
+    //struct strcat(strcat(value_of_, x), _is); \
+    //static_assert(strcat(strcat(value_of_, x), _is)<x>::x, "");
 
 // c++17 unused printing utility
-template <auto val>
-constexpr void static_print() {
-    #if !defined(__GNUC__) || defined(__clang__)
-        int static_print_is_implemented_only_for_gcc = 0;
-    #else
-        int unused = 0;
-    #endif
+template <auto val> constexpr void static_print() {
+#if !defined(__GNUC__) || defined(__clang__)
+  int static_print_is_implemented_only_for_gcc = 0;
+#else
+  int unused = 0;
+#endif
 };
 
 /// ex. power<int, 4, 2>::value
@@ -25,7 +24,8 @@ template <typename T, T V, T N, typename I = std::make_integer_sequence<T, N>>
 struct power;
 template <typename T, T V, T N, T... Is>
 struct power<T, V, N, std::integer_sequence<T, Is...>> {
-   static constexpr T value = (static_cast<T>(1) * ... * (V * static_cast<bool>(Is + 1)));
+  static constexpr T value =
+      (static_cast<T>(1) * ... * (V * static_cast<bool>(Is + 1)));
 };
 
 // Define preprocessor macros, templates and types to be used for
@@ -59,17 +59,22 @@ namespace vp = openvdb::v8_0::points;
 #define INTER1_LOG2DIM 4
 #define INTER2_LOG2DIM 5
 
-// Length of a bound box edge in one dimension in image index space / world space units
-constexpr int LEAF_LENGTH = VOXEL_SIZE * power<int,2, LEAF_LOG2DIM>::value;
-constexpr int INTER1_LENGTH = LEAF_LENGTH * power<int,2, INTER1_LOG2DIM>::value;
+using Leaf = typename vp::PointDataLeafNode<vb::PointDataIndex32, LEAF_LOG2DIM>;
+using InternalNode1 = typename vt::InternalNode<Leaf, INTER1_LOG2DIM>;
+using EnlargedPointDataTree = typename
+    vt::Tree<vt::RootNode<vt::InternalNode<InternalNode1, INTER2_LOG2DIM>>>;
+using EnlargedPointDataGrid = typename openvdb::Grid<EnlargedPointDataTree>;
 
-//PRINT_ERROR(LEAF_LENGTH);
-//PRINT_ERROR(INTER1_LENGTH);
+// Length of a bound box edge in one dimension in image index space / world
+// space units
+constexpr int LEAF_LENGTH = VOXEL_SIZE * power<int, 2, LEAF_LOG2DIM>::value;
+constexpr int INTER1_LENGTH =
+    LEAF_LENGTH * power<int, 2, INTER1_LOG2DIM>::value;
+// equivalent:
+// EnlargedPointDataGrid::TreeType::LeafNodeType::DIM == LEAF_LENGTH
 
-using EnlargedPointDataTree = vt::Tree<vt::RootNode<vt::InternalNode<
-    vt::InternalNode<vp::PointDataLeafNode<vb::PointDataIndex32, LEAF_LOG2DIM>,
-                     INTER1_LOG2DIM>, INTER2_LOG2DIM>>>;
-using EnlargedPointDataGrid = openvdb::Grid<EnlargedPointDataTree>;
+// PRINT_ERROR(LEAF_LENGTH);
+// PRINT_ERROR(INTER1_LENGTH);
 
 #else // not VDB
 using OffsetCoord = std::vector<int8_t>;

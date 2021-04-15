@@ -674,7 +674,8 @@ TEST(VDB, CreatePointDataGrid) {
   auto loc1v = openvdb::Coord(loc1[0], loc1[1], loc1[2]);
   auto pos = 8192;
   auto loc2 = PositionT(pos, pos, pos);
-  auto grid_transform = openvdb::math::Transform::createLinearTransform(VOXEL_SIZE);
+  auto grid_transform =
+      openvdb::math::Transform::createLinearTransform(VOXEL_SIZE);
 
   {
     std::vector<PositionT> positions;
@@ -749,6 +750,32 @@ TEST(VDB, ActivateVids) {
   if (print_all) {
     print_vdb(recut.topology_grid->getConstAccessor(), grid_extents);
     print_all_points(recut.topology_grid);
+  }
+
+  auto block_id = 0;
+  auto interval_id = 0;
+  ASSERT_TRUE(recut.active_intervals[interval_id]);
+  ASSERT_TRUE(recut.active_blocks[interval_id][block_id].load());
+
+  GridCoord root(3, 3, 3);
+  auto leaf_iter = recut.topology_grid->tree().probeLeaf(root);
+  auto ind = leaf_iter->beginIndexVoxel(root);
+  ASSERT_TRUE(leaf_iter->isValueOn(root));
+
+  {
+    openvdb::points::AttributeHandle<uint8_t> flags_handle(
+        leaf_iter->constAttributeArray("flags"));
+    auto flag = flags_handle.get(*ind);
+    ASSERT_TRUE(is_root(flags_handle, ind)) << flag;
+  }
+
+  // parents
+  {
+    openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
+        leaf_iter->constAttributeArray("parents"));
+    OffsetCoord parent = parents_handle.get(*ind);
+    ASSERT_FALSE(valid_parent(parents_handle, ind)) << parent;
+    ASSERT_TRUE(coord_all_eq(zeros_off(), parent)) << parent;
   }
 }
 
@@ -1028,7 +1055,8 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         // topology_grid->getAccessor(), 0);
         // print_grid_metadata(topology_grid); // already in create_point_grid
 
-        auto grid_transform = openvdb::math::Transform::createLinearTransform(VOXEL_SIZE);
+        auto grid_transform =
+            openvdb::math::Transform::createLinearTransform(VOXEL_SIZE);
         std::vector<PositionT> positions;
         convert_buffer_to_vdb(inimg1d, grid_extents, zeros(), zeros(),
                               positions, 0);

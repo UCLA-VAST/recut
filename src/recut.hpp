@@ -2898,10 +2898,9 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     this->block_lengths[1] = this->interval_lengths[1];
     this->block_lengths[2] = this->interval_lengths[2];
   } else {
-    auto block_length = static_cast<int>(std::pow(2, LEAF_LOG2DIM));
-    this->block_lengths[0] = std::min(this->interval_lengths[0], block_length);
-    this->block_lengths[1] = std::min(this->interval_lengths[1], block_length);
-    this->block_lengths[2] = std::min(this->interval_lengths[2], block_length);
+    this->block_lengths[0] = std::min(this->interval_lengths[0], LEAF_LENGTH);
+    this->block_lengths[1] = std::min(this->interval_lengths[1], LEAF_LENGTH);
+    this->block_lengths[2] = std::min(this->interval_lengths[2], LEAF_LENGTH);
   }
 
   // determine length of blocks that span an interval for each dim
