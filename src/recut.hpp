@@ -2791,13 +2791,6 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
     auto path_extension =
         std::string(fs::path(args->image_root_dir()).extension());
     this->input_is_vdb = path_extension == ".vdb" ? true : false;
-    // if (params->convert_only_ || this->input_is_vdb) {
-    // openvdb::initialize();
-    //}
-    // FIXME should only apply to vdb
-    openvdb::initialize();
-    // throws if run more than once
-    // EnlargedPointDataGrid::registerGrid();
   }
 
   // actual possible lengths

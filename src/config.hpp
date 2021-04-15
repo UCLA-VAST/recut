@@ -5,7 +5,7 @@
 //// compile time error printing
 //#define strcat_(x, y) x ## y
 //#define strcat(x, y) strcat_(x, y)
-//   #define PRINT_ERROR(x) \
+//      #define PRINT_ERROR(x) \
     //template <int> \
     //struct strcat(strcat(value_of_, x), _is); \
     //static_assert(strcat(strcat(value_of_, x), _is)<x>::x, "");
@@ -52,18 +52,28 @@ using PositionT = openvdb::Vec3f; // equiv. to Vec3s, both are <float>
 
 namespace vb = openvdb::v8_1;
 namespace vt = openvdb::tree;
+namespace vto = openvdb::tools;
 namespace vp = vb::points;
 
-#define VOXEL_SIZE 1.f
-#define LEAF_LOG2DIM 3
+#define VOXEL_SIZE 1
+#define LEAF_LOG2DIM 4
 #define INTER1_LOG2DIM 4
 #define INTER2_LOG2DIM 5
 
-using Leaf = typename vp::PointDataLeafNode<vb::PointDataIndex32, LEAF_LOG2DIM>;
+// these custom grid types use a 64-bit value type (PointDataIndex64) instead of a 32-bit value
+// type (PointDataIndex32)
+using Leaf = typename vp::PointDataLeafNode<vb::PointDataIndex64, LEAF_LOG2DIM>;
 using InternalNode1 = typename vt::InternalNode<Leaf, INTER1_LOG2DIM>;
-using EnlargedPointDataTree = typename
-    vt::Tree<vt::RootNode<vt::InternalNode<InternalNode1, INTER2_LOG2DIM>>>;
+using EnlargedPointDataTree = typename vt::Tree<
+    vt::RootNode<vt::InternalNode<InternalNode1, INTER2_LOG2DIM>>>;
 using EnlargedPointDataGrid = typename openvdb::Grid<EnlargedPointDataTree>;
+
+using EnlargedPointIndexGrid = typename openvdb::Grid<
+    openvdb::tree::Tree<openvdb::tree::RootNode<openvdb::tree::InternalNode<
+        openvdb::tree::InternalNode<openvdb::tools::PointIndexLeafNode<
+                                        openvdb::PointIndex64, LEAF_LOG2DIM>,
+                                    INTER1_LOG2DIM>,
+        INTER2_LOG2DIM>>>>;
 
 // Length of a bound box edge in one dimension in image index space / world
 // space units

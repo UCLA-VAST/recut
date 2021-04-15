@@ -37,12 +37,6 @@ in
     openvdb.defaultPackage.x86_64-linux
     gbenchmark
 
-    # OpenVDB dependencies
-    # TODO add these as propagated build inputs to openvdb's declaration
-    #openexr
-    #tbb
-    #c-blosc
-
     # For debug purposes only:
     # warning leaving breakpointHook on
     # will cause github actions to hang, if there are any failures
@@ -63,10 +57,11 @@ in
     make installcheck;
 
     # propagated binaries from openvdb
-    cp ${openvdb}/bin/vdb_view $out/bin
-    cp ${openvdb}/bin/vdb_print $out/bin
-    cp ${openvdb}/bin/vdb_render $out/bin
-    cp ${openvdb}/bin/vdb_lod $out/bin
+    cp ${openvdb.defaultPackage.x86_64-linux}/bin/vdb_view $out/bin
+    cp ${openvdb.defaultPackage.x86_64-linux}/bin/vdb_print $out/bin
+    cp ${openvdb.defaultPackage.x86_64-linux}/bin/vdb_render $out/bin
+    cp ${openvdb.defaultPackage.x86_64-linux}/bin/vdb_lod $out/bin
+    # cp ${openvdb.defaultPackage.x86_64-linux}/bin/vdb_test $out/bin
   '';
 
 }

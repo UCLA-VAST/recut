@@ -1048,8 +1048,6 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
           ASSERT_NEAR(actual_slt_pct, slt_pct, 100 * EXP_DEV_LOW);
         }
 
-        std::cout << "created vdb grid\n";
-
         // auto topology_grid = create_vdb_grid(grid_extents, 0);
         // convert_buffer_to_vdb_acc(inimg1d, grid_extents, zeros(), zeros(),
         // topology_grid->getAccessor(), 0);
@@ -1062,6 +1060,8 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
                               positions, 0);
         auto topology_grid =
             create_point_grid(positions, grid_extents, grid_transform);
+        std::cout << "created vdb grid\n";
+
         topology_grid->tree().prune();
         if (print) {
           print_vdb(topology_grid->getConstAccessor(),
@@ -2507,7 +2507,7 @@ int main(int argc, char **argv) {
   // warning: needs to be called once per executable before any related
   // function is called otherwise confusing seg faults ensue
   openvdb::initialize();
-  // EnlargedPointDataGrid::registerGrid();
+   EnlargedPointDataGrid::registerGrid();
 #endif
 
   return RUN_ALL_TESTS();

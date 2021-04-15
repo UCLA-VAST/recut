@@ -785,9 +785,10 @@ bool is_covered_by_parent(VID_t index, VID_t root_vid, int radius,
 }
 
 auto print_descriptor = [](auto grid_base) {
-  // if (grid_base->isType<openvdb::points::PointDataGrid>()) {
-  openvdb::points::PointDataGrid::Ptr gridPtr =
-      openvdb::gridPtrCast<openvdb::points::PointDataGrid>(grid_base);
+  // if (grid_base->isType<EnlargedPointDataGrid>()) {
+  // Warning custom types must be registered before writing or reading them
+  auto gridPtr =
+      openvdb::gridPtrCast<EnlargedPointDataGrid>(grid_base);
   auto leafIter = gridPtr->tree().cbeginLeaf();
   if (leafIter) {
     const openvdb::points::AttributeSet::Descriptor &descriptor =
@@ -838,6 +839,8 @@ template <typename T> void print_grid_metadata(T vdb_grid) {
 
   // cout << "Tree type: "
   // cout << "Value type: "
+  //cout << "Leaf count: " << vdb_grid->tree().print() << '\n';
+  //cout << "Leaf count: " << vdb_grid->tree().leafCount() << '\n';
   cout << "Active voxel_dim: " << active_voxel_dim << '\n';
   cout << "Mem usage GB: " << static_cast<double>(mem_usage_bytes) / (1 << 30)
        << '\n';
@@ -878,7 +881,7 @@ auto create_point_grid = [](auto &positions, auto lengths, auto transform_ptr,
   // wrapper around an stl vector wrapper here, however it is also possible to
   // write one for a custom data structure in order to match the interface
   // required.
-  vp::PointAttributeVector<PositionT> positionsWrapper(positions);
+  vp::PointAttributeVector<PositionT> wrapper(positions);
 
   // Create a PointDataGrid containing these four points and using the
   // transform given. This function has two template parameters, (1) the codec
@@ -888,9 +891,16 @@ auto create_point_grid = [](auto &positions, auto lengths, auto transform_ptr,
   using FPCodec = openvdb::points::FixedPointCodec</*1-byte=*/true,
                                                    openvdb::points::UnitRange>;
 
-  EnlargedPointDataGrid::Ptr grid =
-      openvdb::points::createPointDataGrid<FPCodec, EnlargedPointDataGrid>(
-          positions, *transform_ptr);
+  auto point_index_grid = vto::createPointIndexGrid<EnlargedPointIndexGrid>(wrapper, *transform_ptr);
+  cout << "test\n";
+  auto grid = openvdb::points::createPointDataGrid<FPCodec, EnlargedPointDataGrid>(*point_index_grid, wrapper, *transform_ptr);
+
+  cout << "call create point grid\n";
+  //EnlargedPointDataGrid::Ptr grid =
+      //openvdb::points::createPointDataGrid<FPCodec, EnlargedPointDataGrid>(
+          //wrapper, *transform_ptr);
+
+  cout << "finish create point grid\n";
   grid->tree().prune();
 
   set_grid_meta(grid, lengths, bkg_thresh);
@@ -997,6 +1007,7 @@ void write_vdb_file(openvdb::GridPtrVec vdb_grids, std::string fp = "") {
 
   auto timer = new high_resolution_timer();
   openvdb::io::File vdb_file(fp);
+  cout << "start write of vdb\n";
   vdb_file.write(vdb_grids);
   vdb_file.close();
 
