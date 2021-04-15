@@ -45,6 +45,7 @@ class RecutParameters {
       slt_pct = -1;
       selected = 0;
       root_vid = std::numeric_limits<uint64_t>::max();
+      interval_length = 0;
     }
     std::string MetaString();
     // getters
