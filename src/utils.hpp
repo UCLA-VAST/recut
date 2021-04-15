@@ -892,15 +892,9 @@ auto create_point_grid = [](auto &positions, auto lengths, auto transform_ptr,
                                                    openvdb::points::UnitRange>;
 
   auto point_index_grid = vto::createPointIndexGrid<EnlargedPointIndexGrid>(wrapper, *transform_ptr);
-  cout << "test\n";
+
   auto grid = openvdb::points::createPointDataGrid<FPCodec, EnlargedPointDataGrid>(*point_index_grid, wrapper, *transform_ptr);
 
-  cout << "call create point grid\n";
-  //EnlargedPointDataGrid::Ptr grid =
-      //openvdb::points::createPointDataGrid<FPCodec, EnlargedPointDataGrid>(
-          //wrapper, *transform_ptr);
-
-  cout << "finish create point grid\n";
   grid->tree().prune();
 
   set_grid_meta(grid, lengths, bkg_thresh);

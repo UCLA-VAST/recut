@@ -59,6 +59,9 @@ namespace vp = vb::points;
 #define LEAF_LOG2DIM 4
 #define INTER1_LOG2DIM 4
 #define INTER2_LOG2DIM 5
+// if 3,4,5 re registering throws
+// else you must register the new grid dims
+#define CUSTOM_GRID
 
 // these custom grid types use a 64-bit value type (PointDataIndex64) instead of a 32-bit value
 // type (PointDataIndex32)

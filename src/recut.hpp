@@ -2465,7 +2465,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                                 local_tile_thresholds->bkg_thresh);
           // grid_transform must use the same voxel size for all intervals
           // and be identical
-          auto grid_transform = openvdb::math::Transform::createLinearTransform(VOXEL_SIZE);
+          auto grid_transform =
+              openvdb::math::Transform::createLinearTransform(VOXEL_SIZE);
           grids[interval_id] =
               create_point_grid(positions, this->image_lengths, grid_transform,
                                 local_tile_thresholds->bkg_thresh);
@@ -2643,6 +2644,15 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
                            vector<bool>(interval_block_size)));
 
   if (!(params->convert_only_)) {
+    std::map<VID_t, std::vector<VertexAttr>> test;
+    for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+      auto origin = leaf_iter->getNodeBoundingBox().min();
+      auto block_id = coord_img_to_block_id(origin);
+      std::cout << origin << "->" << block_id << '\n';
+      test[block_id] = std::vector<VertexAttr>();
+    }
+    cout << "Active leaf count: " << test.size() << '\n';
+
     updated_ghost_vec = vector<vector<map<VID_t, vector<VertexAttr>>>>(
         grid_interval_size,
         vector<map<VID_t, vector<VertexAttr>>>(
@@ -3545,6 +3555,9 @@ template <class image_t> void Recut<image_t>::operator()() {
     // mutates topology_grid
     stage = "convert";
     this->update(stage, global_fifo);
+#ifdef LOG
+    print_grid_metadata(this->topology_grid);
+#endif
 
     openvdb::GridPtrVec grids;
     grids.push_back(this->topology_grid);
