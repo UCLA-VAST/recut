@@ -295,7 +295,6 @@ void load_save(bool mmap_) {
   ASSERT_EQ(interval->GetFn(), fn);
   ASSERT_FALSE(interval->IsInMemory());
   ASSERT_TRUE(fs::exists(fn)) << " fn: " << fn;
-  ;
 
   // load and check
   interval->LoadFromDisk();
@@ -663,6 +662,63 @@ TEST(Install, DISABLED_ReadWriteInterval) {
 //}
 //}
 //};
+
+TEST(VDB, GlobalsTopologyCopy) {
+  // should I switch it to a MaskGrid?
+  auto grid = openvdb::BoolGrid::create();
+  //auto points = EnlargedPointDataGrid::create();
+
+  openvdb::Coord coord(1,1,1);
+  openvdb::Coord coord2(2,2,2);
+
+  auto g_acc = grid->getAccessor();
+  //auto p_acc = points->getAccessor();
+
+  ASSERT_FALSE(g_acc.isValueOn(coord));
+  //ASSERT_FALSE(points->isValueOn(coord));
+
+  //points->setValueOn(coord);
+  //ASSERT_TRUE(points->isValueOn(coord));
+
+  g_acc.setValue(coord2, true);
+  ASSERT_TRUE(g_acc.getValue(coord2));
+  ASSERT_FALSE(g_acc.isValueOn(coord2));
+  auto leaf_ptr = g_acc.probeConstLeaf(coord2);
+  // auto node_ptr = g_acc.probeConstNode(coord2);
+  ASSERT_TRUE(leaf_ptr->isInactive());
+
+  g_acc.setValue(coord2, false);
+  g_acc.setValueOn(coord2);
+  ASSERT_FALSE(g_acc.getValue(coord2));
+  ASSERT_TRUE(g_acc.isValueOn(coord2));
+  ASSERT_FALSE(leaf_ptr->isInactive());
+
+  // is leaf active?
+
+  // is internode active?
+
+  // copy active voxels into bool grid
+  // topology copy
+
+  //// check 
+  //ASSERT_TRUE(grid->isValueOn(coord));
+  //ASSERT_FALSE(grid->getValue(coord));
+
+  //// if you turn the boolean value off, is the topology still the same
+  //EXPECT_TRUE(grid->tree().hasSameTopology(points->tree()));
+
+  //grid->setValue(coord, false);
+  //EXPECT_TRUE(grid->tree().hasSameTopology(points->tree()));
+  //ASSERT_TRUE(grid->isValueOn(coord));
+
+  //// set the boolean value
+  //grid->setValue(coord2, true);
+  //ASSERT_FALSE(grid->isValueOn(coord));
+
+  //uint16_t *inimg1d = new uint16_t[tol_sz];
+  //VID_t actual_selected =
+      //create_image(tcase, inimg1d, grid_size, desired_selected, root_vid);
+}
 
 TEST(VDB, CreatePointDataGrid) {
 
@@ -2508,7 +2564,7 @@ int main(int argc, char **argv) {
   // function is called otherwise confusing seg faults ensue
   openvdb::initialize();
 #ifdef CUSTOM_GRID
-   EnlargedPointDataGrid::registerGrid();
+  EnlargedPointDataGrid::registerGrid();
 #endif
 #endif
 
