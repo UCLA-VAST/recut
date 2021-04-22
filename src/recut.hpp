@@ -226,10 +226,10 @@ public:
                          T ind, T2 current_radius, Container &fifo,
                          FlagsT flags_handle, RadiusT radius_handle,
                          AccessorT vdb_accessor);
-  template <class Container, typename T>
+  template <class Container, typename T, typename T2>
   void integrate_update_grid(EnlargedPointDataGrid::Ptr grid,
-                             openvdb::MaskGrid::Ptr update, std::string stage,
-                             Container &fifo, T update_accessor);
+                             std::string stage,
+                             Container &fifo, T& connected_fifo, T2 update_accessor, VID_t interval_id);
   template <class Container>
   void integrate_updated_ghost(const VID_t interval_id, const VID_t block_id,
                                std::string stage, Container &fifo);
@@ -268,11 +268,11 @@ public:
   void load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile);
   TileThresholds<image_t> *get_tile_thresholds(mcp3d::MImage &mcp3d_tile);
 #endif
-  template <class Container, typename T>
+  template <class Container, typename T, typename T2>
   std::atomic<double>
   process_interval(VID_t interval_id, const image_t *tile, std::string stage,
                    const TileThresholds<image_t> *tile_thresholds,
-                   Container &fifo, T vdb_accessor);
+                   Container &fifo, T connected_fifo, T2 vdb_accessor);
   template <class Container>
   std::unique_ptr<InstrumentedUpdateStatistics>
   update(std::string stage, Container &fifo = nullptr,
@@ -1291,24 +1291,28 @@ bool Recut<image_t>::integrate_vertex(const VID_t interval_id,
   return false;
 } // end integrate_vertex
 
-// void integrate_point() {
-// auto updated_vertex = new VertexAttr();
-//// doesn't matter if it's a root or not, it's now just a msg
-// updated_vertex->mark_band();
-//// adds to iterable but not to active vertices since its from outside domain
-// if (stage == "connected") {
-// local_fifo[interval_id][block_id].push_back(*updated_vertex);
-//} else {
-//// cout << "integrate vertex " << updated_vertex->description();
-// fifo.push_back(*updated_vertex);
-//}
-//}
+template <typename Container, typename T>
+void integrate_point(std::string stage, Container& fifo, T& connected_fifo) {
+  // FIXME this has to be correct and updated from...
+  auto updated_vertex = new VertexAttr();
+  // doesn't matter if it's a root or not, it's now just a msg
+  updated_vertex->mark_band();
+  // adds to iterable but not to active vertices since its from outside domain
+  if (stage == "connected") {
+    connected_fifo.push_back(*updated_vertex);
+  } else {
+    // cout << "integrate vertex " << updated_vertex->description();
+    fifo.push_back(*updated_vertex);
+  }
+}
 
-template <typename T, typename Container>
+template <typename T, typename Container, typename T2>
 void integrate_adj_leafs(GridCoord start_coord,
                          std::vector<OffsetCoord> stencil_offsets,
-                         T &update_accessor, Container &fifo) {
-  auto lower_leaf_nbs =
+                         T &update_accessor, Container &fifo, T2 &connected_fifo, std::string stage) {
+  // force evaluation by saving to vector to get desired side effects
+  // from integrate_point
+  auto _ =
       stencil_offsets |
       rng::views::transform([&start_coord](auto stencil_offset) {
         return std::pair{stencil_offset,
@@ -1320,43 +1324,51 @@ void integrate_adj_leafs(GridCoord start_coord,
       }) |
       rng::views::remove_if(
           [](auto leaf_pair) { return leaf_pair.second->isEmpty(); }) |
-      rng::views::transform([&start_coord](auto leaf_pair) {
-        auto _ =
-            // leaf_pair.second->cbeginValueOn() |
-            leaf_pair.second->cbeginIndexOn() |
-            rng::views::remove_if([&start_coord, &leaf_pair](auto val) {
-              // FIXME get actual coord of val
-              auto val_coord = new_grid_coord(0, 0, 0);
-              for (int i = 0; i < 3; ++i) {
-                // the stencil offset at .first has only 1 non-zero
-                if (leaf_pair.first[i]) {
-                  // only use coords that are in the surface facing the current
-                  // block remove if it doesn't match
-                  return (leaf_pair.first[i] + start_coord[i]) != val_coord[i];
-                }
-              }
-              assertm(false, "Unreachable");
-              return true;
-            }) |
-            rng::views::transform([](auto val) {
-              std::cout << val << '\n';
-              // FIXME integrate point
-            }) |
-            rng::to_vector;
+      rng::views::transform([&start_coord, &stage, &fifo, &connected_fifo](auto leaf_pair) {
+            leaf_pair.second->cbeginValueOn() |
+        //auto _ =
+            //leaf_pair.second->cbeginValueOn() |
+            //rng::views::remove_if([&start_coord, &leaf_pair](auto val) {
+                //std::cout << typid(val).name() << '\n';
+                //return true;
+                //});
+              //// FIXME get actual coord of val
+              //auto val_coord = new_grid_coord(0, 0, 0);
+              //for (int i = 0; i < 3; ++i) {
+                //// the stencil offset at .first has only 1 non-zero
+                //if (leaf_pair.first[i]) {
+                  //// only use coords that are in the surface facing the current
+                  //// block remove if it doesn't match
+                  //return (leaf_pair.first[i] + start_coord[i]) != val_coord[i];
+                //}
+              //}
+              //assertm(false, "Unreachable");
+              //return true;
+            //}) |
+            //rng::views::transform([&](auto val) {
+              //std::cout << val << '\n';
+              //// FIXME integrate point
+              //integrate_point(stage, fifo, connected_fifo);
+            //}) |
+            //rng::to_vector;
+          return leaf_pair;
       }) |
       rng::to_vector;
 }
 
 template <class image_t>
-template <class Container, typename T>
+template <class Container, typename T, typename T2>
 void Recut<image_t>::integrate_update_grid(EnlargedPointDataGrid::Ptr grid,
-                                           openvdb::MaskGrid::Ptr update,
-                                           std::string stage, Container &fifo, T update_accessor) {
+                                           std::string stage, Container &fifo,
+                                           T& connected_fifo,
+                                           T2 update_accessor, VID_t interval_id) {
   for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
     auto bbox = leaf_iter->getNodeBoundingBox();
 
-    integrate_adj_leafs(bbox.min(), this->lower_stencil, update_accessor, fifo);
-    integrate_adj_leafs(bbox.max(), this->higher_stencil, update_accessor, fifo);
+    auto block_id = coord_img_to_block_id(bbox.min());
+    integrate_adj_leafs(bbox.min(), this->lower_stencil, update_accessor, fifo[block_id], connected_fifo[block_id], stage);
+    integrate_adj_leafs(bbox.max(), this->higher_stencil, update_accessor,
+                        fifo[block_id], connected_fifo[block_id], stage);
   }
 }
 
@@ -2042,12 +2054,12 @@ int Recut<image_t>::get_bkg_threshold(const image_t *tile,
 }
 
 template <class image_t>
-template <class Container, typename T>
+template <class Container, typename T, typename T2>
 std::atomic<double>
 Recut<image_t>::process_interval(VID_t interval_id, const image_t *tile,
                                  std::string stage,
                                  const TileThresholds<image_t> *tile_thresholds,
-                                 Container &fifo, T vdb_accessor) {
+                                 Container &fifo, T connected_fifo, T2 vdb_accessor) {
 
   struct timespec presave_time, postmarch_time, iter_start,
       start_iter_loop_time, end_iter_time, postsave_time;
@@ -2062,13 +2074,15 @@ Recut<image_t>::process_interval(VID_t interval_id, const image_t *tile,
   }
 #endif
 
-  // setup any border regions from activate_vids or setup functions
-#ifdef USE_OMP_BLOCK
-#pragma omp parallel for
-#endif
-  for (VID_t block_id = 0; block_id < interval_block_size; ++block_id) {
-    integrate_updated_ghost(interval_id, block_id, stage, fifo[block_id]);
-  }
+  //// setup any border regions from activate_vids or setup functions
+//#ifdef USE_OMP_BLOCK
+//#pragma omp parallel for
+//#endif
+  //for (VID_t block_id = 0; block_id < interval_block_size; ++block_id) {
+    //integrate_updated_ghost(interval_id, block_id, stage, fifo[block_id]);
+  //}
+
+  integrate_update_grid(this->topology_grid, stage, fifo, connected_fifo, vdb_accessor, interval_id);
 
   // iterations over blocks
   // if there is a single block per interval than this while
@@ -2169,12 +2183,14 @@ Recut<image_t>::process_interval(VID_t interval_id, const image_t *tile,
     //}
     //#else
 
-#ifdef USE_OMP_BLOCK
-#pragma omp parallel for
-#endif
-    for (VID_t block_id = 0; block_id < interval_block_size; ++block_id) {
-      integrate_updated_ghost(interval_id, block_id, stage, fifo[block_id]);
-    }
+//#ifdef USE_OMP_BLOCK
+//#pragma omp parallel for
+//#endif
+    //for (VID_t block_id = 0; block_id < interval_block_size; ++block_id) {
+      //integrate_updated_ghost(interval_id, block_id, stage, fifo[block_id]);
+    //}
+
+    integrate_update_grid(this->topology_grid, stage, fifo, connected_fifo, vdb_accessor, interval_id);
 
 #ifdef LOG_FULL
     clock_gettime(CLOCK_REALTIME, &end_iter_time);
@@ -2582,7 +2598,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           computation_time =
               computation_time +
               process_interval(interval_id, tile, stage, local_tile_thresholds,
-                               fifo[interval_id], update_accessor);
+                               fifo[interval_id], this->local_fifo[interval_id], update_accessor);
         }
       } // if the interval is active
 
