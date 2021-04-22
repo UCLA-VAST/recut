@@ -440,10 +440,10 @@ auto label = [](auto handle, auto ind) -> char {
   return '?';
 };
 
-//auto remove_outside_bound = [&](auto iter) {
-  //return iter | rng::views::remove_if([&bbox](auto coord) {
-           //return !is_in_bounds(coord, bbox.min(), bbox.extents());
-         //});
+// auto remove_outside_bound = [&](auto iter) {
+// return iter | rng::views::remove_if([&bbox](auto coord) {
+// return !is_in_bounds(coord, bbox.min(), bbox.extents());
+//});
 //};
 
 auto init_root_attributes = [](auto grid, auto roots) {
@@ -462,10 +462,10 @@ auto init_root_attributes = [](auto grid, auto roots) {
     for (auto leaf_iter = current_node->beginChildOn(); leaf_iter;
          ++leaf_iter) {
       auto leaf_bbox = leaf_iter->getNodeBoundingBox();
-      //std::cout << "Leaf BBox: " << leaf_bbox << '\n';
+      // std::cout << "Leaf BBox: " << leaf_bbox << '\n';
 
-       //auto leaf_roots = remove_outside_bound(roots, leaf_bbox) |
-       //auto leaf_roots = roots | remove_outside_bound | rng::to_vector;
+      // auto leaf_roots = remove_outside_bound(roots, leaf_bbox) |
+      // auto leaf_roots = roots | remove_outside_bound | rng::to_vector;
       auto leaf_roots =
           roots | rng::views::remove_if([&](auto coord) {
             return !is_in_bounds(coord, leaf_bbox.min(), leaf_bbox.extents());
@@ -787,8 +787,7 @@ bool is_covered_by_parent(VID_t index, VID_t root_vid, int radius,
 auto print_descriptor = [](auto grid_base) {
   // if (grid_base->isType<EnlargedPointDataGrid>()) {
   // Warning custom types must be registered before writing or reading them
-  auto gridPtr =
-      openvdb::gridPtrCast<EnlargedPointDataGrid>(grid_base);
+  auto gridPtr = openvdb::gridPtrCast<EnlargedPointDataGrid>(grid_base);
   auto leafIter = gridPtr->tree().cbeginLeaf();
   if (leafIter) {
     const openvdb::points::AttributeSet::Descriptor &descriptor =
@@ -839,8 +838,8 @@ template <typename T> void print_grid_metadata(T vdb_grid) {
 
   // cout << "Tree type: "
   // cout << "Value type: "
-  //cout << "Leaf count: " << vdb_grid->tree().print() << '\n';
-  //cout << "Leaf count: " << vdb_grid->tree().leafCount() << '\n';
+  // cout << "Leaf count: " << vdb_grid->tree().print() << '\n';
+  // cout << "Leaf count: " << vdb_grid->tree().leafCount() << '\n';
   cout << "Active voxel_dim: " << active_voxel_dim << '\n';
   cout << "Mem usage GB: " << static_cast<double>(mem_usage_bytes) / (1 << 30)
        << '\n';
@@ -891,9 +890,12 @@ auto create_point_grid = [](auto &positions, auto lengths, auto transform_ptr,
   using FPCodec = openvdb::points::FixedPointCodec</*1-byte=*/true,
                                                    openvdb::points::UnitRange>;
 
-  auto point_index_grid = vto::createPointIndexGrid<EnlargedPointIndexGrid>(wrapper, *transform_ptr);
+  auto point_index_grid = vto::createPointIndexGrid<EnlargedPointIndexGrid>(
+      wrapper, *transform_ptr);
 
-  auto grid = openvdb::points::createPointDataGrid<FPCodec, EnlargedPointDataGrid>(*point_index_grid, wrapper, *transform_ptr);
+  auto grid =
+      openvdb::points::createPointDataGrid<FPCodec, EnlargedPointDataGrid>(
+          *point_index_grid, wrapper, *transform_ptr);
 
   grid->tree().prune();
 

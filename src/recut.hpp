@@ -99,7 +99,16 @@ public:
   bool input_is_vdb;
 #ifdef USE_VDB
   EnlargedPointDataGrid::Ptr topology_grid;
+  openvdb::MaskGrid::Ptr update_grid;
 #endif
+
+  std::vector<OffsetCoord> const lower_stencil{new_offset_coord(0, 0, -1),
+                                               new_offset_coord(0, -1, 0),
+                                               new_offset_coord(-1, 0, 0)};
+
+  std::vector<OffsetCoord> const higher_stencil{new_offset_coord(0, 0, 1),
+                                                new_offset_coord(0, 1, 0),
+                                                new_offset_coord(1, 0, 0)};
 
   std::vector<OffsetCoord> const stencil{
       new_offset_coord(0, 0, -1), new_offset_coord(0, 0, 1),
@@ -164,9 +173,11 @@ public:
   inline VertexAttr *get_active_vertex(const VID_t interval_id,
                                        const VID_t block_id,
                                        const OffsetCoord offset);
+
+  template <typename T>
   void place_vertex(const VID_t nb_interval_id, VID_t block_id, VID_t nb,
-                    struct VertexAttr *dst, OffsetCoord msg_offsets,
-                    std::string stage);
+                    struct VertexAttr *dst, GridCoord dst_coord,
+                    OffsetCoord msg_offsets, std::string stage, T vdb_accessor);
   bool check_blocks_finish(VID_t interval_id);
   bool are_intervals_finished();
   void activate_all_intervals();
@@ -183,9 +194,10 @@ public:
   GridCoord v_to_img_coord(VID_t interval_id, VID_t block_id, VertexAttr *v);
   OffsetCoord v_to_off(VID_t interval_id, VID_t block_id, VertexAttr *v);
 
+  template <typename T>
   void check_ghost_update(VID_t interval_id, VID_t block_id,
                           GridCoord dst_coord, VertexAttr *dst,
-                          std::string stage);
+                          std::string stage, T vdb_accessor);
   int get_parent_code(VID_t dst_id, VID_t src_id);
   template <typename T, typename T2, typename FlagsT, typename ParentsT>
   bool accumulate_connected(const image_t *tile, VID_t interval_id,
@@ -202,16 +214,22 @@ public:
   bool is_covered_by_parent(VID_t interval_id, VID_t block_id,
                             VertexAttr *current);
   template <class Container, typename T, typename T2, typename IndT,
-            typename RadiusT, typename FlagsT>
+            typename RadiusT, typename FlagsT, typename AccessorT>
   void accumulate_prune(VID_t interval_id, VID_t block_id, GridCoord dst_coord,
                         IndT ind, T current, T2 current_vid,
                         bool current_unvisited, Container &fifo,
-                        RadiusT radius_handle, FlagsT flags_handle);
+                        RadiusT radius_handle, FlagsT flags_handle,
+                        AccessorT vdb_accessor);
   template <class Container, typename T, typename T2, typename FlagsT,
-            typename RadiusT>
+            typename RadiusT, typename AccessorT>
   void accumulate_radius(VID_t interval_id, VID_t block_id, GridCoord dst_coord,
                          T ind, T2 current_radius, Container &fifo,
-                         FlagsT flags_handle, RadiusT radius_handle);
+                         FlagsT flags_handle, RadiusT radius_handle,
+                         AccessorT vdb_accessor);
+  template <class Container, typename T>
+  void integrate_update_grid(EnlargedPointDataGrid::Ptr grid,
+                             openvdb::MaskGrid::Ptr update, std::string stage,
+                             Container &fifo, T update_accessor);
   template <class Container>
   void integrate_updated_ghost(const VID_t interval_id, const VID_t block_id,
                                std::string stage, Container &fifo);
@@ -460,6 +478,7 @@ template <class Container>
 void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
                                    std::string stage, Container &fifo) {
   assertm(!(root_vids.empty()), "Must have at least one root");
+  auto update_accessor = this->update_grid->getAccessor();
 
   if (stage == "connected") {
     init_root_attributes(this->topology_grid,
@@ -508,8 +527,8 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
     // edges of intervals in addition to blocks
     // this only adds to update_ghost_vec if the root happens
     // to be on a boundary
-    check_ghost_update(interval_id, block_id, coord, msg_vertex,
-                       stage); // add to any other ghost zone blocks
+    check_ghost_update(interval_id, block_id, coord, msg_vertex, stage,
+                       update_accessor); // add to any other ghost zone blocks
   }
 }
 
@@ -724,12 +743,13 @@ void Recut<image_t>::set_parent_non_branch(const VID_t interval_id,
 
 template <class image_t>
 template <class Container, typename T, typename T2, typename IndT,
-          typename RadiusT, typename FlagsT>
+          typename RadiusT, typename FlagsT, typename AccessorT>
 void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t block_id,
                                       GridCoord dst_coord, IndT ind, T current,
                                       T2 current_vid, bool current_unvisited,
                                       Container &fifo, RadiusT radius_handle,
-                                      FlagsT flags_handle) {
+                                      FlagsT flags_handle,
+                                      AccessorT vdb_accessor) {
 
 #ifdef DENSE
   auto dst = get_vertex_vid(interval_id, block_id, dst_id, nullptr);
@@ -744,7 +764,8 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t block_id,
   auto add_prune_dst = [&]() {
     dst->prune_visit();
     fifo.push_back(*dst);
-    check_ghost_update(interval_id, block_id, dst_coord, dst, "prune");
+    check_ghost_update(interval_id, block_id, dst_coord, dst, "prune",
+                       vdb_accessor);
 #ifdef FULL_PRINT
     std::cout << "  added dst " << dst_coord << " rad " << +(dst->radius)
               << '\n';
@@ -806,12 +827,13 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t block_id,
  */
 template <class image_t>
 template <class Container, typename T, typename T2, typename FlagsT,
-          typename RadiusT>
+          typename RadiusT, typename AccessorT>
 void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t block_id,
                                        GridCoord dst_coord, T ind,
                                        T2 current_radius, Container &fifo,
                                        FlagsT flags_handle,
-                                       RadiusT radius_handle) {
+                                       RadiusT radius_handle,
+                                       AccessorT vdb_accessor) {
 
   // note the current vertex can belong in the boundary
   // region of a separate block /interval and is only
@@ -856,7 +878,8 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t block_id,
       radius_handle.set(*ind, updated_radius);
       // construct a dst message
       fifo.push_back(*dst);
-      check_ghost_update(interval_id, block_id, dst_coord, dst, "radius");
+      check_ghost_update(interval_id, block_id, dst_coord, dst, "radius",
+                         vdb_accessor);
     }
   } else {
     assertm(false, "\tunselected neighbor was found");
@@ -940,7 +963,8 @@ bool Recut<image_t>::accumulate_connected(
   parents_handle.set(*ind, offset_to_current);
 
   local_fifo[interval_id][block_id].push_back(*dst);
-  check_ghost_update(interval_id, block_id, dst_coord, dst, "connected");
+  check_ghost_update(interval_id, block_id, dst_coord, dst, "connected",
+                     vdb_accessor);
 
   return true;
 }
@@ -953,10 +977,12 @@ bool Recut<image_t>::accumulate_connected(
  * destination domain since updated_ghost_vec acts like a fifo
  */
 template <class image_t>
+template <typename T>
 void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
                                   const VID_t block_id, const VID_t nb_block_id,
-                                  struct VertexAttr *dst,
-                                  OffsetCoord msg_offsets, std::string stage) {
+                                  struct VertexAttr *dst, GridCoord dst_coord,
+                                  OffsetCoord msg_offsets, std::string stage,
+                                  T vdb_accessor) {
 
   // ASYNC option means that another block and thread can be started during
   // the processing of the current thread. If ASYNC is not defined then simply
@@ -1030,6 +1056,7 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
   updated_ghost_vec[nb_interval_id][block_id][nb_block_id].emplace_back(
       dst->edge_state, msg_offsets, dst->parent, dst->radius);
   active_neighbors[nb_interval_id][nb_block_id][block_id] = true;
+  vdb_accessor.setValueOn(dst_coord);
 
 #ifdef FULL_PRINT
   auto nb_block_coord = id_to_coord(nb_block_id, this->interval_block_lengths);
@@ -1052,9 +1079,10 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
  * and which neighbor block / interval should be notified of adjacent change
  */
 template <class image_t>
+template <typename T>
 void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
                                         GridCoord dst_coord, VertexAttr *dst,
-                                        std::string stage) {
+                                        std::string stage, T vdb_accessor) {
 
   auto dst_offsets = coord_mod(dst_coord, this->block_lengths);
   auto dst_interval_offsets = coord_mod(dst_coord, this->interval_lengths);
@@ -1077,10 +1105,10 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
                                    block_coord[1], block_coord[2]);
       }
       if ((nb >= 0) && (nb < interval_block_size)) // within valid block bounds
-        place_vertex(nb_interval_id, block_id, nb, dst,
+        place_vertex(nb_interval_id, block_id, nb, dst, dst_coord,
                      new_offset_coord(this->block_lengths[0], dst_offsets[1],
                                       dst_offsets[2]),
-                     stage);
+                     stage, vdb_accessor);
     }
   }
   if (dst_offsets[1] == 0) {
@@ -1094,10 +1122,10 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
                                    block_coord[2]);
       }
       if ((nb >= 0) && (nb < interval_block_size)) // within valid block bounds
-        place_vertex(nb_interval_id, block_id, nb, dst,
+        place_vertex(nb_interval_id, block_id, nb, dst, dst_coord,
                      new_offset_coord(dst_offsets[0], this->block_lengths[1],
                                       dst_offsets[2]),
-                     stage);
+                     stage, vdb_accessor);
     }
   }
   if (dst_offsets[2] == 0) {
@@ -1112,10 +1140,10 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
                                    this->interval_block_lengths[2] - 1);
       }
       if ((nb >= 0) && (nb < interval_block_size)) // within valid block bounds
-        place_vertex(nb_interval_id, block_id, nb, dst,
+        place_vertex(nb_interval_id, block_id, nb, dst, dst_coord,
                      new_offset_coord(dst_offsets[0], dst_offsets[1],
                                       this->block_lengths[2]),
-                     stage);
+                     stage, vdb_accessor);
     }
   }
 
@@ -1131,9 +1159,9 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
         nb = sub_block_to_block_id(block_coord[0], block_coord[1], 0);
       }
       if ((nb >= 0) && (nb < interval_block_size)) // within valid block bounds
-        place_vertex(nb_interval_id, block_id, nb, dst,
+        place_vertex(nb_interval_id, block_id, nb, dst, dst_coord,
                      new_offset_coord(dst_offsets[0], dst_offsets[1], -1),
-                     stage);
+                     stage, vdb_accessor);
     }
   }
   if (dst_offsets[1] == this->block_lengths[1] - 1) {
@@ -1146,9 +1174,9 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
         nb = sub_block_to_block_id(block_coord[0], 0, block_coord[2]);
       }
       if ((nb >= 0) && (nb < interval_block_size)) // within valid block bounds
-        place_vertex(nb_interval_id, block_id, nb, dst,
+        place_vertex(nb_interval_id, block_id, nb, dst, dst_coord,
                      new_offset_coord(dst_offsets[0], -1, dst_offsets[2]),
-                     stage);
+                     stage, vdb_accessor);
     }
   }
   if (dst_offsets[0] == this->block_lengths[2] - 1) {
@@ -1161,9 +1189,9 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
         nb = sub_block_to_block_id(0, block_coord[1], block_coord[2]);
       }
       if ((nb >= 0) && (nb < interval_block_size)) // within valid block bounds
-        place_vertex(nb_interval_id, block_id, nb, dst,
+        place_vertex(nb_interval_id, block_id, nb, dst, dst_coord,
                      new_offset_coord(-1, dst_offsets[1], dst_offsets[2]),
-                     stage);
+                     stage, vdb_accessor);
     }
   }
 }
@@ -1262,6 +1290,75 @@ bool Recut<image_t>::integrate_vertex(const VID_t interval_id,
 
   return false;
 } // end integrate_vertex
+
+// void integrate_point() {
+// auto updated_vertex = new VertexAttr();
+//// doesn't matter if it's a root or not, it's now just a msg
+// updated_vertex->mark_band();
+//// adds to iterable but not to active vertices since its from outside domain
+// if (stage == "connected") {
+// local_fifo[interval_id][block_id].push_back(*updated_vertex);
+//} else {
+//// cout << "integrate vertex " << updated_vertex->description();
+// fifo.push_back(*updated_vertex);
+//}
+//}
+
+template <typename T, typename Container>
+void integrate_adj_leafs(GridCoord start_coord,
+                         std::vector<OffsetCoord> stencil_offsets,
+                         T &update_accessor, Container &fifo) {
+  auto lower_leaf_nbs =
+      stencil_offsets |
+      rng::views::transform([&start_coord](auto stencil_offset) {
+        return std::pair{stencil_offset,
+                         coord_add(start_coord, stencil_offset)};
+      }) |
+      rng::views::transform([&update_accessor](auto coord_pair) {
+        return std::pair{coord_pair.first,
+                         update_accessor.probeConstLeaf(coord_pair.second)};
+      }) |
+      rng::views::remove_if(
+          [](auto leaf_pair) { return leaf_pair.second->isEmpty(); }) |
+      rng::views::transform([&start_coord](auto leaf_pair) {
+        auto _ =
+            // leaf_pair.second->cbeginValueOn() |
+            leaf_pair.second->cbeginIndexOn() |
+            rng::views::remove_if([&start_coord, &leaf_pair](auto val) {
+              // FIXME get actual coord of val
+              auto val_coord = new_grid_coord(0, 0, 0);
+              for (int i = 0; i < 3; ++i) {
+                // the stencil offset at .first has only 1 non-zero
+                if (leaf_pair.first[i]) {
+                  // only use coords that are in the surface facing the current
+                  // block remove if it doesn't match
+                  return (leaf_pair.first[i] + start_coord[i]) != val_coord[i];
+                }
+              }
+              assertm(false, "Unreachable");
+              return true;
+            }) |
+            rng::views::transform([](auto val) {
+              std::cout << val << '\n';
+              // FIXME integrate point
+            }) |
+            rng::to_vector;
+      }) |
+      rng::to_vector;
+}
+
+template <class image_t>
+template <class Container, typename T>
+void Recut<image_t>::integrate_update_grid(EnlargedPointDataGrid::Ptr grid,
+                                           openvdb::MaskGrid::Ptr update,
+                                           std::string stage, Container &fifo, T update_accessor) {
+  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+    auto bbox = leaf_iter->getNodeBoundingBox();
+
+    integrate_adj_leafs(bbox.min(), this->lower_stencil, update_accessor, fifo);
+    integrate_adj_leafs(bbox.max(), this->higher_stencil, update_accessor, fifo);
+  }
+}
 
 /* Core exchange step of the fastmarching algorithm, this processes and
  * empties the overflow buffer updated_ghost_vec in parallel. intervals and
@@ -1617,8 +1714,8 @@ void Recut<image_t>::connected_tile(
         // at this stage
         // goes into updated_ghost_vec of neighbors if its on the edge with
         // them these then get added into neighbor local_fifo
-        check_ghost_update(interval_id, block_id, current_coord, current,
-                           stage);
+        check_ghost_update(interval_id, block_id, current_coord, current, stage,
+                           vdb_accessor);
 #endif
       } else {
         // a message from an outside leaf is actually a surface and was
@@ -1694,8 +1791,8 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
       radius_handle.set(*current_ind, 1);
       // if in domain notify potential outside domains
       if (!(msg_vertex->band())) {
-        check_ghost_update(interval_id, block_id, current_coord, current,
-                           stage);
+        check_ghost_update(interval_id, block_id, current_coord, current, stage,
+                           vdb_accessor);
       }
     }
 
@@ -1728,7 +1825,8 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
           auto ind = leaf_iter->beginIndexVoxel(coord_img);
           // ...has side-effects
           accumulate_radius(interval_id, block_id, coord_img, ind,
-                            current->radius, fifo, flags_handle, radius_handle);
+                            current->radius, fifo, flags_handle, radius_handle,
+                            vdb_accessor);
           return ind;
         }) |
         rng::to_vector; // force evaluation
@@ -1823,7 +1921,7 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
           // ...has side-effects
           accumulate_prune(interval_id, block_id, coord_img, ind, current,
                            current_coord, current->unvisited(), fifo,
-                           radius_handle, flags_handle);
+                           radius_handle, flags_handle, vdb_accessor);
           return ind;
         }) |
         rng::to_vector;
@@ -2303,11 +2401,9 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   // otherewise seg faults will occur
   // if (this->input_is_vdb || params->convert_only_) {
   assertm(this->topology_grid, "topology grid not initialized");
-  auto vdb_const_accessor = this->topology_grid->getConstAccessor();
-  auto vdb_accessor = this->topology_grid->getAccessor();
-  // print_vdb(vdb_accessor, {this->image_lengths[0], this->image_lengths[1],
-  // this->image_lengths[1]});
-  //}
+  auto update_accessor = this->update_grid->getAccessor();
+
+  // multi-grids for convert stage
   std::vector<EnlargedPointDataGrid::Ptr> grids(this->grid_interval_size);
 #endif
 
@@ -2486,7 +2582,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           computation_time =
               computation_time +
               process_interval(interval_id, tile, stage, local_tile_thresholds,
-                               fifo[interval_id], vdb_const_accessor);
+                               fifo[interval_id], update_accessor);
         }
       } // if the interval is active
 
@@ -2645,7 +2741,8 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
 
   if (!(params->convert_only_)) {
     std::map<VID_t, std::vector<VertexAttr>> test;
-    for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+    for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
+         ++leaf_iter) {
       auto origin = leaf_iter->getNodeBoundingBox().min();
       auto block_id = coord_img_to_block_id(origin);
       std::cout << origin << "->" << block_id << '\n';
@@ -2720,6 +2817,7 @@ template <class image_t>
 GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
                                                   RecutCommandLineArgs *args) {
   GridCoord input_image_lengths(3);
+  this->update_grid = openvdb::MaskGrid::create();
   if (this->params->force_regenerate_image) {
     // for generated image runs trust the args->image_lengths
     // to reflect the total global image domain
@@ -2865,8 +2963,8 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
       auto simultaneous_tiles =
           static_cast<double>(recommended_max_mem) /
           (sizeof(image_t) * this->image_lengths[0] * this->image_lengths[1]);
-      // assertm(simultaneous_tiles >= 1, "Tile x and y size too large to fit in
-      // system memory (DRAM)");
+      // assertm(simultaneous_tiles >= 1, "Tile x and y size too large to fit
+      // in system memory (DRAM)");
       this->interval_lengths[2] = std::min(
           simultaneous_tiles, static_cast<double>(this->image_lengths[2]));
     }
