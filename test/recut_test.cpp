@@ -1631,7 +1631,7 @@ TEST(Scale, InitializeGlobals) {
   auto grid_size = 2;
   auto args = get_args(grid_size, grid_size, grid_size, 100, 0);
 
-  auto check_block_sizes = [](auto image_dims) {
+  auto check_block_sizes = [&args](auto image_dims) {
     for (int block_length = 1 << 5; block_length > 4; block_length >>= 1) {
       auto recut = Recut<uint16_t>(args);
       auto block_lengths =
