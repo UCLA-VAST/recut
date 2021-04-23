@@ -227,9 +227,9 @@ public:
                          FlagsT flags_handle, RadiusT radius_handle,
                          AccessorT vdb_accessor);
   template <class Container, typename T, typename T2>
-  void integrate_update_grid(EnlargedPointDataGrid::Ptr grid,
-                             std::string stage,
-                             Container &fifo, T& connected_fifo, T2 update_accessor, VID_t interval_id);
+  void integrate_update_grid(EnlargedPointDataGrid::Ptr grid, std::string stage,
+                             Container &fifo, T &connected_fifo,
+                             T2 update_accessor, VID_t interval_id);
   template <class Container>
   void integrate_updated_ghost(const VID_t interval_id, const VID_t block_id,
                                std::string stage, Container &fifo);
@@ -1291,17 +1291,45 @@ bool Recut<image_t>::integrate_vertex(const VID_t interval_id,
   return false;
 } // end integrate_vertex
 
-template <typename Container, typename T>
-void integrate_point(std::string stage, Container& fifo, T& connected_fifo) {
-  // FIXME this has to be correct and updated from...
-  auto updated_vertex = new VertexAttr();
-  // doesn't matter if it's a root or not, it's now just a msg
+// adds to iterable but not to active vertices since its from outside domain
+template <typename Container, typename T, typename T2>
+void integrate_point(std::string stage, Container &fifo, T &connected_fifo,
+                     T2 adj_coord, EnlargedPointDataGrid::Ptr grid,
+                     OffsetCoord adj_offsets) {
+  // FIXME this might be slow to lookup every time
+  auto adj_leaf_iter = grid->tree().probeConstLeaf(adj_coord);
+  auto ind = adj_leaf_iter->beginIndexVoxel(adj_coord);
+
+  openvdb::points::AttributeHandle<uint8_t> flags_handle(
+      adj_leaf_iter->constAttributeArray("flags"));
+
+  Bitfield bf{flags_handle.get(*ind)};
+  auto updated_vertex = new VertexAttr(bf, adj_offsets);
+  // indicate that this is just a message
   updated_vertex->mark_band();
-  // adds to iterable but not to active vertices since its from outside domain
+
+  std::cout << "\tintegrate_point():\n";
+  // std::cout << typeid(val).name() << '\n';
+  // std::cout << val.pos() << '\n';
+  std::cout << "\t\t" << adj_coord << '\n';
+  std::cout << "\t\t" << adj_offsets << '\n';
+
   if (stage == "connected") {
+    openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
+        adj_leaf_iter->constAttributeArray("parents"));
+    updated_vertex->parent = parents_handle.get(*ind);
     connected_fifo.push_back(*updated_vertex);
-  } else {
-    // cout << "integrate vertex " << updated_vertex->description();
+
+  } else if (stage == "radius") {
+    openvdb::points::AttributeHandle<uint8_t> radius_handle(
+        adj_leaf_iter->constAttributeArray("radius"));
+    updated_vertex->radius = radius_handle.get(*ind);
+    fifo.push_back(*updated_vertex);
+
+  } else if (stage == "prune") {
+    openvdb::points::AttributeHandle<uint8_t> radius_handle(
+        adj_leaf_iter->constAttributeArray("radius"));
+    updated_vertex->radius = radius_handle.get(*ind);
     fifo.push_back(*updated_vertex);
   }
 }
@@ -1309,66 +1337,94 @@ void integrate_point(std::string stage, Container& fifo, T& connected_fifo) {
 template <typename T, typename Container, typename T2>
 void integrate_adj_leafs(GridCoord start_coord,
                          std::vector<OffsetCoord> stencil_offsets,
-                         T &update_accessor, Container &fifo, T2 &connected_fifo, std::string stage) {
+                         T &update_accessor, Container &fifo,
+                         T2 &connected_fifo, std::string stage,
+                         EnlargedPointDataGrid::Ptr grid, int offset_value) {
   // force evaluation by saving to vector to get desired side effects
   // from integrate_point
   auto _ =
+      // from one corner find 3 adj leafs via 1 vox offset
       stencil_offsets |
       rng::views::transform([&start_coord](auto stencil_offset) {
         return std::pair{stencil_offset,
                          coord_add(start_coord, stencil_offset)};
       }) |
+      // get the corresponding leaf from update grid
       rng::views::transform([&update_accessor](auto coord_pair) {
         return std::pair{coord_pair.first,
                          update_accessor.probeConstLeaf(coord_pair.second)};
       }) |
+      // check if any vox from leaf were updated (active)
       rng::views::remove_if(
-          [](auto leaf_pair) { return leaf_pair.second->isEmpty(); }) |
-      rng::views::transform([&start_coord, &stage, &fifo, &connected_fifo](auto leaf_pair) {
-            leaf_pair.second->cbeginValueOn() |
-        //auto _ =
-            //leaf_pair.second->cbeginValueOn() |
-            //rng::views::remove_if([&start_coord, &leaf_pair](auto val) {
-                //std::cout << typid(val).name() << '\n';
-                //return true;
-                //});
-              //// FIXME get actual coord of val
-              //auto val_coord = new_grid_coord(0, 0, 0);
-              //for (int i = 0; i < 3; ++i) {
-                //// the stencil offset at .first has only 1 non-zero
-                //if (leaf_pair.first[i]) {
-                  //// only use coords that are in the surface facing the current
-                  //// block remove if it doesn't match
-                  //return (leaf_pair.first[i] + start_coord[i]) != val_coord[i];
-                //}
-              //}
-              //assertm(false, "Unreachable");
-              //return true;
-            //}) |
-            //rng::views::transform([&](auto val) {
-              //std::cout << val << '\n';
-              //// FIXME integrate point
-              //integrate_point(stage, fifo, connected_fifo);
-            //}) |
-            //rng::to_vector;
-          return leaf_pair;
+          //[](auto leaf_pair) { return leaf_pair.second->isEmpty(); }) |
+          [](auto leaf_pair) {
+            if (leaf_pair.second) {
+              return leaf_pair.second->isEmpty();
+            } else {
+              return true;
+            }
+          }) |
+      // for each active adjacent leaf
+      rng::views::transform([&](auto leaf_pair) {
+        cout << leaf_pair.first << '\n';
+        // which dim is this leaf offset in, can only be in 1
+        auto dim = -1;
+        for (int i = 0; i < 3; ++i) {
+          // the stencil offset at .first has only 1 non-zero
+          if (leaf_pair.first[i]) {
+            assertm(dim < 0, "only 1 offset allowed");
+            dim = i;
+          }
+        }
+        assertm(dim >= 0, "1 offset not found");
+
+        // iterate all updated values in the adj leaf
+        for (auto val = leaf_pair.second->cbeginValueOn(); val; ++val) {
+          // FIXME this might not be most efficient way to get index
+          auto adj_coord = val.getCoord();
+          // actual offset within real adjacent leaf
+          auto adj_offsets =
+              coord_mod(adj_coord, new_grid_coord(LEAF_LENGTH, LEAF_LENGTH,
+                                                  LEAF_LENGTH));
+          // offset with respect to current leaf
+          // the offset dim gets a special value according to whether
+          // it is a positive or negative offset
+          adj_offsets[dim] = offset_value;
+
+          // only use coords that are in the surface facing the current
+          // block remove if it doesn't match
+          if ((leaf_pair.first[dim] + start_coord[dim]) == adj_coord[dim]) {
+            integrate_point(stage, fifo, connected_fifo, adj_coord, grid,
+                            adj_offsets);
+          }
+        }
+        return leaf_pair;
       }) |
-      rng::to_vector;
+      rng::to_vector; // force eval
 }
 
 template <class image_t>
 template <class Container, typename T, typename T2>
 void Recut<image_t>::integrate_update_grid(EnlargedPointDataGrid::Ptr grid,
                                            std::string stage, Container &fifo,
-                                           T& connected_fifo,
-                                           T2 update_accessor, VID_t interval_id) {
+                                           T &connected_fifo,
+                                           T2 update_accessor,
+                                           VID_t interval_id) {
+  // for each leaf with active voxels i.e. containing topology
   for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
     auto bbox = leaf_iter->getNodeBoundingBox();
 
     auto block_id = coord_img_to_block_id(bbox.min());
-    integrate_adj_leafs(bbox.min(), this->lower_stencil, update_accessor, fifo[block_id], connected_fifo[block_id], stage);
+    cout << "block id " << block_id << " " << bbox << '\n';
+    // lower corner adjacents, have an offset at that dim of -1
+    integrate_adj_leafs(bbox.min(), this->lower_stencil, update_accessor,
+                        fifo[block_id], connected_fifo[block_id], stage, grid,
+                        -1);
+    // upper corner adjacents, have an offset at that dim equal to leaf log2
+    // dim
     integrate_adj_leafs(bbox.max(), this->higher_stencil, update_accessor,
-                        fifo[block_id], connected_fifo[block_id], stage);
+                        fifo[block_id], connected_fifo[block_id], stage, grid,
+                        LEAF_LENGTH);
   }
 }
 
@@ -1592,7 +1648,6 @@ void Recut<image_t>::connected_tile(
     const image_t *tile, VID_t interval_id, VID_t block_id, GridCoord offsets,
     std::string stage, const TileThresholds<image_t> *tile_thresholds,
     Container &fifo, VID_t revisits, T vdb_accessor, T2 leaf_iter) {
-
   if (local_fifo[interval_id][block_id].empty())
     return;
 
@@ -1763,7 +1818,6 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
                                  const TileThresholds<image_t> *tile_thresholds,
                                  Container &fifo, VID_t revisits,
                                  T vdb_accessor, T2 leaf_iter) {
-
   if (fifo.empty())
     return;
 
@@ -2055,12 +2109,10 @@ int Recut<image_t>::get_bkg_threshold(const image_t *tile,
 
 template <class image_t>
 template <class Container, typename T, typename T2>
-std::atomic<double>
-Recut<image_t>::process_interval(VID_t interval_id, const image_t *tile,
-                                 std::string stage,
-                                 const TileThresholds<image_t> *tile_thresholds,
-                                 Container &fifo, T connected_fifo, T2 vdb_accessor) {
-
+std::atomic<double> Recut<image_t>::process_interval(
+    VID_t interval_id, const image_t *tile, std::string stage,
+    const TileThresholds<image_t> *tile_thresholds, Container &fifo,
+    T connected_fifo, T2 vdb_accessor) {
   struct timespec presave_time, postmarch_time, iter_start,
       start_iter_loop_time, end_iter_time, postsave_time;
   double no_io_time;
@@ -2075,14 +2127,15 @@ Recut<image_t>::process_interval(VID_t interval_id, const image_t *tile,
 #endif
 
   //// setup any border regions from activate_vids or setup functions
-//#ifdef USE_OMP_BLOCK
-//#pragma omp parallel for
-//#endif
-  //for (VID_t block_id = 0; block_id < interval_block_size; ++block_id) {
-    //integrate_updated_ghost(interval_id, block_id, stage, fifo[block_id]);
+  //#ifdef USE_OMP_BLOCK
+  //#pragma omp parallel for
+  //#endif
+  // for (VID_t block_id = 0; block_id < interval_block_size; ++block_id) {
+  // integrate_updated_ghost(interval_id, block_id, stage, fifo[block_id]);
   //}
 
-  integrate_update_grid(this->topology_grid, stage, fifo, connected_fifo, vdb_accessor, interval_id);
+  integrate_update_grid(this->topology_grid, stage, fifo, connected_fifo,
+                        vdb_accessor, interval_id);
 
   // iterations over blocks
   // if there is a single block per interval than this while
@@ -2183,14 +2236,15 @@ Recut<image_t>::process_interval(VID_t interval_id, const image_t *tile,
     //}
     //#else
 
-//#ifdef USE_OMP_BLOCK
-//#pragma omp parallel for
-//#endif
-    //for (VID_t block_id = 0; block_id < interval_block_size; ++block_id) {
-      //integrate_updated_ghost(interval_id, block_id, stage, fifo[block_id]);
+    //#ifdef USE_OMP_BLOCK
+    //#pragma omp parallel for
+    //#endif
+    // for (VID_t block_id = 0; block_id < interval_block_size; ++block_id) {
+    // integrate_updated_ghost(interval_id, block_id, stage, fifo[block_id]);
     //}
 
-    integrate_update_grid(this->topology_grid, stage, fifo, connected_fifo, vdb_accessor, interval_id);
+    integrate_update_grid(this->topology_grid, stage, fifo, connected_fifo,
+                          vdb_accessor, interval_id);
 
 #ifdef LOG_FULL
     clock_gettime(CLOCK_REALTIME, &end_iter_time);
@@ -2299,7 +2353,6 @@ void Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
 template <class image_t>
 TileThresholds<image_t> *
 Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
-
   auto tile_thresholds = new TileThresholds<image_t>();
 
   std::vector<int> interval_dims =
@@ -2392,7 +2445,6 @@ template <class Container>
 std::unique_ptr<InstrumentedUpdateStatistics>
 Recut<image_t>::update(std::string stage, Container &fifo,
                        TileThresholds<image_t> *tile_thresholds) {
-
   atomic<double> computation_time;
   computation_time = 0.0;
   global_revisits = 0;
@@ -2598,7 +2650,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           computation_time =
               computation_time +
               process_interval(interval_id, tile, stage, local_tile_thresholds,
-                               fifo[interval_id], this->local_fifo[interval_id], update_accessor);
+                               fifo[interval_id], this->local_fifo[interval_id],
+                               update_accessor);
         }
       } // if the interval is active
 
@@ -2747,7 +2800,6 @@ Recut<image_t>::get_active_vertex(const VID_t interval_id, const VID_t block_id,
 template <class image_t>
 void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
                                         const VID_t &interval_block_size) {
-
   // active boolean for in interval domain in block_id ghost region, in
   // domain of block
   this->active_neighbors = vector<vector<vector<bool>>>(
@@ -3349,7 +3401,6 @@ template <typename vertex_t>
 void Recut<image_t>::brute_force_extract(vector<vertex_t> &outtree,
                                          bool accept_band,
                                          bool release_intervals) {
-
   struct timespec time0, time1;
 #ifdef FULL_PRINT
   cout << "Generating results." << '\n';
@@ -3542,7 +3593,6 @@ template <class image_t>
 template <typename vertex_t>
 void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
                                         bool accept_band) {
-
   struct timespec time0, time1;
 #ifdef FULL_PRINT
   cout << "Generating results." << '\n';

@@ -33,7 +33,7 @@ namespace rng = ranges;
 #define STR(x) #x
 
 // forward declarations
-struct bitfield;
+struct Bitfield;
 struct VertexAttr;
 
 auto print_iter = [](auto iterable) {

@@ -666,19 +666,19 @@ TEST(Install, DISABLED_ReadWriteInterval) {
 TEST(VDB, GlobalsTopologyCopy) {
   // should I switch it to a MaskGrid?
   auto grid = openvdb::BoolGrid::create();
-  //auto points = EnlargedPointDataGrid::create();
+  // auto points = EnlargedPointDataGrid::create();
 
-  openvdb::Coord coord(1,1,1);
-  openvdb::Coord coord2(2,2,2);
+  openvdb::Coord coord(1, 1, 1);
+  openvdb::Coord coord2(2, 2, 2);
 
   auto g_acc = grid->getAccessor();
-  //auto p_acc = points->getAccessor();
+  // auto p_acc = points->getAccessor();
 
   ASSERT_FALSE(g_acc.isValueOn(coord));
-  //ASSERT_FALSE(points->isValueOn(coord));
+  // ASSERT_FALSE(points->isValueOn(coord));
 
-  //points->setValueOn(coord);
-  //ASSERT_TRUE(points->isValueOn(coord));
+  // points->setValueOn(coord);
+  // ASSERT_TRUE(points->isValueOn(coord));
 
   g_acc.setValue(coord2, true);
   ASSERT_TRUE(g_acc.getValue(coord2));
@@ -700,24 +700,95 @@ TEST(VDB, GlobalsTopologyCopy) {
   // copy active voxels into bool grid
   // topology copy
 
-  //// check 
-  //ASSERT_TRUE(grid->isValueOn(coord));
-  //ASSERT_FALSE(grid->getValue(coord));
+  //// check
+  // ASSERT_TRUE(grid->isValueOn(coord));
+  // ASSERT_FALSE(grid->getValue(coord));
 
   //// if you turn the boolean value off, is the topology still the same
-  //EXPECT_TRUE(grid->tree().hasSameTopology(points->tree()));
+  // EXPECT_TRUE(grid->tree().hasSameTopology(points->tree()));
 
-  //grid->setValue(coord, false);
-  //EXPECT_TRUE(grid->tree().hasSameTopology(points->tree()));
-  //ASSERT_TRUE(grid->isValueOn(coord));
+  // grid->setValue(coord, false);
+  // EXPECT_TRUE(grid->tree().hasSameTopology(points->tree()));
+  // ASSERT_TRUE(grid->isValueOn(coord));
 
   //// set the boolean value
-  //grid->setValue(coord2, true);
-  //ASSERT_FALSE(grid->isValueOn(coord));
+  // grid->setValue(coord2, true);
+  // ASSERT_FALSE(grid->isValueOn(coord));
 
-  //uint16_t *inimg1d = new uint16_t[tol_sz];
-  //VID_t actual_selected =
-      //create_image(tcase, inimg1d, grid_size, desired_selected, root_vid);
+  // uint16_t *inimg1d = new uint16_t[tol_sz];
+  // VID_t actual_selected =
+  // create_image(tcase, inimg1d, grid_size, desired_selected, root_vid);
+}
+
+TEST(VDB, IntegrateUpdateGrid) {
+  VID_t grid_size = 24;
+  auto grid_extents = std::vector<VID_t>(3, grid_size);
+  // do no use tcase 4 since it is randomized and will not match
+  // for the second read test
+  auto tcase = 7;
+  double slt_pct = 100;
+  bool print_all = false;
+  // generate an image buffer on the fly
+  // then convert to vdb
+  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+                       /*force_regenerate_image=*/false,
+                       /*input_is_vdb=*/true);
+  auto recut = Recut<uint16_t>(args);
+  auto root_vids = recut.initialize();
+  // recut.activate_vids(root_vids, "connected", recut.global_fifo);
+
+  VID_t central_block = 13;
+  VID_t interval_id = 0;
+  auto lower_corner = new_grid_coord(8, 8, 8);
+  auto upper_corner = new_grid_coord(15, 15, 15);
+  ASSERT_EQ(central_block, recut.coord_img_to_block_id(lower_corner));
+  ASSERT_EQ(central_block, recut.coord_img_to_block_id(upper_corner));
+  auto update_vertex = new VertexAttr();
+  auto update_accessor = recut.update_grid->getAccessor();
+
+  {
+    auto stage = "connected";
+    recut.check_ghost_update(0, 13, lower_corner, update_vertex, stage,
+                             update_accessor);
+    recut.check_ghost_update(0, 13, upper_corner, update_vertex, stage,
+                             update_accessor);
+
+    recut.integrate_update_grid(
+        recut.topology_grid, stage, recut.global_fifo[interval_id],
+        recut.local_fifo[interval_id], update_accessor, interval_id);
+
+    cout << "Finished integrate\n";
+
+    auto check_matches = [&](auto block_list, auto corner) {
+      auto matches =
+          block_list | rng::views::transform([&](auto block_id) {
+            auto block_img_offsets =
+                recut.id_interval_block_to_img_offsets(interval_id, block_id);
+            if (print_all)
+              cout << recut.local_fifo[interval_id][block_id][0].offsets
+                   << '\n';
+            return coord_all_eq(
+                coord_add(block_img_offsets,
+                          recut.local_fifo[interval_id][block_id][0].offsets),
+                corner);
+          }) |
+          rng::to_vector;
+      for (const auto match : matches) {
+        ASSERT_TRUE(match);
+      }
+    };
+
+    std::vector lower_adjacent_blocks{4, 10, 12};
+    check_matches(lower_adjacent_blocks, lower_corner);
+
+    std::vector upper_adjacent_blocks{14, 16, 22};
+    check_matches(upper_adjacent_blocks, upper_corner);
+
+    if (print_all) {
+      print_vdb(recut.topology_grid->getConstAccessor(), grid_extents);
+      print_all_points(recut.topology_grid);
+    }
+  }
 }
 
 TEST(VDB, CreatePointDataGrid) {
@@ -997,7 +1068,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
   // Note this will delete anything in the
   // same directory before writing
   // tcase 5 is deprecated
-  std::vector<int> grid_sizes = {2, 4, 8};
+  std::vector<int> grid_sizes = {2, 4, 8, 24};
 
   //#ifdef TEST_ALL_BENCHMARKS
   // grid_sizes = {2, 4, 8, 16, 32, 64, 128, 256, 512};
@@ -1046,8 +1117,6 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
           continue;
         // never allow an image with less than 1 selected exist
         if ((tcase == 4) && (grid_size < 8) && (slt_pct < 10))
-          continue;
-        if ((grid_size > 8) && (tcase != 4))
           continue;
         if ((tcase == 4) && (slt_pct > 5))
           continue;
@@ -2505,7 +2574,7 @@ TEST(RecutPipeline, PrintDefaultInfo) {
   cout << "sizeof vidt " << sizeof(VID_t) << " bytes" << std::scientific
        << endl;
   cout << "sizeof float " << sizeof(float) << " bytes" << endl;
-  cout << "sizeof bitfield " << sizeof(bitfield) << " bytes" << endl;
+  cout << "sizeof Bitfield " << sizeof(Bitfield) << " bytes" << endl;
   cout << "sizeof vertex " << vs << " bytes" << endl;
   cout << "sizeof 1024^3 interval " << sizeof(VertexAttr) << " GB" << endl;
   cout << "page size " << ps << " B" << endl;

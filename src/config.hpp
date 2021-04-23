@@ -2,32 +2,6 @@
 #include <cstdint>
 #include <utility>
 
-//// compile time error printing
-//#define strcat_(x, y) x ## y
-//#define strcat(x, y) strcat_(x, y)
-//      #define PRINT_ERROR(x) \
-    //template <int> \
-    //struct strcat(strcat(value_of_, x), _is); \
-    //static_assert(strcat(strcat(value_of_, x), _is)<x>::x, "");
-
-// c++17 unused printing utility
-template <auto val> constexpr void static_print() {
-#if !defined(__GNUC__) || defined(__clang__)
-  int static_print_is_implemented_only_for_gcc = 0;
-#else
-  int unused = 0;
-#endif
-};
-
-/// ex. power<int, 4, 2>::value
-template <typename T, T V, T N, typename I = std::make_integer_sequence<T, N>>
-struct power;
-template <typename T, T V, T N, T... Is>
-struct power<T, V, N, std::integer_sequence<T, Is...>> {
-  static constexpr T value =
-      (static_cast<T>(1) * ... * (V * static_cast<bool>(Is + 1)));
-};
-
 // Define preprocessor macros, templates and types to be used for
 // configuration and compile time behavior
 // Note it is preferred to pass this macros to `cmake ..
@@ -56,16 +30,24 @@ namespace vto = openvdb::tools;
 namespace vp = vb::points;
 
 #define VOXEL_SIZE 1
-#define LEAF_LOG2DIM 4
+#define LEAF_LOG2DIM 3
 #define INTER1_LOG2DIM 4
 #define INTER2_LOG2DIM 5
+#define INDEX_TYPE vb::PointDataIndex32
+//#define INDEX_TYPE vb::PointDataIndex64
 // if 3,4,5 re registering throws
 // else you must register the new grid dims
-#define CUSTOM_GRID
+//#define CUSTOM_GRID
 
-// these custom grid types use a 64-bit value type (PointDataIndex64) instead of a 32-bit value
-// type (PointDataIndex32)
-using Leaf = typename vp::PointDataLeafNode<vb::PointDataIndex64, LEAF_LOG2DIM>;
+// Length of a bound box edge in one dimension in image index space / world
+// space units
+constexpr int LEAF_LENGTH = VOXEL_SIZE * (1 << LEAF_LOG2DIM);
+constexpr int INTER1_LENGTH =
+    LEAF_LENGTH * (1 << INTER1_LOG2DIM);
+// equivalent:
+// EnlargedPointDataGrid::TreeType::LeafNodeType::DIM == LEAF_LENGTH
+
+using Leaf = typename vp::PointDataLeafNode<INDEX_TYPE, LEAF_LOG2DIM>;
 using InternalNode1 = typename vt::InternalNode<Leaf, INTER1_LOG2DIM>;
 using EnlargedPointDataTree = typename vt::Tree<
     vt::RootNode<vt::InternalNode<InternalNode1, INTER2_LOG2DIM>>>;
@@ -74,20 +56,9 @@ using EnlargedPointDataGrid = typename openvdb::Grid<EnlargedPointDataTree>;
 using EnlargedPointIndexGrid = typename openvdb::Grid<
     openvdb::tree::Tree<openvdb::tree::RootNode<openvdb::tree::InternalNode<
         openvdb::tree::InternalNode<openvdb::tools::PointIndexLeafNode<
-                                        openvdb::PointIndex64, LEAF_LOG2DIM>,
+                                        openvdb::PointIndex32, LEAF_LOG2DIM>,
                                     INTER1_LOG2DIM>,
         INTER2_LOG2DIM>>>>;
-
-// Length of a bound box edge in one dimension in image index space / world
-// space units
-constexpr int LEAF_LENGTH = VOXEL_SIZE * power<int, 2, LEAF_LOG2DIM>::value;
-constexpr int INTER1_LENGTH =
-    LEAF_LENGTH * power<int, 2, INTER1_LOG2DIM>::value;
-// equivalent:
-// EnlargedPointDataGrid::TreeType::LeafNodeType::DIM == LEAF_LENGTH
-
-// PRINT_ERROR(LEAF_LENGTH);
-// PRINT_ERROR(INTER1_LENGTH);
 
 #else // not VDB
 using OffsetCoord = std::vector<int8_t>;

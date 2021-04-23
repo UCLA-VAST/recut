@@ -13,7 +13,7 @@ using std::vector;
 
 #include "utils.hpp"
 
-struct bitfield {
+struct Bitfield {
   uint8_t field_;
 
   void set() {
@@ -38,21 +38,21 @@ struct bitfield {
 
   bool none() const { return field_ == 0; }
 
-  bitfield &operator=(const bitfield &a) {
+  Bitfield &operator=(const Bitfield &a) {
     this->field_ = a.field_;
     return *this;
   }
 
-  // friend std::ostream& (std::ostream& os, bitfield const& bf) {
+  // friend std::ostream& (std::ostream& os, Bitfield const& bf) {
   // char[8]
   // os
   //}
 
-  bool operator==(const bitfield &a) const { return a.field_ == this->field_; }
+  bool operator==(const Bitfield &a) const { return a.field_ == this->field_; }
 
   // defaults as 1100 0000 unvisited with no connections
-  bitfield() : field_(192) {}
-  bitfield(uint8_t field) : field_(field) {}
+  Bitfield() : field_(192) {}
+  Bitfield(uint8_t field) : field_(field) {}
 };
 
 struct VertexAttr {
@@ -60,7 +60,7 @@ struct VertexAttr {
   OffsetCoord parent;
   uint8_t radius = std::numeric_limits<uint8_t>::max();
 // most sig. bits (little-endian) refer to state : 1 bytes
-  struct bitfield edge_state; 
+  struct Bitfield edge_state; 
 
   // constructors
   // defaults as 192 i.e. 1100 0000 unvisited
@@ -81,10 +81,13 @@ struct VertexAttr {
       : edge_state(a.edge_state), offsets(a.offsets), radius(a.radius), parent(a.parent) {
   }
 
-  VertexAttr(bitfield edge_state, OffsetCoord offsets, OffsetCoord parent)
+  VertexAttr(Bitfield edge_state, OffsetCoord offsets)
+      : edge_state(edge_state), offsets(offsets) {}
+
+  VertexAttr(Bitfield edge_state, OffsetCoord offsets, OffsetCoord parent)
       : edge_state(edge_state), offsets(offsets), parent(parent) {}
 
-  VertexAttr(bitfield edge_state, OffsetCoord offsets, OffsetCoord parent, uint8_t radius)
+  VertexAttr(Bitfield edge_state, OffsetCoord offsets, OffsetCoord parent, uint8_t radius)
       : edge_state(edge_state), offsets(offsets), parent(parent), radius (radius) {}
 
   bool root() const {
