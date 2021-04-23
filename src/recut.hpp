@@ -129,7 +129,6 @@ public:
   vector<vector<atomwrapper<bool>>> active_blocks;
   vector<vector<atomwrapper<bool>>> processing_blocks;
   vector<vector<vector<bool>>> active_neighbors;
-  vector<vector<map<VID_t, vector<VertexAttr>>>> updated_ghost_vec;
 
   Recut(RecutCommandLineArgs &args)
       : args(&args), params(&(args.recut_parameters())) {}
@@ -230,9 +229,6 @@ public:
   void integrate_update_grid(EnlargedPointDataGrid::Ptr grid, std::string stage,
                              Container &fifo, T &connected_fifo,
                              T2 update_accessor, VID_t interval_id);
-  template <class Container>
-  void integrate_updated_ghost(const VID_t interval_id, const VID_t block_id,
-                               std::string stage, Container &fifo);
   template <class Container> void dump_buffer(Container buffer);
   void adjust_vertex_parent(VertexAttr *vertex, GridCoord start_offsets);
   template <class Container>
@@ -525,7 +521,7 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
 
     // place ghost update accounts for
     // edges of intervals in addition to blocks
-    // this only adds to update_ghost_vec if the root happens
+    // this only adds to update_grid if the root happens
     // to be on a boundary
     check_ghost_update(interval_id, block_id, coord, msg_vertex, stage,
                        update_accessor); // add to any other ghost zone blocks
@@ -821,7 +817,7 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t block_id,
  * the edge but still within interval_id and block_id domain is updated it
  * is the responsibility of check_ghost_update to take note of the update such
  * that this update is propagated to the relevant interval and block see
- * integrate_updated_ghost(). dst_coord : continuous vertex id VID_t of the dst
+ * integrate_update_grid(). dst_coord : continuous vertex id VID_t of the dst
  * vertex in question block_id : current block id current : minimum vertex
  * attribute selected
  */
@@ -971,10 +967,7 @@ bool Recut<image_t>::accumulate_connected(
 
 /*
  * this will place necessary updates towards regions in outside blocks
- * or intervals safely by leveraging the container of copies of the
- * updated vertices updated_ghost_vec. Vertices themselves act as
- * messages, which can be redundant or repeated when sent to their
- * destination domain since updated_ghost_vec acts like a fifo
+ * or intervals safely by leveraging update_grid
  */
 template <class image_t>
 template <typename T>
@@ -986,7 +979,7 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
 
   // ASYNC option means that another block and thread can be started during
   // the processing of the current thread. If ASYNC is not defined then simply
-  // save all possible updates for checking in the integrate_updated_ghost()
+  // save all possible updates for checking in the integrate_update_grid()
   // function after all blocks have been marched
 #ifdef ASYNC
   if (stage != "value") {
@@ -1024,38 +1017,14 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
         false); // release nb_block_id heap
     // The other block isn't processing, so an update to it at here
     // is currently true for this iteration. It does not need to be checked
-    // again in integrate_updated_ghost via adding it to the
-    // updated_ghost_vec. Does not need to be added to active_neighbors for
+    // again in integrate_update_grid via adding it to the
+    // update_grid. Does not need to be added to active_neighbors for
     // same reason
     return;
   }
 #endif // end of ASYNC
 
-  // save vertex for later processing putting it in an overflow that will
-  // be emptied in integrate_updated_ghost()
-  // updated_ghost_vec[x][a][b] in domain of a, in ghost of block b
-  // active_neighbors[x][a][b] in domain of b, in ghost of block a
-  // in the synchronous case simply place all neighboring interval / block
-  // updates in an overflow buffer update_ghost_vec for processing in
-  // integrate_updated_ghost Note: that if the update is in a separate
-  // interval it will be added to the same set as block_id updates from that
-  // interval, this is because there is no need to separate updates based on
-  // interval saving overhead
   active_intervals[nb_interval_id] = true;
-  if (stage == "prune") {
-    assertm(dst->valid_radius(), "selected must have a valid radius");
-  }
-  // when nb_interval_id != interval_id, the block_id is technically
-  // incorrect, surprisingly this makes no difference for the correctness
-  // since the block_id origination dimension is merely to prevent
-  // race conditions
-  // updated_ghost_vec[nb_interval_id][block_id][nb_block_id].emplace_back(
-  // dst->edge_state, msg_offsets, dst->parent, dst->radius);
-  // updated_ghost_vec[nb_interval_id][block_id].emplace(
-  // nb_block_id, dst->edge_state, msg_offsets, dst->parent, dst->radius);
-  updated_ghost_vec[nb_interval_id][block_id][nb_block_id].emplace_back(
-      dst->edge_state, msg_offsets, dst->parent, dst->radius);
-  active_neighbors[nb_interval_id][nb_block_id][block_id] = true;
   vdb_accessor.setValueOn(dst_coord);
 
 #ifdef FULL_PRINT
@@ -1383,9 +1352,8 @@ void integrate_adj_leafs(GridCoord start_coord,
           // FIXME this might not be most efficient way to get index
           auto adj_coord = val.getCoord();
           // actual offset within real adjacent leaf
-          auto adj_offsets =
-              coord_mod(adj_coord, new_grid_coord(LEAF_LENGTH, LEAF_LENGTH,
-                                                  LEAF_LENGTH));
+          auto adj_offsets = coord_mod(
+              adj_coord, new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH));
           // offset with respect to current leaf
           // the offset dim gets a special value according to whether
           // it is a positive or negative offset
@@ -1403,6 +1371,11 @@ void integrate_adj_leafs(GridCoord start_coord,
       rng::to_vector; // force eval
 }
 
+/* Core exchange step of the fastmarching algorithm, this processes and
+ * empties the update_grid. intervals and
+ * blocks can receive all of their updates from the current iterations run of
+ * march_narrow_band safely to complete the iteration
+ */
 template <class image_t>
 template <class Container, typename T, typename T2>
 void Recut<image_t>::integrate_update_grid(EnlargedPointDataGrid::Ptr grid,
@@ -1425,65 +1398,24 @@ void Recut<image_t>::integrate_update_grid(EnlargedPointDataGrid::Ptr grid,
     integrate_adj_leafs(bbox.max(), this->higher_stencil, update_accessor,
                         fifo[block_id], connected_fifo[block_id], stage, grid,
                         LEAF_LENGTH);
-  }
-}
 
-/* Core exchange step of the fastmarching algorithm, this processes and
- * empties the overflow buffer updated_ghost_vec in parallel. intervals and
- * blocks can receive all of their updates from the current iterations run of
- * march_narrow_band safely to complete the iteration
- */
-template <class image_t>
-template <class Container>
-void Recut<image_t>::integrate_updated_ghost(const VID_t interval_id,
-                                             const VID_t block_id,
-                                             std::string stage,
-                                             Container &fifo) {
-  for (VID_t nb = 0; nb < interval_block_size; nb++) {
-    // active_neighbors[x][a][b] in domain of b, in ghost of block a
-    if (active_neighbors[interval_id][block_id][nb]) {
-      // updated ghost cleared in march_narrow_band
-      // iterate over all ghost points of block_id inside domain of block nb
-
-      // updated_ghost_vec[x][a][b] in domain of a, in ghost of block b
-      for (auto updated_vertex : updated_ghost_vec[interval_id][nb][block_id]) {
-
+    // set active_blocks
+    if (stage == "connected") {
+      if (!(connected_fifo[block_id].empty())) {
 #ifdef FULL_PRINT
-        cout << "integrate(): " << coord_to_str(updated_vertex.offsets)
-             << " ghost of block id: " << block_id << " in domain block: " << nb
-             << " interval: " << interval_id << '\n';
+        cout << "Setting interval: " << interval_id << " block: " << block_id
+             << " to active\n";
 #endif
-        // note fifo must respect that this vertex belongs to the domain
-        // of nb, not block_id
-        // this updates the value of the vertex of block: block_id
-        // this vertex is in an overlapping ghost region
-        // so the vertex is technically in the domain of nb
-        // but the copy needs to be safely updated for march_narrow_band
-        // to execute safely in parallel
-        integrate_vertex(interval_id, block_id, &updated_vertex, false, stage,
-                         fifo);
-      } // end for each VertexAttr
-      active_neighbors[interval_id][block_id][nb] = false; // reset to false
-      // clear sets for all possible block connections of block_id from this
-      // iter
-      updated_ghost_vec[interval_id][nb][block_id].clear();
-    } // for all active neighbor blocks of block_id
-  }
-  if (stage == "connected") {
-    if (!(local_fifo[interval_id][block_id].empty())) {
+        active_blocks[interval_id][block_id].store(true);
+      }
+    } else {
+      if (!(fifo[block_id].empty())) {
 #ifdef FULL_PRINT
-      cout << "Setting interval: " << interval_id << " block: " << block_id
-           << " to active\n";
+        cout << "Setting interval: " << interval_id << " block: " << block_id
+             << " to active\n";
 #endif
-      active_blocks[interval_id][block_id].store(true);
-    }
-  } else {
-    if (!(fifo.empty())) {
-#ifdef FULL_PRINT
-      cout << "Setting interval: " << interval_id << " block: " << block_id
-           << " to active\n";
-#endif
-      active_blocks[interval_id][block_id].store(true);
+        active_blocks[interval_id][block_id].store(true);
+      }
     }
   }
 }
@@ -1779,7 +1711,7 @@ void Recut<image_t>::connected_tile(
         // so they would need to know about any changes to vertex state
         // otherwise surface status change is irrelevant to outside domains
         // at this stage
-        // goes into updated_ghost_vec of neighbors if its on the edge with
+        // goes into update_grid of neighbors if its on the edge with
         // them these then get added into neighbor local_fifo
         check_ghost_update(interval_id, block_id, current_coord, current, stage,
                            vdb_accessor);
@@ -1789,19 +1721,12 @@ void Recut<image_t>::connected_tile(
         // unaware so send a message directly to that leaf
         const auto check_block_id = coord_img_to_block_id(current_coord);
         const auto check_interval_id = coord_img_to_interval_id(current_coord);
+        assertm(false, "Never reached");
 
         // leverage updated_ghost_vec to avoid race conditions
-        // check_ghost_update never applies to vertices outside this leaf
-        // updated_ghost_vec[check_interval_id][block_id][check_block_id]
-        //.emplace_back(current->edge_state, current->offsets,
-        // current->parent, current->radius);
-        // updated_ghost_vec[check_interval_id][block_id].emplace(
-        // check_block_id, current->edge_state, current->offsets,
-        // current->parent, current->radius);
-        updated_ghost_vec[check_interval_id][block_id][check_block_id]
-            .emplace_back(current->edge_state, current->offsets,
-                          current->parent, current->radius);
-        active_neighbors[check_interval_id][check_block_id][block_id] = true;
+        //updated_ghost_vec[check_interval_id][block_id][check_block_id]
+            //.emplace_back(current->edge_state, current->offsets,
+                          //current->parent, current->radius);
       }
     }
   }
@@ -2126,14 +2051,6 @@ std::atomic<double> Recut<image_t>::process_interval(
   }
 #endif
 
-  //// setup any border regions from activate_vids or setup functions
-  //#ifdef USE_OMP_BLOCK
-  //#pragma omp parallel for
-  //#endif
-  // for (VID_t block_id = 0; block_id < interval_block_size; ++block_id) {
-  // integrate_updated_ghost(interval_id, block_id, stage, fifo[block_id]);
-  //}
-
   integrate_update_grid(this->topology_grid, stage, fifo, connected_fifo,
                         vdb_accessor, interval_id);
 
@@ -2235,13 +2152,6 @@ std::atomic<double> Recut<image_t>::process_interval(
     // create_integrate_thread(interval_id, block_id);
     //}
     //#else
-
-    //#ifdef USE_OMP_BLOCK
-    //#pragma omp parallel for
-    //#endif
-    // for (VID_t block_id = 0; block_id < interval_block_size; ++block_id) {
-    // integrate_updated_ghost(interval_id, block_id, stage, fifo[block_id]);
-    //}
 
     integrate_update_grid(this->topology_grid, stage, fifo, connected_fifo,
                           vdb_accessor, interval_id);
@@ -2800,32 +2710,6 @@ Recut<image_t>::get_active_vertex(const VID_t interval_id, const VID_t block_id,
 template <class image_t>
 void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
                                         const VID_t &interval_block_size) {
-  // active boolean for in interval domain in block_id ghost region, in
-  // domain of block
-  this->active_neighbors = vector<vector<vector<bool>>>(
-      grid_interval_size,
-      vector<vector<bool>>(interval_block_size,
-                           vector<bool>(interval_block_size)));
-
-  if (!(params->convert_only_)) {
-    std::map<VID_t, std::vector<VertexAttr>> test;
-    for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
-         ++leaf_iter) {
-      auto origin = leaf_iter->getNodeBoundingBox().min();
-      auto block_id = coord_img_to_block_id(origin);
-      std::cout << origin << "->" << block_id << '\n';
-      test[block_id] = std::vector<VertexAttr>();
-    }
-    cout << "Active leaf count: " << test.size() << '\n';
-
-    updated_ghost_vec = vector<vector<map<VID_t, vector<VertexAttr>>>>(
-        grid_interval_size,
-        vector<map<VID_t, vector<VertexAttr>>>(
-            interval_block_size, map<VID_t, vector<VertexAttr>>()));
-#ifdef LOG_FULL
-    cout << "Created updated ghost vec" << '\n';
-#endif
-  }
 
   // Initialize.
   vector<vector<atomwrapper<bool>>> temp(

@@ -1,4 +1,8 @@
 #ifndef VERTEX_ATTR_H_
+    // ASSERT_TRUE(matches[0]);
+    // ASSERT_TRUE(matches[1]);
+    // ASSERT_TRUE(matches[2]);
+
 #define VERTEX_ATTR_H_
 #include <cassert>
 #include <cstring>
