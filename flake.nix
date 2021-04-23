@@ -3,7 +3,8 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/733e537a8ad76fd355b6f501127f7d0eb8861775";
     mcp3d.url = "git+ssh://git@github.com/muyezhu/mcp3d?ref=stable_lib";
-    openvdb.url = "git+ssh://git@github.com/UCLA-VAST/openvdb?ref=pointalias";
+    #openvdb.url = "git+ssh://git@github.com/UCLA-VAST/openvdb?ref=pointalias";
+    openvdb.url = "git+ssh://git@github.com/kdmarrett/openvdb";
     # alternatively you could pin a certain commit like:
     # mcp3d.url = "git+ssh://git@github.com/muyezhu/mcp3d?ref=kdm-dev&rev=<commit hash>";
     # or you could use your local filesystem branch with:

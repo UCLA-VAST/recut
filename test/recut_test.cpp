@@ -1631,20 +1631,36 @@ TEST(Scale, InitializeGlobals) {
   auto grid_size = 2;
   auto args = get_args(grid_size, grid_size, grid_size, 100, 0);
 
-  auto xy_log2dim = 13;
+  auto check_block_sizes = [](auto image_dims) {
+    for (int block_length = 1 << 5; block_length > 4; block_length >>= 1) {
+      auto recut = Recut<uint16_t>(args);
+      auto block_lengths =
+          new_grid_coord(block_length, block_length, block_length);
+      auto interval_block_lengths = coord_div(image_dims, block_lengths);
+      print_coord(interval_block_lengths, "\tinterval_block_lengths");
+      auto interval_block_size = coord_prod_accum(interval_block_lengths);
+      cout << "\tblock_length: " << block_length
+           << " interval_block_size: " << interval_block_size << '\n';
+      recut.initialize_globals(1, interval_block_size);
+      // delete recut;
+    }
+  };
+
+  auto xy_log2dim = 14;
   auto z_log2dim = 9;
-  auto image_dims = new_grid_coord(1 << xy_log2dim, 1 << xy_log2dim, 1 << z_log2dim);
-  print_coord(image_dims, "medium image");
-  for (int block_length=1 << 5; block_length > 4; block_length >>= 1) {
-    auto recut = Recut<uint16_t>(args);
-    auto block_lengths = new_grid_coord(block_length, block_length, block_length);
-    auto interval_block_lengths = coord_div(image_dims, block_lengths);
-    print_coord(interval_block_lengths, "\tinterval_block_lengths");
-    auto interval_block_size = coord_prod_accum(interval_block_lengths);
-    cout << "\tblock_length: " << block_length << " interval_block_size: " << interval_block_size << '\n';
-    recut.initialize_globals(1, interval_block_size);
-    //delete recut;
+  {
+    auto image_dims =
+        new_grid_coord(1 << xy_log2dim, 1 << xy_log2dim, 1 << z_log2dim);
+    print_coord(image_dims, "medium section");
+    check_block_sizes(image_dims);
   }
+
+  //{
+    //auto image_dims =
+        //new_grid_coord(1 << xy_log2dim, 1 << 14, 1 << z_log2dim);
+    //print_coord(image_dims, "large section");
+    //check_block_sizes(image_dims);
+  //}
 }
 
 TEST(Update, EachStageIteratively) {
