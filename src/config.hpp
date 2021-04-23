@@ -51,14 +51,18 @@ using Leaf = typename vp::PointDataLeafNode<INDEX_TYPE, LEAF_LOG2DIM>;
 using InternalNode1 = typename vt::InternalNode<Leaf, INTER1_LOG2DIM>;
 using EnlargedPointDataTree = typename vt::Tree<
     vt::RootNode<vt::InternalNode<InternalNode1, INTER2_LOG2DIM>>>;
-using EnlargedPointDataGrid = typename openvdb::Grid<EnlargedPointDataTree>;
+//using EnlargedPointDataGrid = typename openvdb::Grid<EnlargedPointDataTree>;
+//using EnlargedPointDataGrid = openvdb::Grid<vp::PointDataTree>;
+using EnlargedPointDataGrid = vp::PointDataGrid;
 
-using EnlargedPointIndexGrid = typename openvdb::Grid<
-    openvdb::tree::Tree<openvdb::tree::RootNode<openvdb::tree::InternalNode<
-        openvdb::tree::InternalNode<openvdb::tools::PointIndexLeafNode<
-                                        openvdb::PointIndex32, LEAF_LOG2DIM>,
-                                    INTER1_LOG2DIM>,
-        INTER2_LOG2DIM>>>>;
+//using EnlargedPointIndexGrid = typename openvdb::Grid<
+    //openvdb::tree::Tree<openvdb::tree::RootNode<openvdb::tree::InternalNode<
+        //openvdb::tree::InternalNode<openvdb::tools::PointIndexLeafNode<
+                                        //openvdb::PointIndex32, LEAF_LOG2DIM>,
+                                    //INTER1_LOG2DIM>,
+        //INTER2_LOG2DIM>>>>;
+//using EnlargedPointIndexGrid = openvdb::Grid<vp::PointIndexTree>;
+using EnlargedPointIndexGrid = vto::PointIndexGrid;
 
 #else // not VDB
 using OffsetCoord = std::vector<int8_t>;
