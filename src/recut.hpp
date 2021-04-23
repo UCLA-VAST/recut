@@ -127,8 +127,9 @@ public:
   // interval specific global data structures
   vector<bool> active_intervals;
   vector<vector<atomwrapper<bool>>> active_blocks;
+#ifdef ASYNC
   vector<vector<atomwrapper<bool>>> processing_blocks;
-  vector<vector<vector<bool>>> active_neighbors;
+#endif
 
   Recut(RecutCommandLineArgs &args)
       : args(&args), params(&(args.recut_parameters())) {}
@@ -1018,8 +1019,7 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
     // The other block isn't processing, so an update to it at here
     // is currently true for this iteration. It does not need to be checked
     // again in integrate_update_grid via adding it to the
-    // update_grid. Does not need to be added to active_neighbors for
-    // same reason
+    // update_grid. 
     return;
   }
 #endif // end of ASYNC
@@ -1958,8 +1958,10 @@ void Recut<image_t>::march_narrow_band(
 
   // Note: could set explicit memory ordering on atomic
   active_blocks[interval_id][block_id].store(false);
+#ifdef ASYNC
   processing_blocks[interval_id][block_id].store(
       false); // release block_id heap
+#endif
 } // end march_narrow_band
 
 // return the nearest background threshold value that is closest to the
@@ -2588,7 +2590,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
     auto finalize_time = timer->elapsed() - finalize_start;
     computation_time = computation_time + finalize_time;
 #ifdef LOG
-    cout << "Grid finalize time: " << finalize_time << " s\n";
+    cout << "Grid join time: " << finalize_time << " s\n";
 #endif
   } else {
 #ifdef RV
@@ -2711,6 +2713,8 @@ template <class image_t>
 void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
                                         const VID_t &interval_block_size) {
 
+  auto timer = new high_resolution_timer();
+
   // Initialize.
   vector<vector<atomwrapper<bool>>> temp(
       grid_interval_size, vector<atomwrapper<bool>>(interval_block_size));
@@ -2726,9 +2730,11 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
   this->active_intervals = vector(grid_interval_size, false);
 
 #ifdef LOG_FULL
-  cout << "Created active blocks" << '\n';
+  cout << "\tCreated active blocks " << timer->elapsed() << 's' << '\n';
 #endif
+  timer->restart();
 
+#ifdef ASYNC
   // Initialize.
   vector<vector<atomwrapper<bool>>> temp2(
       grid_interval_size, vector<atomwrapper<bool>>(interval_block_size));
@@ -2740,10 +2746,12 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
     temp2[interval] = inner;
   }
   this->processing_blocks = temp2;
+#endif
 
 #ifdef LOG_FULL
-  cout << "Created processing blocks" << '\n';
+  cout << "\tCreated processing blocks " << timer->elapsed() << 's' <<'\n';
 #endif
+  timer->restart();
 
   if (!params->convert_only_) {
     // fifo is a deque representing the vids left to
@@ -2762,6 +2770,11 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
         std::vector<std::vector<VertexAttr>>(interval_block_size,
                                              std::vector<VertexAttr>()));
   }
+
+#ifdef LOG_FULL
+  cout << "\tCreated fifos " << timer->elapsed() << 's' <<'\n';
+#endif
+
 }
 
 // Deduce lengths from the various input options

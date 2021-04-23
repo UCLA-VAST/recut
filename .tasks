@@ -24,7 +24,9 @@ command=nix build -L
 cwd=<root>
 
 [project-test]
-command=result/bin/./recut_test --gtest_filter=VDB.IntegrateUpdateGrid
+command=result/bin/./recut_test --gtest_filter=VDB.Convert
+;command=result/bin/./recut_test --gtest_filter=Scale.InitializeGlobals
+;command=result/bin/./recut_test --gtest_filter=VDB.IntegrateUpdateGrid
 ;command=cd bin && ./recut_test --gtest_output=json:../data/test_detail.json  --gtest_also_run_disabled_tests --gtest_filter='*'.ChecksIfFinalVerticesCorrect/'*' | tee ../data/test_detail.log
 ;command=cd bin && ./recut_test --gtest_output=json:../data/test_detail.json  --gtest_also_run_disabled_tests --gtest_filter='*'.ChecksIfFinalVerticesCorrect/11 | tee ../data/test_detail.log
 ;--gtest_filter=Update.EachStageIteratively
