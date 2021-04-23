@@ -120,9 +120,9 @@ public:
   atomic<VID_t> global_revisits;
   RecutCommandLineArgs *args;
   RecutParameters *params;
-  std::vector<std::vector<std::deque<VertexAttr>>> global_fifo;
-  std::vector<std::vector<std::deque<VertexAttr>>> local_fifo;
-  std::vector<std::vector<std::vector<VertexAttr>>> active_vertices;
+  std::map<VID_t, std::deque<VertexAttr>> global_fifo;
+  std::map<VID_t, std::deque<VertexAttr>> local_fifo;
+  std::map<VID_t, std::vector<VertexAttr>> active_vertices;
 
   // interval specific global data structures
   vector<bool> active_intervals;
@@ -455,7 +455,7 @@ void Recut<image_t>::setup_radius(Container &fifo) {
   for (size_t interval_id = 0; interval_id < grid_interval_size;
        ++interval_id) {
     for (size_t block_id = 0; block_id < interval_block_size; ++block_id) {
-      if (!(fifo[interval_id][block_id].empty())) {
+      if (!(fifo[block_id].empty())) {
         active_intervals[interval_id] = true;
         active_blocks[interval_id][block_id].store(true);
 #ifdef FULL_PRINT
@@ -500,9 +500,9 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
     auto offsets = coord_mod(coord, this->block_lengths);
     if (stage == "connected") {
       // place a root with proper vid and parent of itself
-      msg_vertex = &(this->active_vertices[interval_id][block_id].emplace_back(
+      msg_vertex = &(this->active_vertices[block_id].emplace_back(
           /*edge_state*/ 0, offsets, zeros_off()));
-      this->local_fifo[interval_id][block_id].emplace_back(
+      this->local_fifo[block_id].emplace_back(
           /*edge_state*/ 0, offsets, zeros_off());
     } else if (stage == "prune") {
 
@@ -514,7 +514,7 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
 #endif
       assertm(msg_vertex->valid_radius(),
               "activate vids didn't find valid radius");
-      fifo[interval_id][block_id].emplace_back(/*edge_state*/ 0, offsets,
+      fifo[block_id].emplace_back(/*edge_state*/ 0, offsets,
                                                zeros_off());
     } else {
       assertm(false, "stage behavior not yet specified");
@@ -534,7 +534,7 @@ template <class Container>
 void Recut<image_t>::print_grid(std::string stage, Container &fifo) {
   for (size_t interval_id = 0; interval_id < grid_interval_size;
        ++interval_id) {
-    print_interval(interval_id, stage, fifo[interval_id]);
+    print_interval(interval_id, stage, fifo);
   }
 }
 
@@ -959,7 +959,7 @@ bool Recut<image_t>::accumulate_connected(
   dst->set_parent(offset_to_current);
   parents_handle.set(*ind, offset_to_current);
 
-  local_fifo[interval_id][block_id].push_back(*dst);
+  local_fifo[block_id].push_back(*dst);
   check_ghost_update(interval_id, block_id, dst_coord, dst, "connected",
                      vdb_accessor);
 
@@ -1249,7 +1249,7 @@ bool Recut<image_t>::integrate_vertex(const VID_t interval_id,
   updated_vertex->mark_band();
   // adds to iterable but not to active vertices since its from outside domain
   if (stage == "connected") {
-    local_fifo[interval_id][block_id].push_back(*updated_vertex);
+    local_fifo[block_id].push_back(*updated_vertex);
   } else {
     // cout << "integrate vertex " << updated_vertex->description();
     fifo.push_back(*updated_vertex);
@@ -1580,7 +1580,7 @@ void Recut<image_t>::connected_tile(
     const image_t *tile, VID_t interval_id, VID_t block_id, GridCoord offsets,
     std::string stage, const TileThresholds<image_t> *tile_thresholds,
     Container &fifo, VID_t revisits, T vdb_accessor, T2 leaf_iter) {
-  if (local_fifo[interval_id][block_id].empty())
+  if (local_fifo[block_id].empty())
     return;
 
   // load flags
@@ -1596,14 +1596,14 @@ void Recut<image_t>::connected_tile(
 
   VertexAttr *current, *msg_vertex;
   VID_t visited = 0;
-  while (!(local_fifo[interval_id][block_id].empty())) {
+  while (!(local_fifo[block_id].empty())) {
 
 #ifdef LOG_FULL
     visited += 1;
 #endif
 
     // msg_vertex might become undefined during scatter
-    msg_vertex = &(local_fifo[interval_id][block_id].front());
+    msg_vertex = &(local_fifo[block_id].front());
     const bool in_domain = msg_vertex->selected() || msg_vertex->root();
     auto surface = msg_vertex->surface();
 
@@ -1678,12 +1678,12 @@ void Recut<image_t>::connected_tile(
     } else {
       // previous msg_vertex could have been invalidated by insertion in
       // accumulate_connected
-      msg_vertex = &(local_fifo[interval_id][block_id].front());
+      msg_vertex = &(local_fifo[block_id].front());
       assertm(msg_vertex->band(), "if not selected it must be a band message");
       current = msg_vertex;
     }
     // safe to remove msg now
-    local_fifo[interval_id][block_id].pop_front(); // remove it
+    local_fifo[block_id].pop_front(); // remove it
 #endif
 
     // ignore if already designated as surface
@@ -2562,7 +2562,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           computation_time =
               computation_time +
               process_interval(interval_id, tile, stage, local_tile_thresholds,
-                               fifo[interval_id], this->local_fifo[interval_id],
+                               fifo, this->local_fifo,
                                update_accessor);
         }
       } // if the interval is active
@@ -2687,7 +2687,7 @@ inline VertexAttr *Recut<image_t>::get_or_set_active_vertex(
   } else {
     found = false;
     auto v =
-        &(this->active_vertices[interval_id][block_id].emplace_back(offsets));
+        &(this->active_vertices[block_id].emplace_back(offsets));
     v->mark_selected();
     return v;
   }
@@ -2701,7 +2701,7 @@ template <class image_t>
 inline VertexAttr *
 Recut<image_t>::get_active_vertex(const VID_t interval_id, const VID_t block_id,
                                   const OffsetCoord offsets) {
-  for (auto &v : this->active_vertices[interval_id][block_id]) {
+  for (auto &v : this->active_vertices[block_id]) {
     if (v.offsets == offsets) {
       return &v;
     }
@@ -2754,21 +2754,28 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
 #endif
 
   if (!params->convert_only_) {
+
+    std::map<VID_t, std::deque<VertexAttr>> inner;
+    std::map<VID_t, std::vector<VertexAttr>> inner_active_vertices;
+    VID_t interval_id = 0;
+    VID_t active_leaf_count = 0;
+    for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
+         ++leaf_iter) {
+      auto origin = leaf_iter->getNodeBoundingBox().min();
+      auto block_id = coord_img_to_block_id(origin);
+      //std::cout << origin << "->" << block_id << '\n';
+      inner[block_id] = std::deque<VertexAttr>();
+      inner_active_vertices[block_id] = std::vector<VertexAttr>();
+      ++active_leaf_count;
+    }
+    cout << "Active leaf count: " << active_leaf_count << '\n';
+
     // fifo is a deque representing the vids left to
     // process at each stage
-    this->global_fifo = std::vector<std::vector<std::deque<VertexAttr>>>(
-        grid_interval_size, std::vector<std::deque<VertexAttr>>(
-                                interval_block_size, std::deque<VertexAttr>()));
-
-    this->local_fifo = std::vector<std::vector<std::deque<VertexAttr>>>(
-        grid_interval_size, std::vector<std::deque<VertexAttr>>(
-                                interval_block_size, std::deque<VertexAttr>()));
-
+    this->global_fifo = inner;
+    this->local_fifo = inner;
     // global active vertex list
-    this->active_vertices = std::vector<std::vector<std::vector<VertexAttr>>>(
-        grid_interval_size,
-        std::vector<std::vector<VertexAttr>>(interval_block_size,
-                                             std::vector<VertexAttr>()));
+    this->active_vertices = inner_active_vertices;
   }
 
 #ifdef LOG_FULL
@@ -3453,7 +3460,7 @@ template <class image_t> void Recut<image_t>::adjust_parent(bool to_swc_file) {
     for (auto block_id = 0; block_id < interval_block_size; ++block_id) {
       auto block_img_offsets = id_block_to_interval_offsets(block_id);
       auto offsets = coord_add(interval_img_offsets, block_img_offsets);
-      for (auto &v : this->active_vertices[interval_id][block_id]) {
+      for (auto &v : this->active_vertices[block_id]) {
         if (filter_by_label(&v, false)) {
           adjust_vertex_parent(&v, offsets);
           print_vertex(interval_id, block_id, &v, offsets);
@@ -3507,7 +3514,7 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
     for (auto block_id = 0; block_id < interval_block_size; ++block_id) {
       auto block_img_offsets = id_block_to_interval_offsets(block_id);
       auto offsets = coord_add(interval_img_offsets, block_img_offsets);
-      for (auto &vertex_value : this->active_vertices[interval_id][block_id]) {
+      for (auto &vertex_value : this->active_vertices[block_id]) {
         // FIXME add interval offset too
         auto vertex = &vertex_value;
         auto coord = coord_add(vertex->offsets, offsets);
@@ -3555,7 +3562,7 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
     for (auto block_id = 0; block_id < interval_block_size; ++block_id) {
       auto block_img_offsets = id_block_to_interval_offsets(block_id);
       auto offsets = coord_add(interval_img_offsets, block_img_offsets);
-      for (auto &vertex_value : this->active_vertices[interval_id][block_id]) {
+      for (auto &vertex_value : this->active_vertices[block_id]) {
         auto vertex = &vertex_value;
         auto coord = coord_add(vertex->offsets, offsets);
         auto vid = coord_to_id(coord, this->image_lengths);

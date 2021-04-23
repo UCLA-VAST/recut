@@ -38,10 +38,10 @@
 // that returns a value will give strange: "void value not ignored as it ought
 // to be" errors
 
-template <class T, typename DataType, typename T2>
-void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
-                       std::string stage, double &error_rate,
-                       std::vector<std::vector<T2>> fifo,
+template <typename DataType>
+void check_recut_error(Recut<uint16_t> &recut, DataType *ground_truth,
+                       int grid_size, std::string stage, double &error_rate,
+                       std::map<VID_t, std::deque<VertexAttr>> fifo,
                        int ground_truth_selected_count,
                        bool strict_match = true) {
   auto tol_sz = static_cast<VID_t>(grid_size) * grid_size * grid_size;
@@ -63,7 +63,7 @@ void check_recut_error(T &recut, DataType *ground_truth, int grid_size,
         auto interval_id = recut.id_img_to_interval_id(vid);
         auto block_id = recut.id_img_to_block_id(vid);
         auto find_vid = [&]() {
-          for (const auto &local_vertex : fifo[interval_id][block_id]) {
+          for (const auto &local_vertex : fifo[block_id]) {
             // if (vid == recut.v_to_img_coord(interval_id, block_id,
             // local_vertex))
             if (coord_all_eq(correct_offset, local_vertex.offsets))
@@ -753,9 +753,8 @@ TEST(VDB, IntegrateUpdateGrid) {
     recut.check_ghost_update(0, 13, upper_corner, update_vertex, stage,
                              update_accessor);
 
-    recut.integrate_update_grid(
-        recut.topology_grid, stage, recut.global_fifo[interval_id],
-        recut.local_fifo[interval_id], update_accessor, interval_id);
+    recut.integrate_update_grid(recut.topology_grid, stage, recut.global_fifo,
+                                recut.local_fifo, update_accessor, interval_id);
 
     cout << "Finished integrate\n";
 
@@ -765,11 +764,10 @@ TEST(VDB, IntegrateUpdateGrid) {
             auto block_img_offsets =
                 recut.id_interval_block_to_img_offsets(interval_id, block_id);
             if (print_all)
-              cout << recut.local_fifo[interval_id][block_id][0].offsets
-                   << '\n';
+              cout << recut.local_fifo[block_id][0].offsets << '\n';
             return coord_all_eq(
                 coord_add(block_img_offsets,
-                          recut.local_fifo[interval_id][block_id][0].offsets),
+                          recut.local_fifo[block_id][0].offsets),
                 corner);
           }) |
           rng::to_vector;
@@ -1542,11 +1540,11 @@ TEST(CheckGlobals, SurfacePassed) {
     auto vertex = recut.get_active_vertex(0, 0, offsets);
     ASSERT_NE(vertex, nullptr);
     vertex->mark_surface();
-    recut.global_fifo[0][0].push_back(*vertex);
+    recut.global_fifo[0].push_back(*vertex);
   }
 
   {
-    auto msg_vertex = recut.global_fifo[0][0].front();
+    auto msg_vertex = recut.global_fifo[0].front();
     auto vertex = recut.get_active_vertex(0, 0, msg_vertex.offsets);
     ASSERT_NE(vertex, nullptr);
     ASSERT_TRUE(msg_vertex.surface());
@@ -1589,13 +1587,13 @@ TEST(CheckGlobals, AllFifo) {
     ASSERT_TRUE(g2vertex->selected());
     gvertex->mark_root();
 
-    recut.global_fifo[0][0].push_back(*vertex);
-    recut.local_fifo[0][0].push_back(*vertex);
+    recut.global_fifo[0].push_back(*vertex);
+    recut.local_fifo[0].push_back(*vertex);
   }
 
   for (auto vid : l) {
     cout << "check vid: " << vid << '\n';
-    cout << "fifo size: " << recut.local_fifo[0][0].size() << '\n';
+    cout << "fifo size: " << recut.local_fifo[0].size() << '\n';
     auto offsets = id_to_coord(vid, recut.image_lengths);
     auto vertex = recut.get_or_set_active_vertex(0, 0, offsets, found);
     auto gvertex = recut.get_active_vertex(0, 0, offsets);
@@ -1605,8 +1603,8 @@ TEST(CheckGlobals, AllFifo) {
     ASSERT_TRUE(vertex->root());
     ASSERT_TRUE(vertex->surface());
 
-    auto msg_vertex = &(recut.local_fifo[0][0].front());
-    recut.local_fifo[0][0].pop_front(); // remove it
+    auto msg_vertex = &(recut.local_fifo[0].front());
+    recut.local_fifo[0].pop_front(); // remove it
 
     ASSERT_TRUE(coord_all_eq(msg_vertex->offsets, offsets));
     ASSERT_TRUE(coord_all_eq(msg_vertex->offsets, vertex->offsets));
@@ -1614,8 +1612,8 @@ TEST(CheckGlobals, AllFifo) {
     ASSERT_TRUE(msg_vertex->root());
     ASSERT_TRUE(msg_vertex->surface());
 
-    auto global_vertex = &(recut.global_fifo[0][0].front());
-    recut.global_fifo[0][0].pop_front(); // remove it
+    auto global_vertex = &(recut.global_fifo[0].front());
+    recut.global_fifo[0].pop_front(); // remove it
 
     ASSERT_TRUE(coord_all_eq(global_vertex->offsets, offsets));
     ASSERT_TRUE(coord_all_eq(global_vertex->offsets, vertex->offsets));
@@ -1623,11 +1621,11 @@ TEST(CheckGlobals, AllFifo) {
     ASSERT_TRUE(global_vertex->root());
     ASSERT_TRUE(global_vertex->surface());
   }
-  ASSERT_TRUE(recut.local_fifo[0][0].empty());
-  ASSERT_TRUE(recut.global_fifo[0][0].empty());
+  ASSERT_TRUE(recut.local_fifo[0].empty());
+  ASSERT_TRUE(recut.global_fifo[0].empty());
 }
 
-TEST(Scale, InitializeGlobals) {
+TEST(Scale, DISABLED_InitializeGlobals) {
   auto grid_size = 2;
   auto args = get_args(grid_size, grid_size, grid_size, 100, 0);
 
@@ -1656,10 +1654,10 @@ TEST(Scale, InitializeGlobals) {
   }
 
   //{
-    //auto image_dims =
-        //new_grid_coord(1 << xy_log2dim, 1 << 14, 1 << z_log2dim);
-    //print_coord(image_dims, "large section");
-    //check_block_sizes(image_dims);
+  // auto image_dims =
+  // new_grid_coord(1 << xy_log2dim, 1 << 14, 1 << z_log2dim);
+  // print_coord(image_dims, "large section");
+  // check_block_sizes(image_dims);
   //}
 }
 
@@ -1792,9 +1790,8 @@ TEST(Update, EachStageIteratively) {
                   std::cout << "All surface vids: \n";
                   for (int i = 0; i < recut.global_fifo.size(); ++i) {
                     std::cout << "Interval " << i << '\n';
-                    const auto outer = recut.global_fifo[i];
-                    for (int j = 0; j < outer.size(); ++j) {
-                      auto inner = outer[j];
+                    for (int j = 0; j < recut.global_fifo.size(); ++j) {
+                      auto inner = recut.global_fifo[j];
                       std::cout << " Block " << j << '\n';
                       for (auto &vertex : inner) {
                         total++;
@@ -1862,10 +1859,8 @@ TEST(Update, EachStageIteratively) {
               recut.setup_radius(recut.global_fifo);
               // assert conducting update on radius consumes all fifo values
               recut.update("radius", recut.global_fifo);
-              for (const auto &o : recut.global_fifo) {
-                for (const auto &i : o) {
-                  ASSERT_EQ(i.size(), 0);
-                }
+              for (const auto &m : recut.global_fifo) {
+                ASSERT_EQ(m.second.size(), 0);
               }
             }
 
