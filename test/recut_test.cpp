@@ -1632,7 +1632,7 @@ TEST(Scale, InitializeGlobals) {
   auto args = get_args(grid_size, grid_size, grid_size, 100, 0);
 
   auto check_block_sizes = [&args](auto image_dims) {
-    for (int block_length = 1 << 5; block_length > 4; block_length >>= 1) {
+    for (int block_length = 1 << 4; block_length > 4; block_length >>= 1) {
       auto recut = Recut<uint16_t>(args);
       auto block_lengths =
           new_grid_coord(block_length, block_length, block_length);

@@ -2746,12 +2746,12 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
     temp2[interval] = inner;
   }
   this->processing_blocks = temp2;
-#endif
 
 #ifdef LOG_FULL
   cout << "\tCreated processing blocks " << timer->elapsed() << 's' <<'\n';
 #endif
   timer->restart();
+#endif
 
   if (!params->convert_only_) {
     // fifo is a deque representing the vids left to
