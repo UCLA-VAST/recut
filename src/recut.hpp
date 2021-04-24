@@ -121,12 +121,11 @@ public:
   RecutCommandLineArgs *args;
   RecutParameters *params;
   std::map<VID_t, std::deque<VertexAttr>> global_fifo;
-  std::map<VID_t, std::deque<VertexAttr>> local_fifo;
+  std::map<VID_t, std::deque<VertexAttr>> connected_fifo;
   std::map<VID_t, std::vector<VertexAttr>> active_vertices;
 
   // interval specific global data structures
   vector<bool> active_intervals;
-  vector<vector<atomwrapper<bool>>> active_blocks;
 #ifdef ASYNC
   vector<vector<atomwrapper<bool>>> processing_blocks;
 #endif
@@ -178,7 +177,7 @@ public:
   void place_vertex(const VID_t nb_interval_id, VID_t block_id, VID_t nb,
                     struct VertexAttr *dst, GridCoord dst_coord,
                     OffsetCoord msg_offsets, std::string stage, T vdb_accessor);
-  bool check_blocks_finish(VID_t interval_id);
+  template <typename T> bool are_fifos_empty(T check_fifo);
   bool are_intervals_finished();
   void activate_all_intervals();
 
@@ -457,7 +456,6 @@ void Recut<image_t>::setup_radius(Container &fifo) {
     for (size_t block_id = 0; block_id < interval_block_size; ++block_id) {
       if (!(fifo[block_id].empty())) {
         active_intervals[interval_id] = true;
-        active_blocks[interval_id][block_id].store(true);
 #ifdef FULL_PRINT
         cout << "Set interval " << interval_id << " block " << block_id
              << " to active\n";
@@ -494,7 +492,6 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
 #endif
 
     active_intervals[interval_id] = true;
-    active_blocks[interval_id][block_id].store(true);
 
     VertexAttr *msg_vertex;
     auto offsets = coord_mod(coord, this->block_lengths);
@@ -502,7 +499,7 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
       // place a root with proper vid and parent of itself
       msg_vertex = &(this->active_vertices[block_id].emplace_back(
           /*edge_state*/ 0, offsets, zeros_off()));
-      this->local_fifo[block_id].emplace_back(
+      this->connected_fifo[block_id].emplace_back(
           /*edge_state*/ 0, offsets, zeros_off());
     } else if (stage == "prune") {
 
@@ -514,8 +511,7 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
 #endif
       assertm(msg_vertex->valid_radius(),
               "activate vids didn't find valid radius");
-      fifo[block_id].emplace_back(/*edge_state*/ 0, offsets,
-                                               zeros_off());
+      fifo[block_id].emplace_back(/*edge_state*/ 0, offsets, zeros_off());
     } else {
       assertm(false, "stage behavior not yet specified");
     }
@@ -959,7 +955,7 @@ bool Recut<image_t>::accumulate_connected(
   dst->set_parent(offset_to_current);
   parents_handle.set(*ind, offset_to_current);
 
-  local_fifo[block_id].push_back(*dst);
+  connected_fifo[block_id].push_back(*dst);
   check_ghost_update(interval_id, block_id, dst_coord, dst, "connected",
                      vdb_accessor);
 
@@ -1005,7 +1001,7 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
         integrate_vertex(nb_interval_id, nb_block_id, dst, true, stage);
     if (dst_update_success) { // only update if it's true, allows for
       // remaining true
-      active_blocks[nb_interval_id][nb_block_id].store(dst_update_success);
+      // active_blocks[nb_interval_id][nb_block_id].store(dst_update_success);
       active_intervals[nb_interval_id] = true;
 #ifdef FULL_PRINT
       cout << "\t\t\tasync activate interval " << nb_interval_id << " block "
@@ -1019,7 +1015,7 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
     // The other block isn't processing, so an update to it at here
     // is currently true for this iteration. It does not need to be checked
     // again in integrate_update_grid via adding it to the
-    // update_grid. 
+    // update_grid.
     return;
   }
 #endif // end of ASYNC
@@ -1249,7 +1245,7 @@ bool Recut<image_t>::integrate_vertex(const VID_t interval_id,
   updated_vertex->mark_band();
   // adds to iterable but not to active vertices since its from outside domain
   if (stage == "connected") {
-    local_fifo[block_id].push_back(*updated_vertex);
+    connected_fifo[block_id].push_back(*updated_vertex);
   } else {
     // cout << "integrate vertex " << updated_vertex->description();
     fifo.push_back(*updated_vertex);
@@ -1398,25 +1394,6 @@ void Recut<image_t>::integrate_update_grid(EnlargedPointDataGrid::Ptr grid,
     integrate_adj_leafs(bbox.max(), this->higher_stencil, update_accessor,
                         fifo[block_id], connected_fifo[block_id], stage, grid,
                         LEAF_LENGTH);
-
-    // set active_blocks
-    if (stage == "connected") {
-      if (!(connected_fifo[block_id].empty())) {
-#ifdef FULL_PRINT
-        cout << "Setting interval: " << interval_id << " block: " << block_id
-             << " to active\n";
-#endif
-        active_blocks[interval_id][block_id].store(true);
-      }
-    } else {
-      if (!(fifo[block_id].empty())) {
-#ifdef FULL_PRINT
-        cout << "Setting interval: " << interval_id << " block: " << block_id
-             << " to active\n";
-#endif
-        active_blocks[interval_id][block_id].store(true);
-      }
-    }
   }
 }
 
@@ -1459,13 +1436,14 @@ template <class image_t> bool Recut<image_t>::are_intervals_finished() {
  * corresponding heap is not empty
  */
 template <class image_t>
-bool Recut<image_t>::check_blocks_finish(VID_t interval_id) {
+template <typename T>
+bool Recut<image_t>::are_fifos_empty(T check_fifo) {
   VID_t tot_active = 0;
 #ifdef LOG_FULL
   cout << "Blocks active: ";
 #endif
-  for (auto block_id = 0; block_id < interval_block_size; ++block_id) {
-    if (active_blocks[interval_id][block_id].load()) {
+  for (const auto &pair : check_fifo) {
+    if (!pair.second.empty()) {
       tot_active++;
 #ifdef LOG_FULL
       cout << block_id << ", ";
@@ -1580,7 +1558,7 @@ void Recut<image_t>::connected_tile(
     const image_t *tile, VID_t interval_id, VID_t block_id, GridCoord offsets,
     std::string stage, const TileThresholds<image_t> *tile_thresholds,
     Container &fifo, VID_t revisits, T vdb_accessor, T2 leaf_iter) {
-  if (local_fifo[block_id].empty())
+  if (connected_fifo[block_id].empty())
     return;
 
   // load flags
@@ -1596,14 +1574,14 @@ void Recut<image_t>::connected_tile(
 
   VertexAttr *current, *msg_vertex;
   VID_t visited = 0;
-  while (!(local_fifo[block_id].empty())) {
+  while (!(connected_fifo[block_id].empty())) {
 
 #ifdef LOG_FULL
     visited += 1;
 #endif
 
     // msg_vertex might become undefined during scatter
-    msg_vertex = &(local_fifo[block_id].front());
+    msg_vertex = &(connected_fifo[block_id].front());
     const bool in_domain = msg_vertex->selected() || msg_vertex->root();
     auto surface = msg_vertex->surface();
 
@@ -1678,12 +1656,12 @@ void Recut<image_t>::connected_tile(
     } else {
       // previous msg_vertex could have been invalidated by insertion in
       // accumulate_connected
-      msg_vertex = &(local_fifo[block_id].front());
+      msg_vertex = &(connected_fifo[block_id].front());
       assertm(msg_vertex->band(), "if not selected it must be a band message");
       current = msg_vertex;
     }
     // safe to remove msg now
-    local_fifo[block_id].pop_front(); // remove it
+    connected_fifo[block_id].pop_front(); // remove it
 #endif
 
     // ignore if already designated as surface
@@ -1712,7 +1690,7 @@ void Recut<image_t>::connected_tile(
         // otherwise surface status change is irrelevant to outside domains
         // at this stage
         // goes into update_grid of neighbors if its on the edge with
-        // them these then get added into neighbor local_fifo
+        // them these then get added into neighbor connected_fifo
         check_ghost_update(interval_id, block_id, current_coord, current, stage,
                            vdb_accessor);
 #endif
@@ -1724,9 +1702,9 @@ void Recut<image_t>::connected_tile(
         assertm(false, "Never reached");
 
         // leverage updated_ghost_vec to avoid race conditions
-        //updated_ghost_vec[check_interval_id][block_id][check_block_id]
-            //.emplace_back(current->edge_state, current->offsets,
-                          //current->parent, current->radius);
+        // updated_ghost_vec[check_interval_id][block_id][check_block_id]
+        //.emplace_back(current->edge_state, current->offsets,
+        // current->parent, current->radius);
       }
     }
   }
@@ -1956,8 +1934,6 @@ void Recut<image_t>::march_narrow_band(
        << " visiting " << visited << " in " << timer->elapsed() << " s" << '\n';
 #endif
 
-  // Note: could set explicit memory ordering on atomic
-  active_blocks[interval_id][block_id].store(false);
 #ifdef ASYNC
   processing_blocks[interval_id][block_id].store(
       false); // release block_id heap
@@ -2075,52 +2051,52 @@ std::atomic<double> Recut<image_t>::process_interval(
 
     // if any active status for any block of interval_id is
     // true
-    while (aimage_y_len_of(this->active_blocks[interval_id].begin(),
-                           this->active_blocks[interval_id].end(),
-                           [](atomwrapper<bool> i) { return i.load(); })) {
+    // while (aimage_y_len_of(this->active_blocks[interval_id].begin(),
+    // this->active_blocks[interval_id].end(),
+    //[](atomwrapper<bool> i) { return i.load(); })) {
 
 #ifdef TF
-      prevent_destruction.emplace_back(new tf::Taskflow());
-      bool added_task = false;
+    prevent_destruction.emplace_back(new tf::Taskflow());
+    bool added_task = false;
 #endif // TF
 
-      for (VID_t block_id = 0; block_id < interval_block_size; ++block_id) {
-        // if not currently processing, set atomically set to true and
-        if (active_blocks[interval_id][block_id].load() &&
-            processing_blocks[interval_id][block_id].compare_exchange_strong(
-                false, true)) {
+    for (VID_t block_id = 0; block_id < interval_block_size; ++block_id) {
+      // if not currently processing, set atomically set to true and
+      // if (active_blocks[interval_id][block_id].load() &&
+      if (processing_blocks[interval_id][block_id].compare_exchange_strong(
+              false, true)) {
 #ifdef LOG_FULL
-          // cout << "Start active block_id " << block_id << '\n';
+        // cout << "Start active block_id " << block_id << '\n';
 #endif
 
 #ifdef TF
-          // FIXME check passing tile ptr as ref
-          prevent_destruction.back()->silent_emplace([=, &tile]() {
-            march_narrow_band(tile, interval_id, block_id, stage,
-                              tile_thresholds, vdb_accessor);
-          });
-          added_task = true;
+        // FIXME check passing tile ptr as ref
+        prevent_destruction.back()->silent_emplace([=, &tile]() {
+          march_narrow_band(tile, interval_id, block_id, stage, tile_thresholds,
+                            vdb_accessor);
+        });
+        added_task = true;
 #else
-          async(launch::async, &Recut<image_t>::march_narrow_band, this, tile,
-                interval_id, block_id, stage, tile_thresholds, vdb_accessor);
+        async(launch::async, &Recut<image_t>::march_narrow_band, this, tile,
+              interval_id, block_id, stage, tile_thresholds, vdb_accessor);
 #endif // TF
-        }
       }
+    }
 
 #ifdef TF
-      if (!(prevent_destruction.back()->empty())) {
-        // cout << "start taskflow" << '\n';
-        // returns a std::future object
-        // it is non-blocking
-        // note it is the tasks responsibility to set the
-        // appropriate active block variables in order to
-        // exit this loop all active blocks must be false
-        executor.run(*(prevent_destruction.back()));
-      }
+    if (!(prevent_destruction.back()->empty())) {
+      // cout << "start taskflow" << '\n';
+      // returns a std::future object
+      // it is non-blocking
+      // note it is the tasks responsibility to set the
+      // appropriate active block variables in order to
+      // exit this loop all active blocks must be false
+      executor.run(*(prevent_destruction.back()));
+    }
 #endif // TF
 
-      this_thread::sleep_for(chrono::milliseconds(10));
-    }
+    this_thread::sleep_for(chrono::milliseconds(10));
+  }
 
 #else // OMP or sequential strategy
 
@@ -2143,58 +2119,61 @@ std::atomic<double> Recut<image_t>::process_interval(
 #endif // ASYNC
 
 #ifdef LOG_FULL
-    cout << "Marched narrow band";
-    clock_gettime(CLOCK_REALTIME, &postmarch_time);
-    cout << " in " << diff_time(iter_start, postmarch_time) << " sec." << '\n';
+  cout << "Marched narrow band";
+  clock_gettime(CLOCK_REALTIME, &postmarch_time);
+  cout << " in " << diff_time(iter_start, postmarch_time) << " sec." << '\n';
 #endif
 
-    //#ifdef ASYNC
-    // for(VID_t block_id = 0;block_id<interval_block_size;++block_id)
-    //{
-    // create_integrate_thread(interval_id, block_id);
-    //}
-    //#else
+  //#ifdef ASYNC
+  // for(VID_t block_id = 0;block_id<interval_block_size;++block_id)
+  //{
+  // create_integrate_thread(interval_id, block_id);
+  //}
+  //#else
 
-    integrate_update_grid(this->topology_grid, stage, fifo, connected_fifo,
-                          vdb_accessor, interval_id);
+  integrate_update_grid(this->topology_grid, stage, fifo, connected_fifo,
+                        vdb_accessor, interval_id);
 
 #ifdef LOG_FULL
-    clock_gettime(CLOCK_REALTIME, &end_iter_time);
-    cout << "inner_iteration_idx " << inner_iteration_idx << " in "
-         << diff_time(iter_start, end_iter_time) << " sec." << '\n';
+  clock_gettime(CLOCK_REALTIME, &end_iter_time);
+  cout << "inner_iteration_idx " << inner_iteration_idx << " in "
+       << diff_time(iter_start, end_iter_time) << " sec." << '\n';
 #endif
 
-    if (check_blocks_finish(interval_id)) {
-      // final_inner_iter = inner_iteration_idx;
+  if (stage == "connected") {
+    if (are_fifos_empty(connected_fifo)) {
       break;
     }
-    inner_iteration_idx++;
-  } // iterations per interval
-
-  clock_gettime(CLOCK_REALTIME, &presave_time);
-
-#ifdef DENSE
-  if (!(this->mmap_)) {
-    grid.GetInterval(interval_id)->SaveToDisk();
+  } else if (are_fifos_empty(fifo)) {
+    break;
   }
-#endif
+  inner_iteration_idx++;
+} // iterations per interval
 
-  clock_gettime(CLOCK_REALTIME, &postsave_time);
+clock_gettime(CLOCK_REALTIME, &presave_time);
 
-  no_io_time = diff_time(start_iter_loop_time, presave_time);
-  // computation_time += no_io_time;
-#ifdef LOG_FULL
-  cout << "Interval: " << interval_id << " (no I/O) within " << no_io_time
-       << " sec." << '\n';
 #ifdef DENSE
-  if (!(this->mmap_))
-    cout << "Finished saving interval in "
-         << diff_time(presave_time, postsave_time) << " sec." << '\n';
+if (!(this->mmap_)) {
+  grid.GetInterval(interval_id)->SaveToDisk();
+}
+#endif
+
+clock_gettime(CLOCK_REALTIME, &postsave_time);
+
+no_io_time = diff_time(start_iter_loop_time, presave_time);
+// computation_time += no_io_time;
+#ifdef LOG_FULL
+cout << "Interval: " << interval_id << " (no I/O) within " << no_io_time
+     << " sec." << '\n';
+#ifdef DENSE
+if (!(this->mmap_))
+  cout << "Finished saving interval in "
+       << diff_time(presave_time, postsave_time) << " sec." << '\n';
 #endif
 #endif
 
-  active_intervals[interval_id] = false;
-  return no_io_time;
+active_intervals[interval_id] = false;
+return no_io_time;
 }
 
 #ifdef USE_MCP3D
@@ -2562,8 +2541,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           computation_time =
               computation_time +
               process_interval(interval_id, tile, stage, local_tile_thresholds,
-                               fifo, this->local_fifo,
-                               update_accessor);
+                               fifo, this->connected_fifo, update_accessor);
         }
       } // if the interval is active
 
@@ -2686,8 +2664,7 @@ inline VertexAttr *Recut<image_t>::get_or_set_active_vertex(
     return vertex;
   } else {
     found = false;
-    auto v =
-        &(this->active_vertices[block_id].emplace_back(offsets));
+    auto v = &(this->active_vertices[block_id].emplace_back(offsets));
     v->mark_selected();
     return v;
   }
@@ -2713,26 +2690,9 @@ template <class image_t>
 void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
                                         const VID_t &interval_block_size) {
 
-  auto timer = new high_resolution_timer();
-
-  // Initialize.
-  vector<vector<atomwrapper<bool>>> temp(
-      grid_interval_size, vector<atomwrapper<bool>>(interval_block_size));
-  for (auto interval = 0; interval < grid_interval_size; ++interval) {
-    vector<atomwrapper<bool>> inner(interval_block_size);
-    for (auto &e : inner) {
-      e.store(false, memory_order_relaxed);
-    }
-    temp[interval] = inner;
-  }
-  this->active_blocks = temp;
-
   this->active_intervals = vector(grid_interval_size, false);
 
-#ifdef LOG_FULL
-  cout << "\tCreated active blocks " << timer->elapsed() << 's' << '\n';
-#endif
-  timer->restart();
+  auto timer = new high_resolution_timer();
 
 #ifdef ASYNC
   // Initialize.
@@ -2748,7 +2708,7 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
   this->processing_blocks = temp2;
 
 #ifdef LOG_FULL
-  cout << "\tCreated processing blocks " << timer->elapsed() << 's' <<'\n';
+  cout << "\tCreated processing blocks " << timer->elapsed() << 's' << '\n';
 #endif
   timer->restart();
 #endif
@@ -2763,7 +2723,7 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
          ++leaf_iter) {
       auto origin = leaf_iter->getNodeBoundingBox().min();
       auto block_id = coord_img_to_block_id(origin);
-      //std::cout << origin << "->" << block_id << '\n';
+      // std::cout << origin << "->" << block_id << '\n';
       inner[block_id] = std::deque<VertexAttr>();
       inner_active_vertices[block_id] = std::vector<VertexAttr>();
       ++active_leaf_count;
@@ -2773,15 +2733,14 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
     // fifo is a deque representing the vids left to
     // process at each stage
     this->global_fifo = inner;
-    this->local_fifo = inner;
+    this->connected_fifo = inner;
     // global active vertex list
     this->active_vertices = inner_active_vertices;
   }
 
 #ifdef LOG_FULL
-  cout << "\tCreated fifos " << timer->elapsed() << 's' <<'\n';
+  cout << "\tCreated fifos " << timer->elapsed() << 's' << '\n';
 #endif
-
 }
 
 // Deduce lengths from the various input options

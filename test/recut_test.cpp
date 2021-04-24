@@ -754,7 +754,7 @@ TEST(VDB, IntegrateUpdateGrid) {
                              update_accessor);
 
     recut.integrate_update_grid(recut.topology_grid, stage, recut.global_fifo,
-                                recut.local_fifo, update_accessor, interval_id);
+                                recut.connected_fifo, update_accessor, interval_id);
 
     cout << "Finished integrate\n";
 
@@ -764,10 +764,10 @@ TEST(VDB, IntegrateUpdateGrid) {
             auto block_img_offsets =
                 recut.id_interval_block_to_img_offsets(interval_id, block_id);
             if (print_all)
-              cout << recut.local_fifo[block_id][0].offsets << '\n';
+              cout << recut.connected_fifo[block_id][0].offsets << '\n';
             return coord_all_eq(
                 coord_add(block_img_offsets,
-                          recut.local_fifo[block_id][0].offsets),
+                          recut.connected_fifo[block_id][0].offsets),
                 corner);
           }) |
           rng::to_vector;
@@ -880,7 +880,7 @@ TEST(VDB, ActivateVids) {
   auto block_id = 0;
   auto interval_id = 0;
   ASSERT_TRUE(recut.active_intervals[interval_id]);
-  ASSERT_TRUE(recut.active_blocks[interval_id][block_id].load());
+  ASSERT_FALSE(recut.connected_fifo[block_id].empty());
 
   GridCoord root(3, 3, 3);
   auto leaf_iter = recut.topology_grid->tree().probeLeaf(root);
@@ -1588,12 +1588,12 @@ TEST(CheckGlobals, AllFifo) {
     gvertex->mark_root();
 
     recut.global_fifo[0].push_back(*vertex);
-    recut.local_fifo[0].push_back(*vertex);
+    recut.connected_fifo[0].push_back(*vertex);
   }
 
   for (auto vid : l) {
     cout << "check vid: " << vid << '\n';
-    cout << "fifo size: " << recut.local_fifo[0].size() << '\n';
+    cout << "fifo size: " << recut.connected_fifo[0].size() << '\n';
     auto offsets = id_to_coord(vid, recut.image_lengths);
     auto vertex = recut.get_or_set_active_vertex(0, 0, offsets, found);
     auto gvertex = recut.get_active_vertex(0, 0, offsets);
@@ -1603,8 +1603,8 @@ TEST(CheckGlobals, AllFifo) {
     ASSERT_TRUE(vertex->root());
     ASSERT_TRUE(vertex->surface());
 
-    auto msg_vertex = &(recut.local_fifo[0].front());
-    recut.local_fifo[0].pop_front(); // remove it
+    auto msg_vertex = &(recut.connected_fifo[0].front());
+    recut.connected_fifo[0].pop_front(); // remove it
 
     ASSERT_TRUE(coord_all_eq(msg_vertex->offsets, offsets));
     ASSERT_TRUE(coord_all_eq(msg_vertex->offsets, vertex->offsets));
@@ -1621,7 +1621,7 @@ TEST(CheckGlobals, AllFifo) {
     ASSERT_TRUE(global_vertex->root());
     ASSERT_TRUE(global_vertex->surface());
   }
-  ASSERT_TRUE(recut.local_fifo[0].empty());
+  ASSERT_TRUE(recut.connected_fifo[0].empty());
   ASSERT_TRUE(recut.global_fifo[0].empty());
 }
 
