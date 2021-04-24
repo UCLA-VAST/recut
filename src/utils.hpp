@@ -1504,10 +1504,6 @@ void print_macros() {
   cout << "USE_MMAP" << '\n';
 #endif
 
-#ifdef ASYNC
-  cout << "ASYNC" << '\n';
-#endif
-
 #ifdef TF
   cout << "TF" << '\n';
 #endif

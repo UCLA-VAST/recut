@@ -102,16 +102,6 @@ const VID_t MAX_INTERVAL_VERTICES = 4096;
 //#define INTERVAL_BASE "/mnt/huge/interval_base_64bit.bin" // must match the
 // VID_t bit length type
 
-// Parallel strategies other than OMP defined here
-//#define ASYNC // run without TF macro to use the std::async instead of TF
-// thread pool, warning much much slower not recommended #define TF // if
-// defined, use CPP taskflow to use a workstealing thread pool for new blocks
-// TF must be used in conjucntion with ASYNC macro to allow asynchronous starts
-// of new blocks during the marching step
-#ifdef TF
-#define ASYNC
-#endif
-
 // depending on your prune semantics a radius of 1 may cover its neighbor
 // therefore account for this by subtracting 1 from all radii values
 // open accumulate_prune function, if a neighbor has a radius of 1 or greater

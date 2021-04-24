@@ -126,9 +126,6 @@ public:
 
   // interval specific global data structures
   vector<bool> active_intervals;
-#ifdef ASYNC
-  vector<vector<atomwrapper<bool>>> processing_blocks;
-#endif
 
   Recut(RecutCommandLineArgs &args)
       : args(&args), params(&(args.recut_parameters())) {}
@@ -973,52 +970,6 @@ void Recut<image_t>::place_vertex(const VID_t nb_interval_id,
                                   struct VertexAttr *dst, GridCoord dst_coord,
                                   OffsetCoord msg_offsets, std::string stage,
                                   T vdb_accessor) {
-
-  // ASYNC option means that another block and thread can be started during
-  // the processing of the current thread. If ASYNC is not defined then simply
-  // save all possible updates for checking in the integrate_update_grid()
-  // function after all blocks have been marched
-#ifdef ASYNC
-  if (stage != "value") {
-    assertm(false, "not currently adjusted to work for non-value stage");
-  }
-  // if not currently processing, set atomically set to true and
-  // potentially modify a neighbors heap
-  // if neighbors heap is modified it will cause an async launch of a thread
-  // during the processing of the current thread
-#ifdef DENSE
-  // mmap counts all intervals as in memory
-  if (grid.GetInterval(nb_interval_id)->IsInMemory() &&
-      processing_blocks[nb_interval_id][nb_block_id].compare_exchange_strong(
-          false, true)) {
-#else
-  {
-#endif
-    // will check if below band in march narrow
-    // use processing blocks to make sure no other neighbor of nb_block_id is
-    // modifying nb_block_id heap
-    bool dst_update_success =
-        integrate_vertex(nb_interval_id, nb_block_id, dst, true, stage);
-    if (dst_update_success) { // only update if it's true, allows for
-      // remaining true
-      // active_blocks[nb_interval_id][nb_block_id].store(dst_update_success);
-      active_intervals[nb_interval_id] = true;
-#ifdef FULL_PRINT
-      cout << "\t\t\tasync activate interval " << nb_interval_id << " block "
-           << nb_block_id << '\n';
-#endif
-    }
-    // Note: possible optimization here via explicit setting of memory
-    // ordering on atomic
-    processing_blocks[nb_interval_id][nb_block_id].store(
-        false); // release nb_block_id heap
-    // The other block isn't processing, so an update to it at here
-    // is currently true for this iteration. It does not need to be checked
-    // again in integrate_update_grid via adding it to the
-    // update_grid.
-    return;
-  }
-#endif // end of ASYNC
 
   active_intervals[nb_interval_id] = true;
   vdb_accessor.setValueOn(dst_coord);
@@ -1934,10 +1885,6 @@ void Recut<image_t>::march_narrow_band(
        << " visiting " << visited << " in " << timer->elapsed() << " s" << '\n';
 #endif
 
-#ifdef ASYNC
-  processing_blocks[interval_id][block_id].store(
-      false); // release block_id heap
-#endif
 } // end march_narrow_band
 
 // return the nearest background threshold value that is closest to the
@@ -2040,66 +1987,6 @@ std::atomic<double> Recut<image_t>::process_interval(
   while (true) {
     clock_gettime(CLOCK_REALTIME, &iter_start);
 
-#ifdef ASYNC
-
-#ifdef TF
-    tf::Executor executor(params->parallel_num());
-    tf::ExecutorObserver *observer =
-        executor.make_observer<tf::ExecutorObserver>();
-    vector<tf::Taskflow *> prevent_destruction;
-#endif // TF
-
-    // if any active status for any block of interval_id is
-    // true
-    // while (aimage_y_len_of(this->active_blocks[interval_id].begin(),
-    // this->active_blocks[interval_id].end(),
-    //[](atomwrapper<bool> i) { return i.load(); })) {
-
-#ifdef TF
-    prevent_destruction.emplace_back(new tf::Taskflow());
-    bool added_task = false;
-#endif // TF
-
-    for (VID_t block_id = 0; block_id < interval_block_size; ++block_id) {
-      // if not currently processing, set atomically set to true and
-      // if (active_blocks[interval_id][block_id].load() &&
-      if (processing_blocks[interval_id][block_id].compare_exchange_strong(
-              false, true)) {
-#ifdef LOG_FULL
-        // cout << "Start active block_id " << block_id << '\n';
-#endif
-
-#ifdef TF
-        // FIXME check passing tile ptr as ref
-        prevent_destruction.back()->silent_emplace([=, &tile]() {
-          march_narrow_band(tile, interval_id, block_id, stage, tile_thresholds,
-                            vdb_accessor);
-        });
-        added_task = true;
-#else
-        async(launch::async, &Recut<image_t>::march_narrow_band, this, tile,
-              interval_id, block_id, stage, tile_thresholds, vdb_accessor);
-#endif // TF
-      }
-    }
-
-#ifdef TF
-    if (!(prevent_destruction.back()->empty())) {
-      // cout << "start taskflow" << '\n';
-      // returns a std::future object
-      // it is non-blocking
-      // note it is the tasks responsibility to set the
-      // appropriate active block variables in order to
-      // exit this loop all active blocks must be false
-      executor.run(*(prevent_destruction.back()));
-    }
-#endif // TF
-
-    this_thread::sleep_for(chrono::milliseconds(10));
-  }
-
-#else // OMP or sequential strategy
-
     // assertm(this->topology_grid, "Block count and size must match topology
     // grid leaf size at compile time");
     auto leaf_iter = this->topology_grid->tree().beginLeaf();
@@ -2116,20 +2003,11 @@ std::atomic<double> Recut<image_t>::process_interval(
         ++leaf_iter;
     }
 
-#endif // ASYNC
-
 #ifdef LOG_FULL
   cout << "Marched narrow band";
   clock_gettime(CLOCK_REALTIME, &postmarch_time);
   cout << " in " << diff_time(iter_start, postmarch_time) << " sec." << '\n';
 #endif
-
-  //#ifdef ASYNC
-  // for(VID_t block_id = 0;block_id<interval_block_size;++block_id)
-  //{
-  // create_integrate_thread(interval_id, block_id);
-  //}
-  //#else
 
   integrate_update_grid(this->topology_grid, stage, fifo, connected_fifo,
                         vdb_accessor, interval_id);
@@ -2693,25 +2571,6 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
   this->active_intervals = vector(grid_interval_size, false);
 
   auto timer = new high_resolution_timer();
-
-#ifdef ASYNC
-  // Initialize.
-  vector<vector<atomwrapper<bool>>> temp2(
-      grid_interval_size, vector<atomwrapper<bool>>(interval_block_size));
-  for (auto interval = 0; interval < grid_interval_size; ++interval) {
-    vector<atomwrapper<bool>> inner(interval_block_size);
-    for (auto &e : inner) {
-      e.store(false, memory_order_relaxed);
-    }
-    temp2[interval] = inner;
-  }
-  this->processing_blocks = temp2;
-
-#ifdef LOG_FULL
-  cout << "\tCreated processing blocks " << timer->elapsed() << 's' << '\n';
-#endif
-  timer->restart();
-#endif
 
   if (!params->convert_only_) {
 
