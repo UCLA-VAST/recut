@@ -99,7 +99,7 @@ public:
   bool input_is_vdb;
 #ifdef USE_VDB
   EnlargedPointDataGrid::Ptr topology_grid;
-  openvdb::MaskGrid::Ptr update_grid;
+  openvdb::BoolGrid::Ptr update_grid;
 #endif
 
   std::vector<OffsetCoord> const lower_stencil{new_offset_coord(0, 0, -1),
@@ -1346,6 +1346,12 @@ void Recut<image_t>::integrate_update_grid(EnlargedPointDataGrid::Ptr grid,
                         fifo[block_id], connected_fifo[block_id], stage, grid,
                         LEAF_LENGTH);
   }
+
+  // set update_grid false
+  for (auto leaf_iter = this->update_grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+  // FIXME probably a more efficient way (hierarchically?) to set all to false
+    leaf_iter->fill(false);
+  }
 }
 
 template <class image_t> void Recut<image_t>::activate_all_intervals() {
@@ -2004,54 +2010,54 @@ std::atomic<double> Recut<image_t>::process_interval(
     }
 
 #ifdef LOG_FULL
-  cout << "Marched narrow band";
-  clock_gettime(CLOCK_REALTIME, &postmarch_time);
-  cout << " in " << diff_time(iter_start, postmarch_time) << " sec." << '\n';
+    cout << "Marched narrow band";
+    clock_gettime(CLOCK_REALTIME, &postmarch_time);
+    cout << " in " << diff_time(iter_start, postmarch_time) << " sec." << '\n';
 #endif
 
-  integrate_update_grid(this->topology_grid, stage, fifo, connected_fifo,
-                        vdb_accessor, interval_id);
+    integrate_update_grid(this->topology_grid, stage, fifo, connected_fifo,
+                          vdb_accessor, interval_id);
 
 #ifdef LOG_FULL
-  clock_gettime(CLOCK_REALTIME, &end_iter_time);
-  cout << "inner_iteration_idx " << inner_iteration_idx << " in "
-       << diff_time(iter_start, end_iter_time) << " sec." << '\n';
+    clock_gettime(CLOCK_REALTIME, &end_iter_time);
+    cout << "inner_iteration_idx " << inner_iteration_idx << " in "
+         << diff_time(iter_start, end_iter_time) << " sec." << '\n';
 #endif
 
-  if (stage == "connected") {
-    if (are_fifos_empty(connected_fifo)) {
+    if (stage == "connected") {
+      if (are_fifos_empty(connected_fifo)) {
+        break;
+      }
+    } else if (are_fifos_empty(fifo)) {
       break;
     }
-  } else if (are_fifos_empty(fifo)) {
-    break;
-  }
-  inner_iteration_idx++;
-} // iterations per interval
+    inner_iteration_idx++;
+  } // iterations per interval
 
-clock_gettime(CLOCK_REALTIME, &presave_time);
+  clock_gettime(CLOCK_REALTIME, &presave_time);
 
 #ifdef DENSE
-if (!(this->mmap_)) {
-  grid.GetInterval(interval_id)->SaveToDisk();
-}
+  if (!(this->mmap_)) {
+    grid.GetInterval(interval_id)->SaveToDisk();
+  }
 #endif
 
-clock_gettime(CLOCK_REALTIME, &postsave_time);
+  clock_gettime(CLOCK_REALTIME, &postsave_time);
 
-no_io_time = diff_time(start_iter_loop_time, presave_time);
+  no_io_time = diff_time(start_iter_loop_time, presave_time);
 // computation_time += no_io_time;
 #ifdef LOG_FULL
-cout << "Interval: " << interval_id << " (no I/O) within " << no_io_time
-     << " sec." << '\n';
+  cout << "Interval: " << interval_id << " (no I/O) within " << no_io_time
+       << " sec." << '\n';
 #ifdef DENSE
-if (!(this->mmap_))
-  cout << "Finished saving interval in "
-       << diff_time(presave_time, postsave_time) << " sec." << '\n';
+  if (!(this->mmap_))
+    cout << "Finished saving interval in "
+         << diff_time(presave_time, postsave_time) << " sec." << '\n';
 #endif
 #endif
 
-active_intervals[interval_id] = false;
-return no_io_time;
+  active_intervals[interval_id] = false;
+  return no_io_time;
 }
 
 #ifdef USE_MCP3D
@@ -2572,12 +2578,28 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
 
   auto timer = new high_resolution_timer();
 
+  auto is_boundary = [](auto coord) {
+    for (int i = 0; i < 3; ++i) {
+      if (coord[i]) {
+        if (coord[i] == (LEAF_LENGTH - 1)) 
+          return true;
+      } else {
+        return true;
+      }
+    }
+    return false;
+  };
+
   if (!params->convert_only_) {
 
     std::map<VID_t, std::deque<VertexAttr>> inner;
     std::map<VID_t, std::vector<VertexAttr>> inner_active_vertices;
     VID_t interval_id = 0;
     VID_t active_leaf_count = 0;
+
+    // FIXME use a global shared accessor instead
+    auto update_accessor = this->update_grid->getAccessor();
+
     for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
          ++leaf_iter) {
       auto origin = leaf_iter->getNodeBoundingBox().min();
@@ -2586,6 +2608,25 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
       inner[block_id] = std::deque<VertexAttr>();
       inner_active_vertices[block_id] = std::vector<VertexAttr>();
       ++active_leaf_count;
+
+      // init update grid with fixed topology (active state)
+      // FIXME you have to create a leaf first 
+      //auto update_leaf_iter = this->update_grid->tree().probeLeaf(origin);
+      //auto update_leaf = new openvdb::LeafNodeBool(origin, [>background=<]false);
+      //auto update_leaf = new openvdb::tree::LeafNode<bool, LEAF_LOG2DIM>(origin, false);
+      //this->update_grid->tree().addLeaf(update_leaf);
+
+      for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
+        // get coord
+        auto coord = ind.getCoord();
+        auto leaf_coord = coord_mod(coord, new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH));
+        if (is_boundary(leaf_coord)) {
+          // set activate state on but give it a false value
+          update_accessor.setActiveState(coord, true);
+          //update_accessor.setValue(coord, false);
+          //update_leaf->setActiveState(coord, true);
+        }
+      }
     }
     cout << "Active leaf count: " << active_leaf_count << '\n';
 
@@ -2607,7 +2648,7 @@ template <class image_t>
 GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
                                                   RecutCommandLineArgs *args) {
   GridCoord input_image_lengths(3);
-  this->update_grid = openvdb::MaskGrid::create();
+  this->update_grid = openvdb::BoolGrid::create();
   if (this->params->force_regenerate_image) {
     // for generated image runs trust the args->image_lengths
     // to reflect the total global image domain

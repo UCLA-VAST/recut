@@ -663,68 +663,10 @@ TEST(Install, DISABLED_ReadWriteInterval) {
 //}
 //};
 
-TEST(VDB, GlobalsTopologyCopy) {
-  // should I switch it to a MaskGrid?
-  auto grid = openvdb::BoolGrid::create();
-  // auto points = EnlargedPointDataGrid::create();
-
-  openvdb::Coord coord(1, 1, 1);
-  openvdb::Coord coord2(2, 2, 2);
-
-  auto g_acc = grid->getAccessor();
-  // auto p_acc = points->getAccessor();
-
-  ASSERT_FALSE(g_acc.isValueOn(coord));
-  // ASSERT_FALSE(points->isValueOn(coord));
-
-  // points->setValueOn(coord);
-  // ASSERT_TRUE(points->isValueOn(coord));
-
-  g_acc.setValue(coord2, true);
-  ASSERT_TRUE(g_acc.getValue(coord2));
-  ASSERT_FALSE(g_acc.isValueOn(coord2));
-  auto leaf_ptr = g_acc.probeConstLeaf(coord2);
-  // auto node_ptr = g_acc.probeConstNode(coord2);
-  ASSERT_TRUE(leaf_ptr->isInactive());
-
-  g_acc.setValue(coord2, false);
-  g_acc.setValueOn(coord2);
-  ASSERT_FALSE(g_acc.getValue(coord2));
-  ASSERT_TRUE(g_acc.isValueOn(coord2));
-  ASSERT_FALSE(leaf_ptr->isInactive());
-
-  // is leaf active?
-
-  // is internode active?
-
-  // copy active voxels into bool grid
-  // topology copy
-
-  //// check
-  // ASSERT_TRUE(grid->isValueOn(coord));
-  // ASSERT_FALSE(grid->getValue(coord));
-
-  //// if you turn the boolean value off, is the topology still the same
-  // EXPECT_TRUE(grid->tree().hasSameTopology(points->tree()));
-
-  // grid->setValue(coord, false);
-  // EXPECT_TRUE(grid->tree().hasSameTopology(points->tree()));
-  // ASSERT_TRUE(grid->isValueOn(coord));
-
-  //// set the boolean value
-  // grid->setValue(coord2, true);
-  // ASSERT_FALSE(grid->isValueOn(coord));
-
-  // uint16_t *inimg1d = new uint16_t[tol_sz];
-  // VID_t actual_selected =
-  // create_image(tcase, inimg1d, grid_size, desired_selected, root_vid);
-}
-
-TEST(VDB, IntegrateUpdateGrid) {
-  VID_t grid_size = 24;
+TEST(VDB, InitializeGlobals) {
+  // make big enough such that you have at least 2 blocks across each dim
+  VID_t grid_size = 16;
   auto grid_extents = std::vector<VID_t>(3, grid_size);
-  // do no use tcase 4 since it is randomized and will not match
-  // for the second read test
   auto tcase = 7;
   double slt_pct = 100;
   bool print_all = false;
@@ -735,7 +677,94 @@ TEST(VDB, IntegrateUpdateGrid) {
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   auto root_vids = recut.initialize();
+
+  auto update_accessor = recut.update_grid->getConstAccessor();
+  auto topology_accessor = recut.topology_grid->getConstAccessor();
+
+  if (print_all) {
+    print_vdb(topology_accessor, grid_extents);
+    print_vdb(update_accessor, grid_extents);
+  }
+
+  auto topology_is_on = new_grid_coord(3, 3, 3);
+
+  ASSERT_TRUE(topology_accessor.isValueOn(topology_is_on));
+
+  auto leaf_iter = recut.update_grid->tree().probeLeaf(topology_is_on);
+  ASSERT_TRUE(leaf_iter);
+
+  // should be false in update grid
+  ASSERT_FALSE(leaf_iter->isValueOn(topology_is_on));
+  ASSERT_FALSE(leaf_iter->getValue(topology_is_on));
+
+  auto boundary_coord = new_grid_coord(7, 7, 7);
+
+  ASSERT_TRUE(leaf_iter->isValueOn(boundary_coord));
+  ASSERT_FALSE(leaf_iter->getValue(boundary_coord));
+}
+
+TEST(VDB, UpdateSemantics) {
+
+  auto grid = openvdb::BoolGrid::create();
+
+  openvdb::Coord coord(1, 1, 1);
+
+  auto g_acc = grid->getAccessor();
+  g_acc.setValueOn(coord);
+  g_acc.setValueOff(coord);
+  auto leaf_iter = grid->tree().probeLeaf(coord);
+  ASSERT_TRUE(leaf_iter);
+
+  ASSERT_FALSE(leaf_iter->isValueOn(coord));
+  ASSERT_FALSE(leaf_iter->getValue(coord));
+  // set topology on
+  leaf_iter->setActiveState(coord, true);
+  ASSERT_TRUE(leaf_iter->isValueOn(coord));
+  ASSERT_FALSE(leaf_iter->getValue(coord));
+  ASSERT_FALSE(leaf_iter->isInactive());
+
+  // now set the value on
+  leaf_iter->setValue(coord, true);
+  ASSERT_TRUE(leaf_iter->getValue(coord));
+
+  // clear all values, but leave active states intact
+  leaf_iter->fill(false);
+  ASSERT_FALSE(leaf_iter->getValue(coord));
+  ASSERT_TRUE(leaf_iter->isValueOn(coord));
+  ASSERT_FALSE(leaf_iter->isInactive());
+
+  cout << "final view\n";
+  for (auto iter = grid->cbeginValueOn(); iter.test(); ++iter) {
+    auto val = *iter;
+    auto val_coord = iter.getCoord();
+    cout << val_coord << " " << val << '\n';
+  }
+}
+
+TEST(VDB, IntegrateUpdateGrid) {
+  // just large enough for a central block and surrounding blocks
+  VID_t grid_size = 24;
+  auto grid_extents = std::vector<VID_t>(3, grid_size);
+  // do no use tcase 4 since it is randomized and will not match
+  // for the second read test
+  auto tcase = 7;
+  double slt_pct = 100;
+  bool print_all = true;
+  // generate an image buffer on the fly
+  // then convert to vdb
+  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+                       /*force_regenerate_image=*/false,
+                       /*input_is_vdb=*/true);
+  auto recut = Recut<uint16_t>(args);
+  auto root_vids = recut.initialize();
   // recut.activate_vids(root_vids, "connected", recut.global_fifo);
+  auto update_accessor = recut.update_grid->getAccessor();
+  auto topology_accessor = recut.topology_grid->getConstAccessor();
+
+  if (print_all) {
+    print_vdb(topology_accessor, grid_extents);
+    print_vdb(update_accessor, grid_extents);
+  }
 
   VID_t central_block = 13;
   VID_t interval_id = 0;
@@ -744,7 +773,6 @@ TEST(VDB, IntegrateUpdateGrid) {
   ASSERT_EQ(central_block, recut.coord_img_to_block_id(lower_corner));
   ASSERT_EQ(central_block, recut.coord_img_to_block_id(upper_corner));
   auto update_vertex = new VertexAttr();
-  auto update_accessor = recut.update_grid->getAccessor();
 
   {
     auto stage = "connected";
@@ -754,7 +782,8 @@ TEST(VDB, IntegrateUpdateGrid) {
                              update_accessor);
 
     recut.integrate_update_grid(recut.topology_grid, stage, recut.global_fifo,
-                                recut.connected_fifo, update_accessor, interval_id);
+                                recut.connected_fifo, update_accessor,
+                                interval_id);
 
     cout << "Finished integrate\n";
 
@@ -783,7 +812,7 @@ TEST(VDB, IntegrateUpdateGrid) {
     check_matches(upper_adjacent_blocks, upper_corner);
 
     if (print_all) {
-      print_vdb(recut.topology_grid->getConstAccessor(), grid_extents);
+      print_vdb(topology_accessor, grid_extents);
       print_all_points(recut.topology_grid);
     }
   }
@@ -1066,7 +1095,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
   // Note this will delete anything in the
   // same directory before writing
   // tcase 5 is deprecated
-  std::vector<int> grid_sizes = {2, 4, 8, 24};
+  std::vector<int> grid_sizes = {2, 4, 8, 16, 24};
 
   //#ifdef TEST_ALL_BENCHMARKS
   // grid_sizes = {2, 4, 8, 16, 32, 64, 128, 256, 512};
@@ -1661,7 +1690,7 @@ TEST(Scale, DISABLED_InitializeGlobals) {
   //}
 }
 
-TEST(Update, EachStageIteratively) {
+TEST(Update, DISABLED_EachStageIteratively) {
   bool print_all = false;
   bool print_csv = false;
 #ifdef LOG
