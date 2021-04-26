@@ -286,9 +286,10 @@ public:
   template <class Container>
   void print_grid(std::string stage, Container &fifo);
   template <class Container> void setup_radius(Container &fifo);
-  template <class Container>
-  void activate_vids(const std::vector<VID_t> &root_vids, std::string stage,
-                     Container &fifo);
+  void activate_vids(EnlargedPointDataGrid::Ptr grid,
+                     const std::vector<VID_t> roots, const std::string stage,
+                     std::map<VID_t, std::deque<VertexAttr>> &fifo,
+                     std::map<VID_t, std::deque<VertexAttr>> &connected_fifo);
   std::vector<VID_t> process_marker_dir(GridCoord grid_offsets,
                                         GridCoord grid_extents);
   void print_vertex(VID_t interval_id, VID_t block_id, VertexAttr *current,
@@ -464,54 +465,96 @@ void Recut<image_t>::setup_radius(Container &fifo) {
   }
 }
 
-// activates
-// the intervals of the root and reads
-// them to the respective heaps
 template <class image_t>
-template <class Container>
-void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
-                                   std::string stage, Container &fifo) {
-  assertm(!(root_vids.empty()), "Must have at least one root");
+void Recut<image_t>::activate_vids(
+    EnlargedPointDataGrid::Ptr grid, const std::vector<VID_t> roots,
+    const std::string stage, std::map<VID_t, std::deque<VertexAttr>> &fifo,
+    std::map<VID_t, std::deque<VertexAttr>> &connected_fifo) {
 
-  if (stage == "connected") {
-    init_root_attributes(this->topology_grid,
-                         ids_to_coords(root_vids, this->image_lengths));
-  }
+  assertm(!(roots.empty()), "Must have at least one root");
 
-  for (const auto &vid : root_vids) {
-    auto interval_id = id_img_to_interval_id(vid);
-    auto block_id = id_img_to_block_id(vid);
+  auto root_coords = ids_to_coords(roots, this->image_lengths);
+  this->active_intervals[0] = true;
 
-    auto coord = id_to_coord(vid, this->image_lengths);
-#ifdef FULL_PRINT
-    cout << "activate_vids(): setting interval " << interval_id << " block "
-         << block_id << " to active ";
-    cout << "for marker " << coord << '\n';
-#endif
+  // Iterate over leaf nodes that contain topology (active)
+  // checking for roots within them
+  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+    auto leaf_bbox = leaf_iter->getNodeBoundingBox();
+    auto block_id = this->coord_img_to_block_id(leaf_bbox.min());
+    // std::cout << "Leaf BBox: " << leaf_bbox << '\n';
 
-    active_intervals[interval_id] = true;
+    // FILTER for those in this leaf
+    // auto leaf_roots = remove_outside_bound(roots, leaf_bbox) |
+    // auto leaf_roots = roots | remove_outside_bound | rng::to_vector;
+    auto leaf_roots =
+        root_coords | rng::views::remove_if([&](GridCoord coord) {
+          return !is_in_bounds(coord, leaf_bbox.min(), leaf_bbox.extents());
+        }) |
+        rng::views::remove_if([&leaf_iter](GridCoord coord) {
+          if (!leaf_iter->isValueOn(coord)) {
+            std::cout << "Warning: new image does not contain root at: "
+                      << coord << '\n';
+            return true;
+          }
+          return false;
+        }) |
+        rng::to_vector;
 
-    VertexAttr *msg_vertex;
-    auto offsets = coord_mod(coord, this->block_lengths);
+    if (leaf_roots.empty())
+      continue;
+
+    print_iter_name(leaf_roots, "\troots");
+
+    // Set Values
+    auto update_leaf = this->update_grid->tree().probeLeaf(leaf_bbox.min());
+    assertm(update_leaf, "Update must have a corresponding leaf");
+
+    rng::for_each(leaf_roots, [&update_leaf](auto coord) {
+      // this only adds to update_grid if the root happens
+      // to be on a boundary
+      set_if_active(update_leaf, coord);
+    });
+
+    auto idxs = leaf_roots | rng::views::transform([&leaf_iter](auto coord) {
+                  return leaf_iter->beginIndexVoxel(coord);
+                }) |
+                rng::to_vector;
+
+    openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
+        leaf_iter->attributeArray("flags"));
+
+    openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
+        leaf_iter->attributeArray("parents"));
+
+    openvdb::points::AttributeWriteHandle<uint8_t> radius_handle(
+        leaf_iter->attributeArray("radius"));
+
+    auto temp_coord = new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH);
     if (stage == "connected") {
-      // place a root with proper vid and parent of itself
-      msg_vertex = &(this->active_vertices[block_id].emplace_back(
-          /*edge_state*/ 0, offsets, zeros_off()));
-      this->connected_fifo[block_id].emplace_back(
-          /*edge_state*/ 0, offsets, zeros_off());
-    } else if (stage == "prune") {
+      rng::for_each(idxs, [&](auto id) {
+        // set flags as root
+        set_selected(flags_handle, id);
+        set_root(flags_handle, id);
+      });
 
-#ifdef DENSE
-      msg_vertex = get_vertex_vid(interval_id, block_id, coord, nullptr);
-#else
-      msg_vertex = get_active_vertex(interval_id, block_id, offsets);
-      assertm(msg_vertex != nullptr, "get_active_vertex yielded nullptr");
-#endif
-      assertm(msg_vertex->valid_radius(),
-              "activate vids didn't find valid radius");
-      fifo[block_id].emplace_back(/*edge_state*/ 0, offsets, zeros_off());
-    } else {
-      assertm(false, "stage behavior not yet specified");
+      rng::for_each(idxs,
+                    [&](auto id) { parents_handle.set(*id, zeros_off()); });
+
+      rng::for_each(leaf_roots, [&](auto coord) {
+        // auto msg_vertex = &(this->active_vertices[block_id].emplace_back(
+        //[>edge_state<] 0, offsets, zeros_off()));
+        auto offsets = coord_mod(coord, temp_coord);
+        // place a root with proper vid and parent of itself
+        connected_fifo[block_id].emplace_back(
+            /*edge_state*/ 0, offsets, zeros_off());
+      });
+
+    } else if (stage == "prune") {
+      rng::for_each(leaf_roots, [&](auto coord) {
+        auto offsets = coord_mod(coord, temp_coord);
+        // FIXME do you need to put proper radii?
+        fifo[block_id].emplace_back(/*edge_state*/ 0, offsets, zeros_off());
+      });
     }
   }
 }
@@ -2605,10 +2648,6 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
     std::map<VID_t, std::deque<VertexAttr>> inner;
     std::map<VID_t, std::vector<VertexAttr>> inner_active_vertices;
     VID_t interval_id = 0;
-    VID_t active_leaf_count = 0;
-
-    // FIXME use a global shared accessor instead
-    auto update_accessor = this->update_grid->getAccessor();
 
     for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
          ++leaf_iter) {
@@ -2617,30 +2656,24 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
       // std::cout << origin << "->" << block_id << '\n';
       inner[block_id] = std::deque<VertexAttr>();
       inner_active_vertices[block_id] = std::vector<VertexAttr>();
-      ++active_leaf_count;
+
+      // every topology_grid leaf must have a corresponding leaf explicitly
+      // created
+      auto update_leaf =
+          new openvdb::tree::LeafNode<bool, LEAF_LOG2DIM>(origin, false);
 
       // init update grid with fixed topology (active state)
-      // FIXME you have to create a leaf first
-      // auto update_leaf_iter = this->update_grid->tree().probeLeaf(origin);
-      // auto update_leaf = new openvdb::LeafNodeBool(origin,
-      // [>background=<]false); auto update_leaf = new
-      // openvdb::tree::LeafNode<bool, LEAF_LOG2DIM>(origin, false);
-      // this->update_grid->tree().addLeaf(update_leaf);
-
       for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
         // get coord
         auto coord = ind.getCoord();
         auto leaf_coord = coord_mod(
             coord, new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH));
         if (is_boundary(leaf_coord)) {
-          // set activate state on but give it a false value
-          update_accessor.setActiveState(coord, true);
-          // update_accessor.setValue(coord, false);
-          // update_leaf->setActiveState(coord, true);
+          update_leaf->setActiveState(coord, true);
         }
       }
+      this->update_grid->tree().addLeaf(update_leaf);
     }
-    cout << "Active leaf count: " << active_leaf_count << '\n';
 
     // fifo is a deque representing the vids left to
     // process at each stage
@@ -2650,6 +2683,9 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
     this->active_vertices = inner_active_vertices;
   }
 
+#ifdef LOG
+  cout << "Active leaf count: " << this->update_grid->tree().leafCount() << '\n';
+#endif
 #ifdef LOG_FULL
   cout << "\tCreated fifos " << timer->elapsed() << 's' << '\n';
 #endif
@@ -3509,7 +3545,9 @@ template <class image_t> void Recut<image_t>::operator()() {
   // starting from the roots connected stage saves all surface vertices into
   // fifo
   stage = "connected";
-  this->activate_vids(root_vids, stage, global_fifo);
+  // this->activate_vids(root_vids, stage, global_fifo);
+  this->activate_vids(this->topology_grid, root_vids, stage, this->global_fifo,
+                      this->connected_fifo);
   this->update(stage, global_fifo);
 
   // radius stage will consume fifo surface vertices
@@ -3520,7 +3558,9 @@ template <class image_t> void Recut<image_t>::operator()() {
   // starting from roots, prune stage will
   // create final list of vertices
   stage = "prune";
-  this->activate_vids(root_vids, stage, global_fifo);
+  // this->activate_vids(root_vids, stage, global_fifo);
+  this->activate_vids(this->topology_grid, root_vids, stage, this->global_fifo,
+                      this->connected_fifo);
   this->update(stage, global_fifo);
 
 #ifndef DENSE
