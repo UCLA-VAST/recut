@@ -334,7 +334,8 @@ void test_get_attr_vid(bool mmap, int grid_size, int interval_size,
   recut.mmap_ = mmap;
 
   auto root_vids = recut.initialize();
-  recut.activate_vids(root_vids, "connected", recut.global_fifo);
+  recut.activate_vids(recut.topology_grid, root_vids, "connected",
+                      recut.global_fifo, recut.connected_fifo);
 
   ASSERT_EQ(recut.image_length_x, grid_size);
   ASSERT_EQ(recut.image_length_y, grid_size);
@@ -779,10 +780,10 @@ TEST(VDB, IntegrateUpdateGrid) {
 
   {
     auto stage = "connected";
-    //recut.check_ghost_update(0, 13, lower_corner, update_vertex, stage,
-                             //update_accessor);
-    //recut.check_ghost_update(0, 13, upper_corner, update_vertex, stage,
-                             //update_accessor);
+    // recut.check_ghost_update(0, 13, lower_corner, update_vertex, stage,
+    // update_accessor);
+    // recut.check_ghost_update(0, 13, upper_corner, update_vertex, stage,
+    // update_accessor);
     set_if_active(update_leaf, lower_corner);
     set_if_active(update_leaf, upper_corner);
 
@@ -892,19 +893,16 @@ TEST(VDB, CreatePointDataGrid) {
 TEST(VDB, ActivateVids) {
   VID_t grid_size = 8;
   auto grid_extents = std::vector<VID_t>(3, grid_size);
-  // do no use tcase 4 since it is randomized and will not match
-  // for the second read test
   auto tcase = 7;
   double slt_pct = 100;
-  bool print_all = true;
-  // generate an image buffer on the fly
-  // then convert to vdb
+  bool print_all = false;
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
                        /*force_regenerate_image=*/false,
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   auto root_vids = recut.initialize();
-  recut.activate_vids(root_vids, "connected", recut.global_fifo);
+  recut.activate_vids(recut.topology_grid, root_vids, "connected",
+                      recut.global_fifo, recut.connected_fifo);
 
   if (print_all) {
     print_vdb(recut.topology_grid->getConstAccessor(), grid_extents);
@@ -954,7 +952,8 @@ TEST(VDB, Connected) {
   auto recut = Recut<uint16_t>(args);
   auto root_vids = recut.initialize();
   auto stage = "connected";
-  recut.activate_vids(root_vids, stage, recut.global_fifo);
+  recut.activate_vids(recut.topology_grid, root_vids, "connected",
+                      recut.global_fifo, recut.connected_fifo);
   recut.update(stage, recut.global_fifo);
 
   if (print_all) {
@@ -1695,7 +1694,7 @@ TEST(Scale, DISABLED_InitializeGlobals) {
   //}
 }
 
-TEST(Update, DISABLED_EachStageIteratively) {
+TEST(Update, EachStageIteratively) {
   bool print_all = false;
   bool print_csv = false;
 #ifdef LOG
@@ -1808,7 +1807,8 @@ TEST(Update, DISABLED_EachStageIteratively) {
             // RECUT CONNECTED
             {
               auto stage = "connected";
-              recut.activate_vids(root_vids, stage, recut.global_fifo);
+              recut.activate_vids(recut.topology_grid, root_vids, "connected",
+                                  recut.global_fifo, recut.connected_fifo);
               recut.update(stage, recut.global_fifo);
               if (print_all) {
                 std::cout << "Recut connected\n";
@@ -2023,7 +2023,8 @@ TEST(Update, DISABLED_EachStageIteratively) {
                 std::cout << iteration_trace.str();
                 recut.convert_to_markers(args.output_tree, false);
                 auto stage = std::string{"prune"};
-                recut.activate_vids(root_vids, stage, recut.global_fifo);
+                recut.activate_vids(recut.topology_grid, root_vids, stage,
+                                    recut.global_fifo, recut.connected_fifo);
                 recut.update(stage, recut.global_fifo);
 
                 recut.adjust_parent(false);
@@ -2219,7 +2220,8 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   auto recut = Recut<uint16_t>(args);
   std::vector<VID_t> root_vids;
   root_vids = recut.initialize();
-  recut.activate_vids(root_vids, "connected", recut.global_fifo);
+  recut.activate_vids(recut.topology_grid, root_vids, "connected",
+                      recut.global_fifo, recut.connected_fifo);
 
 #ifdef USE_MCP3D
   mcp3d::MImage image(args.image_root_dir());
@@ -2309,7 +2311,8 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   auto recut_output_tree_prune = std::vector<MyMarker *>();
   if (prune) {
     stage = std::string{"prune"};
-    recut.activate_vids(root_vids, stage, recut.global_fifo);
+    recut.activate_vids(recut.topology_grid, root_vids, stage,
+                        recut.global_fifo, recut.connected_fifo);
     auto prune_update_stats = recut.update(stage, recut.global_fifo);
 
     assertm(args.output_tree.size() != 0, "Can not have 0 selected output");
