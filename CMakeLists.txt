@@ -143,7 +143,6 @@ set( GIT_HASH OFF CACHE STRING "Hash of the latest git commit")
 #  Scheduling
 option( NO_INTERVAL_RV OFF)
 option( SCHEDULE_INTERVAL_RV OFF)
-option( USE_HUGE_PAGE OFF)
 # Note you can't have both OMP_BLOCK and OMP_INTERVAL defined
 option( USE_OMP_INTERVAL OFF)
 option( USE_OMP_BLOCK OFF)
@@ -157,8 +156,6 @@ option(LOG "Overview logging details of the recut run, this suffices for basic t
 option(LOG_FULL "roughly block by block processing granularity" OFF)
 option(FULL_PRINT "Print vertex by vertex behavior. Warning: will significantly slow performance" OFF)
 
-option( DENSE "Assume dense access to grid of vertices" OFF)
-option( USE_MMAP "Determines read speed of vertex info from INTERVAL_BASE" OFF)
 option( USE_MCP3D "Use and link external library MCP3D into recut for image reading of TIF and HDF5 (.ims) file types" OFF)
 
 
@@ -179,8 +176,6 @@ set(SRC
 set(HEADER
   ${PROJECT_SOURCE_DIR}/src/recut.hpp
   ${PROJECT_SOURCE_DIR}/src/recut_parameters.hpp
-  ${PROJECT_SOURCE_DIR}/src/grid.hpp
-  ${PROJECT_SOURCE_DIR}/src/interval.hpp
   ${PROJECT_SOURCE_DIR}/src/vertex_attr.hpp
   ${PROJECT_SOURCE_DIR}/src/utils.hpp
   ${PROJECT_SOURCE_DIR}/src/config.hpp
@@ -263,14 +258,6 @@ foreach(I ${ALL_TARGETS})
   if (USE_OMP_INTERVAL)
     target_compile_definitions(${I} PRIVATE USE_OMP_INTERVAL)
   endif()
-  if (DENSE)
-    target_compile_definitions(${I} PRIVATE DENSE)
-    if (USE_MMAP)
-      target_compile_definitions(${I} PRIVATE USE_MMAP)
-      set(INTERVAL_BASE "${CMAKE_INSTALL_DATADIR}/interval_base_64bit.bin")
-      target_compile_definitions(${I} PRIVATE "INTERVAL_BASE=\"${INTERVAL_BASE}\"")
-    endif()
-  endif()
   if (USE_MCP3D)
     target_compile_definitions(${I} PRIVATE USE_MCP3D)
   endif()
@@ -282,9 +269,6 @@ foreach(I ${ALL_TARGETS})
   endif()
   if (SCHEDULE_INTERVAL_RV)
     target_compile_definitions(${I} PRIVATE SCHEDULE_INTERVAL_RV)
-  endif()
-  if (USE_HUGE_PAGE)
-    target_compile_definitions(${I} PRIVATE USE_HUGE_PAGE)
   endif()
   if (GIT_HASH)
     target_compile_definitions(${I} PRIVATE GIT_HASH)

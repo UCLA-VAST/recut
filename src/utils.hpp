@@ -1442,18 +1442,6 @@ void print_macros() {
   cout << "NO_RV" << '\n';
 #endif
 
-#ifdef USE_MMAP
-  cout << "USE_MMAP" << '\n';
-#endif
-
-#ifdef TF
-  cout << "TF" << '\n';
-#endif
-
-#ifdef USE_HUGE_PAGE
-  cout << "USE_HUGE_PAGE" << '\n';
-#endif
-
 #ifdef USE_OMP_BLOCK
   cout << "USE_OMP_BLOCK" << '\n';
 #endif
