@@ -749,7 +749,7 @@ TEST(VDB, IntegrateUpdateGrid) {
   // for the second read test
   auto tcase = 7;
   double slt_pct = 100;
-  bool print_all = true;
+  bool print_all = false;
   // generate an image buffer on the fly
   // then convert to vdb
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
@@ -770,16 +770,21 @@ TEST(VDB, IntegrateUpdateGrid) {
   VID_t interval_id = 0;
   auto lower_corner = new_grid_coord(8, 8, 8);
   auto upper_corner = new_grid_coord(15, 15, 15);
+  // both are in the same block
+  auto update_leaf = recut.update_grid->tree().probeLeaf(lower_corner);
+
   ASSERT_EQ(central_block, recut.coord_img_to_block_id(lower_corner));
   ASSERT_EQ(central_block, recut.coord_img_to_block_id(upper_corner));
   auto update_vertex = new VertexAttr();
 
   {
     auto stage = "connected";
-    recut.check_ghost_update(0, 13, lower_corner, update_vertex, stage,
-                             update_accessor);
-    recut.check_ghost_update(0, 13, upper_corner, update_vertex, stage,
-                             update_accessor);
+    //recut.check_ghost_update(0, 13, lower_corner, update_vertex, stage,
+                             //update_accessor);
+    //recut.check_ghost_update(0, 13, upper_corner, update_vertex, stage,
+                             //update_accessor);
+    set_if_active(update_leaf, lower_corner);
+    set_if_active(update_leaf, upper_corner);
 
     recut.integrate_update_grid(recut.topology_grid, stage, recut.global_fifo,
                                 recut.connected_fifo, update_accessor,

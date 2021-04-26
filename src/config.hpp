@@ -47,13 +47,15 @@ constexpr int INTER1_LENGTH =
 // equivalent:
 // EnlargedPointDataGrid::TreeType::LeafNodeType::DIM == LEAF_LENGTH
 
-using Leaf = typename vp::PointDataLeafNode<INDEX_TYPE, LEAF_LOG2DIM>;
-using InternalNode1 = typename vt::InternalNode<Leaf, INTER1_LOG2DIM>;
-using EnlargedPointDataTree = typename vt::Tree<
-    vt::RootNode<vt::InternalNode<InternalNode1, INTER2_LOG2DIM>>>;
-//using EnlargedPointDataGrid = typename openvdb::Grid<EnlargedPointDataTree>;
+using PointLeaf = typename vp::PointDataLeafNode<INDEX_TYPE, LEAF_LOG2DIM>;
+using PointInternalNode1 = typename vt::InternalNode<PointLeaf, INTER1_LOG2DIM>;
+using PointTree = typename vt::Tree<
+    vt::RootNode<vt::InternalNode<PointInternalNode1, INTER2_LOG2DIM>>>;
+using EnlargedPointDataGrid = typename openvdb::Grid<PointTree>;
 //using EnlargedPointDataGrid = openvdb::Grid<vp::PointDataTree>;
-using EnlargedPointDataGrid = vp::PointDataGrid;
+//using EnlargedPointDataGrid = vp::PointDataGrid;
+using UpdateGrid = openvdb::BoolGrid;
+using UpdateLeaf = UpdateGrid::TreeType::LeafNodeType;
 
 //using EnlargedPointIndexGrid = typename openvdb::Grid<
     //openvdb::tree::Tree<openvdb::tree::RootNode<openvdb::tree::InternalNode<

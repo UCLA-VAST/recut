@@ -384,6 +384,11 @@ auto ids_to_coords = [](auto ids, auto lengths) {
          rng::to_vector;
 };
 
+auto set_if_active = [](auto leaf, GridCoord coord) {
+  if (leaf->isValueOn(coord))
+    leaf->setValue(coord, true);
+};
+
 auto testbit = [](auto field_, auto bit_offset) {
   return static_cast<bool>(field_ & (1 << bit_offset));
 };
@@ -454,7 +459,7 @@ auto init_root_attributes = [](auto grid, auto roots) {
     // auto bbox = iter.getBoundingBox();
     // std::cout << "Internode 1 BBox: " << bbox << '\n';
 
-    InternalNode1 *current_node;
+    PointInternalNode1 *current_node;
     iter.getNode(current_node);
 
     // Iterate over leaf nodes that contain topology (active)
@@ -485,8 +490,17 @@ auto init_root_attributes = [](auto grid, auto roots) {
 
       print_iter_name(leaf_roots, "\troots");
 
+      auto update_leaf = this->update_grid->tree().probeLeaf(coord);
+      assertm(update_leaf, "Update must have a corresponding leaf");
+
+      rng::for_each(leaf_roots, [&update_leaf](auto coord) {
+        // this only adds to update_grid if the root happens
+        // to be on a boundary
+        set_if_active(update_leaf, coord);
+      }
+
       auto idxs = leaf_roots | rng::views::transform([&leaf_iter](auto coord) {
-                    return leaf_iter->beginIndexVoxel(coord);
+        return leaf_iter->beginIndexVoxel(coord);
                   }) |
                   rng::to_vector;
 
@@ -504,7 +518,8 @@ auto init_root_attributes = [](auto grid, auto roots) {
       openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
           leaf_iter->attributeArray("parents"));
       rng::for_each(idxs,
-                    [&](auto id) { parents_handle.set(*id, zeros_off()); });
+                    [&](auto id) {
+        parents_handle.set(*id, zeros_off()); });
     }
   }
 };

@@ -195,13 +195,15 @@ public:
                           GridCoord dst_coord, VertexAttr *dst,
                           std::string stage, T vdb_accessor);
   int get_parent_code(VID_t dst_id, VID_t src_id);
-  template <typename T, typename T2, typename FlagsT, typename ParentsT>
+  template <typename T2, typename FlagsT, typename ParentsT, typename PointIter,
+            typename UpdateIter>
   bool accumulate_connected(const image_t *tile, VID_t interval_id,
                             VID_t block_id, GridCoord dst_coord, T2 ind,
                             OffsetCoord offset_to_current, VID_t &revisits,
                             const TileThresholds<image_t> *tile_thresholds,
-                            bool &found_adjacent_invalid, T vdb_accessor,
-                            FlagsT flags_handle, ParentsT parents_handle);
+                            bool &found_adjacent_invalid, PointIter point_leaf,
+                            UpdateIter update_leaf, FlagsT flags_handle,
+                            ParentsT parents_handle);
   bool accumulate_value(const image_t *tile, VID_t interval_id,
                         GridCoord dst_coord, VID_t block_id,
                         struct VertexAttr *current, VID_t &revisits,
@@ -210,18 +212,18 @@ public:
   bool is_covered_by_parent(VID_t interval_id, VID_t block_id,
                             VertexAttr *current);
   template <class Container, typename T, typename T2, typename IndT,
-            typename RadiusT, typename FlagsT, typename AccessorT>
+            typename RadiusT, typename FlagsT, typename UpdateIter>
   void accumulate_prune(VID_t interval_id, VID_t block_id, GridCoord dst_coord,
                         IndT ind, T current, T2 current_vid,
                         bool current_unvisited, Container &fifo,
                         RadiusT radius_handle, FlagsT flags_handle,
-                        AccessorT vdb_accessor);
+                        UpdateIter update_leaf);
   template <class Container, typename T, typename T2, typename FlagsT,
-            typename RadiusT, typename AccessorT>
+            typename RadiusT, typename UpdateIter>
   void accumulate_radius(VID_t interval_id, VID_t block_id, GridCoord dst_coord,
                          T ind, T2 current_radius, Container &fifo,
                          FlagsT flags_handle, RadiusT radius_handle,
-                         AccessorT vdb_accessor);
+                         UpdateIter update_leaf);
   template <class Container, typename T, typename T2>
   void integrate_update_grid(EnlargedPointDataGrid::Ptr grid, std::string stage,
                              Container &fifo, T &connected_fifo,
@@ -470,7 +472,6 @@ template <class Container>
 void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
                                    std::string stage, Container &fifo) {
   assertm(!(root_vids.empty()), "Must have at least one root");
-  auto update_accessor = this->update_grid->getAccessor();
 
   if (stage == "connected") {
     init_root_attributes(this->topology_grid,
@@ -512,13 +513,6 @@ void Recut<image_t>::activate_vids(const std::vector<VID_t> &root_vids,
     } else {
       assertm(false, "stage behavior not yet specified");
     }
-
-    // place ghost update accounts for
-    // edges of intervals in addition to blocks
-    // this only adds to update_grid if the root happens
-    // to be on a boundary
-    check_ghost_update(interval_id, block_id, coord, msg_vertex, stage,
-                       update_accessor); // add to any other ghost zone blocks
   }
 }
 
@@ -733,13 +727,13 @@ void Recut<image_t>::set_parent_non_branch(const VID_t interval_id,
 
 template <class image_t>
 template <class Container, typename T, typename T2, typename IndT,
-          typename RadiusT, typename FlagsT, typename AccessorT>
+          typename RadiusT, typename FlagsT, typename UpdateIter>
 void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t block_id,
                                       GridCoord dst_coord, IndT ind, T current,
                                       T2 current_vid, bool current_unvisited,
                                       Container &fifo, RadiusT radius_handle,
                                       FlagsT flags_handle,
-                                      AccessorT vdb_accessor) {
+                                      UpdateIter update_leaf) {
 
 #ifdef DENSE
   auto dst = get_vertex_vid(interval_id, block_id, dst_id, nullptr);
@@ -754,8 +748,9 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t block_id,
   auto add_prune_dst = [&]() {
     dst->prune_visit();
     fifo.push_back(*dst);
-    check_ghost_update(interval_id, block_id, dst_coord, dst, "prune",
-                       vdb_accessor);
+    // check_ghost_update(interval_id, block_id, dst_coord, dst, "prune",
+    // vdb_accessor);
+    set_if_active(update_leaf, dst_coord);
 #ifdef FULL_PRINT
     std::cout << "  added dst " << dst_coord << " rad " << +(dst->radius)
               << '\n';
@@ -817,13 +812,13 @@ void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t block_id,
  */
 template <class image_t>
 template <class Container, typename T, typename T2, typename FlagsT,
-          typename RadiusT, typename AccessorT>
+          typename RadiusT, typename UpdateIter>
 void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t block_id,
                                        GridCoord dst_coord, T ind,
                                        T2 current_radius, Container &fifo,
                                        FlagsT flags_handle,
                                        RadiusT radius_handle,
-                                       AccessorT vdb_accessor) {
+                                       UpdateIter update_leaf) {
 
   // note the current vertex can belong in the boundary
   // region of a separate block /interval and is only
@@ -868,8 +863,9 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t block_id,
       radius_handle.set(*ind, updated_radius);
       // construct a dst message
       fifo.push_back(*dst);
-      check_ghost_update(interval_id, block_id, dst_coord, dst, "radius",
-                         vdb_accessor);
+      set_if_active(update_leaf, dst_coord);
+      // check_ghost_update(interval_id, block_id, dst_coord, dst, "radius",
+      // vdb_accessor);
     }
   } else {
     assertm(false, "\tunselected neighbor was found");
@@ -888,13 +884,14 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t block_id,
  * attribute selected
  */
 template <class image_t>
-template <typename T, typename T2, typename FlagsT, typename ParentsT>
+template <typename T2, typename FlagsT, typename ParentsT, typename PointIter,
+          typename UpdateIter>
 bool Recut<image_t>::accumulate_connected(
     const image_t *tile, VID_t interval_id, VID_t block_id, GridCoord dst_coord,
     T2 ind, OffsetCoord offset_to_current, VID_t &revisits,
     const TileThresholds<image_t> *tile_thresholds,
-    bool &found_adjacent_invalid, T vdb_accessor, FlagsT flags_handle,
-    ParentsT parents_handle) {
+    bool &found_adjacent_invalid, PointIter point_leaf, UpdateIter update_leaf,
+    FlagsT flags_handle, ParentsT parents_handle) {
 
 #ifdef FULL_PRINT
   cout << "\tcheck dst: " << coord_to_str(dst_coord);
@@ -906,8 +903,7 @@ bool Recut<image_t>::accumulate_connected(
   // pixel/vertex for the remainder of all processing
   auto found_background = false;
   if (this->input_is_vdb) {
-    auto dst_vox = get_vdb_val(vdb_accessor, dst_coord);
-    if (!dst_vox)
+    if (!point_leaf->isValueOn(dst_coord))
       found_background = true;
   } else {
     auto dst_vox = get_img_val(tile, dst_coord);
@@ -953,8 +949,9 @@ bool Recut<image_t>::accumulate_connected(
   parents_handle.set(*ind, offset_to_current);
 
   connected_fifo[block_id].push_back(*dst);
-  check_ghost_update(interval_id, block_id, dst_coord, dst, "connected",
-                     vdb_accessor);
+  set_if_active(update_leaf, dst_coord);
+  // check_ghost_update(interval_id, block_id, dst_coord, dst, "connected",
+  // vdb_accessor);
 
   return true;
 }
@@ -1294,23 +1291,28 @@ void integrate_adj_leafs(GridCoord start_coord,
         }
         assertm(dim >= 0, "1 offset not found");
 
-        // iterate all updated values in the adj leaf
-        for (auto val = leaf_pair.second->cbeginValueOn(); val; ++val) {
-          // FIXME this might not be most efficient way to get index
-          auto adj_coord = val.getCoord();
-          // actual offset within real adjacent leaf
-          auto adj_offsets = coord_mod(
-              adj_coord, new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH));
-          // offset with respect to current leaf
-          // the offset dim gets a special value according to whether
-          // it is a positive or negative offset
-          adj_offsets[dim] = offset_value;
+        // iterate all active topology in the adj leaf
+        for (auto value_iter = leaf_pair.second->cbeginValueOn(); value_iter;
+             ++value_iter) {
+          // PERF this might not be most efficient way to get index
+          auto adj_coord = value_iter.getCoord();
+          // *value_iter probably better
+          if (leaf_pair.second->getValue(adj_coord)) {
+            // actual offset within real adjacent leaf
+            auto adj_offsets =
+                coord_mod(adj_coord, new_grid_coord(LEAF_LENGTH, LEAF_LENGTH,
+                                                    LEAF_LENGTH));
+            // offset with respect to current leaf
+            // the offset dim gets a special value according to whether
+            // it is a positive or negative offset
+            adj_offsets[dim] = offset_value;
 
-          // only use coords that are in the surface facing the current
-          // block remove if it doesn't match
-          if ((leaf_pair.first[dim] + start_coord[dim]) == adj_coord[dim]) {
-            integrate_point(stage, fifo, connected_fifo, adj_coord, grid,
-                            adj_offsets);
+            // only use coords that are in the surface facing the current
+            // block remove if it doesn't match
+            if ((leaf_pair.first[dim] + start_coord[dim]) == adj_coord[dim]) {
+              integrate_point(stage, fifo, connected_fifo, adj_coord, grid,
+                              adj_offsets);
+            }
           }
         }
         return leaf_pair;
@@ -1348,8 +1350,9 @@ void Recut<image_t>::integrate_update_grid(EnlargedPointDataGrid::Ptr grid,
   }
 
   // set update_grid false
-  for (auto leaf_iter = this->update_grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
-  // FIXME probably a more efficient way (hierarchically?) to set all to false
+  for (auto leaf_iter = this->update_grid->tree().beginLeaf(); leaf_iter;
+       ++leaf_iter) {
+    // FIXME probably a more efficient way (hierarchically?) to set all to false
     leaf_iter->fill(false);
   }
 }
@@ -1515,6 +1518,9 @@ void Recut<image_t>::connected_tile(
     const image_t *tile, VID_t interval_id, VID_t block_id, GridCoord offsets,
     std::string stage, const TileThresholds<image_t> *tile_thresholds,
     Container &fifo, VID_t revisits, T vdb_accessor, T2 leaf_iter) {
+  auto update_leaf = this->topology_grid->tree().probeLeaf(leaf_iter->origin());
+  assertm(update_leaf, "corresponding ");
+
   if (connected_fifo[block_id].empty())
     return;
 
@@ -1567,7 +1573,7 @@ void Recut<image_t>::connected_tile(
           auto mismatch = block_id != coord_img_to_block_id(coord_img);
           if (mismatch) {
             if (this->input_is_vdb) {
-              if (!get_vdb_val(vdb_accessor, coord_img))
+              if (!leaf_iter->isValueOn(coord_img))
                 found_adjacent_invalid = true;
             } else {
               auto dst_vox = get_img_val(tile, coord_img);
@@ -1585,8 +1591,8 @@ void Recut<image_t>::connected_tile(
           // is background?  ...has side-effects
           return !accumulate_connected(
               tile, interval_id, block_id, coord_img, ind, offset_to_current,
-              revisits, tile_thresholds, found_adjacent_invalid, vdb_accessor,
-              flags_handle, parents_handle);
+              revisits, tile_thresholds, found_adjacent_invalid, leaf_iter,
+              update_leaf, flags_handle, parents_handle);
         }) |
         rng::to_vector; // force full evaluation via vector
 
@@ -1648,8 +1654,9 @@ void Recut<image_t>::connected_tile(
         // at this stage
         // goes into update_grid of neighbors if its on the edge with
         // them these then get added into neighbor connected_fifo
-        check_ghost_update(interval_id, block_id, current_coord, current, stage,
-                           vdb_accessor);
+        // check_ghost_update(interval_id, block_id, current_coord, current,
+        // stage, vdb_accessor);
+        set_if_active(update_leaf, current_coord);
 #endif
       } else {
         // a message from an outside leaf is actually a surface and was
@@ -1681,6 +1688,7 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
   if (fifo.empty())
     return;
 
+  auto update_leaf = this->topology_grid->tree().probeLeaf(leaf_iter->origin());
   // load read-only flags
   openvdb::points::AttributeHandle<uint8_t> flags_handle =
       leaf_iter->constAttributeArray("flags");
@@ -1717,8 +1725,9 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
       radius_handle.set(*current_ind, 1);
       // if in domain notify potential outside domains
       if (!(msg_vertex->band())) {
-        check_ghost_update(interval_id, block_id, current_coord, current, stage,
-                           vdb_accessor);
+        // check_ghost_update(interval_id, block_id, current_coord, current,
+        // stage, vdb_accessor);
+        set_if_active(update_leaf, current_coord);
       }
     }
 
@@ -1752,7 +1761,7 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
           // ...has side-effects
           accumulate_radius(interval_id, block_id, coord_img, ind,
                             current->radius, fifo, flags_handle, radius_handle,
-                            vdb_accessor);
+                            update_leaf);
           return ind;
         }) |
         rng::to_vector; // force evaluation
@@ -1770,6 +1779,7 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
   if (fifo.empty())
     return;
 
+  auto update_leaf = this->topology_grid->tree().probeLeaf(leaf_iter->origin());
   openvdb::points::AttributeWriteHandle<uint8_t> radius_handle =
       leaf_iter->attributeArray("radius");
   openvdb::points::AttributeWriteHandle<uint8_t> flags_handle =
@@ -1847,7 +1857,7 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
           // ...has side-effects
           accumulate_prune(interval_id, block_id, coord_img, ind, current,
                            current_coord, current->unvisited(), fifo,
-                           radius_handle, flags_handle, vdb_accessor);
+                           radius_handle, flags_handle, update_leaf);
           return ind;
         }) |
         rng::to_vector;
@@ -2581,7 +2591,7 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
   auto is_boundary = [](auto coord) {
     for (int i = 0; i < 3; ++i) {
       if (coord[i]) {
-        if (coord[i] == (LEAF_LENGTH - 1)) 
+        if (coord[i] == (LEAF_LENGTH - 1))
           return true;
       } else {
         return true;
@@ -2610,21 +2620,23 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
       ++active_leaf_count;
 
       // init update grid with fixed topology (active state)
-      // FIXME you have to create a leaf first 
-      //auto update_leaf_iter = this->update_grid->tree().probeLeaf(origin);
-      //auto update_leaf = new openvdb::LeafNodeBool(origin, [>background=<]false);
-      //auto update_leaf = new openvdb::tree::LeafNode<bool, LEAF_LOG2DIM>(origin, false);
-      //this->update_grid->tree().addLeaf(update_leaf);
+      // FIXME you have to create a leaf first
+      // auto update_leaf_iter = this->update_grid->tree().probeLeaf(origin);
+      // auto update_leaf = new openvdb::LeafNodeBool(origin,
+      // [>background=<]false); auto update_leaf = new
+      // openvdb::tree::LeafNode<bool, LEAF_LOG2DIM>(origin, false);
+      // this->update_grid->tree().addLeaf(update_leaf);
 
       for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
         // get coord
         auto coord = ind.getCoord();
-        auto leaf_coord = coord_mod(coord, new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH));
+        auto leaf_coord = coord_mod(
+            coord, new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH));
         if (is_boundary(leaf_coord)) {
           // set activate state on but give it a false value
           update_accessor.setActiveState(coord, true);
-          //update_accessor.setValue(coord, false);
-          //update_leaf->setActiveState(coord, true);
+          // update_accessor.setValue(coord, false);
+          // update_leaf->setActiveState(coord, true);
         }
       }
     }
