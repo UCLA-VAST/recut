@@ -910,7 +910,6 @@ TEST(VertexAttr, Defaults) {
   ASSERT_FALSE(v1->root());
   ASSERT_EQ(v1->edge_state.field_, 192);
   ASSERT_TRUE(v1->unselected());
-  ASSERT_TRUE(v1->unvisited());
   // FIXME reuse this test once, root marked as known new found
   // ASSERT_TRUE(v1->connections(1, 1).empty());
 }
@@ -979,17 +978,8 @@ TEST(VertexAttr, MarkStatus) {
   v1->mark_root();
   ASSERT_TRUE(v1->root());
 
-  v1->mark_band();
-  ASSERT_FALSE(v1->selected());
-  ASSERT_FALSE(v1->unvisited());
-  ASSERT_FALSE(v1->root());
-  ASSERT_TRUE(v1->unselected());
-
   v1->mark_selected();
   ASSERT_TRUE(v1->selected());
-  ASSERT_FALSE(v1->unvisited());
-  ASSERT_FALSE(v1->root());
-  ASSERT_FALSE(v1->unselected());
 }
 
 TEST(VertexAttr, CopyOp) {

@@ -1,7 +1,7 @@
 #ifndef VERTEX_ATTR_H_
-    // ASSERT_TRUE(matches[0]);
-    // ASSERT_TRUE(matches[1]);
-    // ASSERT_TRUE(matches[2]);
+// ASSERT_TRUE(matches[0]);
+// ASSERT_TRUE(matches[1]);
+// ASSERT_TRUE(matches[2]);
 
 #define VERTEX_ATTR_H_
 #include <cassert>
@@ -47,11 +47,6 @@ struct Bitfield {
     return *this;
   }
 
-  // friend std::ostream& (std::ostream& os, Bitfield const& bf) {
-  // char[8]
-  // os
-  //}
-
   bool operator==(const Bitfield &a) const { return a.field_ == this->field_; }
 
   // defaults as 1100 0000 unvisited with no connections
@@ -63,27 +58,22 @@ struct VertexAttr {
   OffsetCoord offsets;
   OffsetCoord parent;
   uint8_t radius = std::numeric_limits<uint8_t>::max();
-// most sig. bits (little-endian) refer to state : 1 bytes
-  struct Bitfield edge_state; 
+  // most sig. bits (little-endian) refer to state : 1 bytes
+  struct Bitfield edge_state;
 
-  // constructors
-  // defaults as 192 i.e. 1100 0000 unvisited
-  VertexAttr()
-      : edge_state(192), 
-        radius(numeric_limits<uint8_t>::max()) 
-         {}
+  VertexAttr() : edge_state(0), radius(numeric_limits<uint8_t>::max()) {}
 
   // constructors
   // defaults as selected
   VertexAttr(OffsetCoord offsets)
-      : offsets(offsets), 
-        radius(numeric_limits<uint8_t>::max()) 
-         { this->mark_selected(); }
+      : offsets(offsets), radius(numeric_limits<uint8_t>::max()) {
+    this->mark_selected();
+  }
 
   // copy constructor
   VertexAttr(const VertexAttr &a)
-      : edge_state(a.edge_state), offsets(a.offsets), radius(a.radius), parent(a.parent) {
-  }
+      : edge_state(a.edge_state), offsets(a.offsets), radius(a.radius),
+        parent(a.parent) {}
 
   VertexAttr(Bitfield edge_state, OffsetCoord offsets)
       : edge_state(edge_state), offsets(offsets) {}
@@ -91,12 +81,10 @@ struct VertexAttr {
   VertexAttr(Bitfield edge_state, OffsetCoord offsets, OffsetCoord parent)
       : edge_state(edge_state), offsets(offsets), parent(parent) {}
 
-  VertexAttr(Bitfield edge_state, OffsetCoord offsets, OffsetCoord parent, uint8_t radius)
-      : edge_state(edge_state), offsets(offsets), parent(parent), radius (radius) {}
-
-  bool root() const {
-    return (!edge_state.test(7) && !edge_state.test(6)); // 00XX XXXX ROOT
-  }
+  VertexAttr(Bitfield edge_state, OffsetCoord offsets, OffsetCoord parent,
+             uint8_t radius)
+      : edge_state(edge_state), offsets(offsets), parent(parent),
+        radius(radius) {}
 
   // you can pipe the output directly to std::cout
   std::string description() const {
@@ -124,30 +112,11 @@ struct VertexAttr {
 
   /* returns whether this vertex has been added to a heap
    */
-  bool valid_parent() const { 
-    return parent[0] || parent[1] || parent[2];
-  }
+  bool valid_parent() const { return parent[0] || parent[1] || parent[2]; }
 
-  /* returns whether this vertex has had its radius updated from the default max */
+  /* returns whether this vertex has had its radius updated from the default max
+   */
   bool valid_radius() const { return radius != numeric_limits<uint8_t>::max(); }
-
-  bool selected() const {
-    return (edge_state.test(7) && !edge_state.test(6)); // 10XX XXXX KNOWN NEW
-  }
-
-  // change an independent flag to indicate this vertex has been visited
-  void prune_visit() {
-    // XXX1 XXXX
-    edge_state.set(4);
-  }
-
-  // check an independent flag to see if during a prune update
-  // this vertex has already been visited and had it's parent
-  // changed
-  bool prune_visited() const {
-    // XXX? XXXX
-    return edge_state.test(4);
-  }
 
   void set_parent(OffsetCoord coord) {
     this->parent[0] = coord[0];
@@ -172,18 +141,12 @@ struct VertexAttr {
     if (this->selected()) {
       return 'V';
     }
-    if (this->unvisited()) {
-      return '-';
-    }
-    if (this->band()) {
-      return 'B';
-    }
-    return '?';
+    return '-';
   }
 
   friend std::ostream &operator<<(std::ostream &os, const VertexAttr &v) {
-    os << "{offsets: " << coord_to_str(v.offsets )
-       << ", radius: " << +(v.radius) << ", label: " << v.label() << '}';
+    os << "{offsets: " << coord_to_str(v.offsets) << ", radius: " << +(v.radius)
+       << ", label: " << v.label() << '}';
     return os;
   }
 
@@ -197,110 +160,83 @@ struct VertexAttr {
 
   bool operator==(const VertexAttr &a) const {
     return (offsets == a.offsets) &&
-           (edge_state.field_ == a.edge_state.field_) && (radius == a.radius)
-           && (parent == a.parent);
+           (edge_state.field_ == a.edge_state.field_) && (radius == a.radius) &&
+           (parent == a.parent);
   }
 
   bool operator!=(const VertexAttr &a) const {
     return (offsets != a.offsets) ||
-           (edge_state.field_ != a.edge_state.field_) || (radius != a.radius)
-           || (parent != a.parent);
+           (edge_state.field_ != a.edge_state.field_) || (radius != a.radius) ||
+           (parent != a.parent);
   }
 
-  void mark_branch_point() {
-    // XXXX XX1X
-    edge_state.set(1);
-    edge_state.unset(0);
-  }
+  // void mark_branch_point() {
+  //// XXXX XX1X
+  // edge_state.set(1);
+  // edge_state.unset(0);
+  //}
 
-  bool is_branch_point() const {
-    // XXXX XX?X
-    return edge_state.test(1);
-  }
+  // bool is_branch_point() const {
+  //// XXXX XX?X
+  // return edge_state.test(1);
+  //}
 
-  bool has_single_child() const {
-    // XXXX XXX?
-    return edge_state.test(0);
-  }
+  // bool has_single_child() const {
+  //// XXXX XXX?
+  // return edge_state.test(0);
+  //}
 
-  void mark_has_single_child() {
-    // XXXX XXX1
-    edge_state.set(0);
-    edge_state.unset(1);
-  }
+  // void mark_has_single_child() {
+  //// XXXX XXX1
+  // edge_state.set(0);
+  // edge_state.unset(1);
+  //}
 
-  void mark_surface() {
-    edge_state.set(5);
-  }
+  void mark_selected() { edge_state.set(0); }
 
-  void mark_selected() {
-    edge_state.set(7); // set as KNOWN NEW
-    edge_state.unset(6);
-  }
+  bool selected() const { return edge_state.test(0); }
 
-  bool unvisited() const { // 11XX XXXX default unvisited state
-    return edge_state.test(6) && edge_state.test(7);
-  }
+  bool unselected() const { return !selected(); }
 
-  void mark_unvisited() { // 11XX XXXX default unvisited state
-    edge_state.set(7);
-    edge_state.set(6);
-  }
+  void mark_surface() { edge_state.set(1); }
 
-  /* returns true if X1XX XXXX
-   * means node is either BAND or unvisited
-   * and has not been selected as KNOWN_NEW
-   */
-  bool unselected() const {
-    // return edge_state.test(6);
-    return !selected();
-  }
+  bool surface() const { return edge_state.test(1); }
 
   void mark_root() {
-    // no connections is already default
-    // roots can also be surface
-    edge_state.unset(7);
-    edge_state.unset(6);
+    // no parent is already default
+    // roots can also be surface, selected, etc.
+    edge_state.unset(3);
   }
 
-  void mark_band() {
-    // add to band (01XX XXXX)
-    edge_state.unset(7);
-    edge_state.set(6);
+  bool root() const { return edge_state.test(3); }
+
+  // check an independent flag to see if during a prune update
+  // this vertex has already been visited and had it's parent
+  // changed
+  bool prune_visited() const {
+    // XXX? XXXX
+    return edge_state.test(4);
   }
 
-  bool surface() const { // XX1X XXXX
-    return edge_state.test(5);
+  void prune_visit() {
+    // XXX1 XXXX
+    edge_state.set(4);
   }
 
-  bool band() const { // 01XX XXXX
-    return edge_state.test(6) && !(edge_state.test(7));
-  }
+  void mark_tombstone() { edge_state.set(5); }
 
-  // remaining 6 bits indicate connections with neighbors:
-  // each value is a boolean indicating a connection with that neighbor
-  // from least sig. to most sig bit the connections are ordered as follows:
-  // bit | connection
+  bool tombstone() const { return edge_state.test(5); }
+
+  // ordered from right to left:
+  // 7 6 5 4   3 2 1 0
+  // ind | meaning
   // ----------------
-  // 0   | x - 1
-  // 1   | x + 1
-  // 2   | y - 1
-  // 3   | y + 1
-  // 4   | z - 1
-  // 5   | z + 1
-  // 6-7 | 11 indicates unvisited
-  // 6-7 | 01 indicates band
-  // 6-7 | 10 indicates KNOWN_NEW
-  // 6-7 | 00 indicates KNOWN_FIX of
-  //       0000 0000, KNOWN_FIX ROOT
-  //
-  // Ex.
-  // 192 = 1100 0000 :
-  //   initial state of all but root node, no connections to any neighbors
-  // 2 = 0000 0010 :
-  //   indicates a selected node with one connection at x + 1
-  //   0000 0000 indicates root or a fixed selected value, does not need
-  //   to be reprocessed in ghost cell regions
+  // 0   | selected
+  // 1   | surface
+  // 2   | band
+  // 3   | root
+  // 4   | prune visit
+  // 5   | tombstone
 };
 
 #endif
