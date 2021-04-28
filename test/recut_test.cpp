@@ -378,7 +378,7 @@ TEST(VDB, IntegrateUpdateGrid) {
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   auto root_vids = recut.initialize();
-  // recut.activate_vids(root_vids, "connected", recut.global_fifo);
+  // recut.activate_vids(root_vids, "connected", recut.map_fifo);
   auto update_accessor = recut.update_grid->getAccessor();
   auto topology_accessor = recut.topology_grid->getConstAccessor();
 
@@ -407,8 +407,8 @@ TEST(VDB, IntegrateUpdateGrid) {
     set_if_active(update_leaf, lower_corner);
     set_if_active(update_leaf, upper_corner);
 
-    recut.integrate_update_grid(recut.topology_grid, stage, recut.global_fifo,
-                                recut.connected_fifo, update_accessor,
+    recut.integrate_update_grid(recut.topology_grid, stage, recut.map_fifo,
+                                recut.connected_map, update_accessor,
                                 interval_id);
 
     cout << "Finished integrate\n";
@@ -419,10 +419,10 @@ TEST(VDB, IntegrateUpdateGrid) {
             auto block_img_offsets =
                 recut.id_interval_block_to_img_offsets(interval_id, block_id);
             if (print_all)
-              cout << recut.connected_fifo[block_id][0].offsets << '\n';
+              cout << recut.connected_map[block_id][0].offsets << '\n';
             return coord_all_eq(
                 coord_add(block_img_offsets,
-                          recut.connected_fifo[block_id][0].offsets),
+                          recut.connected_map[block_id][0].offsets),
                 corner);
           }) |
           rng::to_vector;
@@ -522,7 +522,7 @@ TEST(VDB, ActivateVids) {
   auto recut = Recut<uint16_t>(args);
   auto root_vids = recut.initialize();
   recut.activate_vids(recut.topology_grid, root_vids, "connected",
-                      recut.global_fifo, recut.connected_fifo);
+                      recut.map_fifo, recut.connected_map);
 
   if (print_all) {
     print_vdb(recut.topology_grid->getConstAccessor(), grid_extents);
@@ -532,7 +532,7 @@ TEST(VDB, ActivateVids) {
   auto block_id = 0;
   auto interval_id = 0;
   ASSERT_TRUE(recut.active_intervals[interval_id]);
-  ASSERT_FALSE(recut.connected_fifo[block_id].empty());
+  ASSERT_FALSE(recut.connected_map[block_id].empty());
 
   GridCoord root(3, 3, 3);
   auto leaf_iter = recut.topology_grid->tree().probeLeaf(root);
@@ -563,7 +563,7 @@ TEST(VDB, Connected) {
   // for the second read test
   auto tcase = 7;
   double slt_pct = 100;
-  bool print_all = true;
+  bool print_all = false;
   // generate an image buffer on the fly
   // then convert to vdb
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
@@ -573,13 +573,43 @@ TEST(VDB, Connected) {
   auto root_vids = recut.initialize();
   auto stage = "connected";
   recut.activate_vids(recut.topology_grid, root_vids, "connected",
-                      recut.global_fifo, recut.connected_fifo);
-  recut.update(stage, recut.global_fifo);
+                      recut.map_fifo, recut.connected_map);
+  recut.update(stage, recut.map_fifo);
 
   if (print_all) {
     print_vdb(recut.topology_grid->getConstAccessor(), grid_extents);
     print_all_points(recut.topology_grid);
   }
+
+  auto known_surface = new_grid_coord(1, 1, 1);
+  auto known_selected = new_grid_coord(2, 2, 2);
+  auto known_root = new_grid_coord(3, 3, 3);
+
+  // they all are in the same leaf
+  auto leaf_iter = recut.topology_grid->tree().probeLeaf(known_surface);
+
+  openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
+      leaf_iter->attributeArray("flags"));
+
+  {
+    auto ind = leaf_iter->beginIndexVoxel(known_surface);
+    ASSERT_TRUE(is_selected(flags_handle, ind));
+    ASSERT_TRUE(is_surface(flags_handle, ind));
+  }
+
+  {
+    auto ind = leaf_iter->beginIndexVoxel(known_selected);
+    ASSERT_TRUE(is_selected(flags_handle, ind));
+    ASSERT_FALSE(is_surface(flags_handle, ind));
+  }
+
+  {
+    auto ind = leaf_iter->beginIndexVoxel(known_root);
+    ASSERT_TRUE(is_selected(flags_handle, ind));
+    ASSERT_TRUE(is_root(flags_handle, ind));
+    ASSERT_FALSE(is_surface(flags_handle, ind));
+  }
+
 }
 
 TEST(VDBWriteOnly, DISABLED_Any) {
@@ -620,7 +650,7 @@ TEST(VDBWriteOnly, DISABLED_Any) {
 
 TEST(VDB, Convert) {
   VID_t grid_size = 8;
-  auto interval_size = grid_size / 2;
+  VID_t interval_size = 4;
   auto grid_extents = std::vector<VID_t>(3, grid_size);
   // do no use tcase 4 since it is randomized and will not match
   // for the second read test
@@ -636,7 +666,7 @@ TEST(VDB, Convert) {
   // generate an image buffer on the fly
   // then convert to vdb
   auto args =
-      get_args(grid_size, interval_size, interval_size, slt_pct, tcase, true);
+      get_args(grid_size, grid_size, grid_size, slt_pct, tcase, /*force_regenerate_image*/true);
   auto recut = Recut<uint16_t>(args);
   recut.params->convert_only_ = true;
   // recut.params->out_vdb_ = fn;
@@ -655,7 +685,7 @@ TEST(VDB, Convert) {
 
   // mutates topology_grid
   auto stage = "convert";
-  recut.update(stage, recut.global_fifo);
+  recut.update(stage, recut.map_fifo);
 
   if (print_all)
     print_vdb(recut.topology_grid->getConstAccessor(), grid_extents);
@@ -666,7 +696,7 @@ TEST(VDB, Convert) {
   double write_error_rate;
   EXPECT_NO_FATAL_FAILURE(
       check_recut_error(recut, recut.generated_image,
-                        grid_size, stage, write_error_rate, recut.global_fifo,
+                        grid_size, stage, write_error_rate, recut.map_fifo,
                         recut.params->selected, true));
   ASSERT_NEAR(write_error_rate, 0., NUMERICAL_ERROR);
   */
@@ -688,7 +718,7 @@ TEST(VDB, Convert) {
     recut_from_vdb_file.activate_all_intervals();
     // mutates topology_grid
     auto stage = "convert";
-    recut_from_vdb_file.update(stage, recut_from_vdb_file.global_fifo);
+    recut_from_vdb_file.update(stage, recut_from_vdb_file.map_fifo);
 
     if (print_all)
       print_vdb(recut_from_vdb_file.topology_grid->getConstAccessor(),
@@ -696,12 +726,12 @@ TEST(VDB, Convert) {
 
     // assert equals original grid above
     double read_from_file_error_rate;
-    EXPECT_NO_FATAL_FAILURE(check_recut_error(
-        recut_from_vdb_file,
-        /*ground_truth*/ recut.generated_image, grid_size, stage,
-        read_from_file_error_rate, recut_from_vdb_file.global_fifo,
-        recut.params->selected,
-        /*strict_match=*/true));
+    EXPECT_NO_FATAL_FAILURE(
+        check_recut_error(recut_from_vdb_file,
+                          /*ground_truth*/ recut.generated_image, grid_size,
+                          stage, read_from_file_error_rate,
+                          recut_from_vdb_file.map_fifo, recut.params->selected,
+                          /*strict_match=*/true));
 
     ASSERT_NEAR(read_from_file_error_rate, 0., NUMERICAL_ERROR);
   }
@@ -1183,11 +1213,11 @@ TEST(CheckGlobals, SurfacePassed) {
     auto vertex = recut.get_active_vertex(0, 0, offsets);
     ASSERT_NE(vertex, nullptr);
     vertex->mark_surface();
-    recut.global_fifo[0].push_back(*vertex);
+    recut.map_fifo[0].push_back(*vertex);
   }
 
   {
-    auto msg_vertex = recut.global_fifo[0].front();
+    auto msg_vertex = recut.map_fifo[0].front();
     auto vertex = recut.get_active_vertex(0, 0, msg_vertex.offsets);
     ASSERT_NE(vertex, nullptr);
     ASSERT_TRUE(msg_vertex.surface());
@@ -1230,13 +1260,13 @@ TEST(CheckGlobals, AllFifo) {
     ASSERT_TRUE(g2vertex->selected());
     gvertex->mark_root();
 
-    recut.global_fifo[0].push_back(*vertex);
-    recut.connected_fifo[0].push_back(*vertex);
+    recut.map_fifo[0].push_back(*vertex);
+    recut.connected_map[0].push_back(*vertex);
   }
 
   for (auto vid : l) {
     cout << "check vid: " << vid << '\n';
-    cout << "fifo size: " << recut.connected_fifo[0].size() << '\n';
+    cout << "fifo size: " << recut.connected_map[0].size() << '\n';
     auto offsets = id_to_coord(vid, recut.image_lengths);
     auto vertex = recut.get_or_set_active_vertex(0, 0, offsets, found);
     auto gvertex = recut.get_active_vertex(0, 0, offsets);
@@ -1246,8 +1276,8 @@ TEST(CheckGlobals, AllFifo) {
     ASSERT_TRUE(vertex->root());
     ASSERT_TRUE(vertex->surface());
 
-    auto msg_vertex = &(recut.connected_fifo[0].front());
-    recut.connected_fifo[0].pop_front(); // remove it
+    auto msg_vertex = &(recut.connected_map[0].front());
+    recut.connected_map[0].pop_front(); // remove it
 
     ASSERT_TRUE(coord_all_eq(msg_vertex->offsets, offsets));
     ASSERT_TRUE(coord_all_eq(msg_vertex->offsets, vertex->offsets));
@@ -1255,8 +1285,8 @@ TEST(CheckGlobals, AllFifo) {
     ASSERT_TRUE(msg_vertex->root());
     ASSERT_TRUE(msg_vertex->surface());
 
-    auto global_vertex = &(recut.global_fifo[0].front());
-    recut.global_fifo[0].pop_front(); // remove it
+    auto global_vertex = &(recut.map_fifo[0].front());
+    recut.map_fifo[0].pop_front(); // remove it
 
     ASSERT_TRUE(coord_all_eq(global_vertex->offsets, offsets));
     ASSERT_TRUE(coord_all_eq(global_vertex->offsets, vertex->offsets));
@@ -1264,8 +1294,8 @@ TEST(CheckGlobals, AllFifo) {
     ASSERT_TRUE(global_vertex->root());
     ASSERT_TRUE(global_vertex->surface());
   }
-  ASSERT_TRUE(recut.connected_fifo[0].empty());
-  ASSERT_TRUE(recut.global_fifo[0].empty());
+  ASSERT_TRUE(recut.connected_map[0].empty());
+  ASSERT_TRUE(recut.map_fifo[0].empty());
 }
 
 TEST(Scale, DISABLED_InitializeGlobals) {
@@ -1418,24 +1448,24 @@ TEST(Update, EachStageIteratively) {
             {
               auto stage = "connected";
               recut.activate_vids(recut.topology_grid, root_vids, "connected",
-                                  recut.global_fifo, recut.connected_fifo);
-              recut.update(stage, recut.global_fifo);
+                                  recut.map_fifo, recut.connected_map);
+              recut.update(stage, recut.map_fifo);
               if (print_all) {
                 std::cout << "Recut connected\n";
                 std::cout << iteration_trace.str();
-                recut.print_grid(stage, recut.global_fifo);
+                recut.print_grid(stage, recut.map_fifo);
                 print_all_points(recut.topology_grid, stage);
                 std::cout << "Recut surface\n";
                 std::cout << iteration_trace.str();
-                recut.print_grid("surface", recut.global_fifo);
+                recut.print_grid("surface", recut.map_fifo);
                 print_all_points(recut.topology_grid, "surface");
                 auto total = 0;
                 if (false) {
                   std::cout << "All surface vids: \n";
-                  for (int i = 0; i < recut.global_fifo.size(); ++i) {
+                  for (int i = 0; i < recut.map_fifo.size(); ++i) {
                     std::cout << "Interval " << i << '\n';
-                    for (int j = 0; j < recut.global_fifo.size(); ++j) {
-                      auto inner = recut.global_fifo[j];
+                    for (int j = 0; j < recut.map_fifo.size(); ++j) {
+                      auto inner = recut.map_fifo[j];
                       std::cout << " Block " << j << '\n';
                       for (auto &vertex : inner) {
                         total++;
@@ -1493,17 +1523,17 @@ TEST(Update, EachStageIteratively) {
               // and will always fail
               EXPECT_NO_FATAL_FAILURE(check_recut_error(
                   recut, app2_accurate_radii_grid.get(), grid_size, "surface",
-                  recut_vs_app2_accurate_surface_error, recut.global_fifo,
+                  recut_vs_app2_accurate_surface_error, recut.map_fifo,
                   surface_count,
                   /*strict_match=*/false));
             }
 
             // RECUT RADIUS
             {
-              recut.setup_radius(recut.global_fifo);
+              recut.setup_radius(recut.map_fifo);
               // assert conducting update on radius consumes all fifo values
-              recut.update("radius", recut.global_fifo);
-              for (const auto &m : recut.global_fifo) {
+              recut.update("radius", recut.map_fifo);
+              for (const auto &m : recut.map_fifo) {
                 ASSERT_EQ(m.second.size(), 0);
               }
             }
@@ -1514,7 +1544,7 @@ TEST(Update, EachStageIteratively) {
               if (print_all) {
                 std::cout << "Recut radii\n";
                 std::cout << iteration_trace.str();
-                recut.print_grid("radius", recut.global_fifo);
+                recut.print_grid("radius", recut.map_fifo);
                 print_all_points(recut.topology_grid, "radius");
               }
 
@@ -1539,7 +1569,7 @@ TEST(Update, EachStageIteratively) {
               double recut_vs_app2_accurate_radius_error;
               EXPECT_NO_FATAL_FAILURE(check_recut_error(
                   recut, app2_accurate_radii_grid.get(), grid_size, "radius",
-                  recut_vs_app2_accurate_radius_error, recut.global_fifo,
+                  recut_vs_app2_accurate_radius_error, recut.map_fifo,
                   ground_truth_selected));
               // see above comment on app2's accuracy_radius
               // the error is still recorded and radii are made sure to be
@@ -1578,7 +1608,7 @@ TEST(Update, EachStageIteratively) {
                 // radii are made sure to be valid in the right locations
                 EXPECT_NO_FATAL_FAILURE(check_recut_error(
                     recut, seq_radii_grid.get(), grid_size, "radius",
-                    recut_vs_recut_sequential_radius_error, recut.global_fifo,
+                    recut_vs_recut_sequential_radius_error, recut.map_fifo,
                     ground_truth_selected));
                 // exact match at every radii value
                 ASSERT_NEAR(recut_vs_recut_sequential_radius_error, 0.,
@@ -1634,19 +1664,19 @@ TEST(Update, EachStageIteratively) {
                 recut.convert_to_markers(args.output_tree, false);
                 auto stage = std::string{"prune"};
                 recut.activate_vids(recut.topology_grid, root_vids, stage,
-                                    recut.global_fifo, recut.connected_fifo);
-                recut.update(stage, recut.global_fifo);
+                                    recut.map_fifo, recut.connected_map);
+                recut.update(stage, recut.map_fifo);
 
                 recut.adjust_parent(false);
                 if (print_all) {
                   std::cout << "Recut prune\n";
                   std::cout << iteration_trace.str();
-                  recut.print_grid("label", recut.global_fifo);
+                  recut.print_grid("label", recut.map_fifo);
                   print_all_points(recut.topology_grid, "label");
 
                   std::cout << "Recut radii post prune\n";
                   std::cout << iteration_trace.str();
-                  recut.print_grid("radius", recut.global_fifo);
+                  recut.print_grid("radius", recut.map_fifo);
                   print_all_points(recut.topology_grid, "radius");
                 }
 
@@ -1831,7 +1861,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   std::vector<VID_t> root_vids;
   root_vids = recut.initialize();
   recut.activate_vids(recut.topology_grid, root_vids, "connected",
-                      recut.global_fifo, recut.connected_fifo);
+                      recut.map_fifo, recut.connected_map);
 
 #ifdef USE_MCP3D
   mcp3d::MImage image(args.image_root_dir());
@@ -1865,11 +1895,11 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   // Connected
   // update with fixed tile_thresholds for the entire update
   auto connected_update_stats =
-      recut.update("connected", recut.global_fifo, tile_thresholds);
+      recut.update("connected", recut.map_fifo, tile_thresholds);
 
   if (print_all) {
     std::cout << "Recut connected\n";
-    recut.print_grid("label", recut.global_fifo);
+    recut.print_grid("label", recut.map_fifo);
   }
 
   {
@@ -1903,12 +1933,12 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   }
 
   // RADIUS
-  recut.setup_radius(recut.global_fifo);
-  auto radius_update_stats = recut.update("radius", recut.global_fifo);
+  recut.setup_radius(recut.map_fifo);
+  auto radius_update_stats = recut.update("radius", recut.map_fifo);
 
   if (print_all) {
     std::cout << "Recut radius\n";
-    recut.print_grid("radius", recut.global_fifo);
+    recut.print_grid("radius", recut.map_fifo);
   }
 
   // save the output_tree early before it is pruned to compare
@@ -1921,22 +1951,22 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   auto recut_output_tree_prune = std::vector<MyMarker *>();
   if (prune) {
     stage = std::string{"prune"};
-    recut.activate_vids(recut.topology_grid, root_vids, stage,
-                        recut.global_fifo, recut.connected_fifo);
-    auto prune_update_stats = recut.update(stage, recut.global_fifo);
+    recut.activate_vids(recut.topology_grid, root_vids, stage, recut.map_fifo,
+                        recut.connected_map);
+    auto prune_update_stats = recut.update(stage, recut.map_fifo);
 
     assertm(args.output_tree.size() != 0, "Can not have 0 selected output");
     recut_output_tree_prune.reserve(args.output_tree.size() / 100);
     accept_band = true;
 
     std::cout << "Recut prune\n";
-    recut.print_grid("label", recut.global_fifo);
+    recut.print_grid("label", recut.map_fifo);
 
     std::cout << "Recut radii post prune\n";
-    recut.print_grid("radius", recut.global_fifo);
+    recut.print_grid("radius", recut.map_fifo);
 
     std::cout << "Recut parent post prune\n";
-    recut.print_grid("parent", recut.global_fifo);
+    recut.print_grid("parent", recut.map_fifo);
 
     recut.adjust_parent(false);
     recut.convert_to_markers(recut_output_tree_prune,

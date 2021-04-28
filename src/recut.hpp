@@ -98,8 +98,8 @@ public:
   atomic<VID_t> global_revisits;
   RecutCommandLineArgs *args;
   RecutParameters *params;
-  std::map<VID_t, std::deque<VertexAttr>> global_fifo;
-  std::map<VID_t, std::deque<VertexAttr>> connected_fifo;
+  std::map<VID_t, std::deque<VertexAttr>> map_fifo;
+  std::map<VID_t, std::deque<VertexAttr>> connected_map;
   std::map<VID_t, std::vector<VertexAttr>> active_vertices;
 
   // interval specific global data structures
@@ -136,7 +136,7 @@ public:
   void place_vertex(const VID_t nb_interval_id, VID_t block_id, VID_t nb,
                     struct VertexAttr *dst, GridCoord dst_coord,
                     OffsetCoord msg_offsets, std::string stage, T vdb_accessor);
-  template <typename T> bool are_fifos_empty(T check_fifo);
+  bool are_fifos_empty(std::map<VID_t, std::deque<VertexAttr>> &check_fifo);
   bool are_intervals_finished();
   void activate_all_intervals();
 
@@ -165,7 +165,7 @@ public:
                             const TileThresholds<image_t> *tile_thresholds,
                             bool &found_adjacent_invalid, PointIter point_leaf,
                             UpdateIter update_leaf, FlagsT flags_handle,
-                            ParentsT parents_handle, std::deque<VertexAttr> connected_fifo);
+                            ParentsT parents_handle, std::deque<VertexAttr> &connected_fifo);
   bool accumulate_value(const image_t *tile, VID_t interval_id,
                         GridCoord dst_coord, VID_t block_id,
                         struct VertexAttr *current, VID_t &revisits,
@@ -186,17 +186,17 @@ public:
                          T ind, T2 current_radius, Container &fifo,
                          FlagsT flags_handle, RadiusT radius_handle,
                          UpdateIter update_leaf);
-  template <class Container, typename T, typename T2>
+  template <typename T2>
   void integrate_update_grid(EnlargedPointDataGrid::Ptr grid, std::string stage,
-                             Container &fifo, T &connected_fifo,
+                             std::map<VID_t, std::deque<VertexAttr>> &fifo, std::map<VID_t, std::deque<VertexAttr>> &connected_fifo,
                              T2 update_accessor, VID_t interval_id);
   template <class Container> void dump_buffer(Container buffer);
   void adjust_vertex_parent(VertexAttr *vertex, GridCoord start_offsets);
-  template <class Container, typename T, typename T2>
+  template <typename T, typename T2>
   void march_narrow_band(const image_t *tile, VID_t interval_id, VID_t block_id,
                          std::string stage,
                          const TileThresholds<image_t> *tile_thresholds,
-                         Container &connected_fifo, Container &fifo,
+                         std::deque<VertexAttr> &connected_fifo, std::deque<VertexAttr> &fifo,
                          T vdb_accessor, T2 leaf_iter);
   template <class Container, typename T, typename T2>
   void connected_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
@@ -221,11 +221,11 @@ public:
   void load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile);
   TileThresholds<image_t> *get_tile_thresholds(mcp3d::MImage &mcp3d_tile);
 #endif
-  template <class Container, typename T, typename T2>
+  template <typename T2>
   std::atomic<double>
   process_interval(VID_t interval_id, const image_t *tile, std::string stage,
                    const TileThresholds<image_t> *tile_thresholds,
-                   Container &fifo, T connected_fifo, T2 vdb_accessor);
+                   T2 vdb_accessor);
   template <class Container>
   std::unique_ptr<InstrumentedUpdateStatistics>
   update(std::string stage, Container &fifo = nullptr,
@@ -841,7 +841,7 @@ bool Recut<image_t>::accumulate_connected(
     const TileThresholds<image_t> *tile_thresholds,
     bool &found_adjacent_invalid, PointIter point_leaf, UpdateIter update_leaf,
     FlagsT flags_handle, ParentsT parents_handle,
-    std::deque<VertexAttr> connected_fifo) {
+    std::deque<VertexAttr> &connected_fifo) {
 
 #ifdef FULL_PRINT
   cout << "\tcheck dst: " << coord_to_str(dst_coord);
@@ -1208,10 +1208,10 @@ void integrate_adj_leafs(GridCoord start_coord,
  * march_narrow_band safely to complete the iteration
  */
 template <class image_t>
-template <class Container, typename T, typename T2>
+template <typename T2>
 void Recut<image_t>::integrate_update_grid(EnlargedPointDataGrid::Ptr grid,
-                                           std::string stage, Container &fifo,
-                                           T &connected_fifo,
+                                           std::string stage, std::map<VID_t, std::deque<VertexAttr>> &fifo,
+                                           std::map<VID_t, std::deque<VertexAttr>> &connected_fifo,
                                            T2 update_accessor,
                                            VID_t interval_id) {
   // for each leaf with active voxels i.e. containing topology
@@ -1278,8 +1278,7 @@ template <class image_t> bool Recut<image_t>::are_intervals_finished() {
  * corresponding heap is not empty
  */
 template <class image_t>
-template <typename T>
-bool Recut<image_t>::are_fifos_empty(T check_fifo) {
+bool Recut<image_t>::are_fifos_empty(std::map<VID_t, std::deque<VertexAttr>>& check_fifo) {
   VID_t tot_active = 0;
 #ifdef LOG_FULL
   cout << "Blocks active: ";
@@ -1518,7 +1517,6 @@ void Recut<image_t>::connected_tile(
     }
   }
 
-  assertm(connected_fifo.empty(), "not mepty");
 #ifdef LOG_FULL
   cout << "visited vertices: " << visited << '\n';
 #endif
@@ -1713,11 +1711,11 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
 } // end prune_tile
 
 template <class image_t>
-template <class Container, typename T, typename T2>
+template <typename T, typename T2>
 void Recut<image_t>::march_narrow_band(
     const image_t *tile, VID_t interval_id, VID_t block_id, std::string stage,
-    const TileThresholds<image_t> *tile_thresholds, Container &connected_fifo,
-    Container &fifo, T vdb_accessor, T2 leaf_iter) {
+    const TileThresholds<image_t> *tile_thresholds, std::deque<VertexAttr> &connected_fifo,
+    std::deque<VertexAttr> &fifo, T vdb_accessor, T2 leaf_iter) {
   // first coord of block with respect to whole image
   auto block_img_offsets =
       id_interval_block_to_img_offsets(interval_id, block_id);
@@ -1735,7 +1733,6 @@ void Recut<image_t>::march_narrow_band(
     connected_tile(tile, interval_id, block_id, block_img_offsets, stage,
                    tile_thresholds, connected_fifo, fifo, revisits,
                    vdb_accessor, leaf_iter);
-    assertm(connected_fifo.empty(), "not empty");
   } else if (stage == "radius") {
     radius_tile(tile, interval_id, block_id, block_img_offsets, stage,
                 tile_thresholds, fifo, revisits, vdb_accessor, leaf_iter);
@@ -1824,17 +1821,17 @@ int Recut<image_t>::get_bkg_threshold(const image_t *tile,
 }
 
 template <class image_t>
-template <class Container, typename T, typename T2>
+template <typename T2>
 std::atomic<double> Recut<image_t>::process_interval(
     VID_t interval_id, const image_t *tile, std::string stage,
-    const TileThresholds<image_t> *tile_thresholds, Container &fifo,
-    T connected_fifo, T2 vdb_accessor) {
+    const TileThresholds<image_t> *tile_thresholds, 
+    T2 vdb_accessor) {
   struct timespec presave_time, postmarch_time, iter_start,
       start_iter_loop_time, end_iter_time, postsave_time;
   double no_io_time;
   no_io_time = 0.0;
 
-  integrate_update_grid(this->topology_grid, stage, fifo, connected_fifo,
+  integrate_update_grid(this->topology_grid, stage, this->map_fifo, this->connected_map,
                         vdb_accessor, interval_id);
 
   // iterations over blocks
@@ -1865,19 +1862,17 @@ std::atomic<double> Recut<image_t>::process_interval(
          ++leaf_iter) {
       auto block_id = coord_img_to_block_id(leaf_iter->origin());
       march_narrow_band(tile, interval_id, block_id, stage, tile_thresholds,
-                        connected_fifo[block_id], fifo[block_id], vdb_accessor,
+                        this->connected_map[block_id], this->map_fifo[block_id], vdb_accessor,
                         leaf_iter);
     }
-    assertm(connected_fifo[0].empty(), "not empty");
 
 #ifdef LOG_FULL
     cout << "Marched narrow band";
     clock_gettime(CLOCK_REALTIME, &postmarch_time);
     cout << " in " << diff_time(iter_start, postmarch_time) << " sec." << '\n';
-    cout << " fifos empty? " << are_fifos_empty(connected_fifo) << '\n';
 #endif
 
-    integrate_update_grid(this->topology_grid, stage, fifo, connected_fifo,
+    integrate_update_grid(this->topology_grid, stage, this->map_fifo, this->connected_map,
                           vdb_accessor, interval_id);
 
 #ifdef LOG_FULL
@@ -1887,10 +1882,10 @@ std::atomic<double> Recut<image_t>::process_interval(
 #endif
 
     if (stage == "connected") {
-      if (are_fifos_empty(connected_fifo)) {
+      if (are_fifos_empty(this->connected_map)) {
         break;
       }
-    } else if (are_fifos_empty(fifo)) {
+    } else if (are_fifos_empty(this->map_fifo)) {
       break;
     }
     inner_iteration_idx++;
@@ -2276,7 +2271,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           computation_time =
               computation_time +
               process_interval(interval_id, tile, stage, local_tile_thresholds,
-                               fifo, this->connected_fifo, update_accessor);
+                               update_accessor);
         }
       } // if the interval is active
 
@@ -2295,10 +2290,6 @@ Recut<image_t>::update(std::string stage, Container &fifo,
     }
 
     this->topology_grid = grids[this->grid_interval_size - 1];
-
-#ifdef FULL_PRINT
-    print_positions(this->topology_grid);
-#endif
 
     auto finalize_time = timer->elapsed() - finalize_start;
     computation_time = computation_time + finalize_time;
@@ -2473,8 +2464,8 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
 
     // fifo is a deque representing the vids left to
     // process at each stage
-    this->global_fifo = inner;
-    this->connected_fifo = inner;
+    this->map_fifo = inner;
+    this->connected_map = inner;
     // global active vertex list
   }
 
@@ -2951,7 +2942,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     // mutates topology_grid
     stage = "convert";
-    this->update(stage, global_fifo);
+    this->update(stage, map_fifo);
 #ifdef LOG
     print_grid_metadata(this->topology_grid);
 #endif
@@ -2967,21 +2958,21 @@ template <class image_t> void Recut<image_t>::operator()() {
   // starting from the roots connected stage saves all surface vertices into
   // fifo
   stage = "connected";
-  // this->activate_vids(root_vids, stage, global_fifo);
-  this->activate_vids(this->topology_grid, root_vids, stage, this->global_fifo,
-                      this->connected_fifo);
-  this->update(stage, global_fifo);
+  // this->activate_vids(root_vids, stage, map_fifo);
+  this->activate_vids(this->topology_grid, root_vids, stage, this->map_fifo,
+                      this->connected_map);
+  this->update(stage, map_fifo);
 
   // radius stage will consume fifo surface vertices
   stage = "radius";
-  this->setup_radius(global_fifo);
-  this->update(stage, global_fifo);
+  this->setup_radius(map_fifo);
+  this->update(stage, map_fifo);
 
   // starting from roots, prune stage will
   // create final list of vertices
   stage = "prune";
-  // this->activate_vids(root_vids, stage, global_fifo);
-  this->activate_vids(this->topology_grid, root_vids, stage, this->global_fifo,
-                      this->connected_fifo);
-  this->update(stage, global_fifo);
+  // this->activate_vids(root_vids, stage, map_fifo);
+  this->activate_vids(this->topology_grid, root_vids, stage, this->map_fifo,
+                      this->connected_map);
+  this->update(stage, map_fifo);
 }
