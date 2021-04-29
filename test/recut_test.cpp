@@ -609,7 +609,6 @@ TEST(VDB, Connected) {
     ASSERT_TRUE(is_root(flags_handle, ind));
     ASSERT_FALSE(is_surface(flags_handle, ind));
   }
-
 }
 
 TEST(VDBWriteOnly, DISABLED_Any) {
@@ -665,8 +664,8 @@ TEST(VDB, Convert) {
 
   // generate an image buffer on the fly
   // then convert to vdb
-  auto args =
-      get_args(grid_size, grid_size, grid_size, slt_pct, tcase, /*force_regenerate_image*/true);
+  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+                       /*force_regenerate_image*/ true);
   auto recut = Recut<uint16_t>(args);
   recut.params->convert_only_ = true;
   // recut.params->out_vdb_ = fn;
@@ -1159,6 +1158,7 @@ TEST(CoveredByParent, Full) {
 }
 */
 
+/*
 TEST(CheckGlobals, ActiveVertices) {
   // minimal setup of globals
   int max_size = 8;
@@ -1225,7 +1225,7 @@ TEST(CheckGlobals, SurfacePassed) {
   }
 }
 
-TEST(CheckGlobals, AllFifo) {
+TEST(CheckGlobals, DISABLED_AllFifo) {
   // minimal setup of globals
   int max_size = 8;
   auto args = get_args(max_size, max_size, max_size, 100, 0, true);
@@ -1297,6 +1297,7 @@ TEST(CheckGlobals, AllFifo) {
   ASSERT_TRUE(recut.connected_map[0].empty());
   ASSERT_TRUE(recut.map_fifo[0].empty());
 }
+*/
 
 TEST(Scale, DISABLED_InitializeGlobals) {
   auto grid_size = 2;
@@ -1453,29 +1454,22 @@ TEST(Update, EachStageIteratively) {
               if (print_all) {
                 std::cout << "Recut connected\n";
                 std::cout << iteration_trace.str();
-                recut.print_grid(stage, recut.map_fifo);
+                //recut.print_grid(stage, recut.map_fifo);
                 print_all_points(recut.topology_grid, stage);
                 std::cout << "Recut surface\n";
                 std::cout << iteration_trace.str();
-                recut.print_grid("surface", recut.map_fifo);
+                //recut.print_grid("surface", recut.map_fifo);
                 print_all_points(recut.topology_grid, "surface");
                 auto total = 0;
-                if (false) {
+                if (true) {
                   std::cout << "All surface vids: \n";
-                  for (int i = 0; i < recut.map_fifo.size(); ++i) {
-                    std::cout << "Interval " << i << '\n';
-                    for (int j = 0; j < recut.map_fifo.size(); ++j) {
-                      auto inner = recut.map_fifo[j];
-                      std::cout << " Block " << j << '\n';
-                      for (auto &vertex : inner) {
-                        total++;
-                        cout << "\t" << vertex.description() << '\n';
-                        ASSERT_TRUE(vertex.surface());
-                        ASSERT_TRUE(vertex.root() || vertex.selected());
-                        ASSERT_NE(nullptr,
-                                  recut.get_active_vertex(
-                                      i, j, recut.v_to_off(i, j, &vertex)));
-                      }
+                  for (const auto inner : recut.map_fifo) {
+                    std::cout << " Block " << inner.first << '\n';
+                    for (auto &vertex : inner.second) {
+                      total++;
+                      cout << "\t" << vertex.description() << '\n';
+                      ASSERT_TRUE(vertex.surface());
+                      ASSERT_TRUE(vertex.root() || vertex.selected());
                     }
                   }
                   cout << "Surface vid total size " << total << '\n';
@@ -1544,7 +1538,7 @@ TEST(Update, EachStageIteratively) {
               if (print_all) {
                 std::cout << "Recut radii\n";
                 std::cout << iteration_trace.str();
-                recut.print_grid("radius", recut.map_fifo);
+                //recut.print_grid("radius", recut.map_fifo);
                 print_all_points(recut.topology_grid, "radius");
               }
 
@@ -1671,12 +1665,12 @@ TEST(Update, EachStageIteratively) {
                 if (print_all) {
                   std::cout << "Recut prune\n";
                   std::cout << iteration_trace.str();
-                  recut.print_grid("label", recut.map_fifo);
+                  //recut.print_grid("label", recut.map_fifo);
                   print_all_points(recut.topology_grid, "label");
 
                   std::cout << "Recut radii post prune\n";
                   std::cout << iteration_trace.str();
-                  recut.print_grid("radius", recut.map_fifo);
+                  //recut.print_grid("radius", recut.map_fifo);
                   print_all_points(recut.topology_grid, "radius");
                 }
 
@@ -1899,7 +1893,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
   if (print_all) {
     std::cout << "Recut connected\n";
-    recut.print_grid("label", recut.map_fifo);
+    //recut.print_grid("label", recut.map_fifo);
   }
 
   {
@@ -1938,7 +1932,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
   if (print_all) {
     std::cout << "Recut radius\n";
-    recut.print_grid("radius", recut.map_fifo);
+    //recut.print_grid("radius", recut.map_fifo);
   }
 
   // save the output_tree early before it is pruned to compare
@@ -1960,13 +1954,13 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     accept_band = true;
 
     std::cout << "Recut prune\n";
-    recut.print_grid("label", recut.map_fifo);
+    //recut.print_grid("label", recut.map_fifo);
 
     std::cout << "Recut radii post prune\n";
-    recut.print_grid("radius", recut.map_fifo);
+    //recut.print_grid("radius", recut.map_fifo);
 
     std::cout << "Recut parent post prune\n";
-    recut.print_grid("parent", recut.map_fifo);
+    //recut.print_grid("parent", recut.map_fifo);
 
     recut.adjust_parent(false);
     recut.convert_to_markers(recut_output_tree_prune,

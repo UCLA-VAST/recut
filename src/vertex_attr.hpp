@@ -63,14 +63,6 @@ struct VertexAttr {
 
   VertexAttr() : edge_state(0), radius(numeric_limits<uint8_t>::max()) {}
 
-  // constructors
-  // defaults as selected
-  VertexAttr(OffsetCoord offsets)
-      : offsets(offsets), radius(numeric_limits<uint8_t>::max()) {
-    this->mark_selected();
-  }
-
-  // copy constructor
   VertexAttr(const VertexAttr &a)
       : edge_state(a.edge_state), offsets(a.offsets), radius(a.radius),
         parent(a.parent) {}
@@ -78,8 +70,13 @@ struct VertexAttr {
   VertexAttr(Bitfield edge_state, OffsetCoord offsets)
       : edge_state(edge_state), offsets(offsets) {}
 
+  // connected stage
   VertexAttr(Bitfield edge_state, OffsetCoord offsets, OffsetCoord parent)
       : edge_state(edge_state), offsets(offsets), parent(parent) {}
+
+  // prune and radius stage
+  VertexAttr(Bitfield edge_state, OffsetCoord offsets, uint8_t radius)
+      : edge_state(edge_state), offsets(offsets), radius(radius) {}
 
   VertexAttr(Bitfield edge_state, OffsetCoord offsets, OffsetCoord parent,
              uint8_t radius)

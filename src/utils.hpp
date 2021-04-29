@@ -91,7 +91,7 @@ auto id_to_off_coord = [](auto id, auto lengths) {
 
 auto coord_to_str = [](auto coords) {
   std::ostringstream coord_str;
-  coord_str << '[' << coords[0] << ',' << coords[1] << ',' << coords[2] << "]";
+  coord_str << '[' << coords[0] << ", " << coords[1] << ", " << coords[2] << "]";
   return coord_str.str();
 };
 
