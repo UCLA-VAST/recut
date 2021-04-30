@@ -71,39 +71,6 @@ using OffsetCoord = std::vector<int8_t>;
 using GridCoord = std::vector<int32_t>;
 #endif
 
-// pre-generated array of vertices initialized wth desired default values,
-// useful for mmap
-// must match the VID_t bit length type
-// on remote servers with mounted filesystems it is
-// recommended to place the interval in /tmp/ to avoid mmap issues
-//#define INTERVAL_BASE "/tmp/interval_base_32.bin";
-//#define INTERVAL_BASE "../data/interval_base_64bit.bin"
-
-// equivalent max allows up to interval actual size shown with
-// block_size 4 including padding (ghost cells) WARNING: if you change this
-// number you need to rerun CreateIntervalBase function in recut_tests.cpp to
-// save an interval at least that size at /tmp/
-// MAX_INTERVAL_VERTICES needs to be larger than just the processing region to
-// account for ghost regions see utils.hpp:get_used_vertex_size() or
-// recut_test.cpp:PrintDefaultInfo() Vertices needed for a 1024^3 interval block
-// size 4 : 3623878656 Vertices needed for a 2048^3 interval block size 4 :
-// 28991029248 Vertices needed for a 8^3 interval block size 2 : 4096
-#ifdef TEST_ALL_BENCHMARKS
-// const VID_t MAX_INTERVAL_VERTICES =  3623878656;
-const VID_t MAX_INTERVAL_VERTICES = 4096;
-#else
-const VID_t MAX_INTERVAL_VERTICES = 4096;
-#endif
-
-// equivalent max allows up to interval actual size of 256, 256, 256 with
-// block_size 4 including padding (ghost cells) Note this is ~786 MB, for
-// VertexAttr of size 24 bytes WARNING: if you change this number you need to
-// rerun CreateIntervalBase function in recut_tests.cpp to save an interval at
-// least that size at /tmp/
-// const VID_t MAX_INTERVAL_VERTICES = 32768000;
-//#define INTERVAL_BASE "/mnt/huge/interval_base_64bit.bin" // must match the
-// VID_t bit length type
-
 // depending on your prune semantics a radius of 1 may cover its neighbor
 // therefore account for this by subtracting 1 from all radii values
 // open accumulate_prune function, if a neighbor has a radius of 1 or greater

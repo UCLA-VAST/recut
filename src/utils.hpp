@@ -420,6 +420,26 @@ auto set_surface = [](auto handle, auto ind) {
   handle.set(*ind, setbit(handle.get(*ind), 1));
 };
 
+auto set_prune_visited = [](auto handle, auto ind) {
+  // ???1 ????
+  handle.set(*ind, setbit(handle.get(*ind), 4));
+};
+
+auto is_prune_visited = [](auto handle, auto ind) {
+  // XXX? XXXX
+  return testbit(handle.get(*ind), 4);
+};
+
+auto set_tombstone = [](auto handle, auto ind) {
+  // ??1? ????
+  handle.set(*ind, setbit(handle.get(*ind), 5));
+};
+
+auto is_tombstone = [](auto handle, auto ind) {
+  // XX?X XXXX
+  return testbit(handle.get(*ind), 5);
+};
+
 auto is_surface = [](auto handle, auto ind) {
   // XXXX XX?X
   return testbit(handle.get(*ind), 1);
@@ -554,12 +574,12 @@ auto print_all_points = [](auto grid, std::string stage = "label",
             auto ind = leaf_iter->beginIndexVoxel(xyz);
             if (ind) {
               if (stage == "radius") {
-                if (radius_handle.get(*ind) != 0) {
+                //if (radius_handle.get(*ind) != 0) {
                   // if (valid_radius(radius_handle, ind)) {
                   cout << +(radius_handle.get(*ind)) << " ";
-                } else {
-                  cout << "- ";
-                }
+                //} else {
+                  //cout << "- ";
+                //}
               } else if (stage == "parent") {
                 auto recv_parent = parents_handle.get(*ind);
                 std::cout << coord_to_str(recv_parent);

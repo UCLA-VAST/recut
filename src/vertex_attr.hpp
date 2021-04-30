@@ -49,8 +49,7 @@ struct Bitfield {
 
   bool operator==(const Bitfield &a) const { return a.field_ == this->field_; }
 
-  // defaults as 1100 0000 unvisited with no connections
-  Bitfield() : field_(192) {}
+  Bitfield() : field_(0) {}
   Bitfield(uint8_t field) : field_(field) {}
 };
 
@@ -200,9 +199,8 @@ struct VertexAttr {
   bool surface() const { return edge_state.test(1); }
 
   void mark_root() {
-    // no parent is already default
     // roots can also be surface, selected, etc.
-    edge_state.unset(3);
+    edge_state.set(3);
   }
 
   bool root() const { return edge_state.test(3); }

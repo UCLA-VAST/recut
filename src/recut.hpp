@@ -114,7 +114,7 @@ public:
                           const VID_t &interval_block_size);
 
   bool filter_by_vid(VID_t vid, VID_t find_interval_id, VID_t find_block_id);
-  bool filter_by_label(VertexAttr *v, bool accept_band);
+  bool filter_by_label(VertexAttr *v, bool accept_tombstone);
   void adjust_parent(bool to_swc_file);
 
   image_t get_img_val(const image_t *tile, GridCoord coord);
@@ -170,10 +170,10 @@ public:
                         bool &found_background);
   bool is_covered_by_parent(VID_t interval_id, VID_t block_id,
                             VertexAttr *current);
-  template <class Container, typename T, typename T2, typename IndT,
-            typename RadiusT, typename FlagsT, typename UpdateIter>
+  template <class Container, typename T2, typename IndT, typename RadiusT,
+            typename FlagsT, typename UpdateIter>
   void accumulate_prune(VID_t interval_id, VID_t block_id, GridCoord dst_coord,
-                        IndT ind, T current, T2 current_vid,
+                        IndT ind, uint8_t current_radius, T2 current_vid,
                         bool current_unvisited, Container &fifo,
                         RadiusT radius_handle, FlagsT flags_handle,
                         UpdateIter update_leaf);
@@ -237,7 +237,7 @@ public:
   const std::vector<VID_t> initialize();
   template <typename vertex_t>
   void convert_to_markers(std::vector<vertex_t> &outtree,
-                          bool accept_band = false);
+                          bool accept_tombstone = false);
   inline VID_t sub_block_to_block_id(VID_t iblock, VID_t jblock, VID_t kblock);
   template <class Container>
   void print_interval(VID_t interval_id, std::string stage, Container &fifo);
@@ -683,70 +683,74 @@ void Recut<image_t>::set_parent_non_branch(const VID_t interval_id,
 */
 
 template <class image_t>
-template <class Container, typename T, typename T2, typename IndT,
-          typename RadiusT, typename FlagsT, typename UpdateIter>
+template <class Container, typename T2, typename IndT, typename RadiusT,
+          typename FlagsT, typename UpdateIter>
 void Recut<image_t>::accumulate_prune(VID_t interval_id, VID_t block_id,
-                                      GridCoord dst_coord, IndT ind, T current,
+                                      GridCoord dst_coord, IndT ind,
+                                      const uint8_t current_radius,
                                       T2 current_vid, bool current_unvisited,
                                       Container &fifo, RadiusT radius_handle,
                                       FlagsT flags_handle,
                                       UpdateIter update_leaf) {
 
-  auto dst = get_active_vertex(interval_id, block_id,
-                               coord_mod(dst_coord, this->block_lengths));
-  if (dst == nullptr) { // never selected
-    return;
-  }
-
-  auto add_prune_dst = [&]() {
-    dst->prune_visit();
-    fifo.push_back(*dst);
-    // check_ghost_update(interval_id, block_id, dst_coord, dst, "prune",
-    // vdb_accessor);
-    set_if_active(update_leaf, dst_coord);
-#ifdef FULL_PRINT
-    std::cout << "  added dst " << dst_coord << " rad " << +(dst->radius)
-              << '\n';
+  if (ind && is_selected(flags_handle, ind)) {
+#if FULL_PRINT
+    std::cout << "\tcheck foreground dst: " << coord_to_str(dst_coord) << '\n';
 #endif
-  };
+    auto offset = coord_mod(dst_coord, this->block_lengths);
 
-  // check if dst is covered by current
-  // dst can only be 1 hop away (adjacent) from current, therefore
-  // all radii greater than 1 imply some redundancy in coverage
-  // but this may be desired with DILATION_FACTOR higher than 1
-  if (current->radius >= DILATION_FACTOR) {
-    auto dst_was_updated = false;
-    // dst itself can be used to pass messages
-    // like modified radius and prune status
-    // to other blocks / intervals
-    auto update_radius = current->radius - 1;
-    if ((!dst->prune_visited()) && (update_radius < dst->radius)) {
-      // previously pruned vertex can transmits transitive
-      // coverage info
-      dst->radius = update_radius;
-      dst_was_updated = true;
-    }
-
-    // dst should be covered by current
-    // if it hasn't already by pruned
-    if (!(dst->root() || dst->tombstone())) {
-      dst->mark_tombstone();
-      dst_was_updated = true;
-    }
-
-    if (dst_was_updated) {
+    auto add_prune_dst = [&]() {
+      set_prune_visited(flags_handle, ind);
+      fifo.emplace_back(flags_handle.get(*ind), offset,
+                        radius_handle.get(*ind));
+      set_if_active(update_leaf, dst_coord);
 #ifdef FULL_PRINT
-      std::cout << "current covers  radius of: " << +(dst->radius) << " at dst "
-                << dst_coord << " " << dst->label();
+      std::cout << "  added dst " << dst_coord << " rad "
+                << +(radius_handle.get(*ind)) << '\n';
 #endif
-      add_prune_dst();
-    }
-  } else {
+    };
 
-    // even if dst is not covered if it's already been
-    // pruned or visited there's no more work to do
-    if (!(dst->tombstone() || dst->prune_visited())) {
-      add_prune_dst();
+    // check if dst is covered by current
+    // dst can only be 1 hop away (adjacent) from current, therefore
+    // all radii greater than 1 imply some redundancy in coverage
+    // but this may be desired with DILATION_FACTOR higher than 1
+    if (current_radius >= DILATION_FACTOR) {
+      auto dst_was_updated = false;
+      // dst itself can be used to pass messages
+      // like modified radius and prune status
+      // to other blocks / intervals
+      auto update_radius = current_radius - 1;
+      if ((!is_prune_visited(flags_handle, ind)) &&
+          (update_radius < radius_handle.get(*ind))) {
+        // previously pruned vertex can transmits transitive
+        // coverage info
+        radius_handle.set(*ind, update_radius);
+        dst_was_updated = true;
+      }
+
+      // dst should be covered by current
+      // if it hasn't already by pruned
+      if (!(is_root(flags_handle, ind) || is_tombstone(flags_handle, ind))) {
+        set_tombstone(flags_handle, ind);
+        dst_was_updated = true;
+      }
+
+      if (dst_was_updated) {
+#ifdef FULL_PRINT
+        std::cout << "\tcurrent covers radius of: "
+                  << +(radius_handle.get(*ind)) << " at dst " << dst_coord
+                  << " " << +(flags_handle.get(*ind));
+#endif
+        add_prune_dst();
+      }
+    } else {
+
+      // even if dst is not covered if it's already been
+      // pruned or visited there's no more work to do
+      if (!(is_tombstone(flags_handle, ind) ||
+            is_prune_visited(flags_handle, ind))) {
+        add_prune_dst();
+      }
     }
   }
 }
@@ -784,7 +788,9 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t block_id,
   // after filter in scatter this pointer arithmetic is always valid
 
   if (ind && is_selected(flags_handle, ind)) {
-  std::cout << "\tcheck foreground dst: " << coord_to_str(dst_coord) << '\n';
+#if FULL_PRINT
+    std::cout << "\tcheck foreground dst: " << coord_to_str(dst_coord) << '\n';
+#endif
 
     uint8_t updated_radius = 1 + current_radius;
     auto dst_radius = radius_handle.get(*ind);
@@ -1571,7 +1577,6 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
           return block_id != coord_img_to_block_id(coord_img);
         }) |
         rng::views::transform([&](auto coord_img) {
-          print_coord(coord_img, "in leaf");
           return coord_img;
         }) |
         // visit valid voxels
@@ -1606,45 +1611,33 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
   openvdb::points::AttributeWriteHandle<uint8_t> flags_handle =
       leaf_iter->attributeArray("flags");
 
-  VertexAttr *current;
-  bool current_outside_domain, covered;
   VID_t visited = 0;
   while (!(fifo.empty())) {
-    covered = false;
     // fifo starts with only roots
-    auto msg_vertex = &(fifo.front());
-    auto current_outside_domain = false;
+    auto current = &(fifo.front());
     fifo.pop_front();
-
-    // if (msg_vertex->band()) {
-    if (msg_vertex->unselected()) {
-      current = msg_vertex;
-      current_outside_domain = true;
-    } else {
-      current = get_active_vertex(interval_id, block_id, msg_vertex->offsets);
-      assertm(current != nullptr,
-              "get_active_vertex yielded nullptr radius_tile");
-    }
-    assertm(current->valid_radius(), "fifo must recover a valid_radius vertex");
 
 #ifdef LOG_FULL
     visited += 1;
 #endif
 
     auto current_coord = coord_add(current->offsets, offsets);
-    auto current_ind = leaf_iter->beginIndexVoxel(current_coord);
 
-    assertm(current->root() == is_root(flags_handle, current_ind),
-            "roots don't match");
-
-    // Parent
-    // by default current will have a root of itself
-    if (current->root()) {
-      // OffsetCoord zeros{0, 0, 0};
-      // current->set_parent(zeros);
-      // parent_handle.set(*ind, zeros);
-      current->prune_visit();
+    if (current->selected()) {
+      auto current_ind = leaf_iter->beginIndexVoxel(current_coord);
+      set_prune_visited(flags_handle, current_ind);
     }
+
+    // if (current->root() && current->selected()) {
+    // auto current_ind = leaf_iter->beginIndexVoxel(current_coord);
+    // assertm(current->root() == is_root(flags_handle, current_ind),
+    //"roots don't match");
+    // assertm(current->selected(), "root not selected");
+    //// OffsetCoord zeros{0, 0, 0};
+    //// current->set_parent(zeros);
+    // parent_handle.set(*ind, zeros);
+    // set_prune_visistedflags_handle, ind);
+    //}
 
 #ifdef FULL_PRINT
     // all block ids are a linear row-wise idx, relative to current interval
@@ -1673,9 +1666,9 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
         rng::views::transform([&](auto coord_img) {
           auto ind = leaf_iter->beginIndexVoxel(coord_img);
           // ...has side-effects
-          accumulate_prune(interval_id, block_id, coord_img, ind, current,
-                           current_coord, current->tombstone(), fifo,
-                           radius_handle, flags_handle, update_leaf);
+          accumulate_prune(interval_id, block_id, coord_img, ind,
+                           current->radius, current_coord, current->tombstone(),
+                           fifo, radius_handle, flags_handle, update_leaf);
           return ind;
         }) |
         rng::to_vector;
@@ -2699,8 +2692,8 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
 // reject unvisited vertices
 // band can be optionally included
 template <class image_t>
-bool Recut<image_t>::filter_by_label(VertexAttr *v, bool accept_band) {
-  if (accept_band) {
+bool Recut<image_t>::filter_by_label(VertexAttr *v, bool accept_tombstone) {
+  if (accept_tombstone) {
     if (v->tombstone()) {
       return false;
     }
@@ -2761,11 +2754,11 @@ bool Recut<image_t>::filter_by_vid(VID_t vid, VID_t find_interval_id,
   return true;
 };
 
-// accept_band is a way to see pruned vertices still in active_vertex
+// accept_tombstone is a way to see pruned vertices still in active_vertex
 template <class image_t>
 template <typename vertex_t>
 void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
-                                        bool accept_band) {
+                                        bool accept_tombstone) {
   struct timespec time0, time1;
 #ifdef FULL_PRINT
   cout << "Generating results." << '\n';
@@ -2776,73 +2769,90 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
   // parent is valid pointer when returning just outtree
   map<VID_t, MyMarker *> vid_to_marker_ptr;
 
+  auto is_valid = [&](auto ind, auto flags_handle) {
+    if (is_selected(flags_handle, ind)) {
+      if (accept_tombstone) {
+        return true;
+      } else {
+        if (is_tombstone(flags_handle, ind)) {
+          return false;
+        } else {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
   // iterate all active vertices ahead of time so each marker
   // can have a pointer to it's parent marker
-  for (auto interval_id = 0; interval_id < grid_interval_size; ++interval_id) {
-    auto interval_img_offsets = id_interval_to_img_offsets(interval_id);
-    for (auto block_id = 0; block_id < interval_block_size; ++block_id) {
-      auto block_img_offsets = id_block_to_interval_offsets(block_id);
-      auto offsets = coord_add(interval_img_offsets, block_img_offsets);
-      for (auto &vertex_value : this->active_vertices[block_id]) {
-        // FIXME add interval offset too
-        auto vertex = &vertex_value;
-        auto coord = coord_add(vertex->offsets, offsets);
-        auto vid = coord_to_id(coord, this->image_lengths);
-#ifdef FULL_PRINT
-        print_vertex(interval_id, block_id, vertex, offsets);
-#endif
-        // create all valid new marker objects
-        if (filter_by_label(vertex, accept_band)) {
-          // don't create redundant copies of same vid
-          // check that all copied across blocks and intervals of a
-          // single vertex all match same values
-          // FIXME this needs to be moved to recut_test.cpp
-          // auto previous_match = vid_to_marker_ptr[vid];
-          // assert(*previous_match == *vertex);
-          if (vid_to_marker_ptr.count(vid)) {
-            std::cout << interval_id << ' ' << block_id << ' ' << vid
-                      << " has parent " << coord_to_str(vertex->parent) << '\n';
-          }
-          assertm(vid_to_marker_ptr.count(vid) == 0,
-                  "Can't have two matching vids");
-          // get original i, j, k
-          auto marker = new MyMarker(coord[0], coord[1], coord[2]);
-          if (vertex->root()) {
-            // a marker with a type of 0, must be a root
-            marker->type = 0;
-          }
-          marker->radius = vertex->radius;
-          // save this marker ptr to a map
-          vid_to_marker_ptr[vid] = marker;
-          // std::cout << "\t " << interval_id << ' ' << block_id << ' ' <<
-          // vid
-          std::cout << "\t " << coord_to_str(coord) << " -> " << vertex->parent
-                    << '\n';
-          outtree.push_back(marker);
+  for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+     auto block_id = coord_img_to_block_id(leaf_iter->origin());
+
+    openvdb::points::AttributeHandle<uint8_t> flags_handle(
+        leaf_iter->constAttributeArray("flags"));
+
+    openvdb::points::AttributeHandle<uint8_t> radius_handle(
+        leaf_iter->constAttributeArray("radius"));
+
+    openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
+        leaf_iter->constAttributeArray("parents"));
+
+    for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
+      // get coord
+      auto coord = ind.getCoord();
+      auto vid = coord_to_id(coord, this->image_lengths);
+      // create all valid new marker objects
+      if (is_valid(ind, flags_handle)) {
+        if (vid_to_marker_ptr.count(vid)) {
+          std::cout << block_id << ' ' << vid << '\n';
         }
+        assertm(vid_to_marker_ptr.count(vid) == 0,
+                "Can't have two matching vids");
+        // get original i, j, k
+        auto marker = new MyMarker(coord[0], coord[1], coord[2]);
+        if (is_root(flags_handle, ind)) {
+          // a marker with a type of 0, must be a root
+          marker->type = 0;
+        }
+        marker->radius = radius_handle.get(*ind);
+        // save this marker ptr to a map
+        vid_to_marker_ptr[vid] = marker;
+        std::cout << "\t " << coord_to_str(coord) << " -> " << parents_handle.get(*ind)
+                  << " " << marker->radius << '\n';
+        assertm(marker->radius, "can't have 0 radius");
+        outtree.push_back(marker);
       }
     }
   }
 
-  // know that a pointer to all desired markers is known
+  // now that a pointer to all desired markers is known
   // iterate and complete the marker definition
-  for (auto interval_id = 0; interval_id < grid_interval_size; ++interval_id) {
-    auto interval_img_offsets = id_interval_to_img_offsets(interval_id);
-    for (auto block_id = 0; block_id < interval_block_size; ++block_id) {
-      auto block_img_offsets = id_block_to_interval_offsets(block_id);
-      auto offsets = coord_add(interval_img_offsets, block_img_offsets);
-      for (auto &vertex_value : this->active_vertices[block_id]) {
-        auto vertex = &vertex_value;
-        auto coord = coord_add(vertex->offsets, offsets);
-        auto vid = coord_to_id(coord, this->image_lengths);
-        // only consider the same vertices as above
-        if (filter_by_label(vertex, accept_band)) {
-          auto parent_vid = coord_to_id(coord_add(coord, vertex->parent),
+  for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+     auto block_id = coord_img_to_block_id(leaf_iter->origin());
+
+    openvdb::points::AttributeHandle<uint8_t> flags_handle(
+        leaf_iter->constAttributeArray("flags"));
+
+    openvdb::points::AttributeHandle<uint8_t> radius_handle(
+        leaf_iter->constAttributeArray("radius"));
+
+    openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
+        leaf_iter->constAttributeArray("parents"));
+
+    for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
+      // get coord
+      auto coord = ind.getCoord();
+      auto vid = coord_to_id(coord, this->image_lengths);
+      // create all valid new marker objects
+      if (is_valid(ind, flags_handle)) {
+          auto parent = parents_handle.get(*ind);
+          auto parent_vid = coord_to_id(coord_add(coord, parent),
                                         this->image_lengths);
           assertm(vid_to_marker_ptr.count(vid),
                   "did not find vertex in marker map");
           auto marker = vid_to_marker_ptr[vid]; // get the ptr
-          if (vertex->root()) {
+          if (is_root(flags_handle, ind)) {
             // a marker with a parent of 0, must be a root
             marker->parent = 0;
             //#ifdef FULL_PRINT
@@ -2856,16 +2866,13 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
             marker->parent = parent;
             if (marker->parent == 0) {
               // failure condition
-              std::cout << "interval vid " << interval_id << '\n';
               std::cout << "block vid " << block_id << '\n';
-              print_vertex(interval_id, block_id, vertex, offsets);
               assertm(marker->parent != 0,
                       "a non root marker must have a valid parent");
             }
             assertm(marker->type != 0,
                     "a marker with a type of 0, must be a root");
           }
-        }
       }
     }
   }

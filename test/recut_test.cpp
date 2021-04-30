@@ -52,7 +52,6 @@ void check_recut_error(Recut<uint16_t> &recut, DataType *ground_truth,
 
   double error_sum = 0.0;
   VID_t total_valid = 0;
-  VertexAttr *v;
   for (int zi = 0; zi < recut.image_lengths[2]; zi++) {
     for (int yi = 0; yi < recut.image_lengths[1]; yi++) {
       for (int xi = 0; xi < recut.image_lengths[0]; xi++) {
@@ -72,30 +71,11 @@ void check_recut_error(Recut<uint16_t> &recut, DataType *ground_truth,
           return false;
         };
 
-#ifdef USE_VDB
         auto leaf_iter = recut.topology_grid->tree().probeLeaf(coord);
         auto ind = leaf_iter->beginIndexVoxel(coord);
         auto value_on = leaf_iter->isValueOn(coord);
-        if (stage != "convert") {
-          openvdb::points::AttributeHandle<uint8_t> radius_handle(
-              leaf_iter->constAttributeArray("radius"));
-
-          openvdb::points::AttributeHandle<uint8_t> flags_handle(
-              leaf_iter->constAttributeArray("flags"));
-
-          openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
-              leaf_iter->constAttributeArray("parents"));
-        }
-
-#endif
-
-        // get the active vertex from recut
-        if (stage != "convert") {
-          v = recut.get_active_vertex(interval_id, block_id, correct_offset);
-        }
 
         if (stage == "convert") {
-#ifdef USE_VDB
           // std::cout << "type: " << typeid(value_on).name() << '\n';
           auto int_val = value_on ? 1 : 0;
           if (ground_truth[vid]) {
@@ -106,24 +86,32 @@ void check_recut_error(Recut<uint16_t> &recut, DataType *ground_truth,
             ASSERT_EQ(ground_truth[vid], 1) << coord;
             error_sum += absdiff(ground_truth[vid], int_val);
           }
-#endif
-        } else if (stage == "radius") {
+          continue;
+        }
+
+        // load
+        openvdb::points::AttributeHandle<uint8_t> radius_handle(
+            leaf_iter->constAttributeArray("radius"));
+        openvdb::points::AttributeHandle<uint8_t> flags_handle(
+            leaf_iter->constAttributeArray("flags"));
+        openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
+            leaf_iter->constAttributeArray("parents"));
+
+        if (stage == "radius") {
           if (ground_truth[vid]) {
-            ASSERT_NE(v, nullptr) << coord;
             ASSERT_TRUE(value_on) << coord;
             ASSERT_TRUE(ind) << coord;
-            ASSERT_TRUE(v->valid_radius())
-                << coord << " recut radius " << ground_truth[vid];
-            error_sum += absdiff(ground_truth[vid], v->radius);
+            // ASSERT_TRUE(radius_handle.get(*ind) > 0)
+            //<< coord << " recut radius " << ground_truth[vid];
+            error_sum += absdiff(ground_truth[vid], radius_handle.get(*ind));
             ++total_valid;
-          } else if (v) {
-            if (v->valid_radius()) {
-              ASSERT_TRUE(ground_truth[vid] > 0) << coord;
-              error_sum += absdiff(ground_truth[vid], v->radius);
-              if (strict_match) {
-                ASSERT_EQ(v->radius, ground_truth[vid]) << coord;
-              }
+          } else if (value_on) {
+            ASSERT_TRUE(ground_truth[vid] > 0) << coord;
+            error_sum += absdiff(ground_truth[vid], radius_handle.get(*ind));
+            if (strict_match) {
+              ASSERT_EQ(radius_handle.get(*ind), ground_truth[vid]) << coord;
             }
+            //}
           }
         } else if (stage == "surface") {
           if (strict_match) {
@@ -131,34 +119,38 @@ void check_recut_error(Recut<uint16_t> &recut, DataType *ground_truth,
             // vertex, therefore fifo should also
             // contain this value
             if (ground_truth[vid] == 1) {
-              ASSERT_NE(v, nullptr) << coord;
+              ASSERT_TRUE(value_on) << coord;
+              ASSERT_TRUE(ind) << coord;
               // if truth shows a value of 1 it is a surface
               // vertex, therefore fifo should also
               // contain this value
               ASSERT_TRUE(find_vid()) << coord;
-              ASSERT_TRUE(v->surface()) << coord;
-            } else if (v) {
+              ASSERT_TRUE(is_selected(flags_handle, ind)) << coord;
+              ASSERT_TRUE(is_surface(flags_handle, ind)) << coord;
+            } else if (value_on) {
               ASSERT_FALSE(find_vid()) << coord;
-              ASSERT_FALSE(v->surface()) << coord;
+              ASSERT_FALSE(is_surface(flags_handle, ind)) << coord;
             }
-          } else if (v) {
+          } else if (value_on) {
             // where strict_match=false all recut surface vertices will be in
             // ground truth, but not all ground_truth surfaces will in recut
             auto found = find_vid();
-            if (v->surface()) {
+            if (is_surface(flags_handle, ind)) {
               ASSERT_TRUE(ground_truth[vid] == 1) << coord;
               ASSERT_TRUE(found) << coord;
             }
             if (found) {
               ASSERT_TRUE(ground_truth[vid] == 1) << coord;
-              ASSERT_TRUE(v->surface()) << coord;
+              ASSERT_TRUE(is_surface(flags_handle, ind)) << coord;
             }
           }
         } else if (stage == "connected") {
           if (ground_truth[vid]) {
-            ASSERT_NE(v, nullptr) << coord;
+            ASSERT_TRUE(value_on) << coord;
+            ASSERT_TRUE(ind) << coord;
+            ASSERT_TRUE(is_selected(flags_handle, ind)) << coord;
           }
-          if (v) {
+          if (value_on) {
             ASSERT_EQ(ground_truth[vid], 1) << coord;
           }
         }
@@ -936,11 +928,9 @@ TEST(Install, DISABLED_ImageReadWrite) {
 
 TEST(VertexAttr, Defaults) {
   auto v1 = new VertexAttr();
-  ASSERT_FALSE(v1->root());
-  ASSERT_EQ(v1->edge_state.field_, 192);
+  ASSERT_EQ(v1->edge_state.field_, 0);
   ASSERT_TRUE(v1->unselected());
-  // FIXME reuse this test once, root marked as known new found
-  // ASSERT_TRUE(v1->connections(1, 1).empty());
+  ASSERT_FALSE(v1->root());
 }
 
 TEST(TileThresholds, AllTcases) {
@@ -1454,14 +1444,14 @@ TEST(Update, EachStageIteratively) {
               if (print_all) {
                 std::cout << "Recut connected\n";
                 std::cout << iteration_trace.str();
-                //recut.print_grid(stage, recut.map_fifo);
+                // recut.print_grid(stage, recut.map_fifo);
                 print_all_points(recut.topology_grid, stage);
                 std::cout << "Recut surface\n";
                 std::cout << iteration_trace.str();
-                //recut.print_grid("surface", recut.map_fifo);
+                // recut.print_grid("surface", recut.map_fifo);
                 print_all_points(recut.topology_grid, "surface");
                 auto total = 0;
-                if (true) {
+                if (false) {
                   std::cout << "All surface vids: \n";
                   for (const auto inner : recut.map_fifo) {
                     std::cout << " Block " << inner.first << '\n';
@@ -1538,7 +1528,7 @@ TEST(Update, EachStageIteratively) {
               if (print_all) {
                 std::cout << "Recut radii\n";
                 std::cout << iteration_trace.str();
-                //recut.print_grid("radius", recut.map_fifo);
+                // recut.print_grid("radius", recut.map_fifo);
                 print_all_points(recut.topology_grid, "radius");
               }
 
@@ -1665,17 +1655,18 @@ TEST(Update, EachStageIteratively) {
                 if (print_all) {
                   std::cout << "Recut prune\n";
                   std::cout << iteration_trace.str();
-                  //recut.print_grid("label", recut.map_fifo);
+                  // recut.print_grid("label", recut.map_fifo);
                   print_all_points(recut.topology_grid, "label");
 
                   std::cout << "Recut radii post prune\n";
                   std::cout << iteration_trace.str();
-                  //recut.print_grid("radius", recut.map_fifo);
+                  // recut.print_grid("radius", recut.map_fifo);
                   print_all_points(recut.topology_grid, "radius");
                 }
 
                 std::cout << iteration_trace.str();
-                recut.convert_to_markers(recut_output_tree_prune, true);
+                // recut.convert_to_markers(recut_output_tree_prune, true);
+                recut.convert_to_markers(recut_output_tree_prune, false);
               }
 
               auto mask = std::make_unique<uint8_t[]>(tol_sz);
@@ -1893,7 +1884,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
   if (print_all) {
     std::cout << "Recut connected\n";
-    //recut.print_grid("label", recut.map_fifo);
+    // recut.print_grid("label", recut.map_fifo);
   }
 
   {
@@ -1932,7 +1923,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
   if (print_all) {
     std::cout << "Recut radius\n";
-    //recut.print_grid("radius", recut.map_fifo);
+    // recut.print_grid("radius", recut.map_fifo);
   }
 
   // save the output_tree early before it is pruned to compare
@@ -1954,13 +1945,13 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     accept_band = true;
 
     std::cout << "Recut prune\n";
-    //recut.print_grid("label", recut.map_fifo);
+    // recut.print_grid("label", recut.map_fifo);
 
     std::cout << "Recut radii post prune\n";
-    //recut.print_grid("radius", recut.map_fifo);
+    // recut.print_grid("radius", recut.map_fifo);
 
     std::cout << "Recut parent post prune\n";
-    //recut.print_grid("parent", recut.map_fifo);
+    // recut.print_grid("parent", recut.map_fifo);
 
     recut.adjust_parent(false);
     recut.convert_to_markers(recut_output_tree_prune,
@@ -2271,29 +2262,10 @@ INSTANTIATE_TEST_CASE_P(
 
 TEST(RecutPipeline, PrintDefaultInfo) {
   auto v1 = new VertexAttr();
-  auto ps = sysconf(_SC_PAGESIZE);
   auto vs = sizeof(VertexAttr);
-  cout << "sizeof vidt " << sizeof(VID_t) << " bytes" << std::scientific
-       << endl;
-  cout << "sizeof float " << sizeof(float) << " bytes" << endl;
-  cout << "sizeof Bitfield " << sizeof(Bitfield) << " bytes" << endl;
   cout << "sizeof vertex " << vs << " bytes" << endl;
-  cout << "sizeof 1024^3 interval " << sizeof(VertexAttr) << " GB" << endl;
-  cout << "page size " << ps << " B" << endl;
-  cout << "VertexAttr vertices per page " << ps / vs << endl;
-  cout << "cube root of vertices per page " << (int)cbrt(ps / vs) << endl;
   cout << "AvailMem " << GetAvailMem() / (1024 * 1024 * 1024) << " GB" << endl;
-  cout << "MAX_INTERVAL_VERTICES " << MAX_INTERVAL_VERTICES << std::scientific
-       << endl;
-  cout << "Vertices needed for a 1024^3 interval block size 4 : "
-       << get_used_vertex_size(1024, 4) << std::scientific << endl;
-  cout << "Vertices needed for a 2048^3 interval block size 4 : "
-       << get_used_vertex_size(2048, 4) << std::scientific << endl;
-  cout << "Vertices needed for a 8^3 interval block size 2 : "
-       << get_used_vertex_size(8, 2) << std::scientific << endl;
-  // cout << "Print parent directory to this binary " << get_parent_dir() <<
-  // '\n';
-  cout << "Print data directory to this binary " << get_data_dir() << '\n';
+  cout << "Data directory referenced by this test binary: " << get_data_dir() << '\n';
 }
 
 int main(int argc, char **argv) {
