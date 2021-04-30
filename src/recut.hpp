@@ -473,11 +473,6 @@ void Recut<image_t>::activate_vids(
       set_if_active(update_leaf, coord);
     });
 
-    auto idxs = leaf_roots | rng::views::transform([&leaf_iter](auto coord) {
-                  return leaf_iter->beginIndexVoxel(coord);
-                }) |
-                rng::to_vector;
-
     openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
         leaf_iter->attributeArray("flags"));
 
@@ -487,35 +482,45 @@ void Recut<image_t>::activate_vids(
     openvdb::points::AttributeWriteHandle<uint8_t> radius_handle(
         leaf_iter->attributeArray("radius"));
 
-    // selected, root bitfield
-    Bitfield root_bitfield{};
-    root_bitfield.set(0); // selected
-    root_bitfield.set(3); // root
-
     auto temp_coord = new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH);
 
     if (stage == "connected") {
-      rng::for_each(idxs, [&](auto id) {
-        // set flags as root
-        set_selected(flags_handle, id);
-        set_root(flags_handle, id);
-      });
-
-      rng::for_each(idxs,
-                    [&](auto id) { parents_handle.set(*id, zeros_off()); });
 
       rng::for_each(leaf_roots, [&](auto coord) {
-        auto offsets = coord_mod(coord, temp_coord);
-        // place a root with proper vid and parent of itself
-        connected_fifo[block_id].emplace_back(
-            /*edge_state*/ root_bitfield, offsets, zeros_off());
+        auto ind = leaf_iter->beginIndexVoxel(coord);
+        if (ind) {
+          // place a root with proper vid and parent of itself
+          // set flags as root
+          set_selected(flags_handle, ind);
+          set_root(flags_handle, ind);
+          parents_handle.set(*ind, zeros_off());
+
+          auto offsets = coord_mod(coord, temp_coord);
+          connected_fifo[block_id].emplace_back(
+              /*edge_state*/ flags_handle.get(*ind), offsets, zeros_off());
+        } else {
+          cout << "Warning: root at " << coord << " in leaf " << leaf_bbox
+               << " is not selected in the segmentation so it is ignored. This "
+                  "may indicate the image and marker directories are "
+                  "mismatched or major inaccuracies in segmentation\n";
+        }
       });
 
     } else if (stage == "prune") {
+
       rng::for_each(leaf_roots, [&](auto coord) {
-        auto offsets = coord_mod(coord, temp_coord);
-        fifo[block_id].emplace_back(/*edge_state*/ root_bitfield, offsets,
-                                    zeros_off());
+        auto ind = leaf_iter->beginIndexVoxel(coord);
+        if (ind) {
+          auto offsets = coord_mod(coord, temp_coord);
+          set_prune_visited(flags_handle, ind);
+          fifo[block_id].emplace_back(/*edge_state*/ flags_handle.get(*ind),
+                                      offsets, zeros_off());
+        } else {
+          cout << "Warning: root at " << coord << " in leaf " << leaf_bbox
+               << " is not selected in the segmentation so it is ignored. This "
+                  "may indicate the image and marker directories are "
+                  "mismatched or major inaccuracies in segmentation\n";
+        }
       });
     }
   }
@@ -1416,11 +1421,11 @@ void Recut<image_t>::connected_tile(
     msg_vertex = &(connected_fifo.front());
     const bool in_domain = msg_vertex->selected();
     auto surface = msg_vertex->surface();
-    auto current_coord = coord_add(msg_vertex->offsets, offsets);
-    auto current_off = coord_mod(current_coord, this->block_lengths);
-    auto current_ind = leaf_iter->beginIndexVoxel(current_coord);
+    auto msg_coord = coord_add(msg_vertex->offsets, offsets);
+    auto msg_off = coord_mod(msg_coord, this->block_lengths);
+    auto msg_ind = leaf_iter->beginIndexVoxel(msg_coord);
 
-    cout << "check current " << current_coord << ' ' << in_domain << '\n';
+    cout << "check current " << msg_coord << ' ' << in_domain << '\n';
 
     // invalid can either be out of range of the entire global image or it
     // can be a background vertex which occurs due to pixel value below the
@@ -1429,8 +1434,8 @@ void Recut<image_t>::connected_tile(
     auto valids =
         // star stencil offsets to img coords
         this->stencil |
-        rng::views::transform([&current_coord](auto stencil_offset) {
-          return coord_add(current_coord, stencil_offset);
+        rng::views::transform([&msg_coord](auto stencil_offset) {
+          return coord_add(msg_coord, stencil_offset);
         }) |
         // within image?
         rng::views::remove_if([this, &found_adjacent_invalid](auto coord_img) {
@@ -1457,7 +1462,7 @@ void Recut<image_t>::connected_tile(
         }) |
         // visit valid voxels
         rng::views::remove_if([&](auto coord_img) {
-          auto offset_to_current = coord_sub(current_coord, coord_img);
+          auto offset_to_current = coord_sub(msg_coord, coord_img);
           auto ind = leaf_iter->beginIndexVoxel(coord_img);
           // is background?  ...has side-effects
           return !accumulate_connected(
@@ -1470,19 +1475,18 @@ void Recut<image_t>::connected_tile(
     // protect from message values not inside
     // this block or interval such as roots from activate_vids
     if (in_domain) {
-      // current = get_active_vertex(interval_id, block_id, current_off);
       // msg_vertex aleady aware it is a surface
       if (surface) {
 #ifdef FULL_PRINT
         std::cout << "\tfound surface vertex " << interval_id << " " << block_id
-                  << " " << coord_to_str(current_coord) << '\n';
+                  << " " << coord_to_str(msg_coord) << '\n';
 #endif
 
-        set_surface(flags_handle, current_ind);
+        set_surface(flags_handle, msg_ind);
         // save all surface vertices for the radius stage
-        fifo.emplace_back(Bitfield(flags_handle.get(*current_ind)), current_off,
-                          parents_handle.get(*current_ind));
-        cout << "pushed coord onto fifo " << current_coord << '\n';
+        fifo.emplace_back(Bitfield(flags_handle.get(*msg_ind)), msg_off,
+                          parents_handle.get(*msg_ind));
+        cout << "pushed coord onto fifo " << msg_coord << '\n';
       }
     }
 
@@ -1491,20 +1495,20 @@ void Recut<image_t>::connected_tile(
 
     // ignore if already designated as surface
     // also prevents adding to fifo twice
-    if (found_adjacent_invalid && !(is_surface(flags_handle, current_ind))) {
-      if (in_domain) {
+    if (in_domain) {
+      if (found_adjacent_invalid && !(is_surface(flags_handle, msg_ind))) {
 #ifdef FULL_PRINT
         std::cout << "\tfound surface vertex " << interval_id << " " << block_id
-                  << " " << coord_to_str(current_coord) << '\n';
+                  << " " << coord_to_str(msg_coord) << '\n';
 #endif
 
         // save all surface vertices for the radius stage
         // each fifo corresponds to a specific interval_id and block_id
         // so there are no race conditions
         // save all surface vertices for the radius stage
-        set_surface(flags_handle, current_ind);
-        fifo.emplace_back(Bitfield(flags_handle.get(*current_ind)), current_off,
-                          parents_handle.get(*current_ind));
+        set_surface(flags_handle, msg_ind);
+        fifo.emplace_back(Bitfield(flags_handle.get(*msg_ind)), msg_off,
+                          parents_handle.get(*msg_ind));
       }
     }
   }
@@ -1539,34 +1543,30 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
     auto msg_vertex = &(fifo.front());
     fifo.pop_front(); // remove it
 
-    auto current_coord = coord_add(msg_vertex->offsets, offsets);
-    auto current_ind = leaf_iter->beginIndexVoxel(current_coord);
+    auto msg_coord = coord_add(msg_vertex->offsets, offsets);
+    auto msg_ind = leaf_iter->beginIndexVoxel(msg_coord);
+
     // radius field can now be be mutated
     // set any vertex that shares a border with background
     // to the known radius of 1
-    assertm(msg_vertex->surface() == is_surface(flags_handle, current_ind),
-            "surfaces don't match");
-    cout << "current " << current_coord << '\n';
-    if (msg_vertex->surface()) {
-      msg_vertex->radius = 1;
-      radius_handle.set(*current_ind, 1);
-      if (!(msg_vertex->unselected())) {
+    if (!(msg_vertex->unselected())) {
+      if (msg_vertex->surface()) {
+        msg_vertex->radius = 1;
+        radius_handle.set(*msg_ind, 1);
         // if in domain notify potential outside domains of the change
-        set_if_active(update_leaf, current_coord);
+        set_if_active(update_leaf, msg_coord);
       }
     }
 
 #ifdef LOG_FULL
     visited += 1;
 #endif
-    assertm(msg_vertex->radius == radius_handle.get(*current_ind),
-            "radii don't match");
 
     auto updated_inds =
         // star stencil offsets to img coords
         this->stencil |
-        rng::views::transform([&current_coord](auto stencil_offset) {
-          return coord_add(current_coord, stencil_offset);
+        rng::views::transform([&msg_coord](auto stencil_offset) {
+          return coord_add(msg_coord, stencil_offset);
         }) |
         // within image?
         rng::views::remove_if([this](auto coord_img) {
@@ -1576,9 +1576,7 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
         rng::views::remove_if([&](auto coord_img) {
           return block_id != coord_img_to_block_id(coord_img);
         }) |
-        rng::views::transform([&](auto coord_img) {
-          return coord_img;
-        }) |
+        rng::views::transform([&](auto coord_img) { return coord_img; }) |
         // visit valid voxels
         rng::views::transform([&](auto coord_img) {
           auto ind = leaf_iter->beginIndexVoxel(coord_img);
@@ -1621,29 +1619,18 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
     visited += 1;
 #endif
 
-    auto current_coord = coord_add(current->offsets, offsets);
+    auto msg_coord = coord_add(current->offsets, offsets);
 
     if (current->selected()) {
-      auto current_ind = leaf_iter->beginIndexVoxel(current_coord);
-      set_prune_visited(flags_handle, current_ind);
+      auto msg_ind = leaf_iter->beginIndexVoxel(msg_coord);
+      set_prune_visited(flags_handle, msg_ind);
     }
-
-    // if (current->root() && current->selected()) {
-    // auto current_ind = leaf_iter->beginIndexVoxel(current_coord);
-    // assertm(current->root() == is_root(flags_handle, current_ind),
-    //"roots don't match");
-    // assertm(current->selected(), "root not selected");
-    //// OffsetCoord zeros{0, 0, 0};
-    //// current->set_parent(zeros);
-    // parent_handle.set(*ind, zeros);
-    // set_prune_visistedflags_handle, ind);
-    //}
 
 #ifdef FULL_PRINT
     // all block ids are a linear row-wise idx, relative to current interval
     cout << '\n'
-         << coord_to_str(current_coord) << " interval " << interval_id
-         << " block " << block_id << " label " << current->label() << " radius "
+         << coord_to_str(msg_coord) << " interval " << interval_id << " block "
+         << block_id << " label " << current->label() << " radius "
          << +(current->radius) << '\n';
 #endif
 
@@ -1651,8 +1638,8 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
     auto updated_inds =
         // star stencil offsets to img coords
         this->stencil |
-        rng::views::transform([&current_coord](auto stencil_offset) {
-          return coord_add(current_coord, stencil_offset);
+        rng::views::transform([&msg_coord](auto stencil_offset) {
+          return coord_add(msg_coord, stencil_offset);
         }) |
         // within image?
         rng::views::remove_if([this](auto coord_img) {
@@ -1667,7 +1654,7 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
           auto ind = leaf_iter->beginIndexVoxel(coord_img);
           // ...has side-effects
           accumulate_prune(interval_id, block_id, coord_img, ind,
-                           current->radius, current_coord, current->tombstone(),
+                           current->radius, msg_coord, current->tombstone(),
                            fifo, radius_handle, flags_handle, update_leaf);
           return ind;
         }) |
@@ -2786,8 +2773,9 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
 
   // iterate all active vertices ahead of time so each marker
   // can have a pointer to it's parent marker
-  for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
-     auto block_id = coord_img_to_block_id(leaf_iter->origin());
+  for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
+       ++leaf_iter) {
+    auto block_id = coord_img_to_block_id(leaf_iter->origin());
 
     openvdb::points::AttributeHandle<uint8_t> flags_handle(
         leaf_iter->constAttributeArray("flags"));
@@ -2818,8 +2806,8 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
         marker->radius = radius_handle.get(*ind);
         // save this marker ptr to a map
         vid_to_marker_ptr[vid] = marker;
-        std::cout << "\t " << coord_to_str(coord) << " -> " << parents_handle.get(*ind)
-                  << " " << marker->radius << '\n';
+        std::cout << "\t " << coord_to_str(coord) << " -> "
+                  << parents_handle.get(*ind) << " " << marker->radius << '\n';
         assertm(marker->radius, "can't have 0 radius");
         outtree.push_back(marker);
       }
@@ -2828,8 +2816,9 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
 
   // now that a pointer to all desired markers is known
   // iterate and complete the marker definition
-  for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
-     auto block_id = coord_img_to_block_id(leaf_iter->origin());
+  for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
+       ++leaf_iter) {
+    auto block_id = coord_img_to_block_id(leaf_iter->origin());
 
     openvdb::points::AttributeHandle<uint8_t> flags_handle(
         leaf_iter->constAttributeArray("flags"));
@@ -2846,33 +2835,33 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
       auto vid = coord_to_id(coord, this->image_lengths);
       // create all valid new marker objects
       if (is_valid(ind, flags_handle)) {
-          auto parent = parents_handle.get(*ind);
-          auto parent_vid = coord_to_id(coord_add(coord, parent),
-                                        this->image_lengths);
+        auto parent = parents_handle.get(*ind);
+        auto parent_vid =
+            coord_to_id(coord_add(coord, parent), this->image_lengths);
+        assertm(vid_to_marker_ptr.count(vid),
+                "did not find vertex in marker map");
+        auto marker = vid_to_marker_ptr[vid]; // get the ptr
+        if (is_root(flags_handle, ind)) {
+          // a marker with a parent of 0, must be a root
+          marker->parent = 0;
+          //#ifdef FULL_PRINT
+          // cout << "found root at " << vid << '\n';
+          // printf("with address of %p\n", (void *)vertex);
+          //#endif
+        } else {
           assertm(vid_to_marker_ptr.count(vid),
                   "did not find vertex in marker map");
-          auto marker = vid_to_marker_ptr[vid]; // get the ptr
-          if (is_root(flags_handle, ind)) {
-            // a marker with a parent of 0, must be a root
-            marker->parent = 0;
-            //#ifdef FULL_PRINT
-            // cout << "found root at " << vid << '\n';
-            // printf("with address of %p\n", (void *)vertex);
-            //#endif
-          } else {
-            assertm(vid_to_marker_ptr.count(vid),
-                    "did not find vertex in marker map");
-            auto parent = vid_to_marker_ptr[parent_vid]; // adjust
-            marker->parent = parent;
-            if (marker->parent == 0) {
-              // failure condition
-              std::cout << "block vid " << block_id << '\n';
-              assertm(marker->parent != 0,
-                      "a non root marker must have a valid parent");
-            }
-            assertm(marker->type != 0,
-                    "a marker with a type of 0, must be a root");
+          auto parent = vid_to_marker_ptr[parent_vid]; // adjust
+          marker->parent = parent;
+          if (marker->parent == 0) {
+            // failure condition
+            std::cout << "block vid " << block_id << '\n';
+            assertm(marker->parent != 0,
+                    "a non root marker must have a valid parent");
           }
+          assertm(marker->type != 0,
+                  "a marker with a type of 0, must be a root");
+        }
       }
     }
   }

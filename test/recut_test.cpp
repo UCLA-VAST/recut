@@ -1341,12 +1341,12 @@ TEST(Update, EachStageIteratively) {
   // app2 has a 2D radii estimation which can also be compared
   bool check_xy = false;
 
-  int max_size = 8;
+  int max_size = 16;
   // std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
   // max_size / 2, max_size};
   std::vector<int> grid_sizes = {max_size};
   std::vector<int> interval_sizes = {max_size};
-  std::vector<int> block_sizes = {max_size}; //, max_size / 2, max_size / 4};
+  std::vector<int> block_sizes = {8}; //, max_size / 2, max_size / 4};
   std::vector<bool> input_is_vdbs = {true};
   // tcase 5 is a sphere of radius grid_size / 4 centered
   // in the middle of an image
