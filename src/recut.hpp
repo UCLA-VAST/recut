@@ -2,7 +2,7 @@
 
 #include "recut_parameters.hpp"
 #include "tile_thresholds.hpp"
-#include "vertex_attr.hpp"
+#include "utils.hpp"
 #include <algorithm>
 #include <bits/stdc++.h>
 #include <bitset>
@@ -66,6 +66,7 @@ public:
   // If the program were keeping track of multiple images then the variable
   // image_count would record that number
   VID_t image_size, grid_interval_size, interval_block_size;
+  openvdb::math::CoordBBox image_bbox;
 
   GridCoord image_lengths;
   GridCoord image_offsets;
@@ -113,7 +114,6 @@ public:
   void initialize_globals(const VID_t &grid_interval_size,
                           const VID_t &interval_block_size);
 
-  bool filter_by_vid(VID_t vid, VID_t find_interval_id, VID_t find_block_id);
   bool filter_by_label(VertexAttr *v, bool accept_tombstone);
   void adjust_parent(bool to_swc_file);
 
@@ -124,10 +124,6 @@ public:
                             const VID_t pad_block_size);
   int get_bkg_threshold(const image_t *tile, VID_t interval_vertex_size,
                         const double foreground_percent);
-  inline VertexAttr *get_active_vertex(const VID_t interval_id,
-                                       const VID_t block_id,
-                                       const OffsetCoord offset);
-
   template <typename T>
   void place_vertex(const VID_t nb_interval_id, VID_t block_id, VID_t nb,
                     struct VertexAttr *dst, GridCoord dst_coord,
@@ -152,7 +148,6 @@ public:
   void check_ghost_update(VID_t interval_id, VID_t block_id,
                           GridCoord dst_coord, VertexAttr *dst,
                           std::string stage, T vdb_accessor);
-  int get_parent_code(VID_t dst_id, VID_t src_id);
   template <typename T2, typename FlagsT, typename ParentsT, typename PointIter,
             typename UpdateIter>
   bool accumulate_connected(const image_t *tile, VID_t interval_id,
@@ -190,7 +185,7 @@ public:
                         std::map<VID_t, std::deque<VertexAttr>> &connected_fifo,
                         T2 update_accessor, VID_t interval_id);
   template <class Container> void dump_buffer(Container buffer);
-  void adjust_vertex_parent(VertexAttr *vertex, GridCoord start_offsets);
+  OffsetCoord adjust_vertex_parent(OffsetCoord parent_offset, const GridCoord &original_coord);
   template <typename T, typename T2>
   void march_narrow_band(const image_t *tile, VID_t interval_id, VID_t block_id,
                          std::string stage,
@@ -239,10 +234,6 @@ public:
   void convert_to_markers(std::vector<vertex_t> &outtree,
                           bool accept_tombstone = false);
   inline VID_t sub_block_to_block_id(VID_t iblock, VID_t jblock, VID_t kblock);
-  template <class Container>
-  void print_interval(VID_t interval_id, std::string stage, Container &fifo);
-  template <class Container>
-  void print_grid(std::string stage, Container &fifo);
   template <class Container> void setup_radius(Container &fifo);
   void activate_vids(EnlargedPointDataGrid::Ptr grid,
                      const std::vector<VID_t> roots, const std::string stage,
@@ -250,8 +241,6 @@ public:
                      std::map<VID_t, std::deque<VertexAttr>> &connected_fifo);
   std::vector<VID_t> process_marker_dir(GridCoord grid_offsets,
                                         GridCoord grid_extents);
-  void print_vertex(VID_t interval_id, VID_t block_id, VertexAttr *current,
-                    GridCoord offsets);
   void set_parent_non_branch(const VID_t interval_id, const VID_t block_id,
                              VertexAttr *dst, VertexAttr *potential_new_parent);
   ~Recut<image_t>();
@@ -366,6 +355,8 @@ template <class image_t>
 std::vector<VID_t>
 Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
                                    const GridCoord grid_extents) {
+  auto local_bbox =
+      openvdb::math::CoordBBox(grid_offsets, grid_offsets + grid_extents);
   std::vector<VID_t> root_vids;
 
   if (params->marker_file_path().empty())
@@ -390,14 +381,12 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
     for (auto &root : inmarkers) {
       auto adjusted = coord_add(new_grid_coord(root.x, root.y, root.z), ones());
 
-      if (!(is_in_bounds(adjusted, grid_offsets, grid_extents)))
-        continue;
-
-      root_vids.push_back(coord_to_id(adjusted, this->image_lengths));
-
+      if (local_bbox.isInside(adjusted)) {
+        root_vids.push_back(coord_to_id(adjusted, this->image_lengths));
 #ifdef FULL_PRINT
-      cout << "Using marker at " << coord_to_str(adjusted) << '\n';
+        cout << "Using marker at " << coord_to_str(adjusted) << '\n';
 #endif
+      }
     }
   }
   return root_vids;
@@ -446,12 +435,15 @@ void Recut<image_t>::activate_vids(
     // auto leaf_roots = roots | remove_outside_bound | rng::to_vector;
     auto leaf_roots =
         root_coords | rng::views::remove_if([&](GridCoord coord) {
-          return !is_in_bounds(coord, leaf_bbox.min(), leaf_bbox.extents());
+          return !leaf_bbox.isInside(coord);
         }) |
-        rng::views::remove_if([&leaf_iter](GridCoord coord) {
+        rng::views::remove_if([&leaf_iter, &leaf_bbox](GridCoord coord) {
           if (!leaf_iter->isValueOn(coord)) {
-            std::cout << "Warning: new image does not contain root at: "
-                      << coord << '\n';
+            cout << "Warning: root at " << coord << " in leaf " << leaf_bbox
+                 << " is not selected in the segmentation so it is ignored. "
+                    "This "
+                    "may indicate the image and marker directories are "
+                    "mismatched or major inaccuracies in segmentation\n";
             return true;
           }
           return false;
@@ -461,7 +453,7 @@ void Recut<image_t>::activate_vids(
     if (leaf_roots.empty())
       continue;
 
-    print_iter_name(leaf_roots, "\troots");
+    // print_iter_name(leaf_roots, "\troots");
 
     // Set Values
     auto update_leaf = this->update_grid->tree().probeLeaf(leaf_bbox.min());
@@ -487,8 +479,18 @@ void Recut<image_t>::activate_vids(
     if (stage == "connected") {
 
       rng::for_each(leaf_roots, [&](auto coord) {
+        cout << '\n';
         auto ind = leaf_iter->beginIndexVoxel(coord);
+        cout << coord << '\n';
+        cout << leaf_iter->isValueOn(coord) << '\n';
+        cout << ind << '\n';
+        cout << "size: " << flags_handle.size() << '\n';
+        cout << "stride: " << flags_handle.stride() << '\n';
+        // cout << "total size: " << flags_handle.dataSize() << '\n';
+        // assertm(leaf_iter->isValueOn(coord) == ind, "don't match");
         if (ind) {
+          cout << *ind << '\n';
+          cout << '\n';
           // place a root with proper vid and parent of itself
           // set flags as root
           set_selected(flags_handle, ind);
@@ -523,80 +525,6 @@ void Recut<image_t>::activate_vids(
         }
       });
     }
-  }
-}
-
-template <class image_t>
-template <class Container>
-void Recut<image_t>::print_grid(std::string stage, Container &fifo) {
-  for (size_t interval_id = 0; interval_id < grid_interval_size;
-       ++interval_id) {
-    print_interval(interval_id, stage, fifo);
-  }
-}
-
-template <class image_t>
-template <class Container>
-void Recut<image_t>::print_interval(VID_t interval_id, std::string stage,
-                                    Container &fifo) {
-
-  // these looping vars below are over the non-padded lengths of each interval
-  auto interval_coord = id_to_coord(interval_id, this->grid_interval_lengths);
-  auto adjusted = coord_prod(interval_coord, this->interval_lengths);
-
-  for (int zi = adjusted[2]; zi < adjusted[2] + this->interval_lengths[2];
-       zi++) {
-    cout << "Z=" << zi << '\n';
-    cout << "  | ";
-    for (int xi = adjusted[0]; xi < adjusted[0] + this->interval_lengths[0];
-         xi++) {
-      cout << xi << " ";
-    }
-    cout << '\n';
-    for (int xi = 0; xi < 2 * this->interval_lengths[1] + 4; xi++) {
-      cout << "-";
-    }
-    cout << '\n';
-    for (int yi = adjusted[0]; yi < adjusted[0] + this->interval_lengths[1];
-         yi++) {
-      cout << yi << " | ";
-      for (int xi = adjusted[0]; xi < adjusted[0] + this->interval_lengths[0];
-           xi++) {
-        auto coord = new_grid_coord(xi, yi, zi);
-        auto block_id = coord_img_to_block_id(coord);
-
-        auto offsets = coord_mod(coord, this->block_lengths);
-        auto v = get_active_vertex(interval_id, block_id, offsets);
-        if (v == nullptr) {
-          cout << "- ";
-          continue;
-        }
-
-        if (stage == "radius") {
-          if (v->valid_radius()) {
-            cout << +(v->radius) << " ";
-          } else {
-            cout << "- ";
-          }
-        } else if (stage == "parent") {
-          if (v->valid_parent()) {
-            cout << v->parent << " ";
-          } else {
-            cout << "- ";
-          }
-          //} else if (stage == "surface") {
-          if (v->surface()) {
-            cout << "L "; // L for leaf and because disambiguates selected S
-          } else {
-            cout << "- ";
-          }
-        } else if (stage == "label" || stage == "connected") {
-          cout << v->label() << ' ';
-        }
-      }
-      cout << '\n';
-    }
-    cout << '\n';
   }
 }
 
@@ -1043,37 +971,6 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
   }
 }
 
-/* check and add current vertices in star stencil
- * if the current is greater the parent code will be greater
- * see struct definition in vertex_attr.h for full
- * list of VertexAttr parent codes and their meaning
- */
-template <class image_t>
-int Recut<image_t>::get_parent_code(VID_t dst_id, VID_t src_id) {
-  auto src_gr = src_id > dst_id ? true : false; // current greater
-  auto adiff = absdiff(dst_id, src_id);
-  if ((adiff % image_lengths[0] * image_lengths[1]) == 0) {
-    if (src_gr)
-      return 5;
-    else
-      return 4;
-  } else if ((adiff % this->image_lengths[0]) == 0) {
-    if (src_gr)
-      return 3;
-    else
-      return 2;
-  } else if (adiff == 1) {
-    if (src_gr)
-      return 1;
-    else
-      return 0;
-  }
-  // FIXME check this
-  cout << "get_parent_code failed at current " << src_id << " dst_id " << dst_id
-       << " absdiff " << adiff << '\n';
-  throw;
-}
-
 // adds to iterable but not to active vertices since its from outside domain
 template <typename Container, typename T, typename T2>
 void integrate_point(std::string stage, Container &fifo, T &connected_fifo,
@@ -1291,82 +1188,41 @@ bool Recut<image_t>::are_fifos_empty(
   }
 }
 
-// https://github.com/HumanBrainProject/swcPlus/blob/master/SWCplus_specification.html
-template <typename image_t>
-void Recut<image_t>::print_vertex(VID_t interval_id, VID_t block_id,
-                                  VertexAttr *current, GridCoord offsets) {
-  auto coord = coord_add(current->offsets, offsets);
-  std::ostringstream line;
-  // n,type,x,y,z,radius,parent
-
-  // n
-  line << coord_to_id(coord, this->image_lengths) << ' ';
-
-  // type_id
-  if (current->root()) {
-    line << "-1" << ' ';
-  } else {
-    line << '0' << ' ';
-  }
-
-  // coordinates
-  line << coord[0] << ' ' << coord[1] << ' ' << coord[2] << ' ';
-
-  // radius
-  line << +(current->radius) << ' ';
-
-  // parent
-  auto parent_coord = coord_add(coord, current->parent);
-  auto parent_vid = coord_to_id(parent_coord, this->image_lengths);
-  if (current->root()) {
-    line << "-1";
-  } else {
-    line << parent_vid;
-  }
-
-  line << '\n';
-
-  if (this->out.is_open()) {
-#pragma omp critical
-    this->out << line.str();
-  } else {
-#pragma omp critical
-    std::cout << line.str();
-  }
-}
-
 // if the parent has been pruned then set the current
 // parent further upstream
+// parameters are intentionally pass by value (copied)
 template <typename image_t>
-void Recut<image_t>::adjust_vertex_parent(VertexAttr *vertex,
-                                          GridCoord start_offsets) {
-  VertexAttr *parent = vertex;
-  VID_t block_id, interval_id;
-  GridCoord coord, parent_coord;
-  do {
+OffsetCoord
+Recut<image_t>::adjust_vertex_parent(OffsetCoord parent_offset,
+                                     const GridCoord &original_coord) {
+  GridCoord parent_coord;
+  GridCoord current_coord = original_coord;
+  while (true) {
     // find parent
-    {
-      coord = coord_add(parent->offsets, start_offsets);
-      parent_coord = coord_add(coord, parent->parent);
+    parent_coord = coord_add(current_coord, parent_offset);
+    auto parent_leaf = this->topology_grid->tree().probeConstLeaf(parent_coord);
+    auto parent_ind = parent_leaf->beginIndexVoxel(parent_coord);
+    assertm(parent_ind, "inactive parents must be unreachable");
 
-      // get actual interval and block
-      block_id = coord_img_to_block_id(parent_coord);
-      interval_id = coord_img_to_interval_id(parent_coord);
+    // check state
+    openvdb::points::AttributeHandle<uint8_t> flags_handle(
+        parent_leaf->constAttributeArray("flags"));
 
-      auto parent_offset = coord_mod(parent_coord, this->block_lengths);
+    if (is_tombstone(flags_handle, parent_ind)) {
+      // prep for next iteration
+      current_coord = parent_coord;
 
-      // get parent
-      parent = get_active_vertex(interval_id, block_id, parent_offset);
-      assertm(parent != nullptr, "inactive parents must be unreachable");
+      // get new offset
+      openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
+          parent_leaf->constAttributeArray("parents"));
+      parent_offset = parents_handle.get(*parent_ind);
+    } else {
+      break;
     }
+  }
 
-    // update offsets for next loop iteration
-    start_offsets = id_interval_block_to_img_offsets(interval_id, block_id);
-
-  } while (parent->tombstone());
   // parent is now unpruned and traceable from vertex
-  // so set vertex->parent to the new offset
-  vertex->parent = coord_sub(parent_coord, coord);
+  return coord_sub(parent_coord, original_coord);
 }
 
 template <class image_t>
@@ -1439,7 +1295,7 @@ void Recut<image_t>::connected_tile(
         }) |
         // within image?
         rng::views::remove_if([this, &found_adjacent_invalid](auto coord_img) {
-          if (is_in_bounds(coord_img, zeros(), this->image_lengths))
+          if (this->image_bbox.isInside(coord_img))
             return false;
           found_adjacent_invalid = true;
           return true;
@@ -1570,7 +1426,7 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
         }) |
         // within image?
         rng::views::remove_if([this](auto coord_img) {
-          return !is_in_bounds(coord_img, zeros(), this->image_lengths);
+          return !this->image_bbox.isInside(coord_img);
         }) |
         // within leaf?
         rng::views::remove_if([&](auto coord_img) {
@@ -1643,7 +1499,7 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
         }) |
         // within image?
         rng::views::remove_if([this](auto coord_img) {
-          return !is_in_bounds(coord_img, zeros(), this->image_lengths);
+          return !this->image_bbox.isInside(coord_img);
         }) |
         // within leaf?
         rng::views::remove_if([&](auto coord_img) {
@@ -2325,22 +2181,6 @@ inline VID_t Recut<image_t>::rotate_index(VID_t img_coord, const VID_t current,
   return 0; // for compiler
 }
 
-/*
- * Returns a pointer to the VertexAttr within interval_id,
- * block_id, and img_vid (vid with respect to global image)
- */
-template <class image_t>
-inline VertexAttr *
-Recut<image_t>::get_active_vertex(const VID_t interval_id, const VID_t block_id,
-                                  const OffsetCoord offsets) {
-  for (auto &v : this->active_vertices[block_id]) {
-    if (v.offsets == offsets) {
-      return &v;
-    }
-  }
-  return nullptr;
-}
-
 template <class image_t>
 void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
                                         const VID_t &interval_block_size) {
@@ -2530,6 +2370,7 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
       this->image_lengths[i] = max_len_after_off[i];
     }
   }
+  this->image_bbox = openvdb::math::CoordBBox(zeros(), this->image_lengths);
 
   // save to globals the actual size of the full image
   // accounting for the input offsets and extents
@@ -2709,16 +2550,30 @@ template <class image_t> void Recut<image_t>::adjust_parent(bool to_swc_file) {
     this->out << line.str();
   }
 
-  for (auto interval_id = 0; interval_id < grid_interval_size; ++interval_id) {
-    auto interval_img_offsets = id_interval_to_img_offsets(interval_id);
-    for (auto block_id = 0; block_id < interval_block_size; ++block_id) {
-      auto block_img_offsets = id_block_to_interval_offsets(block_id);
-      auto offsets = coord_add(interval_img_offsets, block_img_offsets);
-      for (auto &v : this->active_vertices[block_id]) {
-        if (filter_by_label(&v, false)) {
-          adjust_vertex_parent(&v, offsets);
-          print_vertex(interval_id, block_id, &v, offsets);
-        }
+  // iterate all active vertices ahead of time so each marker
+  // can have a pointer to it's parent marker
+  for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
+       ++leaf_iter) {
+    auto block_id = coord_img_to_block_id(leaf_iter->origin());
+
+    openvdb::points::AttributeHandle<uint8_t> flags_handle(
+        leaf_iter->constAttributeArray("flags"));
+
+    openvdb::points::AttributeHandle<uint8_t> radius_handle(
+        leaf_iter->constAttributeArray("radius"));
+
+    openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
+        leaf_iter->constAttributeArray("parents"));
+
+    for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
+      if (is_valid(flags_handle, ind)) {
+        auto coord = ind.getCoord();
+        // std::cout << "\t " << coord_to_str(coord) << " -> "
+        //<< parents_handle.get(*ind) << " " << marker->radius << '\n';
+        auto v = VertexAttr(flags_handle.get(*ind), /*ignored*/ zeros_off(),
+                            parents_handle.get(*ind), radius_handle.get(*ind));
+        v.parent = adjust_vertex_parent(v.parent, coord);
+        print_vertex_swc(coord, v, this->image_lengths, this->out);
       }
     }
   }
@@ -2726,20 +2581,6 @@ template <class image_t> void Recut<image_t>::adjust_parent(bool to_swc_file) {
   if (this->out.is_open())
     this->out.close();
 }
-
-template <class image_t>
-bool Recut<image_t>::filter_by_vid(VID_t vid, VID_t find_interval_id,
-                                   VID_t find_block_id) {
-  find_interval_id = id_img_to_interval_id(vid);
-  if (find_interval_id >= grid_interval_size) {
-    return false;
-  }
-  find_block_id = id_img_to_block_id(vid);
-  if (find_block_id >= interval_block_size) {
-    return false;
-  }
-  return true;
-};
 
 // accept_tombstone is a way to see pruned vertices still in active_vertex
 template <class image_t>
@@ -2755,21 +2596,6 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
   // get a mapping to stable address pointers in outtree such that a markers
   // parent is valid pointer when returning just outtree
   map<VID_t, MyMarker *> vid_to_marker_ptr;
-
-  auto is_valid = [&](auto ind, auto flags_handle) {
-    if (is_selected(flags_handle, ind)) {
-      if (accept_tombstone) {
-        return true;
-      } else {
-        if (is_tombstone(flags_handle, ind)) {
-          return false;
-        } else {
-          return true;
-        }
-      }
-    }
-    return false;
-  };
 
   // iterate all active vertices ahead of time so each marker
   // can have a pointer to it's parent marker
@@ -2791,7 +2617,7 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
       auto coord = ind.getCoord();
       auto vid = coord_to_id(coord, this->image_lengths);
       // create all valid new marker objects
-      if (is_valid(ind, flags_handle)) {
+      if (is_valid(flags_handle, ind, accept_tombstone)) {
         if (vid_to_marker_ptr.count(vid)) {
           std::cout << block_id << ' ' << vid << '\n';
         }
@@ -2834,7 +2660,7 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
       auto coord = ind.getCoord();
       auto vid = coord_to_id(coord, this->image_lengths);
       // create all valid new marker objects
-      if (is_valid(ind, flags_handle)) {
+      if (is_valid(flags_handle, ind, accept_tombstone)) {
         auto parent = parents_handle.get(*ind);
         auto parent_vid =
             coord_to_id(coord_add(coord, parent), this->image_lengths);

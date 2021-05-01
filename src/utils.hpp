@@ -4,6 +4,7 @@
 #include "markers.h"
 #include "range/v3/all.hpp"
 #include "recut_parameters.hpp"
+#include "vertex_attr.hpp"
 #include <algorithm> //min
 #include <atomic>
 #include <chrono>
@@ -31,10 +32,6 @@ namespace rng = ranges;
 // be able to change pp values into std::string
 #define XSTR(x) STR(x)
 #define STR(x) #x
-
-// forward declarations
-struct Bitfield;
-struct VertexAttr;
 
 auto print_iter = [](auto iterable) {
   rng::for_each(iterable, [](auto i) { std::cout << i << ", "; });
@@ -91,7 +88,8 @@ auto id_to_off_coord = [](auto id, auto lengths) {
 
 auto coord_to_str = [](auto coords) {
   std::ostringstream coord_str;
-  coord_str << '[' << coords[0] << ", " << coords[1] << ", " << coords[2] << "]";
+  coord_str << '[' << coords[0] << ", " << coords[1] << ", " << coords[2]
+            << "]";
   return coord_str.str();
 };
 
@@ -158,30 +156,6 @@ const auto coord_all_lt = [](auto x, auto y) {
   if (x[1] >= y[1])
     return false;
   if (x[2] >= y[2])
-    return false;
-  return true;
-};
-
-/*
- * Does this coord belong in the full image
- * accounting for the input offsets and extents
- * i, j, k : coord of vertex in question
- * off : offsets in x y z
- * end : sanitized end pixels order
- */
-auto is_in_bounds = [](auto check, auto off, auto lengths) {
-  if (check[0] < off[0])
-    return false;
-  if (check[1] < off[1])
-    return false;
-  if (check[2] < off[2])
-    return false;
-
-  if (check[0] > (off[0] + lengths[0]))
-    return false;
-  if (check[1] > (off[1] + lengths[1]))
-    return false;
-  if (check[2] > (off[2] + lengths[2]))
     return false;
   return true;
 };
@@ -350,7 +324,7 @@ auto print_marker_3D = [](auto markers, auto interval_lengths,
 
 // only values strictly greater than bkg_thresh are valid
 template <typename T>
-void print_vdb(T vdb_accessor, const std::vector<VID_t> lengths,
+void print_vdb_mask(T vdb_accessor, const std::vector<VID_t> lengths,
                const int bkg_thresh = -1) {
   cout << "Print VDB grid: \n";
   for (int z = 0; z < lengths[2]; z++) {
@@ -465,11 +439,20 @@ auto label = [](auto handle, auto ind) -> char {
   return '?';
 };
 
-// auto remove_outside_bound = [&](auto iter) {
-// return iter | rng::views::remove_if([&bbox](auto coord) {
-// return !is_in_bounds(coord, bbox.min(), bbox.extents());
-//});
-//};
+auto is_valid = [](auto flags_handle, auto ind, bool accept_tombstone=false) {
+  if (is_selected(flags_handle, ind)) {
+    if (accept_tombstone) {
+      return true;
+    } else {
+      if (is_tombstone(flags_handle, ind)) {
+        return false;
+      } else {
+        return true;
+      }
+    }
+  }
+  return false;
+};
 
 auto print_point_count = [](auto grid) {
   openvdb::Index64 count = openvdb::points::pointCount(grid->tree());
@@ -574,11 +557,11 @@ auto print_all_points = [](auto grid, std::string stage = "label",
             auto ind = leaf_iter->beginIndexVoxel(xyz);
             if (ind) {
               if (stage == "radius") {
-                //if (radius_handle.get(*ind) != 0) {
-                  // if (valid_radius(radius_handle, ind)) {
-                  cout << +(radius_handle.get(*ind)) << " ";
+                // if (radius_handle.get(*ind) != 0) {
+                // if (valid_radius(radius_handle, ind)) {
+                cout << +(radius_handle.get(*ind)) << " ";
                 //} else {
-                  //cout << "- ";
+                // cout << "- ";
                 //}
               } else if (stage == "parent") {
                 auto recv_parent = parents_handle.get(*ind);
@@ -1744,3 +1727,46 @@ auto check_coverage(const T mask, const T2 inimg1d, const VID_t tol_sz,
   return new CompareResults<std::vector<VID_t>>(
       false_negatives, false_positives, over_coverage, match_count);
 }
+
+// n,type,x,y,z,radius,parent
+// for more info see:
+// https://github.com/HumanBrainProject/swcPlus/blob/master/SWCplus_specification.html
+auto print_vertex_swc = [](GridCoord &coord, const struct VertexAttr &current,
+                           const GridCoord &image_lengths, std::ofstream &out) {
+  std::ostringstream line;
+
+  // n
+  line << coord_to_id(coord, image_lengths) << ' ';
+
+  // type_id
+  if (current.root()) {
+    line << "-1" << ' ';
+  } else {
+    line << '0' << ' ';
+  }
+
+  // coordinates
+  line << coord[0] << ' ' << coord[1] << ' ' << coord[2] << ' ';
+
+  // radius
+  line << +(current.radius) << ' ';
+
+  // parent
+  auto parent_coord = coord_add(coord, current.parent);
+  auto parent_vid = coord_to_id(parent_coord, image_lengths);
+  if (current.root()) {
+    line << "-1";
+  } else {
+    line << parent_vid;
+  }
+
+  line << '\n';
+
+  if (out.is_open()) {
+    //#pragma omp critical
+    out << line.str();
+  } else {
+    //#pragma omp critical
+    std::cout << line.str();
+  }
+};

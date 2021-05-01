@@ -1,21 +1,13 @@
 #ifndef VERTEX_ATTR_H_
-// ASSERT_TRUE(matches[0]);
-// ASSERT_TRUE(matches[1]);
-// ASSERT_TRUE(matches[2]);
-
 #define VERTEX_ATTR_H_
+
 #include <cassert>
 #include <cstring>
 #include <iostream>
 #include <limits>
-#include <vector>
 
 using std::cout;
 using std::ios;
-using std::numeric_limits;
-using std::vector;
-
-#include "utils.hpp"
 
 struct Bitfield {
   uint8_t field_;
@@ -60,7 +52,7 @@ struct VertexAttr {
   // most sig. bits (little-endian) refer to state : 1 bytes
   struct Bitfield edge_state;
 
-  VertexAttr() : edge_state(0), radius(numeric_limits<uint8_t>::max()) {}
+  VertexAttr() : edge_state(0), radius(std::numeric_limits<uint8_t>::max()) {}
 
   VertexAttr(const VertexAttr &a)
       : edge_state(a.edge_state), offsets(a.offsets), radius(a.radius),
@@ -84,26 +76,26 @@ struct VertexAttr {
 
   // you can pipe the output directly to std::cout
   std::string description() const {
-    std::string descript = "offsets:" + coord_to_str(offsets);
-    descript += '\n';
-    descript += "parent offsets:";
-    auto parent_str = std::string("-");
+    std::ostringstream descript;
+    descript << "offsets:" << offsets;
+    descript << '\n';
+    descript << "parent offsets:";
     if (valid_parent()) {
-      parent_str = coord_to_str(parent);
+      descript << parent;
+    } else {
+      descript << '-';
     }
-    descript += parent_str;
-    descript += '\n';
-    descript += '\n';
-    descript += "state:";
+    descript << '\n';
+    descript << "state:";
     for (int i = 7; i >= 0; i--) {
-      descript += edge_state.test(i) ? "1" : "0";
+      descript << edge_state.test(i) ? "1" : "0";
     }
-    descript += '\n';
-    descript += "label:" + std::to_string(label());
-    descript += '\n';
-    descript += "radius:" + std::to_string(radius);
-    descript += '\n';
-    return descript;
+    descript << '\n';
+    descript << "label:" + std::to_string(label());
+    descript << '\n';
+    descript << "radius:" + std::to_string(radius);
+    descript << '\n';
+    return descript.str();
   }
 
   /* returns whether this vertex has been added to a heap
@@ -112,7 +104,7 @@ struct VertexAttr {
 
   /* returns whether this vertex has had its radius updated from the default max
    */
-  bool valid_radius() const { return radius != numeric_limits<uint8_t>::max(); }
+  bool valid_radius() const { return radius != std::numeric_limits<uint8_t>::max(); }
 
   void set_parent(OffsetCoord coord) {
     this->parent[0] = coord[0];
@@ -141,7 +133,7 @@ struct VertexAttr {
   }
 
   friend std::ostream &operator<<(std::ostream &os, const VertexAttr &v) {
-    os << "{offsets: " << coord_to_str(v.offsets) << ", radius: " << +(v.radius)
+    os << "{offsets: " << v.offsets << ", radius: " << +(v.radius)
        << ", label: " << v.label() << '}';
     return os;
   }
