@@ -325,7 +325,7 @@ auto print_marker_3D = [](auto markers, auto interval_lengths,
 // only values strictly greater than bkg_thresh are valid
 template <typename T>
 void print_vdb_mask(T vdb_accessor, const std::vector<VID_t> lengths,
-               const int bkg_thresh = -1) {
+                    const int bkg_thresh = -1) {
   cout << "Print VDB grid: \n";
   for (int z = 0; z < lengths[2]; z++) {
     cout << "y | Z=" << z << '\n';
@@ -439,7 +439,7 @@ auto label = [](auto handle, auto ind) -> char {
   return '?';
 };
 
-auto is_valid = [](auto flags_handle, auto ind, bool accept_tombstone=false) {
+auto is_valid = [](auto flags_handle, auto ind, bool accept_tombstone = false) {
   if (is_selected(flags_handle, ind)) {
     if (accept_tombstone) {
       return true;
@@ -470,10 +470,25 @@ auto print_positions = [](auto grid) {
     // Create a read-only AttributeHandle. Position always uses Vec3f.
     openvdb::points::AttributeHandle<PositionT> positionHandle(array);
 
+    openvdb::points::AttributeHandle<uint8_t> radius_handle(
+        leaf_iter->constAttributeArray("radius"));
+
+    openvdb::points::AttributeHandle<uint8_t> flags_handle(
+        leaf_iter->constAttributeArray("flags"));
+
+    openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
+        leaf_iter->constAttributeArray("parents"));
+
     // Iterate over the point indices in the leaf.
     for (auto indexIter = leaf_iter->beginIndexOn(); indexIter; ++indexIter) {
       // Extract the voxel-space position of the point.
       openvdb::Vec3f voxelPosition = positionHandle.get(*indexIter);
+
+      auto radius = radius_handle.get(*indexIter);
+
+      auto recv_flags = flags_handle.get(*indexIter);
+
+      auto recv_parent = parents_handle.get(*indexIter);
 
       // Extract the world-space position of the voxel.
       const openvdb::Vec3d xyz = indexIter.getCoord().asVec3d();
@@ -484,114 +499,70 @@ auto print_positions = [](auto grid) {
       std::cout << "ind:" << *indexIter << " ";
       std::cout << "xyz: " << xyz << ' ';
       std::cout << "WorldPosition=" << worldPosition << ' ';
-      std::cout << coord_to_str(xyz) << '\n';
+      std::cout << coord_to_str(xyz) << " -> " << coord_to_str(recv_parent)
+                << ' ';
+      std::cout << +(recv_flags) << ' ';
+      std::cout << +(radius) << '\n';
     }
   }
 };
 
-auto print_all_points = [](auto grid, std::string stage = "label",
-                           bool index_order = false) {
+auto print_all_points = [](auto grid, openvdb::math::CoordBBox bbox,
+                           std::string stage = "label") {
   std::cout << "Print all points " << stage << "\n";
-  // Iterate over all the leaf nodes in the grid.
-  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+  // 3D visual
+  for (int z = bbox.min()[2]; z < bbox.max()[2]; z++) {
+    cout << "y | Z=" << z << '\n';
+    for (int x = 0; x < 2 * bbox.extents()[0] + 4; x++) {
+      cout << "-";
+    }
+    cout << '\n';
+    for (int y = bbox.min()[1]; y < bbox.max()[1]; y++) {
+      cout << y << " | ";
+      for (int x = bbox.min()[0]; x < bbox.max()[0]; x++) {
+        openvdb::Coord xyz(x, y, z);
+        auto leaf_iter = grid->tree().probeConstLeaf(xyz);
+        auto ind = leaf_iter->beginIndexVoxel(xyz);
 
-    auto bbox = leaf_iter->getNodeBoundingBox();
-    std::cout << bbox << std::endl;
+        openvdb::points::AttributeHandle<uint8_t> radius_handle(
+            leaf_iter->constAttributeArray("radius"));
 
-    // Extract the position attribute from the leaf by name (P is position).
-    const openvdb::points::AttributeArray &array =
-        leaf_iter->constAttributeArray("P");
-    // Create a read-only AttributeHandle. Position always uses Vec3f.
-    openvdb::points::AttributeHandle<PositionT> positionHandle(array);
+        openvdb::points::AttributeHandle<uint8_t> flags_handle(
+            leaf_iter->constAttributeArray("flags"));
 
-    openvdb::points::AttributeWriteHandle<uint8_t> radius_handle(
-        leaf_iter->attributeArray("radius"));
+        openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
+            leaf_iter->constAttributeArray("parents"));
 
-    openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
-        leaf_iter->attributeArray("flags"));
-
-    openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
-        leaf_iter->attributeArray("parents"));
-
-    if (index_order) {
-      // Iterate over the point indices in the leaf.
-      for (auto indexIter = leaf_iter->beginIndexOn(); indexIter; ++indexIter) {
-        // Extract the voxel-space position of the point.
-        openvdb::Vec3f voxelPosition = positionHandle.get(*indexIter);
-
-        // radius_handle.set(*indexIter, static_cast<uint8_t>(*indexIter));
-        auto radius = radius_handle.get(*indexIter);
-
-        auto recv_flags = flags_handle.get(*indexIter);
-
-        auto recv_parent = parents_handle.get(*indexIter);
-
-        // Extract the world-space position of the voxel.
-        const openvdb::Vec3d xyz = indexIter.getCoord().asVec3d();
-        // Compute the world-space position of the point.
-        openvdb::Vec3f worldPosition =
-            grid->transform().indexToWorld(voxelPosition + xyz);
-        // Verify the index and world-space position of the point
-        // std::cout << "* PointIndex=[" << *indexIter << "] ";
-        std::cout << "xyz: " << xyz << ' ';
-        std::cout << "WorldPosition=" << worldPosition << ' ';
-        std::cout << coord_to_str(xyz) << " -> " << coord_to_str(recv_parent)
-                  << ' ';
-        std::cout << +(recv_flags) << ' ';
-        std::cout << +(radius) << '\n';
-        // auto v = new VertexAttr(flags, zeros_off(), parent, radius);
-        // cout << v->description() << '\n';
-      }
-    } else {
-      // 3D visual
-      for (int z = bbox.min()[2]; z < bbox.max()[2]; z++) {
-        cout << "y | Z=" << z << '\n';
-        for (int x = 0; x < 2 * bbox.extents()[0] + 4; x++) {
-          cout << "-";
-        }
-        cout << '\n';
-        for (int y = bbox.min()[1]; y < bbox.max()[1]; y++) {
-          cout << y << " | ";
-          for (int x = bbox.min()[0]; x < bbox.max()[0]; x++) {
-            openvdb::Coord xyz(x, y, z);
-            auto ind = leaf_iter->beginIndexVoxel(xyz);
-            if (ind) {
-              if (stage == "radius") {
-                // if (radius_handle.get(*ind) != 0) {
-                // if (valid_radius(radius_handle, ind)) {
-                cout << +(radius_handle.get(*ind)) << " ";
-                //} else {
-                // cout << "- ";
-                //}
-              } else if (stage == "parent") {
-                auto recv_parent = parents_handle.get(*ind);
-                std::cout << coord_to_str(recv_parent);
-                // if (valid_parent(parents_handle, ind)) {
-                // cout << parents_handle.get(*ind) << " ";
-                //} else {
-                // cout << "- ";
-                //}
-              } else if (stage == "surface") {
-                if (testbit(flags_handle.get(*ind), 1)) {
-                  // if (is_surface(flags_handle, ind)) {
-                  cout << "L "; // L for leaf and because disambiguates selected
-                                // S
-                } else {
-                  cout << "- ";
-                }
-              } else if (stage == "label" || stage == "connected") {
-                // cout << label(flags_handle, ind) << ' ';
-                cout << +(flags_handle.get(*ind)) << ' ';
-              }
+        if (ind) {
+          if (stage == "radius") {
+            cout << +(radius_handle.get(*ind)) << " ";
+          } else if (stage == "parent") {
+            auto recv_parent = parents_handle.get(*ind);
+            std::cout << coord_to_str(recv_parent);
+            // if (valid_parent(parents_handle, ind)) {
+            // cout << parents_handle.get(*ind) << " ";
+            //} else {
+            // cout << "- ";
+            //}
+          } else if (stage == "surface") {
+            if (testbit(flags_handle.get(*ind), 1)) {
+              // if (is_surface(flags_handle, ind)) {
+              cout << "L "; // L for leaf and because disambiguates selected
+                            // S
             } else {
               cout << "- ";
             }
+          } else if (stage == "label" || stage == "connected") {
+            // cout << label(flags_handle, ind) << ' ';
+            cout << +(flags_handle.get(*ind)) << ' ';
           }
-          cout << '\n';
+        } else {
+          cout << "- ";
         }
-        cout << '\n';
       }
+      cout << '\n';
     }
+    cout << '\n';
   }
 };
 

@@ -1258,11 +1258,6 @@ void Recut<image_t>::connected_tile(
       leaf_iter->attributeArray("flags");
   openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle =
       leaf_iter->attributeArray("parents");
-  // if (input_is_vdb) {
-  // flags_handle = leaf_iter->attributeArray("flags");
-
-  // parents_handle = leaf_iter->attributeArray("parents");
-  //}
 
   VertexAttr *msg_vertex;
   VID_t visited = 0;

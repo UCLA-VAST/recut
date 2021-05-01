@@ -431,7 +431,7 @@ TEST(VDB, IntegrateUpdateGrid) {
 
     if (print_all) {
       print_vdb_mask(topology_accessor, grid_extents);
-      print_all_points(recut.topology_grid);
+      print_all_points(recut.topology_grid, recut.image_bbox);
     }
   }
 }
@@ -518,7 +518,7 @@ TEST(VDB, ActivateVids) {
 
   if (print_all) {
     print_vdb_mask(recut.topology_grid->getConstAccessor(), grid_extents);
-    print_all_points(recut.topology_grid);
+    print_all_points(recut.topology_grid, recut.image_bbox);
   }
 
   auto block_id = 0;
@@ -570,7 +570,7 @@ TEST(VDB, Connected) {
 
   if (print_all) {
     print_vdb_mask(recut.topology_grid->getConstAccessor(), grid_extents);
-    print_all_points(recut.topology_grid);
+    print_all_points(recut.topology_grid, recut.image_bbox);
   }
 
   auto known_surface = new_grid_coord(1, 1, 1);
@@ -863,7 +863,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         if (print) {
           print_vdb_mask(topology_grid->getConstAccessor(),
                     coord_to_vec(grid_extents));
-          print_all_points(topology_grid);
+          print_all_points(topology_grid, openvdb::math::CoordBBox(zeros(), new_grid_coord(grid_size, grid_size, grid_size)));
         }
 
 #ifdef USE_MCP3D
@@ -1270,7 +1270,7 @@ TEST(Update, EachStageIteratively) {
   // app2 has a 2D radii estimation which can also be compared
   bool check_xy = false;
 
-  int max_size = 8;
+  int max_size = 16;
   // std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
   // max_size / 2, max_size};
   std::vector<int> grid_sizes = {max_size};
@@ -1373,10 +1373,10 @@ TEST(Update, EachStageIteratively) {
               if (print_all) {
                 std::cout << "Recut connected\n";
                 std::cout << iteration_trace.str();
-                print_all_points(recut.topology_grid, stage);
+                print_all_points(recut.topology_grid, recut.image_bbox, stage);
                 std::cout << "Recut surface\n";
                 std::cout << iteration_trace.str();
-                print_all_points(recut.topology_grid, "surface");
+                print_all_points(recut.topology_grid, recut.image_bbox, "surface");
                 auto total = 0;
                 if (false) {
                   std::cout << "All surface vids: \n";
@@ -1455,7 +1455,7 @@ TEST(Update, EachStageIteratively) {
               if (print_all) {
                 std::cout << "Recut radii\n";
                 std::cout << iteration_trace.str();
-                print_all_points(recut.topology_grid, "radius");
+                print_all_points(recut.topology_grid, recut.image_bbox, "radius");
               }
 
               VID_t interval_num = 0;
@@ -1589,11 +1589,11 @@ TEST(Update, EachStageIteratively) {
                 if (print_all) {
                   std::cout << "Recut prune\n";
                   std::cout << iteration_trace.str();
-                  print_all_points(recut.topology_grid, "label");
+                  print_all_points(recut.topology_grid, recut.image_bbox, "label");
 
                   std::cout << "Recut radii post prune\n";
                   std::cout << iteration_trace.str();
-                  print_all_points(recut.topology_grid, "radius");
+                  print_all_points(recut.topology_grid, recut.image_bbox, "radius");
                 }
 
                 std::cout << iteration_trace.str();
@@ -1816,7 +1816,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
   if (print_all) {
     std::cout << "Recut connected\n";
-    print_all_points(recut.topology_grid, "label");
+    print_all_points(recut.topology_grid, recut.image_bbox, "label");
   }
 
   {
@@ -1855,7 +1855,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
   if (print_all) {
     std::cout << "Recut radius\n";
-    print_all_points(recut.topology_grid, "radius");
+    print_all_points(recut.topology_grid, recut.image_bbox, "radius");
   }
 
   // save the output_tree early before it is pruned to compare
@@ -1877,13 +1877,13 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     accept_band = true;
 
     std::cout << "Recut prune\n";
-    print_all_points(recut.topology_grid, "label");
+    print_all_points(recut.topology_grid, recut.image_bbox, "label");
 
     std::cout << "Recut radii post prune\n";
-    print_all_points(recut.topology_grid, "radius");
+    print_all_points(recut.topology_grid, recut.image_bbox, "radius");
 
     std::cout << "Recut parent post prune\n";
-    print_all_points(recut.topology_grid, "parent");
+    print_all_points(recut.topology_grid, recut.image_bbox, "parent");
 
     recut.adjust_parent(false);
     recut.convert_to_markers(recut_output_tree_prune,
