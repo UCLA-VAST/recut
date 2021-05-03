@@ -71,6 +71,8 @@ using OffsetCoord = std::vector<int8_t>;
 using GridCoord = std::vector<int32_t>;
 #endif
 
+// Set the pruning / coverage semantics by defining what adjacent hop count 
+// qualifies as covering its neighbor. 
 // depending on your prune semantics a radius of 1 may cover its neighbor
 // therefore account for this by subtracting 1 from all radii values
 // open accumulate_prune function, if a neighbor has a radius of 1 or greater
@@ -83,4 +85,4 @@ using GridCoord = std::vector<int32_t>;
 // when checking 1 hop away (adjacent) from current,
 // all radii greater than 1 imply some redundancy in coverage
 // but this may be desired with DILATION_FACTORS higher than 1
-#define DILATION_FACTOR 1
+#define DILATION_FACTOR 0

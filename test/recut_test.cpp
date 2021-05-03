@@ -640,8 +640,8 @@ TEST(VDBWriteOnly, DISABLED_Any) {
 }
 
 TEST(VDB, Convert) {
-  VID_t grid_size = 8;
-  VID_t interval_size = 4;
+  VID_t grid_size = 16;
+  VID_t interval_size = 16;
   auto grid_extents = std::vector<VID_t>(3, grid_size);
   // do no use tcase 4 since it is randomized and will not match
   // for the second read test
@@ -664,14 +664,14 @@ TEST(VDB, Convert) {
   // ASSERT_FALSE(fs::exists(fn));
   recut.initialize();
 
-  /*
-  if (recut.params->convert_only_) {
-    recut.activate_all_intervals();
-  }
-
   if (print_all) {
     std::cout << "recut image grid" << endl;
     print_image_3D(recut.generated_image, grid_extents);
+  }
+
+  /*
+  if (recut.params->convert_only_) {
+    recut.activate_all_intervals();
   }
 
   // mutates topology_grid
@@ -699,7 +699,7 @@ TEST(VDB, Convert) {
     auto args =
         get_args(grid_size, interval_size, interval_size, slt_pct, tcase,
                  /*force_regenerate_image=*/false,
-                 /*input_is_vdb=*/false);
+                 /*input_is_vdb=*/true);
 
     auto recut_from_vdb_file = Recut<uint16_t>(args);
     recut_from_vdb_file.params->convert_only_ = true;
@@ -713,7 +713,7 @@ TEST(VDB, Convert) {
 
     if (print_all)
       print_vdb_mask(recut_from_vdb_file.topology_grid->getConstAccessor(),
-                grid_extents);
+                     grid_extents);
 
     // assert equals original grid above
     double read_from_file_error_rate;
@@ -860,10 +860,15 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         std::cout << "created vdb grid\n";
 
         topology_grid->tree().prune();
+
         if (print) {
           print_vdb_mask(topology_grid->getConstAccessor(),
-                    coord_to_vec(grid_extents));
-          print_all_points(topology_grid, openvdb::math::CoordBBox(zeros(), new_grid_coord(grid_size, grid_size, grid_size)));
+                         coord_to_vec(grid_extents));
+          //print_all_points(
+              //topology_grid,
+              //openvdb::math::CoordBBox(
+                  //zeros(), grid_extents)); 
+          print_image_3D(inimg1d, coord_to_vec(grid_extents));
         }
 
 #ifdef USE_MCP3D
@@ -882,13 +887,14 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
 }
 
 #ifdef USE_MCP3D
-TEST(Install, DISABLED_ImageReadWrite) {
+TEST(Install, ImageReadWrite) {
   auto grid_size = 2;
   auto grid_extents = std::vector<VID_t>(3, grid_size);
   auto tcase = 7;
   double slt_pct = 100;
   auto lengths = new_grid_coord(grid_size, grid_size, grid_size);
   auto tol_sz = coord_prod_accum(lengths);
+  auto print_all = true;
 
   std::string fn(get_data_dir());
   // Warning: do not use directory names postpended with slash
@@ -899,11 +905,17 @@ TEST(Install, DISABLED_ImageReadWrite) {
   VID_t selected = tol_sz; // for tcase 4
   uint16_t *inimg1d = new uint16_t[tol_sz];
   create_image(tcase, inimg1d, grid_size, selected, get_central_vid(grid_size));
+  cout << "Created image:\n";
+  print_image_3D(inimg1d, grid_extents);
+
   write_tiff(inimg1d, fn, grid_size);
   mcp3d::MImage check(fn, {"ch0"});
   ASSERT_NE(check.n_channels(), 0);
   read_tiff(fn, image_offsets, image_lengths, check);
   // print_image(check, grid_size * grid_size * grid_size);
+  cout << "Read image:\n";
+  print_image_3D(check.Volume<uint16_t>(0), grid_extents);
+
   ASSERT_NO_FATAL_FAILURE(
       check_image_equality(inimg1d, check.Volume<uint16_t>(0), grid_size));
   cout << "first read passed\n";
@@ -1251,7 +1263,6 @@ TEST(Scale, DISABLED_InitializeGlobals) {
     print_coord(image_dims, "medium section");
     check_block_sizes(image_dims);
   }
-
 }
 
 TEST(Update, EachStageIteratively) {
@@ -1269,6 +1280,8 @@ TEST(Update, EachStageIteratively) {
   auto expect_exact_radii_match_with_seq = true;
   // app2 has a 2D radii estimation which can also be compared
   bool check_xy = false;
+  // you need to modify the vdb leaf size to accomplish this:
+  bool check_against_sequential = false;
 
   int max_size = 16;
   // std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
@@ -1376,7 +1389,8 @@ TEST(Update, EachStageIteratively) {
                 print_all_points(recut.topology_grid, recut.image_bbox, stage);
                 std::cout << "Recut surface\n";
                 std::cout << iteration_trace.str();
-                print_all_points(recut.topology_grid, recut.image_bbox, "surface");
+                print_all_points(recut.topology_grid, recut.image_bbox,
+                                 "surface");
                 auto total = 0;
                 if (false) {
                   std::cout << "All surface vids: \n";
@@ -1455,7 +1469,8 @@ TEST(Update, EachStageIteratively) {
               if (print_all) {
                 std::cout << "Recut radii\n";
                 std::cout << iteration_trace.str();
-                print_all_points(recut.topology_grid, recut.image_bbox, "radius");
+                print_all_points(recut.topology_grid, recut.image_bbox,
+                                 "radius");
               }
 
               VID_t interval_num = 0;
@@ -1475,7 +1490,7 @@ TEST(Update, EachStageIteratively) {
                 }
               }
 
-              // APP2 ACCURATE (3D) VS APP2
+              // APP2 ACCURATE (3D) VS Recut
               double recut_vs_app2_accurate_radius_error;
               EXPECT_NO_FATAL_FAILURE(check_recut_error(
                   recut, app2_accurate_radii_grid.get(), grid_size, "radius",
@@ -1497,44 +1512,47 @@ TEST(Update, EachStageIteratively) {
                           << recut_vs_app2_accurate_radius_error << '\n';
               }
 
-              // RECUT match with previous recut run exactly
-              // check against is_sequential_run recut radii run
-              if (is_sequential_run) {
-                // is_sequential_run needs to always be run first
-                for (int vid = 0; vid < tol_sz; ++vid) {
-                  auto coord = id_to_coord(vid, recut.image_lengths);
-                  if (recut.topology_grid->tree().isValueOn(coord)) {
-                    auto leaf =
-                        recut.topology_grid->tree().probeConstLeaf(coord);
-                    openvdb::points::AttributeHandle<uint8_t> radius_handle(
-                        leaf->constAttributeArray("radius"));
-                    auto ind = leaf->beginIndexVoxel(coord);
-                    if (ind)
-                      seq_radii_grid[vid] = radius_handle.get(*ind);
-                    else
+              if (check_against_sequential) {
+                // RECUT match with previous recut run exactly
+                // check against is_sequential_run recut radii run
+                if (is_sequential_run) {
+                  // is_sequential_run needs to always be run first
+                  for (int vid = 0; vid < tol_sz; ++vid) {
+                    auto coord = id_to_coord(vid, recut.image_lengths);
+                    if (recut.topology_grid->tree().isValueOn(coord)) {
+                      auto leaf =
+                          recut.topology_grid->tree().probeConstLeaf(coord);
+                      openvdb::points::AttributeHandle<uint8_t> radius_handle(
+                          leaf->constAttributeArray("radius"));
+                      auto ind = leaf->beginIndexVoxel(coord);
+                      if (ind)
+                        seq_radii_grid[vid] = radius_handle.get(*ind);
+                      else
+                        seq_radii_grid[vid] = 0;
+                    } else {
                       seq_radii_grid[vid] = 0;
-                  } else {
-                    seq_radii_grid[vid] = 0;
+                    }
                   }
+                } else {
+                  if (print_all) {
+                    cout << "recut sequential radii \n";
+                    print_image_3D(seq_radii_grid.get(), grid_extents);
+                  }
+                  double recut_vs_recut_sequential_radius_error;
+                  // radii are made sure to be valid in the right locations
+                  EXPECT_NO_FATAL_FAILURE(check_recut_error(
+                      recut, seq_radii_grid.get(), grid_size, "radius",
+                      recut_vs_recut_sequential_radius_error, recut.map_fifo,
+                      ground_truth_selected));
+                  // exact match at every radii value
+                  ASSERT_NEAR(recut_vs_recut_sequential_radius_error, 0.,
+                              NUMERICAL_ERROR);
                 }
-              } else {
-                if (print_all) {
-                  cout << "recut sequential radii \n";
-                  print_image_3D(seq_radii_grid.get(), grid_extents);
-                }
-                double recut_vs_recut_sequential_radius_error;
-                // radii are made sure to be valid in the right locations
-                EXPECT_NO_FATAL_FAILURE(check_recut_error(
-                    recut, seq_radii_grid.get(), grid_size, "radius",
-                    recut_vs_recut_sequential_radius_error, recut.map_fifo,
-                    ground_truth_selected));
-                // exact match at every radii value
-                ASSERT_NEAR(recut_vs_recut_sequential_radius_error, 0.,
-                            NUMERICAL_ERROR);
               }
             }
 
             if (prune) {
+
               // APP2 PRUNE
               std::vector<MyMarker *> app2_output_tree;
               std::vector<MyMarker *> app2_output_tree_prune;
@@ -1589,11 +1607,18 @@ TEST(Update, EachStageIteratively) {
                 if (print_all) {
                   std::cout << "Recut prune\n";
                   std::cout << iteration_trace.str();
-                  print_all_points(recut.topology_grid, recut.image_bbox, "label");
+                  print_all_points(recut.topology_grid, recut.image_bbox,
+                                   "label");
 
                   std::cout << "Recut radii post prune\n";
                   std::cout << iteration_trace.str();
-                  print_all_points(recut.topology_grid, recut.image_bbox, "radius");
+                  print_all_points(recut.topology_grid, recut.image_bbox,
+                                   "radius");
+
+                  std::cout << "Recut post prune valid\n";
+                  std::cout << iteration_trace.str();
+                  print_all_points(recut.topology_grid, recut.image_bbox,
+                                   "valid");
                 }
 
                 std::cout << iteration_trace.str();
@@ -1860,9 +1885,9 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
   // save the output_tree early before it is pruned to compare
   // to app2
-  bool accept_band = false;
-  recut.convert_to_markers(args.output_tree,
-                           accept_band); // this fills args.output_tree
+  recut.convert_to_markers(
+      args.output_tree,
+      /*accept_band*/ false); // this fills args.output_tree
 
   // PRUNE
   auto recut_output_tree_prune = std::vector<MyMarker *>();
@@ -1874,7 +1899,6 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
     assertm(args.output_tree.size() != 0, "Can not have 0 selected output");
     recut_output_tree_prune.reserve(args.output_tree.size() / 100);
-    accept_band = true;
 
     std::cout << "Recut prune\n";
     print_all_points(recut.topology_grid, recut.image_bbox, "label");
@@ -1886,8 +1910,9 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     print_all_points(recut.topology_grid, recut.image_bbox, "parent");
 
     recut.adjust_parent(false);
-    recut.convert_to_markers(recut_output_tree_prune,
-                             accept_band); // this fills args.output_tree
+    recut.convert_to_markers(
+        recut_output_tree_prune,
+        /*accept_band*/ true); // this fills args.output_tree
   }
 
   double actual_slt_pct = (100. * args.output_tree.size()) / tol_sz;

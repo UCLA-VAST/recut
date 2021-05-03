@@ -536,6 +536,12 @@ auto print_all_points = [](auto grid, openvdb::math::CoordBBox bbox,
         if (ind) {
           if (stage == "radius") {
             cout << +(radius_handle.get(*ind)) << " ";
+          } else if (stage == "valid") {
+            if (is_valid(flags_handle, ind)) {
+              cout << "V ";
+            } else {
+              cout << "- ";
+            }
           } else if (stage == "parent") {
             auto recv_parent = parents_handle.get(*ind);
             std::cout << coord_to_str(recv_parent);
@@ -1293,9 +1299,9 @@ auto convert_buffer_to_vdb = [](auto buffer, GridCoord buffer_lengths,
                                 GridCoord buffer_offsets,
                                 GridCoord image_offsets, auto &positions,
                                 auto bkg_thresh = 0) {
-  // print_coord(buffer_lengths, "buffer_lengths");
-  // print_coord(buffer_offsets, "buffer_offsets");
-  // print_coord(image_offsets, "image_offsets");
+   print_coord(buffer_lengths, "buffer_lengths");
+   print_coord(buffer_offsets, "buffer_offsets");
+   print_coord(image_offsets, "image_offsets");
   for (auto z : rng::views::iota(0, buffer_lengths[2])) {
     for (auto y : rng::views::iota(0, buffer_lengths[1])) {
       for (auto x : rng::views::iota(0, buffer_lengths[0])) {
@@ -1353,6 +1359,7 @@ void write_tiff(uint16_t *inimg1d, std::string base, int grid_size,
 #endif
 
   base = base + "/ch0";
+  std::vector<VID_t> plane_extents{static_cast<VID_t>(grid_size), static_cast<VID_t>(grid_size), 1};
   if (!fs::exists(base) || rerun) {
     fs::remove_all(base); // make sure it's an overwrite
     if (print)
@@ -1369,6 +1376,8 @@ void write_tiff(uint16_t *inimg1d, std::string base, int grid_size,
       VID_t start = zi * grid_size * grid_size;
       // cout << "fn: " << fn << " start: " << start << '\n';
       // print_image(&(inimg1d[start]), grid_size * grid_size);
+      cout << fn << '\n';
+      print_image_3D(&(inimg1d[start]), plane_extents);
 
       { // cv write
         int cv_type = mcp3d::VoxelTypeToCVType(mcp3d::VoxelType::M16U, 1);
