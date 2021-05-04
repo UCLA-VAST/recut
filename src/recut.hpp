@@ -2089,6 +2089,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
     }
 
     this->topology_grid = grids[this->grid_interval_size - 1];
+    set_grid_meta(this->topology_grid, this->image_lengths, 0);
     this->topology_grid->tree().prune();
 
     auto finalize_time = timer->elapsed() - finalize_start;
