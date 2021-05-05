@@ -326,7 +326,7 @@ auto print_marker_3D = [](auto markers, auto interval_lengths,
 template <typename T>
 void print_vdb_mask(T vdb_accessor, const std::vector<VID_t> lengths,
                     const int bkg_thresh = -1) {
-  cout << "Print VDB grid: \n";
+  cout << "print_vdb_mask(): \n";
   for (int z = 0; z < lengths[2]; z++) {
     cout << "y | Z=" << z << '\n';
     for (int x = 0; x < 2 * lengths[0] + 4; x++) {
@@ -1376,8 +1376,8 @@ void write_tiff(uint16_t *inimg1d, std::string base, int grid_size,
       VID_t start = zi * grid_size * grid_size;
       // cout << "fn: " << fn << " start: " << start << '\n';
       // print_image(&(inimg1d[start]), grid_size * grid_size);
-      cout << fn << '\n';
-      print_image_3D(&(inimg1d[start]), plane_extents);
+      //cout << fn << '\n';
+      //print_image_3D(&(inimg1d[start]), plane_extents);
 
       { // cv write
         int cv_type = mcp3d::VoxelTypeToCVType(mcp3d::VoxelType::M16U, 1);
