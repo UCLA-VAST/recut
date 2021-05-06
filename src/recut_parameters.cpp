@@ -53,7 +53,8 @@ void RecutCommandLineArgs::PrintUsage() {
           "default 0 0 0\n";
   cout << "--image-lengths      [-ie] lengths of subvolume, in x y z order "
           "defaults"
-          " to max range from offset start to max length in each axis (-1, -1, -1)\n";
+          " to max range from offset start to max length in each axis (-1, -1, "
+          "-1)\n";
   cout << "--bg-thresh          [-bt] background threshold value desired\n";
   cout << "--fg-percent         [-fp] default 0.01, percent of voxels to be "
           "considered foreground. overrides --bg-thresh\n";
@@ -126,9 +127,9 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
         args.set_swc_path(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--type") == 0) {
-        auto arg = argv[i+1];
+        auto arg = std::string(argv[i + 1]);
         if (arg == "float" || arg == "point") {
-        args.set_type(argv[i + 1]);
+          args.set_type(argv[i + 1]);
         } else {
           cerr << "--type option must be one of [float,point]\n";
           return false;
@@ -213,9 +214,9 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
     }
     // if neither background threshold nor foreground percent given, set
     // foreground percent to 0.01
-    //if (args.recut_parameters().background_thresh() < 0 &&
-        //args.recut_parameters().foreground_percent() < 0)
-      //args.recut_parameters().set_foreground_percent(0.01);
+    // if (args.recut_parameters().background_thresh() < 0 &&
+    // args.recut_parameters().foreground_percent() < 0)
+    // args.recut_parameters().set_foreground_percent(0.01);
     return true;
   } catch (const exception &e) {
     cout << e.what() << '\n';
