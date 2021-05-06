@@ -783,7 +783,7 @@ auto set_grid_meta = [](auto grid, auto lengths, auto bkg_thresh) {
   grid->setName("topology");
   grid->setCreator("recut");
   grid->setIsInWorldSpace(true);
-  // grid->setGridClass(openvdb::GRID_FOG_VOLUME);
+  grid->setGridClass(openvdb::GRID_FOG_VOLUME);
   grid->insertMeta("original_bounding_extent_x",
                    openvdb::FloatMetadata(static_cast<float>(lengths[0])));
   grid->insertMeta("original_bounding_extent_y",
@@ -1287,7 +1287,8 @@ auto convert_buffer_to_vdb_acc =
             auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
             // voxels equal to bkg_thresh are always discarded
             if (val > bkg_thresh) {
-              accessor.setValueOn(xyz);
+              //accessor.setValueOn(xyz);
+              accessor.setValue(xyz, val);
             }
           }
         }

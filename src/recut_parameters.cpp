@@ -25,6 +25,7 @@ string RecutParameters::MetaString() {
 
 void RecutCommandLineArgs::PrintUsage() {
   cout << "Basic usage : recut <image_root_dir> [--seeds <marker_dir>] "
+          "[--type float/point] "
           "[--channel <dir>] "
           "[--convert <vdb_file>] "
           "[--outswc <swc_file>] "
@@ -33,10 +34,10 @@ void RecutCommandLineArgs::PrintUsage() {
           "[--bkg-thresh <int>] [--fg-percent <double>]\n\n";
 
   cout << "<image_root_dir>     directory for input image\n";
-  cout << "--seeds              [-s] directory containing all marker "
-          "files which represent known soma locations\n";
+  cout << "--seeds              files which represent known soma locations\n";
   cout << "--convert            [-cv] convert image file and exit default "
           "out.vdb\n";
+  cout << "--type               VDB input grid type: 'point' or 'float'\n";
   cout << "--max                set max image voxel raw value allowed, "
           "computed automatically when --bg_thresh or --fg-percent are "
           "specified\n";
@@ -123,6 +124,15 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
       } else if (strcmp(argv[i], "--outswc") == 0 ||
                  strcmp(argv[i], "-os") == 0) {
         args.set_swc_path(argv[i + 1]);
+        ++i;
+      } else if (strcmp(argv[i], "--type") == 0) {
+        auto arg = argv[i+1];
+        if (arg == "float" || arg == "point") {
+        args.set_type(argv[i + 1]);
+        } else {
+          cerr << "--type option must be one of [float,point]\n";
+          return false;
+        }
         ++i;
       } else if (strcmp(argv[i], "--channel") == 0 ||
                  strcmp(argv[i], "-c") == 0) {

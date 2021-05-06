@@ -158,9 +158,14 @@ class RecutCommandLineArgs {
     int resolution_level() const { return resolution_level_; }
 
     // setters
+    void set_type(const std::string& type) {
+      type_ = type;
+    }
+
     void set_recut_parameters(RecutParameters &params) {
       recut_parameters_ = params;
     }
+
     void set_image_root_dir(const std::string &image_root_dir) {
       image_root_dir_ = image_root_dir;
     }
@@ -190,9 +195,8 @@ class RecutCommandLineArgs {
     std::vector<MyMarker *> output_tree;
     GridCoord image_offsets, image_lengths;
 
-  private:
     RecutParameters recut_parameters_;
-    std::string image_root_dir_, swc_path_, channel_; 
+    std::string image_root_dir_, swc_path_, channel_, type_; 
     int resolution_level_;
 };
 
