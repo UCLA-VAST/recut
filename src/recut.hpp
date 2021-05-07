@@ -2079,6 +2079,12 @@ Recut<image_t>::update(std::string stage, Container &fifo,
             grids[interval_id] = create_point_grid(
                 positions, this->image_lengths, get_transform(),
                 local_tile_thresholds->bkg_thresh);
+
+            {
+              cout << "validate grid interval id " << interval_id << '\n';
+              validate_grid(grids[interval_id]);
+            }
+
 #ifdef FULL_PRINT
             print_vdb_mask(grids[interval_id]->getConstAccessor(),
                            coord_to_vec(this->image_lengths));
@@ -2107,6 +2113,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
     auto finalize_start = timer->elapsed();
 
     if (args->type_ == "point") {
+
       assertm(params->convert_only_,
               "reduce grids only possible for convert_only stage");
       for (int i = 0; i < (this->grid_interval_size - 1); ++i) {
@@ -2116,10 +2123,21 @@ Recut<image_t>::update(std::string stage, Container &fifo,
         grids[i + 1]->tree().merge(grids[i]->tree(),
                                    vb::MERGE_ACTIVE_STATES_AND_NODES);
       }
-
       this->topology_grid = grids[this->grid_interval_size - 1];
+
+      {
+        cout << "validate merged grid \n";
+        validate_grid(this->topology_grid);
+      }
+
       set_grid_meta(this->topology_grid, this->image_lengths, 0);
       this->topology_grid->tree().prune();
+
+      {
+        cout << "validate pruned grid \n";
+        validate_grid(this->topology_grid);
+      }
+
     } else if (this->args->type_ == "float") {
       set_grid_meta(this->input_grid, this->image_lengths, 0);
       this->input_grid->tree().prune();
@@ -2236,9 +2254,6 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
          ++leaf_iter) {
       auto origin = leaf_iter->getNodeBoundingBox().min();
       auto block_id = coord_img_to_block_id(origin);
-
-      //std::cout << origin << "->" << block_id << '\n';
-      leaf_iter->validateOffsets();
 
       inner[block_id] = std::deque<VertexAttr>();
 
@@ -2758,12 +2773,17 @@ template <class image_t> void Recut<image_t>::operator()() {
     // mutates input_grid
     stage = "convert";
     this->update(stage, map_fifo);
+    openvdb::GridPtrVec grids;
 #ifdef LOG
-    print_grid_metadata(this->input_grid);
+    if (args->type_ == "float") {
+      print_grid_metadata(this->input_grid);
+      grids.push_back(this->input_grid);
+    } else if (args->type_ == "point") {
+      print_grid_metadata(this->topology_grid);
+      grids.push_back(this->topology_grid);
+    }
 #endif
 
-    openvdb::GridPtrVec grids;
-    grids.push_back(this->input_grid);
     write_vdb_file(grids, this->params->out_vdb_);
 
     // no more work to do, exiting

@@ -793,7 +793,6 @@ auto set_grid_meta = [](auto grid, auto lengths, auto bkg_thresh) {
                    openvdb::FloatMetadata(static_cast<float>(lengths[2])));
 
   grid->insertMeta("bkg_thresh", openvdb::FloatMetadata(bkg_thresh));
-  // print_grid_metadata(grid);
 };
 
 auto copy_to_point_grid = [](openvdb::FloatGrid::Ptr other, auto lengths,
@@ -1202,7 +1201,8 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
 RecutCommandLineArgs get_args(int grid_size, int interval_length,
                               int block_size, int slt_pct, int tcase,
                               bool force_regenerate_image = false,
-                              bool input_is_vdb = false, std::string type = "point") {
+                              bool input_is_vdb = false,
+                              std::string type = "point") {
 
   bool print = false;
 
@@ -1808,4 +1808,14 @@ auto get_transform = []() {
                                     VOXEL_SIZE / 2.);
   grid_transform->postTranslate(offset);
   return grid_transform;
+};
+
+// throws if any leaf does not have monotonically increasing offsets or
+// within bounds of attribute arrays
+auto validate_grid = [](EnlargedPointDataGrid::Ptr grid) {
+  // TODO use leafManager and tbb::parallel_for
+  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter;
+       ++leaf_iter) {
+    leaf_iter->validateOffsets();
+  }
 };
