@@ -490,15 +490,15 @@ void Recut<image_t>::activate_vids(
 
     auto temp_coord = new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH);
 
-    //if (block_id == 90219157) {
-      //// Print all active ("on") voxels by means of an iterator.
-      //for (auto iter = leaf_iter->beginIndexOn(); iter; ++iter) {
-        //std::cout << "Grid" << iter.getCoord() << " = " << *iter << '\n';
-      //}
-      //cout << "value iter\n";
-      //for (auto iter = leaf_iter->beginValueOn(); iter; ++iter) {
-        //std::cout << "Grid" << iter.getCoord() << " = " << *iter << '\n';
-      //}
+    // if (block_id == 90219157) {
+    //// Print all active ("on") voxels by means of an iterator.
+    // for (auto iter = leaf_iter->beginIndexOn(); iter; ++iter) {
+    // std::cout << "Grid" << iter.getCoord() << " = " << *iter << '\n';
+    //}
+    // cout << "value iter\n";
+    // for (auto iter = leaf_iter->beginValueOn(); iter; ++iter) {
+    // std::cout << "Grid" << iter.getCoord() << " = " << *iter << '\n';
+    //}
     //}
 
     if (stage == "connected") {
@@ -2075,12 +2075,9 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                                   /*buffer_offsets=*/buffer_offsets,
                                   /*image_offsets=*/interval_offsets, positions,
                                   local_tile_thresholds->bkg_thresh);
-            // grid_transform must use the same voxel size for all intervals
-            // and be identical
-            auto grid_transform =
-                openvdb::math::Transform::createLinearTransform(VOXEL_SIZE);
+
             grids[interval_id] = create_point_grid(
-                positions, this->image_lengths, grid_transform,
+                positions, this->image_lengths, get_transform(),
                 local_tile_thresholds->bkg_thresh);
 #ifdef FULL_PRINT
             print_vdb_mask(grids[interval_id]->getConstAccessor(),
@@ -2109,7 +2106,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   if (stage == "convert") {
     auto finalize_start = timer->elapsed();
 
-    if (args->type_ == "points") {
+    if (args->type_ == "point") {
       assertm(params->convert_only_,
               "reduce grids only possible for convert_only stage");
       for (int i = 0; i < (this->grid_interval_size - 1); ++i) {
@@ -2123,7 +2120,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
       this->topology_grid = grids[this->grid_interval_size - 1];
       set_grid_meta(this->topology_grid, this->image_lengths, 0);
       this->topology_grid->tree().prune();
-    } else {
+    } else if (this->args->type_ == "float") {
       set_grid_meta(this->input_grid, this->image_lengths, 0);
       this->input_grid->tree().prune();
     }
@@ -2131,7 +2128,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
     auto finalize_time = timer->elapsed() - finalize_start;
     computation_time = computation_time + finalize_time;
 #ifdef LOG
-    cout << "Grid join time: " << finalize_time << " s\n";
+    cout << "Grid finalize time: " << finalize_time << " s\n";
 #endif
   } else {
 #ifdef RV
@@ -2307,21 +2304,29 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     auto timer = new high_resolution_timer();
     auto base_grid = read_vdb_file(args->image_root_dir(), grid_name);
 
+#ifdef LOG
+    cout << "VDB input type " << this->args->type_ << '\n';
+#endif
+
     if (this->args->type_ == "float") {
       this->input_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
-      this->topology_grid = EnlargedPointDataGrid::create();
-    } else {
+      // copy topology (bit-mask actives) to the topology grid
+      this->topology_grid =
+          copy_to_point_grid(this->input_grid, input_image_lengths, this->params->background_thresh());
+      auto [lengths, bkg_thresh] = get_metadata(input_grid);
+      input_image_lengths = lengths;
+    } else if (this->args->type_ == "point") {
       this->topology_grid =
           openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
       append_attributes(this->topology_grid);
+      auto [lengths, bkg_thresh] = get_metadata(topology_grid);
+      input_image_lengths = lengths;
       // ignore input grid
     }
 
 #ifdef LOG
     cout << "Read grid in: " << timer->elapsed() << " s\n";
 #endif
-
-    input_image_lengths = get_grid_original_lengths(topology_grid);
 
   } else {
     // read from image use mcp3d library
@@ -2351,10 +2356,10 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     // reverse mcp3d's z y x order for offsets and lengths
     input_image_lengths = new_grid_coord(temp[2], temp[1], temp[0]);
 
-    // FIXME remove this, don't require
+    // FIXME remove this, don't necessarily require
     if (args->type_ == "float") {
       this->input_grid = openvdb::FloatGrid::create();
-    } else {
+    } else if (args->type_ == "point") {
       this->topology_grid = create_vdb_grid(input_image_lengths);
       append_attributes(this->topology_grid);
     }

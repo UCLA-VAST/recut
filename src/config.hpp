@@ -23,12 +23,15 @@ using GridCoord = openvdb::Coord;
 // integer positions get cast to floats, half and doubles positions is
 // acceptable
 using PositionT = openvdb::Vec3f; // equiv. to Vec3s, both are <float>
+using FPCodec = openvdb::points::FixedPointCodec</*1-byte=*/true,
+                                                 openvdb::points::UnitRange>;
 
 namespace vb = openvdb::v8_1;
 namespace vt = openvdb::tree;
 namespace vto = openvdb::tools;
 namespace vp = vb::points;
 
+#define VOXEL_POINTS 1
 #define VOXEL_SIZE 1
 #define LEAF_LOG2DIM 3
 #define INTER1_LOG2DIM 4
@@ -42,8 +45,7 @@ namespace vp = vb::points;
 // Length of a bound box edge in one dimension in image index space / world
 // space units
 constexpr int LEAF_LENGTH = VOXEL_SIZE * (1 << LEAF_LOG2DIM);
-constexpr int INTER1_LENGTH =
-    LEAF_LENGTH * (1 << INTER1_LOG2DIM);
+constexpr int INTER1_LENGTH = LEAF_LENGTH * (1 << INTER1_LOG2DIM);
 // equivalent:
 // EnlargedPointDataGrid::TreeType::LeafNodeType::DIM == LEAF_LENGTH
 
@@ -52,18 +54,18 @@ using PointInternalNode1 = typename vt::InternalNode<PointLeaf, INTER1_LOG2DIM>;
 using PointTree = typename vt::Tree<
     vt::RootNode<vt::InternalNode<PointInternalNode1, INTER2_LOG2DIM>>>;
 using EnlargedPointDataGrid = typename openvdb::Grid<PointTree>;
-//using EnlargedPointDataGrid = openvdb::Grid<vp::PointDataTree>;
-//using EnlargedPointDataGrid = vp::PointDataGrid;
+// using EnlargedPointDataGrid = openvdb::Grid<vp::PointDataTree>;
+// using EnlargedPointDataGrid = vp::PointDataGrid;
 using UpdateGrid = openvdb::BoolGrid;
 using UpdateLeaf = UpdateGrid::TreeType::LeafNodeType;
 
-//using EnlargedPointIndexGrid = typename openvdb::Grid<
-    //openvdb::tree::Tree<openvdb::tree::RootNode<openvdb::tree::InternalNode<
-        //openvdb::tree::InternalNode<openvdb::tools::PointIndexLeafNode<
-                                        //openvdb::PointIndex32, LEAF_LOG2DIM>,
-                                    //INTER1_LOG2DIM>,
-        //INTER2_LOG2DIM>>>>;
-//using EnlargedPointIndexGrid = openvdb::Grid<vp::PointIndexTree>;
+// using EnlargedPointIndexGrid = typename openvdb::Grid<
+// openvdb::tree::Tree<openvdb::tree::RootNode<openvdb::tree::InternalNode<
+// openvdb::tree::InternalNode<openvdb::tools::PointIndexLeafNode<
+// openvdb::PointIndex32, LEAF_LOG2DIM>,
+// INTER1_LOG2DIM>,
+// INTER2_LOG2DIM>>>>;
+// using EnlargedPointIndexGrid = openvdb::Grid<vp::PointIndexTree>;
 using EnlargedPointIndexGrid = vto::PointIndexGrid;
 
 #else // not VDB
@@ -71,8 +73,8 @@ using OffsetCoord = std::vector<int8_t>;
 using GridCoord = std::vector<int32_t>;
 #endif
 
-// Set the pruning / coverage semantics by defining what adjacent hop count 
-// qualifies as covering its neighbor. 
+// Set the pruning / coverage semantics by defining what adjacent hop count
+// qualifies as covering its neighbor.
 // depending on your prune semantics a radius of 1 may cover its neighbor
 // therefore account for this by subtracting 1 from all radii values
 // open accumulate_prune function, if a neighbor has a radius of 1 or greater

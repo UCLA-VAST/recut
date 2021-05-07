@@ -324,7 +324,7 @@ auto print_marker_3D = [](auto markers, auto interval_lengths,
 
 // only values strictly greater than bkg_thresh are valid
 template <typename T>
-void print_vdb_mask(T vdb_accessor, const std::vector<VID_t> lengths,
+void print_vdb_mask(T vdb_accessor, const GridCoord lengths,
                     const int bkg_thresh = -1) {
   cout << "print_vdb_mask(): \n";
   for (int z = 0; z < lengths[2]; z++) {
@@ -573,7 +573,7 @@ auto print_all_points = [](auto grid, openvdb::math::CoordBBox bbox,
 };
 
 template <typename T>
-void print_image_3D(T *inimg1d, std::vector<VID_t> interval_lengths,
+void print_image_3D(const T *inimg1d, const GridCoord interval_lengths,
                     const T bkg_thresh = 0) {
   cout << "Print image 3D:\n";
   for (int zi = 0; zi < interval_lengths[2]; zi++) {
@@ -736,7 +736,8 @@ template <typename T> void print_grid_metadata(T vdb_grid) {
   // stats need to be refreshed manually after any changes with addStatsMetadata
   vdb_grid->addStatsMetadata();
 
-  print_descriptor(vdb_grid);
+  if (std::is_same<T, EnlargedPointDataGrid::Ptr>::value)
+    print_descriptor(vdb_grid);
 
   auto mem_usage_bytes = vdb_grid->memUsage();
   auto active_voxel_dim = vdb_grid->evalActiveVoxelDim();
@@ -795,6 +796,52 @@ auto set_grid_meta = [](auto grid, auto lengths, auto bkg_thresh) {
   // print_grid_metadata(grid);
 };
 
+auto copy_to_point_grid = [](openvdb::FloatGrid::Ptr other, auto lengths,
+                             float bkg_thresh = 0.) {
+
+  // Use the topology to create a PointDataTree
+  vp::PointDataTree::Ptr pointTree(
+      new vp::PointDataTree(other->tree(), 0,
+                                         openvdb::TopologyCopy()));
+
+  // Ensure all tiles have been voxelized
+  pointTree->voxelizeActiveTiles();
+
+  using PositionAttribute = openvdb::points::TypedAttributeArray<
+      PositionT, FPCodec>;
+
+  openvdb::NamePair positionType = PositionAttribute::attributeType();
+  // Create a new Attribute Descriptor with position only
+  openvdb::points::AttributeSet::Descriptor::Ptr descriptor(
+      openvdb::points::AttributeSet::Descriptor::create(positionType));
+
+  // Determine the number of points / voxel and points / leaf.
+  openvdb::Index leaf_voxels =
+      EnlargedPointDataGrid::TreeType::LeafNodeType::SIZE;
+  openvdb::Index leaf_points = VOXEL_POINTS * leaf_voxels;
+
+  // Iterate over the leaf nodes in the point tree.
+  for (auto leafIter = pointTree->beginLeaf(); leafIter; ++leafIter) {
+    // Initialize the attributes using the descriptor and point count.
+    leafIter->initializeAttributes(descriptor, leaf_points);
+
+    //// Initialize the voxel offsets
+    //openvdb::Index offset(0);
+    //for (openvdb::Index index = 0; index < leaf_voxels; ++index) {
+      //offset += VOXEL_POINTS;
+      //leafIter->setOffsetOn(index, offset);
+    //}
+  }
+
+  auto grid = EnlargedPointDataGrid::create(pointTree);
+
+  grid->tree().prune();
+
+  set_grid_meta(grid, lengths, bkg_thresh);
+
+  return grid;
+};
+
 auto create_point_grid = [](auto &positions, auto lengths, auto transform_ptr,
                             float bkg_thresh = 0.) {
   // The VDB Point-Partioner is used when bucketing points and requires a
@@ -803,14 +850,6 @@ auto create_point_grid = [](auto &positions, auto lengths, auto transform_ptr,
   // write one for a custom data structure in order to match the interface
   // required.
   vp::PointAttributeVector<PositionT> wrapper(positions);
-
-  // Create a PointDataGrid containing these four points and using the
-  // transform given. This function has two template parameters, (1) the codec
-  // to use for storing the position, (2) the grid we want to create
-  // (ie a PointDataGrid).
-  // We use no compression here for the positions.
-  using FPCodec = openvdb::points::FixedPointCodec</*1-byte=*/true,
-                                                   openvdb::points::UnitRange>;
 
   auto point_index_grid = vto::createPointIndexGrid<EnlargedPointIndexGrid>(
       wrapper, *transform_ptr);
@@ -833,8 +872,9 @@ auto create_vdb_grid = [](auto lengths, float bkg_thresh = 0.) {
   return topology_grid;
 };
 
-template <typename T> GridCoord get_grid_original_lengths(T vdb_grid) {
+auto get_metadata = [](auto vdb_grid) -> std::pair<GridCoord, float> {
   GridCoord image_lengths(0, 0, 0);
+  float bkg_thresh = 0; // default value if not found acceptable
   for (openvdb::MetaMap::MetaIterator iter = vdb_grid->beginMeta();
        iter != vdb_grid->endMeta(); ++iter) {
     // name and val
@@ -847,10 +887,12 @@ template <typename T> GridCoord get_grid_original_lengths(T vdb_grid) {
       image_lengths[1] = static_cast<openvdb::FloatMetadata &>(*value).value();
     } else if (name == "original_bounding_extent_z") {
       image_lengths[2] = static_cast<openvdb::FloatMetadata &>(*value).value();
+    } else if (name == "bkg_thresh") {
+      bkg_thresh = static_cast<openvdb::FloatMetadata &>(*value).value();
     }
   }
-  return image_lengths;
-}
+  return std::pair(image_lengths, bkg_thresh);
+};
 
 auto append_attributes = [](auto grid) {
   // Append a "radius" attribute to the grid to hold the radius.
@@ -1287,7 +1329,7 @@ auto convert_buffer_to_vdb_acc =
             auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
             // voxels equal to bkg_thresh are always discarded
             if (val > bkg_thresh) {
-              //accessor.setValueOn(xyz);
+              // accessor.setValueOn(xyz);
               accessor.setValue(xyz, val);
             }
           }
@@ -1300,9 +1342,9 @@ auto convert_buffer_to_vdb = [](auto buffer, GridCoord buffer_lengths,
                                 GridCoord buffer_offsets,
                                 GridCoord image_offsets, auto &positions,
                                 auto bkg_thresh = 0) {
-   print_coord(buffer_lengths, "buffer_lengths");
-   print_coord(buffer_offsets, "buffer_offsets");
-   print_coord(image_offsets, "image_offsets");
+  print_coord(buffer_lengths, "buffer_lengths");
+  print_coord(buffer_offsets, "buffer_offsets");
+  print_coord(image_offsets, "image_offsets");
   for (auto z : rng::views::iota(0, buffer_lengths[2])) {
     for (auto y : rng::views::iota(0, buffer_lengths[1])) {
       for (auto x : rng::views::iota(0, buffer_lengths[0])) {
@@ -1360,7 +1402,8 @@ void write_tiff(uint16_t *inimg1d, std::string base, int grid_size,
 #endif
 
   base = base + "/ch0";
-  std::vector<VID_t> plane_extents{static_cast<VID_t>(grid_size), static_cast<VID_t>(grid_size), 1};
+  std::vector<VID_t> plane_extents{static_cast<VID_t>(grid_size),
+                                   static_cast<VID_t>(grid_size), 1};
   if (!fs::exists(base) || rerun) {
     fs::remove_all(base); // make sure it's an overwrite
     if (print)
@@ -1377,8 +1420,8 @@ void write_tiff(uint16_t *inimg1d, std::string base, int grid_size,
       VID_t start = zi * grid_size * grid_size;
       // cout << "fn: " << fn << " start: " << start << '\n';
       // print_image(&(inimg1d[start]), grid_size * grid_size);
-      //cout << fn << '\n';
-      //print_image_3D(&(inimg1d[start]), plane_extents);
+      // cout << fn << '\n';
+      // print_image_3D(&(inimg1d[start]), plane_extents);
 
       { // cv write
         int cv_type = mcp3d::VoxelTypeToCVType(mcp3d::VoxelType::M16U, 1);
@@ -1751,3 +1794,16 @@ auto print_vertex_swc = [](GridCoord &coord, const struct VertexAttr &current,
     std::cout << line.str();
   }
 };
+
+auto get_transform = []() {
+  // grid_transform must use the same voxel size for all intervals
+  // and be identical
+  auto grid_transform =
+      openvdb::math::Transform::createLinearTransform(VOXEL_SIZE);
+  // The offset to cell-center points
+  const openvdb::math::Vec3d offset(VOXEL_SIZE / 2., VOXEL_SIZE / 2.,
+                                    VOXEL_SIZE / 2.);
+  //grid_transform->postTranslate(offset);
+  return grid_transform;
+};
+

@@ -279,7 +279,7 @@ void check_image_equality(uint16_t *inimg1d, uint16_t *check, int grid_size) {
 TEST(VDB, InitializeGlobals) {
   // make big enough such that you have at least 2 blocks across each dim
   VID_t grid_size = 16;
-  auto grid_extents = std::vector<VID_t>(3, grid_size);
+  auto grid_extents = GridCoord(grid_size);
   auto tcase = 7;
   double slt_pct = 100;
   bool print_all = true;
@@ -357,7 +357,7 @@ TEST(VDB, UpdateSemantics) {
 TEST(VDB, IntegrateUpdateGrid) {
   // just large enough for a central block and surrounding blocks
   VID_t grid_size = 24;
-  auto grid_extents = std::vector<VID_t>(3, grid_size);
+  auto grid_extents = GridCoord(grid_size);
   // do no use tcase 4 since it is randomized and will not match
   // for the second read test
   auto tcase = 7;
@@ -447,13 +447,11 @@ TEST(VDB, CreatePointDataGrid) {
   auto loc1v = openvdb::Coord(loc1[0], loc1[1], loc1[2]);
   auto pos = 8192;
   auto loc2 = PositionT(pos, pos, pos);
-  auto grid_transform =
-      openvdb::math::Transform::createLinearTransform(VOXEL_SIZE);
 
   {
     std::vector<PositionT> positions;
     positions.push_back(loc1);
-    auto grid = create_point_grid(positions, lengths, grid_transform);
+    auto grid = create_point_grid(positions, lengths, get_transform());
     auto points_tree = grid->tree();
     // Create a leaf iterator for the PointDataTree.
     auto leafIter = points_tree.beginLeaf();
@@ -473,7 +471,7 @@ TEST(VDB, CreatePointDataGrid) {
   {
     std::vector<PositionT> positions;
     positions.push_back(loc2);
-    auto grid = create_point_grid(positions, lengths, grid_transform);
+    auto grid = create_point_grid(positions, lengths, get_transform());
     grids[1] = grid;
     // grids.push_back(grid);
   }
@@ -505,7 +503,7 @@ TEST(VDB, CreatePointDataGrid) {
 
 TEST(VDB, ActivateVids) {
   VID_t grid_size = 8;
-  auto grid_extents = std::vector<VID_t>(3, grid_size);
+  auto grid_extents = GridCoord(grid_size);
   auto tcase = 7;
   double slt_pct = 100;
   bool print_all = false;
@@ -551,7 +549,7 @@ TEST(VDB, ActivateVids) {
 
 TEST(VDB, Connected) {
   VID_t grid_size = 8;
-  auto grid_extents = std::vector<VID_t>(3, grid_size);
+  auto grid_extents = GridCoord(grid_size);
   // do no use tcase 4 since it is randomized and will not match
   // for the second read test
   auto tcase = 7;
@@ -606,7 +604,7 @@ TEST(VDB, Connected) {
 
 TEST(VDBWriteOnly, DISABLED_Any) {
   VID_t grid_size = 8;
-  auto grid_extents = std::vector<VID_t>(3, grid_size);
+  auto grid_extents = GridCoord(grid_size);
   // do no use tcase 4 since it is randomized and will not match
   // for the second read test
   auto tcase = 7;
@@ -643,7 +641,7 @@ TEST(VDBWriteOnly, DISABLED_Any) {
 TEST(VDB, Convert) {
   VID_t grid_size = 8;
   VID_t interval_size = 8;
-  auto grid_extents = std::vector<VID_t>(3, grid_size);
+  GridCoord grid_extents(grid_size);
   // do no use tcase 4 since it is randomized and will not match
   // for the second read test
   auto tcase = 7;
@@ -755,10 +753,10 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
   // std::vector<double> selected_percents = {.1, .5, 1, 10, 50, 100};
 
   std::vector<int> no_offsets{0, 0, 0};
-  auto print = true;
+  auto print = false;
 
   for (auto &grid_size : grid_sizes) {
-    auto grid_extents = new_grid_coord(grid_size, grid_size, grid_size);
+    auto grid_extents = GridCoord(grid_size);
     if (print)
       cout << "Create grids of " << grid_size << endl;
     auto root_vid = get_central_vid(grid_size);
@@ -846,39 +844,55 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
           ASSERT_NEAR(actual_slt_pct, slt_pct, 100 * EXP_DEV_LOW);
         }
 
-        //auto topology_grid = create_vdb_grid(grid_extents, 0);
-        //convert_buffer_to_vdb_acc(inimg1d, grid_extents, zeros(), zeros(),
-                                  //topology_grid->getAccessor(), 0);
-        //print_grid_metadata(topology_grid); // already in create_point_grid
+        // auto topology_grid = create_vdb_grid(grid_extents, 0);
+        auto float_grid = openvdb::FloatGrid::create();
+        convert_buffer_to_vdb_acc(inimg1d, grid_extents, zeros(), zeros(),
+                                  float_grid->getAccessor(), 0);
+        set_grid_meta(float_grid, grid_extents, bkg_thresh);
+        if (print) {
+          // print_grid_metadata(float_grid); // already in create_point_grid
+          cout << "float grid\n";
+          print_vdb_mask(float_grid->getConstAccessor(), grid_extents);
+        }
 
-         auto grid_transform =
-         openvdb::math::Transform::createLinearTransform(VOXEL_SIZE);
-         std::vector<PositionT> positions;
-         convert_buffer_to_vdb(inimg1d, grid_extents, zeros(), zeros(),
-         positions, 0);
-         auto topology_grid =
-         create_point_grid(positions, grid_extents, grid_transform);
+        auto point_grid =
+            copy_to_point_grid(float_grid, grid_extents, bkg_thresh);
+        if (print) {
+          cout << "point grid\n";
+          print_vdb_mask(point_grid->getConstAccessor(), grid_extents);
+          for (auto iter = point_grid->cbeginValueOn(); iter; ++iter) {
+            std::cout << "Grid " << iter.getCoord() << " = " << *iter
+                      << std::endl;
+          }
+        }
+
+        // check transferring metadata from one grid to another
+        auto [lengths, bt] = get_metadata(point_grid);
+        print_grid_metadata(point_grid); // already in create_point_grid
+        ASSERT_EQ(bt, bkg_thresh);
+        ASSERT_EQ(lengths[0], grid_extents[0]);
+        ASSERT_EQ(lengths[1], grid_extents[1]);
+        ASSERT_EQ(lengths[2], grid_extents[2]);
+
+        std::vector<PositionT> positions;
+        convert_buffer_to_vdb(inimg1d, grid_extents, zeros(), zeros(),
+                              positions, 0);
+        auto topology_grid =
+            create_point_grid(positions, grid_extents, get_transform());
 
         std::cout << "created vdb grid\n";
 
         topology_grid->tree().prune();
 
         if (print) {
-          print_vdb_mask(topology_grid->getConstAccessor(),
-                         coord_to_vec(grid_extents));
-
-          // Print all active ("on") voxels by means of an iterator.
-          for (auto iter = topology_grid->cbeginValueOn(); iter; ++iter) {
-            std::cout << "Grid" << iter.getCoord() << " = " << *iter
-                      << std::endl;
-          }
+          print_vdb_mask(topology_grid->getConstAccessor(), grid_extents);
 
           // print_all_points(
           // topology_grid,
           // openvdb::math::CoordBBox(
           // zeros(), grid_extents));
 
-          // print_image_3D(inimg1d, coord_to_vec(grid_extents));
+          // print_image_3D(inimg1d, grid_extents);
         }
 
 #ifdef USE_MCP3D
@@ -899,7 +913,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
 #ifdef USE_MCP3D
 TEST(Install, ImageReadWrite) {
   auto grid_size = 2;
-  auto grid_extents = std::vector<VID_t>(3, grid_size);
+  auto grid_extents = GridCoord(grid_size);
   auto tcase = 7;
   double slt_pct = 100;
   auto lengths = new_grid_coord(grid_size, grid_size, grid_size);
@@ -909,8 +923,8 @@ TEST(Install, ImageReadWrite) {
   std::string fn(get_data_dir());
   // Warning: do not use directory names postpended with slash
   fn = fn + "/test_images/ReadWriteTest";
-  auto image_lengths = std::vector<int>(3, grid_size);
-  auto image_offsets = std::vector<int>(3, 0);
+  auto image_lengths = GridCoord(grid_size);
+  auto image_offsets = GridCoord(0);
 
   VID_t selected = tol_sz; // for tcase 4
   uint16_t *inimg1d = new uint16_t[tol_sz];
@@ -957,7 +971,7 @@ TEST(VertexAttr, Defaults) {
 
 TEST(TileThresholds, AllTcases) {
   VID_t grid_size = 4;
-  auto grid_extents = std::vector<VID_t>(3, grid_size);
+  auto grid_extents = GridCoord(grid_size);
   auto slt_pct = 50;
   auto grid_vertex_size = grid_size * grid_size * grid_size;
   auto print_image = false;
@@ -1040,7 +1054,7 @@ TEST(CompareTree, All) {
   std::vector<MyMarker *> truth;
   std::vector<MyMarker *> check;
   VID_t grid_size = 4;
-  auto grid_extents = std::vector<VID_t>(3, grid_size);
+  auto grid_extents = GridCoord(grid_size);
   auto interval_size = grid_size;
   VID_t block_size = 2;
 
@@ -1334,9 +1348,9 @@ TEST(Update, EachStageIteratively) {
               (grid_size == interval_size) && (grid_size == block_size) ? true
                                                                         : false;
           for (auto &tcase : tcases) {
-            auto grid_extents = std::vector<VID_t>(3, grid_size);
-            auto interval_extents = std::vector<VID_t>(3, interval_size);
-            auto block_extents = std::vector<VID_t>(3, block_size);
+            GridCoord grid_extents(grid_size);
+            GridCoord interval_extents(interval_size);
+            GridCoord block_extents(block_size);
 
             // Create ground truth refence for the rest of the loop body
             auto ground_truth_args =
@@ -1791,9 +1805,9 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 #endif
   bool prune = false;
   std::string stage;
-  auto grid_extents = std::vector<VID_t>(3, grid_size);
-  auto interval_extents = std::vector<VID_t>(3, interval_size);
-  auto block_extents = std::vector<VID_t>(3, block_size);
+  auto grid_extents = GridCoord(grid_size);
+  auto interval_extents = GridCoord(interval_size);
+  auto block_extents = GridCoord(block_size);
 
   // shared params
   // generate image so that you can read it below
