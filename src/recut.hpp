@@ -426,14 +426,12 @@ void Recut<image_t>::activate_vids(
   auto root_coords = ids_to_coords(roots, this->image_lengths);
   this->active_intervals[0] = true;
 
-  // vp::AttributeSet::Descriptor::create(vp::TypedAttributeArray<>);
-
   // Iterate over leaf nodes that contain topology (active)
   // checking for roots within them
   for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
     auto leaf_bbox = leaf_iter->getNodeBoundingBox();
     auto block_id = this->coord_img_to_block_id(leaf_bbox.min());
-    std::cout << "Leaf " << block_id << " BBox: " << leaf_bbox << '\n';
+    //std::cout << "Leaf " << block_id << " BBox: " << leaf_bbox << '\n';
 
     // FILTER for those in this leaf
     // auto leaf_roots = remove_outside_bound(roots, leaf_bbox) |
@@ -476,11 +474,8 @@ void Recut<image_t>::activate_vids(
     // Create a read-only AttributeHandle. Position always uses Vec3f.
     openvdb::points::AttributeHandle<PositionT> position_handle(array);
 
-    auto flags_handle = *vp::AttributeWriteHandle<uint8_t>::create(
-        leaf_iter->attributeArray("flags"));
-
-    // openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
-    // leaf_iter->attributeArray("flags"));
+     openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
+     leaf_iter->attributeArray("flags"));
 
     openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
         leaf_iter->attributeArray("parents"));
@@ -490,33 +485,11 @@ void Recut<image_t>::activate_vids(
 
     auto temp_coord = new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH);
 
-    // if (block_id == 90219157) {
-    //// Print all active ("on") voxels by means of an iterator.
-    // for (auto iter = leaf_iter->beginIndexOn(); iter; ++iter) {
-    // std::cout << "Grid" << iter.getCoord() << " = " << *iter << '\n';
-    //}
-    // cout << "value iter\n";
-    // for (auto iter = leaf_iter->beginValueOn(); iter; ++iter) {
-    // std::cout << "Grid" << iter.getCoord() << " = " << *iter << '\n';
-    //}
-    //}
-
     if (stage == "connected") {
 
       rng::for_each(leaf_roots, [&](auto coord) {
-        cout << '\n';
         auto ind = leaf_iter->beginIndexVoxel(coord);
-        cout << coord << '\n';
-        cout << leaf_iter->isValueOn(coord) << '\n';
-        cout << ind << '\n';
-        cout << "size: " << flags_handle.size() << '\n';
-        cout << "stride: " << flags_handle.stride() << '\n';
-        // cout << "total size: " << flags_handle.dataSize() << '\n';
-        // assertm(leaf_iter->isValueOn(coord) == ind, "don't match");
         if (ind) {
-          cout << *ind << '\n';
-          cout << '\n';
-          cout << "pos: " << position_handle.get(*ind) << '\n';
           // place a root with proper vid and parent of itself
           // set flags as root
           set_selected(flags_handle, ind);
