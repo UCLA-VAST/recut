@@ -798,17 +798,15 @@ auto set_grid_meta = [](auto grid, auto lengths, auto bkg_thresh) {
 
 auto copy_to_point_grid = [](openvdb::FloatGrid::Ptr other, auto lengths,
                              float bkg_thresh = 0.) {
-
   // Use the topology to create a PointDataTree
   vp::PointDataTree::Ptr pointTree(
-      new vp::PointDataTree(other->tree(), 0,
-                                         openvdb::TopologyCopy()));
+      new vp::PointDataTree(other->tree(), 0, openvdb::TopologyCopy()));
 
   // Ensure all tiles have been voxelized
   pointTree->voxelizeActiveTiles();
 
-  using PositionAttribute = openvdb::points::TypedAttributeArray<
-      PositionT, FPCodec>;
+  using PositionAttribute =
+      openvdb::points::TypedAttributeArray<PositionT, FPCodec>;
 
   openvdb::NamePair positionType = PositionAttribute::attributeType();
   // Create a new Attribute Descriptor with position only
@@ -826,10 +824,10 @@ auto copy_to_point_grid = [](openvdb::FloatGrid::Ptr other, auto lengths,
     leafIter->initializeAttributes(descriptor, leaf_points);
 
     //// Initialize the voxel offsets
-    //openvdb::Index offset(0);
-    //for (openvdb::Index index = 0; index < leaf_voxels; ++index) {
-      //offset += VOXEL_POINTS;
-      //leafIter->setOffsetOn(index, offset);
+    // openvdb::Index offset(0);
+    // for (openvdb::Index index = 0; index < leaf_voxels; ++index) {
+    // offset += VOXEL_POINTS;
+    // leafIter->setOffsetOn(index, offset);
     //}
   }
 
@@ -1204,11 +1202,12 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
 RecutCommandLineArgs get_args(int grid_size, int interval_length,
                               int block_size, int slt_pct, int tcase,
                               bool force_regenerate_image = false,
-                              bool input_is_vdb = false) {
+                              bool input_is_vdb = false, std::string type = "point") {
 
   bool print = false;
 
   RecutCommandLineArgs args;
+  args.type_ = type;
   auto params = args.recut_parameters();
   auto str_path = get_data_dir();
   params.set_marker_file_path(
@@ -1261,7 +1260,11 @@ RecutCommandLineArgs get_args(int grid_size, int interval_length,
         str_path + "/test_images/" + std::to_string(grid_size) + "/tcase" +
         std::to_string(tcase) + "/slt_pct" + std::to_string(slt_pct);
     if (input_is_vdb) {
-      args.set_image_root_dir(image_root_dir + "/topology.vdb");
+      if (args.type_ == "point") {
+        args.set_image_root_dir(image_root_dir + "/point.vdb");
+      } else if (args.type_ == "float") {
+        args.set_image_root_dir(image_root_dir + "/float.vdb");
+      }
     } else {
       args.set_image_root_dir(image_root_dir);
     }
@@ -1803,7 +1806,6 @@ auto get_transform = []() {
   // The offset to cell-center points
   const openvdb::math::Vec3d offset(VOXEL_SIZE / 2., VOXEL_SIZE / 2.,
                                     VOXEL_SIZE / 2.);
-  //grid_transform->postTranslate(offset);
+  grid_transform->postTranslate(offset);
   return grid_transform;
 };
-

@@ -2215,19 +2215,19 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
 
   auto timer = new high_resolution_timer();
 
-  auto is_boundary = [](auto coord) {
-    for (int i = 0; i < 3; ++i) {
-      if (coord[i]) {
-        if (coord[i] == (LEAF_LENGTH - 1))
-          return true;
-      } else {
-        return true;
-      }
-    }
-    return false;
-  };
-
   if (!params->convert_only_) {
+
+    auto is_boundary = [](auto coord) {
+      for (int i = 0; i < 3; ++i) {
+        if (coord[i]) {
+          if (coord[i] == (LEAF_LENGTH - 1))
+            return true;
+        } else {
+          return true;
+        }
+      }
+      return false;
+    };
 
     std::map<VID_t, std::deque<VertexAttr>> inner;
     VID_t interval_id = 0;
@@ -2236,7 +2236,10 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
          ++leaf_iter) {
       auto origin = leaf_iter->getNodeBoundingBox().min();
       auto block_id = coord_img_to_block_id(origin);
-      // std::cout << origin << "->" << block_id << '\n';
+
+      //std::cout << origin << "->" << block_id << '\n';
+      leaf_iter->validateOffsets();
+
       inner[block_id] = std::deque<VertexAttr>();
 
       // every topology_grid leaf must have a corresponding leaf explicitly
@@ -2312,7 +2315,8 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
       this->input_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
       // copy topology (bit-mask actives) to the topology grid
       this->topology_grid =
-          copy_to_point_grid(this->input_grid, input_image_lengths, this->params->background_thresh());
+          copy_to_point_grid(this->input_grid, input_image_lengths,
+                             this->params->background_thresh());
       auto [lengths, bkg_thresh] = get_metadata(input_grid);
       input_image_lengths = lengths;
     } else if (this->args->type_ == "point") {

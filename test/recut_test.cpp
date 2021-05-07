@@ -46,9 +46,7 @@ void check_recut_error(Recut<uint16_t> &recut, DataType *ground_truth,
                        bool strict_match = true) {
   auto tol_sz = static_cast<VID_t>(grid_size) * grid_size * grid_size;
 
-#ifdef USE_VDB
   auto vdb_accessor = recut.topology_grid->getAccessor();
-#endif
 
   double error_sum = 0.0;
   VID_t total_valid = 0;
@@ -235,8 +233,6 @@ void check_image_equality(uint16_t *inimg1d, uint16_t *check, int grid_size) {
     ASSERT_EQ(inimg1d[i], check[i]);
   }
 }
-
-#ifdef USE_VDB
 
 // template <typename image_t> struct WriteValueOp {
 
@@ -726,7 +722,6 @@ TEST(VDB, Convert) {
     ASSERT_NEAR(read_from_file_error_rate, 0., NUMERICAL_ERROR);
   }
 }
-#endif // USE_VDB
 
 /*
  * Create the desired markers (seed locations) and images to be used by other
@@ -806,14 +801,13 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         // record the root
         write_marker(x, y, z, fn_marker);
 
-        auto fn = base + "/test_images/";
-        fn = fn + std::to_string(grid_size);
-        fn = fn + "/tcase";
-        fn = fn + std::to_string(tcase);
-        fn = fn + delim;
-        fn = fn + "slt_pct";
-        fn = fn + std::to_string((int)slt_pct);
-        // fn = fn + delim;
+        auto image_dir = base + "/test_images/";
+        image_dir = image_dir + std::to_string(grid_size);
+        image_dir = image_dir + "/tcase";
+        image_dir = image_dir + std::to_string(tcase);
+        image_dir = image_dir + delim;
+        image_dir = image_dir + "slt_pct";
+        image_dir = image_dir + std::to_string((int)slt_pct);
 
         VID_t desired_selected;
         desired_selected = tol_sz * (slt_pct / (float)100); // for tcase 4
@@ -855,24 +849,16 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
           print_vdb_mask(float_grid->getConstAccessor(), grid_extents);
         }
 
-        auto point_grid =
-            copy_to_point_grid(float_grid, grid_extents, bkg_thresh);
-        if (print) {
-          cout << "point grid\n";
-          print_vdb_mask(point_grid->getConstAccessor(), grid_extents);
-          for (auto iter = point_grid->cbeginValueOn(); iter; ++iter) {
-            std::cout << "Grid " << iter.getCoord() << " = " << *iter
-                      << std::endl;
-          }
-        }
-
-        // check transferring metadata from one grid to another
-        auto [lengths, bt] = get_metadata(point_grid);
-        print_grid_metadata(point_grid); // already in create_point_grid
-        ASSERT_EQ(bt, bkg_thresh);
-        ASSERT_EQ(lengths[0], grid_extents[0]);
-        ASSERT_EQ(lengths[1], grid_extents[1]);
-        ASSERT_EQ(lengths[2], grid_extents[2]);
+        // auto point_grid =
+        // copy_to_point_grid(float_grid, grid_extents, bkg_thresh);
+        // if (print) {
+        // cout << "point grid\n";
+        // print_vdb_mask(point_grid->getConstAccessor(), grid_extents);
+        // for (auto iter = point_grid->cbeginValueOn(); iter; ++iter) {
+        // std::cout << "Grid " << iter.getCoord() << " = " << *iter
+        //<< std::endl;
+        //}
+        //}
 
         std::vector<PositionT> positions;
         convert_buffer_to_vdb(inimg1d, grid_extents, zeros(), zeros(),
@@ -896,17 +882,46 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         }
 
 #ifdef USE_MCP3D
-        write_tiff(inimg1d, fn, grid_size);
+        write_tiff(inimg1d, image_dir, grid_size);
 #endif
 
-        openvdb::GridPtrVec grids;
-        grids.push_back(topology_grid);
-        fn = fn + "/topology.vdb";
-        write_vdb_file(grids, fn);
+        {
+          openvdb::GridPtrVec grids;
+          grids.push_back(topology_grid);
+          auto fn = image_dir + "/point.vdb";
+          write_vdb_file(grids, fn);
+        }
+
+        {
+          openvdb::GridPtrVec grids;
+          grids.push_back(float_grid);
+          auto fn = image_dir + "/float.vdb";
+          write_vdb_file(grids, fn);
+        }
 
         delete[] inimg1d;
       }
     }
+  }
+}
+
+TEST(VDB, GetSetGridMeta) {
+  float bkg_thresh = 0.;
+  GridCoord grid_extents(1);
+  auto grid = openvdb::FloatGrid::create();
+
+  {
+    set_grid_meta(grid, grid_extents, bkg_thresh);
+    // print_grid_metadata(grid);
+  }
+
+  // check transferring metadata from one grid to another
+  auto [lengths, bt] = get_metadata(grid);
+  {
+    ASSERT_EQ(bt, bkg_thresh);
+    ASSERT_EQ(lengths[0], grid_extents[0]);
+    ASSERT_EQ(lengths[1], grid_extents[1]);
+    ASSERT_EQ(lengths[2], grid_extents[2]);
   }
 }
 
@@ -2272,13 +2287,11 @@ int main(int argc, char **argv) {
   testing::Test::RecordProperty("USE_MCP3D", 1);
 #endif
 
-#ifdef USE_VDB
   // warning: needs to be called once per executable before any related
   // function is called otherwise confusing seg faults ensue
   openvdb::initialize();
 #ifdef CUSTOM_GRID
   EnlargedPointDataGrid::registerGrid();
-#endif
 #endif
 
   return RUN_ALL_TESTS();
