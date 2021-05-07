@@ -3,7 +3,7 @@
     "mcp3d": {
       "inputs": {
         "nixpkgs": [
-          "nixpkgs"
+          "pinned"
         ]
       },
       "locked": {
@@ -23,17 +23,17 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1609254719,
-        "narHash": "sha256-XB3391z8r81Bt8NfQzB+tYdTWoraY0QVdXM21JhfW+Y=",
+        "lastModified": 1620351499,
+        "narHash": "sha256-OsEsKkQo9axVSMP0AGY2Xlz08kvwZB2z1DNLQkCtar4=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "733e537a8ad76fd355b6f501127f7d0eb8861775",
+        "rev": "e62feb3bf4a603e26755238303bda0c24651e155",
         "type": "github"
       },
       "original": {
         "owner": "NixOS",
+        "ref": "nixpkgs-unstable",
         "repo": "nixpkgs",
-        "rev": "733e537a8ad76fd355b6f501127f7d0eb8861775",
         "type": "github"
       }
     },
@@ -57,11 +57,28 @@
         "url": "ssh://git@github.com/kdmarrett/openvdb"
       }
     },
+    "pinned": {
+      "locked": {
+        "lastModified": 1609254719,
+        "narHash": "sha256-XB3391z8r81Bt8NfQzB+tYdTWoraY0QVdXM21JhfW+Y=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "733e537a8ad76fd355b6f501127f7d0eb8861775",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "733e537a8ad76fd355b6f501127f7d0eb8861775",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "mcp3d": "mcp3d",
         "nixpkgs": "nixpkgs",
-        "openvdb": "openvdb"
+        "openvdb": "openvdb",
+        "pinned": "pinned"
       }
     }
   },

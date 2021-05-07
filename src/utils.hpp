@@ -1814,8 +1814,28 @@ auto get_transform = []() {
 // within bounds of attribute arrays
 auto validate_grid = [](EnlargedPointDataGrid::Ptr grid) {
   // TODO use leafManager and tbb::parallel_for
-  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter;
-       ++leaf_iter) {
+  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
     leaf_iter->validateOffsets();
   }
+};
+
+// return sorted origins of all active leafs
+auto get_origins = [](EnlargedPointDataGrid::Ptr grid) -> std::vector<GridCoord> {
+  std::vector<GridCoord> origins;
+  // TODO use leafManager and tbb::parallel_for
+  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+    origins.push_back(leaf_iter->origin());
+  }
+  std::sort(origins.begin(), origins.end());
+  return origins;
+};
+
+auto leaves_intersect = [](EnlargedPointDataGrid::Ptr grid,
+                          EnlargedPointDataGrid::Ptr other) {
+  std::vector<GridCoord> out;
+   //inputs must be sorted
+  auto origins = get_origins(grid);
+  auto other_origins = get_origins(other);
+  std::set_intersection(origins.begin(), origins.end(), other_origins.begin(), other_origins.end(), std::back_inserter(out));
+  return !out.empty();
 };

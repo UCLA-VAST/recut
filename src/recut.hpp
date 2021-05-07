@@ -2119,6 +2119,9 @@ Recut<image_t>::update(std::string stage, Container &fifo,
       for (int i = 0; i < (this->grid_interval_size - 1); ++i) {
         // vb::tools::compActiveLeafVoxels(grids[i]->tree(), grids[i +
         // 1]->tree());
+        if (leaves_intersect(grids[i + 1], grids[i])) {
+          cout << "\nWarning: leaves intersect\n";
+        }
         // leaves grids[i] empty, copies all to grids[i+1]
         grids[i + 1]->tree().merge(grids[i]->tree(),
                                    vb::MERGE_ACTIVE_STATES_AND_NODES);
@@ -2461,15 +2464,16 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
       // especially in z dimension
       this->interval_lengths[0] = this->image_lengths[0];
       this->interval_lengths[1] = this->image_lengths[1];
-      auto recommended_max_mem = GetAvailMem() / 16;
+      this->interval_lengths[2] = LEAF_LENGTH;
+      //auto recommended_max_mem = GetAvailMem() / 16;
       // guess how many z-depth tiles will fit before a bad_alloc is likely
-      auto simultaneous_tiles =
-          static_cast<double>(recommended_max_mem) /
-          (sizeof(image_t) * this->image_lengths[0] * this->image_lengths[1]);
+      //auto simultaneous_tiles =
+          //static_cast<double>(recommended_max_mem) /
+          //(sizeof(image_t) * this->image_lengths[0] * this->image_lengths[1]);
       // assertm(simultaneous_tiles >= 1, "Tile x and y size too large to fit
       // in system memory (DRAM)");
-      this->interval_lengths[2] = std::min(
-          simultaneous_tiles, static_cast<double>(this->image_lengths[2]));
+      //this->interval_lengths[2] = std::min(
+          //simultaneous_tiles, static_cast<double>(this->image_lengths[2]));
     }
   } else if (this->input_is_vdb) {
     this->interval_lengths[0] = this->image_lengths[0];

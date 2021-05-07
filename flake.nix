@@ -1,7 +1,9 @@
 {
   description = "recut";
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/733e537a8ad76fd355b6f501127f7d0eb8861775";
+    pinned.url = "github:NixOS/nixpkgs/733e537a8ad76fd355b6f501127f7d0eb8861775";
+    # mcp3d fails on latest unstable hdf5 API changes
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     mcp3d.url = "git+ssh://git@github.com/muyezhu/mcp3d?ref=stable_lib";
     #openvdb.url = "git+ssh://git@github.com/UCLA-VAST/openvdb?ref=pointalias";
     openvdb.url = "git+ssh://git@github.com/kdmarrett/openvdb";
@@ -11,7 +13,7 @@
     # mcp3d.url = "/home/kdmarrett/mcp3d";
 
     # pin nix package manager versions to exact match between mcp3d and recut
-    mcp3d.inputs.nixpkgs.follows = "nixpkgs";
+    mcp3d.inputs.nixpkgs.follows = "pinned";
     openvdb.inputs.nixpkgs.follows = "nixpkgs";
   };
 

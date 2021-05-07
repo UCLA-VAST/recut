@@ -275,6 +275,7 @@ foreach(I ${ALL_TARGETS})
   endif()
   target_compile_definitions(${I} PRIVATE "CMAKE_INSTALL_DATADIR=\"${CMAKE_INSTALL_DATADIR}\"")
 
+  # c++20 has compile errors with range-v3 library
   target_compile_features(${I} PRIVATE cxx_std_17)
   # these are the actual flags passed during compilation
   target_compile_options(${I} PRIVATE -fno-omit-frame-pointer -g)
