@@ -259,19 +259,13 @@ void get_img_coord(VID_t id, VID_t &i, VID_t &j, VID_t &k, VID_t grid_size) {
   k = (id / (grid_size * grid_size)) % grid_size;
 }
 
-std::vector<MyMarker *> vids_to_markers(std::vector<VID_t> vids,
-                                        VID_t grid_size) {
-  std::vector<MyMarker *> markers;
-  for (const auto &vid : vids) {
-    VID_t x, y, z;
-    get_img_coord(vid, x, y, z, grid_size);
-    auto root = new MyMarker();
-    root->x = x;
-    root->y = y;
-    root->z = z;
-    markers.push_back(root);
-  }
-  return markers;
+std::vector<MyMarker *> coords_to_markers(std::vector<GridCoord> coords) {
+  return coords | rng::views::transform([](GridCoord coord) {
+           return new MyMarker(static_cast<double>(coord.x()),
+                               static_cast<double>(coord.y()),
+                               static_cast<double>(coord.z()));
+         }) |
+         rng::to_vector;
 }
 
 /* interval_length parameter is actually irrelevant due to
@@ -1820,7 +1814,8 @@ auto validate_grid = [](EnlargedPointDataGrid::Ptr grid) {
 };
 
 // return sorted origins of all active leafs
-auto get_origins = [](EnlargedPointDataGrid::Ptr grid) -> std::vector<GridCoord> {
+auto get_origins =
+    [](EnlargedPointDataGrid::Ptr grid) -> std::vector<GridCoord> {
   std::vector<GridCoord> origins;
   // TODO use leafManager and tbb::parallel_for
   for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
@@ -1831,11 +1826,12 @@ auto get_origins = [](EnlargedPointDataGrid::Ptr grid) -> std::vector<GridCoord>
 };
 
 auto leaves_intersect = [](EnlargedPointDataGrid::Ptr grid,
-                          EnlargedPointDataGrid::Ptr other) {
+                           EnlargedPointDataGrid::Ptr other) {
   std::vector<GridCoord> out;
-   //inputs must be sorted
+  // inputs must be sorted
   auto origins = get_origins(grid);
   auto other_origins = get_origins(other);
-  std::set_intersection(origins.begin(), origins.end(), other_origins.begin(), other_origins.end(), std::back_inserter(out));
+  std::set_intersection(origins.begin(), origins.end(), other_origins.begin(),
+                        other_origins.end(), std::back_inserter(out));
   return !out.empty();
 };

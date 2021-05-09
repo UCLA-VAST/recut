@@ -103,7 +103,6 @@ public:
   RecutParameters *params;
   std::map<VID_t, std::deque<VertexAttr>> map_fifo;
   std::map<VID_t, std::deque<VertexAttr>> connected_map;
-  std::map<VID_t, std::vector<VertexAttr>> active_vertices;
 
   // interval specific global data structures
   vector<bool> active_intervals;
@@ -230,18 +229,18 @@ public:
                                     RecutCommandLineArgs *args);
   GridCoord get_input_image_lengths(bool force_regenerate_image,
                                     RecutCommandLineArgs *args);
-  const std::vector<VID_t> initialize();
+  const std::vector<GridCoord> initialize();
   template <typename vertex_t>
   void convert_to_markers(std::vector<vertex_t> &outtree,
                           bool accept_tombstone = false);
   inline VID_t sub_block_to_block_id(VID_t iblock, VID_t jblock, VID_t kblock);
   template <class Container> void setup_radius(Container &fifo);
   void activate_vids(EnlargedPointDataGrid::Ptr grid,
-                     const std::vector<VID_t> roots, const std::string stage,
+                     const std::vector<GridCoord> roots, const std::string stage,
                      std::map<VID_t, std::deque<VertexAttr>> &fifo,
                      std::map<VID_t, std::deque<VertexAttr>> &connected_fifo);
-  std::vector<VID_t> process_marker_dir(GridCoord grid_offsets,
-                                        GridCoord grid_extents);
+  const std::vector<GridCoord> process_marker_dir(const GridCoord grid_offsets,
+                                        const GridCoord grid_extents);
   void set_parent_non_branch(const VID_t interval_id, const VID_t block_id,
                              VertexAttr *dst, VertexAttr *potential_new_parent);
   ~Recut<image_t>();
@@ -350,10 +349,9 @@ OffsetCoord Recut<image_t>::v_to_off(VID_t interval_id, VID_t block_id,
                    this->block_lengths);
 }
 
-// adds all markers to root_vids
-//
+// adds all markers to root_coords
 template <class image_t>
-std::vector<VID_t>
+const std::vector<GridCoord>
 Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
                                    const GridCoord grid_extents) {
   auto local_bbox =
@@ -386,7 +384,7 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
   auto coords = std::vector<GridCoord>();
   std::transform(
       inmarkers.begin(), inmarkers.end(), std::back_inserter(coords),
-      [](auto marker) { return GridCoord(marker.x, marker.y, marker.z); });
+      [](auto marker) { return ones() + GridCoord(marker.x, marker.y, marker.z); });
 
   coords.erase(
       std::remove_if(
@@ -408,17 +406,7 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
             return true; // remove it
           }),
       coords.end());
-
-  std::vector<VID_t> root_vids;
-  std::transform(coords.begin(), coords.end(), std::back_inserter(root_vids),
-                 [this](auto coord) {
-#ifdef FULL_PRINT
-                   cout << "Using marker at " << coord << '\n';
-#endif
-                   return coord_to_id(coord, this->image_lengths);
-                 });
-
-  return root_vids;
+  return coords;
 }
 
 // activates
@@ -443,25 +431,23 @@ void Recut<image_t>::setup_radius(Container &fifo) {
 
 template <class image_t>
 void Recut<image_t>::activate_vids(
-    EnlargedPointDataGrid::Ptr grid, const std::vector<VID_t> roots,
+    EnlargedPointDataGrid::Ptr grid, const std::vector<GridCoord> roots,
     const std::string stage, std::map<VID_t, std::deque<VertexAttr>> &fifo,
     std::map<VID_t, std::deque<VertexAttr>> &connected_fifo) {
 
   assertm(!(roots.empty()), "Must have at least one root");
 
-  auto root_coords = ids_to_coords(roots, this->image_lengths);
-
   // Iterate over leaf nodes that contain topology (active)
   // checking for roots within them
   for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
     auto leaf_bbox = leaf_iter->getNodeBoundingBox();
-    auto block_id = this->coord_img_to_block_id(leaf_bbox.min());
+    auto block_id = this->coord_img_to_block_id(leaf_iter->origin());
     // std::cout << "Leaf " << block_id << " BBox: " << leaf_bbox << '\n';
 
     // FILTER for those in this leaf
     // auto leaf_roots = remove_outside_bound(roots, leaf_bbox) |
     // auto leaf_roots = roots | remove_outside_bound | rng::to_vector;
-    auto leaf_roots = root_coords | rng::views::remove_if([&](GridCoord coord) {
+    auto leaf_roots = roots | rng::views::remove_if([&leaf_bbox](GridCoord coord) {
                         return !leaf_bbox.isInside(coord);
                       }) |
                       rng::to_vector;
@@ -2377,7 +2363,7 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
   return input_image_lengths;
 }
 
-template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
+template <class image_t> const std::vector<GridCoord> Recut<image_t>::initialize() {
 
 #if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
   omp_set_num_threads(params->user_thread_count());
@@ -2563,14 +2549,14 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
       this->params->selected = selected;
     }
 
-    // add the single root vid to the root_vids
-    return {this->params->root_vid};
+    // add the single root vid to the roots
+    return {id_to_coord(this->params->root_vid, this->image_lengths)};
 
   } else {
     if (params->convert_only_) {
-      return {0}; // dummy root vid
+      return {}; 
     } else {
-      // adds all valid markers to root_vids vector and returns
+      // adds all valid markers to roots vector and returns
       return process_marker_dir(this->image_offsets, this->image_lengths);
     }
   }
@@ -2757,7 +2743,7 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
 template <class image_t> void Recut<image_t>::operator()() {
   std::string stage;
   // create a list of root vids
-  auto root_vids = this->initialize();
+  auto root_coords = this->initialize();
 
   if (params->convert_only_) {
     activate_all_intervals();
@@ -2785,8 +2771,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   // starting from the roots connected stage saves all surface vertices into
   // fifo
   stage = "connected";
-  // this->activate_vids(root_vids, stage, map_fifo);
-  this->activate_vids(this->topology_grid, root_vids, stage, this->map_fifo,
+  this->activate_vids(this->topology_grid, root_coords, stage, this->map_fifo,
                       this->connected_map);
   this->update(stage, map_fifo);
 
@@ -2798,8 +2783,8 @@ template <class image_t> void Recut<image_t>::operator()() {
   // starting from roots, prune stage will
   // create final list of vertices
   stage = "prune";
-  // this->activate_vids(root_vids, stage, map_fifo);
-  this->activate_vids(this->topology_grid, root_vids, stage, this->map_fifo,
+  // this->activate_vids(root_coords, stage, map_fifo);
+  this->activate_vids(this->topology_grid, root_coords, stage, this->map_fifo,
                       this->connected_map);
   this->update(stage, map_fifo);
 }
