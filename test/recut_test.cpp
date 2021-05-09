@@ -1839,8 +1839,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 #endif
 
   auto recut = Recut<uint16_t>(args);
-  std::vector<VID_t> root_vids;
-  root_vids = recut.initialize();
+  auto root_vids = recut.initialize();
   recut.activate_vids(recut.topology_grid, root_vids, "connected",
                       recut.map_fifo, recut.connected_map);
 

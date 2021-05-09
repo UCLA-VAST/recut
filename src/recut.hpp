@@ -198,22 +198,20 @@ public:
                          T2 leaf_iter);
   template <class Container, typename T, typename T2>
   void connected_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
-                      GridCoord offsets, std::string stage,
+                      std::string stage,
                       const TileThresholds<image_t> *tile_thresholds,
                       Container &connected_fifo, Container &fifo,
                       VID_t revisits, T vdb_accessor, T2 leaf_iter);
   template <class Container, typename T, typename T2>
-  void radius_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
-                   GridCoord offsets, std::string stage,
-                   const TileThresholds<image_t> *tile_thresholds,
-                   Container &fifo, VID_t revisits, T vdb_accessor,
-                   T2 leaf_iter);
+  void
+  radius_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
+              std::string stage, const TileThresholds<image_t> *tile_thresholds,
+              Container &fifo, VID_t revisits, T vdb_accessor, T2 leaf_iter);
   template <class Container, typename T, typename T2>
-  void prune_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
-                  GridCoord offsets, std::string stage,
-                  const TileThresholds<image_t> *tile_thresholds,
-                  Container &fifo, VID_t revisits, T vdb_accessor,
-                  T2 leaf_iter);
+  void
+  prune_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
+             std::string stage, const TileThresholds<image_t> *tile_thresholds,
+             Container &fifo, VID_t revisits, T vdb_accessor, T2 leaf_iter);
   void create_march_thread(VID_t interval_id, VID_t block_id);
 #ifdef USE_MCP3D
   void load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile);
@@ -360,10 +358,9 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
                                    const GridCoord grid_extents) {
   auto local_bbox =
       openvdb::math::CoordBBox(grid_offsets, grid_offsets + grid_extents);
-  std::vector<VID_t> root_vids;
 
   if (params->marker_file_path().empty())
-    return root_vids;
+    return {};
 
   // allow either dir or dir/ naming styles
   if (params->marker_file_path().back() != '/')
@@ -373,25 +370,54 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
   assertm(fs::exists(params->marker_file_path()),
           "Marker file path must exist");
 
-  std::vector<MyMarker> inmarkers;
-  for (const auto &marker_file :
-       fs::directory_iterator(params->marker_file_path())) {
-    const auto marker_name = marker_file.path().filename().string();
-    const auto full_marker_name = params->marker_file_path() + marker_name;
-    inmarkers = readMarker_file(full_marker_name);
+  // gather all markers within directory
+  // std::vector<MyMarker> inmarkers{};
+  auto inmarkers = std::vector<MyMarker>();
+  rng::for_each(
+      fs::directory_iterator(params->marker_file_path()),
+      [&inmarkers, this](auto marker_file) {
+        const auto full_marker_name =
+            params->marker_file_path() + marker_file.path().filename().string();
+        auto markers = readMarker_file(full_marker_name);
+        inmarkers.insert(inmarkers.end(), markers.begin(), markers.end());
+      });
 
-    // set intervals with root present as active
-    for (auto &root : inmarkers) {
-      auto adjusted = coord_add(new_grid_coord(root.x, root.y, root.z), ones());
+  // gather all filtered markers vids
+  auto coords = std::vector<GridCoord>();
+  std::transform(
+      inmarkers.begin(), inmarkers.end(), std::back_inserter(coords),
+      [](auto marker) { return GridCoord(marker.x, marker.y, marker.z); });
 
-      if (local_bbox.isInside(adjusted)) {
-        root_vids.push_back(coord_to_id(adjusted, this->image_lengths));
-#ifdef FULL_PRINT
-        cout << "Using marker at " << coord_to_str(adjusted) << '\n';
+  coords.erase(
+      std::remove_if(
+          coords.begin(), coords.end(),
+          [this, &local_bbox](auto coord) {
+            if (local_bbox.isInside(coord)) {
+              if (this->topology_grid->tree().isValueOn(coord)) {
+                return false;
+              } else {
+#ifdef LOG
+                cout
+                    << "Warning: root at " << coord << " in leaf " << local_bbox
+                    << " is not selected in the segmentation so it is ignored. "
+                       "May indicate the image and marker directories are  "
+                       "mismatched or major inaccuracies in segmentation\n ";
 #endif
-      }
-    }
-  }
+              }
+            }
+            return true; // remove it
+          }),
+      coords.end());
+
+  std::vector<VID_t> root_vids;
+  std::transform(coords.begin(), coords.end(), std::back_inserter(root_vids),
+                 [this](auto coord) {
+#ifdef FULL_PRINT
+                   cout << "Using marker at " << coord << '\n';
+#endif
+                   return coord_to_id(coord, this->image_lengths);
+                 });
+
   return root_vids;
 }
 
@@ -424,39 +450,27 @@ void Recut<image_t>::activate_vids(
   assertm(!(roots.empty()), "Must have at least one root");
 
   auto root_coords = ids_to_coords(roots, this->image_lengths);
-  this->active_intervals[0] = true;
 
   // Iterate over leaf nodes that contain topology (active)
   // checking for roots within them
   for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
     auto leaf_bbox = leaf_iter->getNodeBoundingBox();
     auto block_id = this->coord_img_to_block_id(leaf_bbox.min());
-    //std::cout << "Leaf " << block_id << " BBox: " << leaf_bbox << '\n';
+    // std::cout << "Leaf " << block_id << " BBox: " << leaf_bbox << '\n';
 
     // FILTER for those in this leaf
     // auto leaf_roots = remove_outside_bound(roots, leaf_bbox) |
     // auto leaf_roots = roots | remove_outside_bound | rng::to_vector;
-    auto leaf_roots =
-        root_coords | rng::views::remove_if([&](GridCoord coord) {
-          return !leaf_bbox.isInside(coord);
-        }) |
-        rng::views::remove_if([&leaf_iter, &leaf_bbox](GridCoord coord) {
-          if (!leaf_iter->isValueOn(coord)) {
-            cout << "Warning: root at " << coord << " in leaf " << leaf_bbox
-                 << " is not selected in the segmentation so it is ignored. "
-                    "This "
-                    "may indicate the image and marker directories are "
-                    "mismatched or inaccuracies in segmentation\n";
-            return true;
-          }
-          return false;
-        }) |
-        rng::to_vector;
+    auto leaf_roots = root_coords | rng::views::remove_if([&](GridCoord coord) {
+                        return !leaf_bbox.isInside(coord);
+                      }) |
+                      rng::to_vector;
 
     if (leaf_roots.empty())
       continue;
 
-    // print_iter_name(leaf_roots, "\troots");
+    this->active_intervals[0] = true;
+    print_iter_name(leaf_roots, "\troots");
 
     // Set Values
     auto update_leaf = this->update_grid->tree().probeLeaf(leaf_bbox.min());
@@ -474,8 +488,8 @@ void Recut<image_t>::activate_vids(
     // Create a read-only AttributeHandle. Position always uses Vec3f.
     openvdb::points::AttributeHandle<PositionT> position_handle(array);
 
-     openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
-     leaf_iter->attributeArray("flags"));
+    openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
+        leaf_iter->attributeArray("flags"));
 
     openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
         leaf_iter->attributeArray("parents"));
@@ -497,9 +511,12 @@ void Recut<image_t>::activate_vids(
           parents_handle.set(*ind, zeros_off());
 
           auto offsets = coord_mod(coord, temp_coord);
+          cout << "added to block_id " << block_id << ' ' << leaf_iter->origin()
+               << '\n';
           connected_fifo[block_id].emplace_back(
               /*edge_state*/ flags_handle.get(*ind), offsets, zeros_off());
         } else {
+          // FIXME delete this
           cout << "Warning: root at " << coord << " in leaf " << leaf_bbox
                << " is not selected in the segmentation so it is ignored. This "
                   "may indicate the image and marker directories are "
@@ -1017,24 +1034,22 @@ void integrate_adj_leafs(GridCoord start_coord,
       // from one corner find 3 adj leafs via 1 vox offset
       stencil_offsets |
       rng::views::transform([&start_coord](auto stencil_offset) {
-        return std::pair{stencil_offset,
+        return std::pair{/*rel. offset*/ stencil_offset,
                          coord_add(start_coord, stencil_offset)};
       }) |
       // get the corresponding leaf from update grid
       rng::views::transform([&update_accessor](auto coord_pair) {
-        return std::pair{coord_pair.first,
+        return std::pair{/*rel. offset*/ coord_pair.first,
                          update_accessor.probeConstLeaf(coord_pair.second)};
       }) |
-      // check if any vox from leaf were updated (active)
-      rng::views::remove_if(
-          //[](auto leaf_pair) { return leaf_pair.second->isEmpty(); }) |
-          [](auto leaf_pair) {
-            if (leaf_pair.second) {
-              return leaf_pair.second->isEmpty();
-            } else {
-              return true;
-            }
-          }) |
+      // does adj leaf have any border topology?
+      rng::views::remove_if([](auto leaf_pair) {
+        if (leaf_pair.second) {
+          return leaf_pair.second->isEmpty(); // any of value mask true
+        } else {
+          return true;
+        }
+      }) |
       // for each active adjacent leaf
       rng::views::transform([&](auto leaf_pair) {
         // cout << leaf_pair.first << '\n';
@@ -1054,7 +1069,8 @@ void integrate_adj_leafs(GridCoord start_coord,
              ++value_iter) {
           // PERF this might not be most efficient way to get index
           auto adj_coord = value_iter.getCoord();
-          // *value_iter probably better
+          // filter to voxels active *and* true
+          // true means they were updated in this iteration
           if (leaf_pair.second->getValue(adj_coord)) {
             // actual offset within real adjacent leaf
             auto adj_offsets =
@@ -1233,13 +1249,17 @@ void Recut<image_t>::dump_buffer(Container buffer) {
 template <class image_t>
 template <class Container, typename T, typename T2>
 void Recut<image_t>::connected_tile(
-    const image_t *tile, VID_t interval_id, VID_t block_id, GridCoord offsets,
-    std::string stage, const TileThresholds<image_t> *tile_thresholds,
-    Container &connected_fifo, Container &fifo, VID_t revisits, T vdb_accessor,
-    T2 leaf_iter) {
+    const image_t *tile, VID_t interval_id, VID_t block_id, std::string stage,
+    const TileThresholds<image_t> *tile_thresholds, Container &connected_fifo,
+    Container &fifo, VID_t revisits, T vdb_accessor, T2 leaf_iter) {
 
   if (connected_fifo.empty())
     return;
+
+#ifdef LOG_FULL
+  cout << "\nMarching " << tree_to_str(interval_id, block_id) << ' '
+       << leaf_iter->origin() << '\n';
+#endif
 
   auto update_leaf = this->update_grid->tree().probeLeaf(leaf_iter->origin());
   assertm(update_leaf, "corresponding leaf does not exist");
@@ -1263,7 +1283,7 @@ void Recut<image_t>::connected_tile(
     msg_vertex = &(connected_fifo.front());
     const bool in_domain = msg_vertex->selected();
     auto surface = msg_vertex->surface();
-    auto msg_coord = coord_add(msg_vertex->offsets, offsets);
+    auto msg_coord = coord_add(msg_vertex->offsets, leaf_iter->origin());
     auto msg_off = coord_mod(msg_coord, this->block_lengths);
     auto msg_ind = leaf_iter->beginIndexVoxel(msg_coord);
 
@@ -1348,8 +1368,7 @@ void Recut<image_t>::connected_tile(
 template <class image_t>
 template <class Container, typename T, typename T2>
 void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
-                                 VID_t block_id, GridCoord offsets,
-                                 std::string stage,
+                                 VID_t block_id, std::string stage,
                                  const TileThresholds<image_t> *tile_thresholds,
                                  Container &fifo, VID_t revisits,
                                  T vdb_accessor, T2 leaf_iter) {
@@ -1370,7 +1389,7 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
     // or any other insertion or deltion to fifo
     auto msg_vertex = &(fifo.front());
 
-    auto msg_coord = coord_add(msg_vertex->offsets, offsets);
+    auto msg_coord = coord_add(msg_vertex->offsets, leaf_iter->origin());
     auto msg_ind = leaf_iter->beginIndexVoxel(msg_coord);
 
     // radius field can now be be mutated
@@ -1433,8 +1452,7 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
 template <class image_t>
 template <class Container, typename T, typename T2>
 void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
-                                VID_t block_id, GridCoord offsets,
-                                std::string stage,
+                                VID_t block_id, std::string stage,
                                 const TileThresholds<image_t> *tile_thresholds,
                                 Container &fifo, VID_t revisits, T vdb_accessor,
                                 T2 leaf_iter) {
@@ -1458,7 +1476,7 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
     visited += 1;
 #endif
 
-    auto msg_coord = coord_add(current->offsets, offsets);
+    auto msg_coord = coord_add(current->offsets, leaf_iter->origin());
 
     if (current->selected()) {
       auto msg_ind = leaf_iter->beginIndexVoxel(msg_coord);
@@ -1511,37 +1529,33 @@ void Recut<image_t>::march_narrow_band(
     const TileThresholds<image_t> *tile_thresholds,
     std::deque<VertexAttr> &connected_fifo, std::deque<VertexAttr> &fifo,
     T vdb_accessor, T2 leaf_iter) {
-  // first coord of block with respect to whole image
-  auto block_img_offsets =
-      id_interval_block_to_img_offsets(interval_id, block_id);
 
-#ifdef LOG_FULL
-  VID_t visited = 0;
-  auto timer = new high_resolution_timer();
-  cout << "\nMarching " << tree_to_str(interval_id, block_id) << ' '
-       << coord_to_str(block_img_offsets) << '\n';
-#endif
+  //#ifdef LOG_FULL
+  // VID_t visited = 0;
+  // auto timer = new high_resolution_timer();
+  // cout << "\nMarching " << tree_to_str(interval_id, block_id) << ' '
+  //<< leaf_iter->origin() << '\n';
+  //#endif
 
   VID_t revisits = 0;
 
   if (stage == "connected") {
-    connected_tile(tile, interval_id, block_id, block_img_offsets, stage,
-                   tile_thresholds, connected_fifo, fifo, revisits,
-                   vdb_accessor, leaf_iter);
+    connected_tile(tile, interval_id, block_id, stage, tile_thresholds,
+                   connected_fifo, fifo, revisits, vdb_accessor, leaf_iter);
   } else if (stage == "radius") {
-    radius_tile(tile, interval_id, block_id, block_img_offsets, stage,
-                tile_thresholds, fifo, revisits, vdb_accessor, leaf_iter);
+    radius_tile(tile, interval_id, block_id, stage, tile_thresholds, fifo,
+                revisits, vdb_accessor, leaf_iter);
   } else if (stage == "prune") {
-    prune_tile(tile, interval_id, block_id, block_img_offsets, stage,
-               tile_thresholds, fifo, revisits, vdb_accessor, leaf_iter);
+    prune_tile(tile, interval_id, block_id, stage, tile_thresholds, fifo,
+               revisits, vdb_accessor, leaf_iter);
   } else {
     assertm(false, "Stage name not recognized");
   }
 
-#ifdef LOG_FULL
-  cout << "Marched interval: " << interval_id << " block: " << block_id
-       << " visiting " << visited << " in " << timer->elapsed() << " s" << '\n';
-#endif
+  //#ifdef LOG_FULL
+  // cout << "Marched interval: " << interval_id << " block: " << block_id
+  //<< " visiting " << visited << " in " << timer->elapsed() << " s" << '\n';
+  //#endif
 
 } // end march_narrow_band
 
@@ -1620,6 +1634,7 @@ template <typename T2>
 std::atomic<double> Recut<image_t>::process_interval(
     VID_t interval_id, const image_t *tile, std::string stage,
     const TileThresholds<image_t> *tile_thresholds, T2 vdb_accessor) {
+
   struct timespec presave_time, postmarch_time, iter_start,
       start_iter_loop_time, end_iter_time, postsave_time;
   double no_io_time;
@@ -2030,7 +2045,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           auto convert_start = timer->elapsed();
 
 #ifdef FULL_PRINT
-          print_image_3D(tile, coord_to_vec(buffer_extents));
+          print_image_3D(tile, buffer_extents);
 #endif
           if (this->args->type_ == "float") {
             convert_buffer_to_vdb_acc(tile, buffer_extents,
@@ -2060,7 +2075,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
 #ifdef FULL_PRINT
             print_vdb_mask(grids[interval_id]->getConstAccessor(),
-                           coord_to_vec(this->image_lengths));
+                           this->image_lengths);
 #endif
           }
           computation_time =
@@ -2438,15 +2453,15 @@ template <class image_t> const std::vector<VID_t> Recut<image_t>::initialize() {
       this->interval_lengths[0] = this->image_lengths[0];
       this->interval_lengths[1] = this->image_lengths[1];
       this->interval_lengths[2] = LEAF_LENGTH;
-      //auto recommended_max_mem = GetAvailMem() / 16;
+      // auto recommended_max_mem = GetAvailMem() / 16;
       // guess how many z-depth tiles will fit before a bad_alloc is likely
-      //auto simultaneous_tiles =
-          //static_cast<double>(recommended_max_mem) /
-          //(sizeof(image_t) * this->image_lengths[0] * this->image_lengths[1]);
+      // auto simultaneous_tiles =
+      // static_cast<double>(recommended_max_mem) /
+      //(sizeof(image_t) * this->image_lengths[0] * this->image_lengths[1]);
       // assertm(simultaneous_tiles >= 1, "Tile x and y size too large to fit
       // in system memory (DRAM)");
-      //this->interval_lengths[2] = std::min(
-          //simultaneous_tiles, static_cast<double>(this->image_lengths[2]));
+      // this->interval_lengths[2] = std::min(
+      // simultaneous_tiles, static_cast<double>(this->image_lengths[2]));
     }
   } else if (this->input_is_vdb) {
     this->interval_lengths[0] = this->image_lengths[0];
