@@ -973,7 +973,7 @@ void integrate_point(std::string stage, Container &fifo, T &connected_fifo,
                      T2 adj_coord, EnlargedPointDataGrid::Ptr grid,
                      OffsetCoord adj_offsets, GridCoord potential_update) {
   // FIXME this might be slow to lookup every time
-  auto leaf_iter = grid->tree().probeConstLeaf(potential_update);
+  //auto leaf_iter = grid->tree().probeConstLeaf(potential_update);
   auto adj_leaf_iter = grid->tree().probeConstLeaf(adj_coord);
   auto ind = adj_leaf_iter->beginIndexVoxel(adj_coord);
 
@@ -986,14 +986,19 @@ void integrate_point(std::string stage, Container &fifo, T &connected_fifo,
 
 #ifdef FULL_PRINT
   std::cout << "\tintegrate_point(): " << adj_coord << '\n';
+  std::cout << "\t\tpot(): " << potential_update << ' ' << leaf_iter << '\n';
 #endif
 
   if (stage == "connected") {
-    // openvdb::points::AttributeHandle<uint8_t> current_flags_handle(
-    // leaf_iter->constAttributeArray("flags"));
-    // auto potential_update_ind = leaf_iter->beginIndexVoxel(potential_update);
-    // if (is_selected(current_flags_handle, potential_update_ind))
-    // return; // no work to do at this point
+    // this doesn't speed up the runtime at all
+    //openvdb::points::AttributeHandle<uint8_t> current_flags_handle(
+        //leaf_iter->constAttributeArray("flags"));
+    //auto potential_update_ind = leaf_iter->beginIndexVoxel(potential_update);
+    //if (!potential_update_ind)
+      //return;
+    //if (is_selected(current_flags_handle, potential_update_ind))
+      //return; // no work to do at
+              //// this point
 
     openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
         adj_leaf_iter->constAttributeArray("parents"));
@@ -1017,7 +1022,7 @@ void integrate_adj_leafs(GridCoord start_coord,
                          T &update_accessor, Container &fifo,
                          T2 &connected_fifo, std::string stage,
                          EnlargedPointDataGrid::Ptr grid, int offset_value) {
-  GridCoord neg_ones(-1);
+
   // force evaluation by saving to vector to get desired side effects
   // from integrate_point
   auto _ =
@@ -1072,8 +1077,8 @@ void integrate_adj_leafs(GridCoord start_coord,
             if ((leaf_pair.first[dim] + start_coord[dim]) == adj_coord[dim]) {
               // find the adjacent vox back in the current leaf which touches
               // adj_coord
-              auto potential_update =
-                  coord_prod(leaf_pair.first, neg_ones) + adj_coord;
+              auto potential_update = adj_coord;
+              potential_update[dim] = start_coord[dim];
               integrate_point(stage, fifo, connected_fifo, adj_coord, grid,
                               adj_offsets, potential_update);
             }
@@ -1112,6 +1117,7 @@ void Recut<image_t>::integrate_update_grid(
                         LEAF_LENGTH);
   }
 
+  auto timer = high_resolution_timer();
   // set update_grid false, keeping active values intact on boundary for
   // the lifetime of the program for sparse checks
   for (auto leaf_iter = this->update_grid->tree().beginLeaf(); leaf_iter;
@@ -1119,6 +1125,9 @@ void Recut<image_t>::integrate_update_grid(
     // FIXME probably a more efficient way (hierarchically?) to set all to false
     leaf_iter->fill(false);
   }
+#ifdef LOG_FULL
+  cout << "\tFill to false in " << timer.elapsed() << " sec.\n";
+#endif
 }
 
 template <class image_t> void Recut<image_t>::activate_all_intervals() {
@@ -1632,7 +1641,8 @@ std::atomic<double> Recut<image_t>::process_interval(
 
   // if there is a single block per interval than this while
   // loop will exit after one iteration
-  for (VID_t inner_iteration_idx = 0;; ++inner_iteration_idx) {
+  VID_t inner_iteration_idx = 0;
+  for (;; ++inner_iteration_idx) {
     auto iter_start = timer.elapsed();
 
     // assertm(this->topology_grid, "Block count and size must match topology
@@ -1691,7 +1701,7 @@ std::atomic<double> Recut<image_t>::process_interval(
   active_intervals[interval_id] = false;
 
 #ifdef LOG_FULL
-  cout << "Interval: " << interval_id << " (no I/O) within " << timer.elapsed()
+  cout << "Interval: " << interval_id << " in " << inner_iteration_idx << " iterations (no I/O) within " << timer.elapsed()
        << " sec." << '\n';
 #endif
   return timer.elapsed();
@@ -2725,8 +2735,8 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
 #endif
 
 #ifdef FULL_PRINT
-  cout << "Finished generating results within " << timer.elapsed()
-       << " sec." << '\n';
+  cout << "Finished generating results within " << timer.elapsed() << " sec."
+       << '\n';
 #endif
 }
 
