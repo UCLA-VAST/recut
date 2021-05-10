@@ -1702,24 +1702,26 @@ std::atomic<double> Recut<image_t>::process_interval(
   // loop will exit after one iteration
   VID_t inner_iteration_idx = 0;
   for (; is_active(); ++inner_iteration_idx) {
-    auto iter_start = timer.elapsed();
 
-    tbb::parallel_for(grid_leaf_manager.leafRange(), march_range);
-
+    { // march
+      auto iter_start = timer.elapsed();
+      tbb::parallel_for(grid_leaf_manager.leafRange(), march_range);
 #ifdef LOG_FULL
-    cout << "\nMarched " << stage << " in " << timer.elapsed() - iter_start
-         << " sec.\n";
+      cout << "\nMarched " << stage << " in " << timer.elapsed() - iter_start
+           << " sec.\n";
 #endif
+    }
 
-    auto integrate_start = timer.elapsed();
-    integrate_update_grid(this->topology_grid, grid_leaf_manager, stage,
-                          this->map_fifo, this->connected_map,
-                          this->update_grid, interval_id);
-
+    { // integrate
+      auto integrate_start = timer.elapsed();
+      integrate_update_grid(this->topology_grid, grid_leaf_manager, stage,
+                            this->map_fifo, this->connected_map,
+                            this->update_grid, interval_id);
 #ifdef LOG_FULL
-    cout << "Integrated " << stage << " in "
-         << timer.elapsed() - integrate_start << " sec.\n";
+      cout << "Integrated " << stage << " in "
+           << timer.elapsed() - integrate_start << " sec.\n";
 #endif
+    }
 
   } // iterations per interval
 
@@ -2813,7 +2815,11 @@ template <class image_t> void Recut<image_t>::operator()() {
                       this->connected_map);
   this->update(stage, map_fifo);
 
+  auto timer = high_resolution_timer();
   // adjust final parent
   auto to_swc_file = true;
   adjust_parent(to_swc_file);
+#ifdef LOG_FULL
+  cout << "Adjust parent in " << timer.elapsed() << " sec.\n";
+#endif
 }
