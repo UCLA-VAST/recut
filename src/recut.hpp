@@ -1135,15 +1135,15 @@ void Recut<image_t>::integrate_update_grid(
   // set update_grid false, keeping active values intact on boundary for
   // the lifetime of the program for sparse checks
   {
-    auto fill_range = [](const openvdb::tree::LeafManager<
-                          vb::BoolTree>::LeafRange &range) {
-      // for each leaf with active voxels i.e. containing topology
-      for (auto leaf_iter = range.begin(); leaf_iter; ++leaf_iter) {
-        // FIXME probably a more efficient way (hierarchically?) to set all to
-        // false
-        leaf_iter->fill(false);
-      }
-    };
+    auto fill_range =
+        [](const openvdb::tree::LeafManager<vb::BoolTree>::LeafRange &range) {
+          // for each leaf with active voxels i.e. containing topology
+          for (auto leaf_iter = range.begin(); leaf_iter; ++leaf_iter) {
+            // FIXME probably a more efficient way (hierarchically?) to set all
+            // to false
+            leaf_iter->fill(false);
+          }
+        };
 
     timer.restart();
     openvdb::tree::LeafManager<vb::BoolTree> update_grid_leaf_manager(
@@ -1660,6 +1660,9 @@ std::atomic<double> Recut<image_t>::process_interval(
 
   auto timer = high_resolution_timer();
 
+  openvdb::tree::LeafManager<PointTree> grid_leaf_manager(
+      this->topology_grid->tree());
+
   integrate_update_grid(this->topology_grid, stage, this->map_fifo,
                         this->connected_map, this->update_grid, interval_id);
 
@@ -1669,16 +1672,20 @@ std::atomic<double> Recut<image_t>::process_interval(
   for (;; ++inner_iteration_idx) {
     auto iter_start = timer.elapsed();
 
-    //openvdb::tree::LeafManager<PointTree> grid_leaf_manager(this->topology_grid->tree());
-    //tbb::parallel_for(grid_leaf_manager.leafRange(), march_range);
+    auto march_range =
+        [&, this](const openvdb::tree::LeafManager<
+                  openvdb::points::PointDataTree>::LeafRange &range) {
+          // for each leaf with active voxels i.e. containing topology
+          for (auto leaf_iter = range.begin(); leaf_iter; ++leaf_iter) {
+            auto block_id = coord_img_to_block_id(leaf_iter->origin());
+            march_narrow_band(tile, interval_id, block_id, stage,
+                              tile_thresholds,
+                              this->connected_map[leaf_iter->origin()],
+                              this->map_fifo[leaf_iter->origin()], leaf_iter);
+          }
+        };
 
-    for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
-         ++leaf_iter) {
-      auto block_id = coord_img_to_block_id(leaf_iter->origin());
-      march_narrow_band(tile, interval_id, block_id, stage, tile_thresholds,
-                        this->connected_map[leaf_iter->origin()],
-                        this->map_fifo[leaf_iter->origin()], leaf_iter);
-    }
+    tbb::parallel_for(grid_leaf_manager.leafRange(), march_range);
 
 #ifdef LOG_FULL
     cout << "Marched narrow band in " << timer.elapsed() - iter_start
