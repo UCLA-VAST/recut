@@ -973,7 +973,7 @@ void integrate_point(std::string stage, Container &fifo, T &connected_fifo,
                      T2 adj_coord, EnlargedPointDataGrid::Ptr grid,
                      OffsetCoord adj_offsets, GridCoord potential_update) {
   // FIXME this might be slow to lookup every time
-  //auto leaf_iter = grid->tree().probeConstLeaf(potential_update);
+  // auto leaf_iter = grid->tree().probeConstLeaf(potential_update);
   auto adj_leaf_iter = grid->tree().probeConstLeaf(adj_coord);
   auto ind = adj_leaf_iter->beginIndexVoxel(adj_coord);
 
@@ -991,14 +991,14 @@ void integrate_point(std::string stage, Container &fifo, T &connected_fifo,
 
   if (stage == "connected") {
     // this doesn't speed up the runtime at all
-    //openvdb::points::AttributeHandle<uint8_t> current_flags_handle(
-        //leaf_iter->constAttributeArray("flags"));
-    //auto potential_update_ind = leaf_iter->beginIndexVoxel(potential_update);
-    //if (!potential_update_ind)
-      //return;
-    //if (is_selected(current_flags_handle, potential_update_ind))
-      //return; // no work to do at
-              //// this point
+    // openvdb::points::AttributeHandle<uint8_t> current_flags_handle(
+    // leaf_iter->constAttributeArray("flags"));
+    // auto potential_update_ind = leaf_iter->beginIndexVoxel(potential_update);
+    // if (!potential_update_ind)
+    // return;
+    // if (is_selected(current_flags_handle, potential_update_ind))
+    // return; // no work to do at
+    //// this point
 
     openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
         adj_leaf_iter->constAttributeArray("parents"));
@@ -1101,8 +1101,8 @@ void Recut<image_t>::integrate_update_grid(
     std::map<GridCoord, std::deque<VertexAttr>> &fifo,
     std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo,
     T2 update_accessor, VID_t interval_id) {
-  // for each leaf with active voxels i.e. containing topology
-  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+
+  auto integrate_leaf = [&](auto leaf_iter) {
     auto bbox = leaf_iter->getNodeBoundingBox();
 
     // lower corner adjacents, have an offset at that dim of -1
@@ -1115,9 +1115,24 @@ void Recut<image_t>::integrate_update_grid(
                         fifo[leaf_iter->origin()],
                         connected_fifo[leaf_iter->origin()], stage, grid,
                         LEAF_LENGTH);
-  }
+  };
 
-  auto timer = high_resolution_timer();
+  auto op = [&](const openvdb::tree::LeafManager<
+                openvdb::points::PointDataTree>::LeafRange &range) {
+    // for each leaf with active voxels i.e. containing topology
+    for (auto leaf_iter = range.begin(); leaf_iter; ++leaf_iter) {
+      integrate_leaf(leaf_iter);
+    }
+  };
+
+  // Create a leaf manager for the points tree.
+  openvdb::tree::LeafManager<openvdb::points::PointDataTree> leafManager(
+      grid->tree());
+  // Evaluate in parallel
+  tbb::parallel_for(leafManager.leafRange(), op);
+
+  //auto timer = high_resolution_timer();
+
   // set update_grid false, keeping active values intact on boundary for
   // the lifetime of the program for sparse checks
   for (auto leaf_iter = this->update_grid->tree().beginLeaf(); leaf_iter;
@@ -1125,9 +1140,9 @@ void Recut<image_t>::integrate_update_grid(
     // FIXME probably a more efficient way (hierarchically?) to set all to false
     leaf_iter->fill(false);
   }
-#ifdef LOG_FULL
-  cout << "\tFill to false in " << timer.elapsed() << " sec.\n";
-#endif
+//#ifdef LOG_FULL
+  //cout << "\tFill to false in " << timer.elapsed() << " sec.\n";
+//#endif
 }
 
 template <class image_t> void Recut<image_t>::activate_all_intervals() {
@@ -1701,8 +1716,8 @@ std::atomic<double> Recut<image_t>::process_interval(
   active_intervals[interval_id] = false;
 
 #ifdef LOG_FULL
-  cout << "Interval: " << interval_id << " in " << inner_iteration_idx << " iterations (no I/O) within " << timer.elapsed()
-       << " sec." << '\n';
+  cout << "Interval: " << interval_id << " in " << inner_iteration_idx
+       << " iterations (no I/O) within " << timer.elapsed() << " sec." << '\n';
 #endif
   return timer.elapsed();
 }
@@ -2787,4 +2802,8 @@ template <class image_t> void Recut<image_t>::operator()() {
   this->activate_vids(this->topology_grid, root_coords, stage, this->map_fifo,
                       this->connected_map);
   this->update(stage, map_fifo);
+
+  // adjust final parent
+  auto to_swc_file = true;
+  adjust_parent(to_swc_file);
 }
