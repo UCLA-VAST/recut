@@ -114,20 +114,16 @@ auto coord_sub = [](auto x, auto y) {
   return GridCoord(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
 };
 
-auto coord_div = [](auto x, auto y) {
+auto coord_div = [](const auto& x, const auto& y) {
   return GridCoord(x[0] / y[0], x[1] / y[1], x[2] / y[2]);
+};
+
+auto coord_prod = [](const auto& x, const auto& y) {
+  return GridCoord(x[0] * y[0], x[1] * y[1], x[2] * y[2]);
 };
 
 auto coord_prod_accum = [](const auto coord) -> VID_t {
   return static_cast<VID_t>(coord[0]) * coord[1] * coord[2];
-};
-
-auto coord_prod = [](const auto x, const auto y) {
-  auto prod = GridCoord(3);
-  prod[0] = x[0] * y[0];
-  prod[1] = x[1] * y[1];
-  prod[2] = x[2] * y[2];
-  return prod;
 };
 
 auto coord_mod = [](auto x, auto y) {

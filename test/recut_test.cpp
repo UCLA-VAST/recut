@@ -41,7 +41,7 @@
 template <typename DataType>
 void check_recut_error(Recut<uint16_t> &recut, DataType *ground_truth,
                        int grid_size, std::string stage, double &error_rate,
-                       std::map<VID_t, std::deque<VertexAttr>> fifo,
+                       std::map<GridCoord, std::deque<VertexAttr>> fifo,
                        int ground_truth_selected_count,
                        bool strict_match = true) {
   auto tol_sz = static_cast<VID_t>(grid_size) * grid_size * grid_size;
@@ -55,23 +55,21 @@ void check_recut_error(Recut<uint16_t> &recut, DataType *ground_truth,
       for (int xi = 0; xi < recut.image_lengths[0]; xi++) {
         // iteration vars
         auto coord = new_grid_coord(xi, yi, zi);
-        auto correct_offset = coord_mod(coord, recut.block_lengths);
+        auto leaf_iter = recut.topology_grid->tree().probeLeaf(coord);
+        auto ind = leaf_iter->beginIndexVoxel(coord);
+        auto value_on = leaf_iter->isValueOn(coord);
+
+        auto coord_offset = coord - leaf_iter->origin();
         VID_t vid = coord_to_id(coord, recut.image_lengths);
-        auto interval_id = recut.id_img_to_interval_id(vid);
-        auto block_id = recut.id_img_to_block_id(vid);
+        //auto interval_id = recut.id_img_to_interval_id(vid);
+
         auto find_vid = [&]() {
-          for (const auto &local_vertex : fifo[block_id]) {
-            // if (vid == recut.v_to_img_coord(interval_id, block_id,
-            // local_vertex))
-            if (coord_all_eq(correct_offset, local_vertex.offsets))
+          for (const auto &local_vertex : fifo[leaf_iter->origin()]) {
+            if (coord_all_eq(coord_offset, local_vertex.offsets))
               return true;
           }
           return false;
         };
-
-        auto leaf_iter = recut.topology_grid->tree().probeLeaf(coord);
-        auto ind = leaf_iter->beginIndexVoxel(coord);
-        auto value_on = leaf_iter->isValueOn(coord);
 
         if (stage == "convert") {
           // std::cout << "type: " << typeid(value_on).name() << '\n';
@@ -375,7 +373,6 @@ TEST(VDB, IntegrateUpdateGrid) {
     print_vdb_mask(update_accessor, grid_extents);
   }
 
-  VID_t central_block = 13;
   VID_t interval_id = 0;
   auto lower_corner = new_grid_coord(8, 8, 8);
   auto upper_corner = new_grid_coord(15, 15, 15);
@@ -383,16 +380,10 @@ TEST(VDB, IntegrateUpdateGrid) {
   auto update_leaf = recut.update_grid->tree().probeLeaf(lower_corner);
   ASSERT_TRUE(update_leaf);
 
-  ASSERT_EQ(central_block, recut.coord_img_to_block_id(lower_corner));
-  ASSERT_EQ(central_block, recut.coord_img_to_block_id(upper_corner));
   auto update_vertex = new VertexAttr();
 
   {
     auto stage = "connected";
-    // recut.check_ghost_update(0, 13, lower_corner, update_vertex, stage,
-    // update_accessor);
-    // recut.check_ghost_update(0, 13, upper_corner, update_vertex, stage,
-    // update_accessor);
     set_if_active(update_leaf, lower_corner);
     set_if_active(update_leaf, upper_corner);
 
@@ -408,10 +399,10 @@ TEST(VDB, IntegrateUpdateGrid) {
             auto block_img_offsets =
                 recut.id_interval_block_to_img_offsets(interval_id, block_id);
             if (print_all)
-              cout << recut.connected_map[block_id][0].offsets << '\n';
+              cout << recut.connected_map[block_img_offsets][0].offsets << '\n';
             return coord_all_eq(
                 coord_add(block_img_offsets,
-                          recut.connected_map[block_id][0].offsets),
+                          recut.connected_map[block_img_offsets][0].offsets),
                 corner);
           }) |
           rng::to_vector;
@@ -497,6 +488,10 @@ TEST(VDB, CreatePointDataGrid) {
   // tbb::parallel_for(leafManager.leafRange(), op);
 }
 
+TEST(Globals, Map) {
+  auto map_fifo = std::map<GridCoord, std::deque<VertexAttr>>();
+}
+
 TEST(VDB, ActivateVids) {
   VID_t grid_size = 8;
   auto grid_extents = GridCoord(grid_size);
@@ -516,10 +511,9 @@ TEST(VDB, ActivateVids) {
     print_all_points(recut.topology_grid, recut.image_bbox);
   }
 
-  auto block_id = 0;
   auto interval_id = 0;
   ASSERT_TRUE(recut.active_intervals[interval_id]);
-  ASSERT_FALSE(recut.connected_map[block_id].empty());
+  ASSERT_FALSE(recut.connected_map[GridCoord(0)].empty());
 
   GridCoord root(3, 3, 3);
   auto leaf_iter = recut.topology_grid->tree().probeLeaf(root);
