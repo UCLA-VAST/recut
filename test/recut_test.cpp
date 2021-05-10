@@ -388,7 +388,7 @@ TEST(VDB, IntegrateUpdateGrid) {
     set_if_active(update_leaf, upper_corner);
 
     recut.integrate_update_grid(recut.topology_grid, stage, recut.map_fifo,
-                                recut.connected_map, update_accessor,
+                                recut.connected_map, recut.update_grid,
                                 interval_id);
 
     cout << "Finished integrate\n";

@@ -179,38 +179,36 @@ public:
                          T ind, const uint8_t current_radius, Container &fifo,
                          FlagsT flags_handle, RadiusT radius_handle,
                          UpdateIter update_leaf);
-  template <typename T2>
   void integrate_update_grid(
       EnlargedPointDataGrid::Ptr grid, std::string stage,
       std::map<GridCoord, std::deque<VertexAttr>> &fifo,
       std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo,
-      T2 update_accessor, VID_t interval_id);
+      openvdb::BoolGrid::Ptr update_grid, VID_t interval_id);
   template <class Container> void dump_buffer(Container buffer);
   OffsetCoord adjust_vertex_parent(OffsetCoord parent_offset,
                                    const GridCoord &original_coord);
-  template <typename T, typename T2>
+  template <typename T2>
   void march_narrow_band(const image_t *tile, VID_t interval_id, VID_t block_id,
                          std::string stage,
                          const TileThresholds<image_t> *tile_thresholds,
                          std::deque<VertexAttr> &connected_fifo,
-                         std::deque<VertexAttr> &fifo, T vdb_accessor,
-                         T2 leaf_iter);
-  template <class Container, typename T, typename T2>
+                         std::deque<VertexAttr> &fifo, T2 leaf_iter);
+  template <class Container, typename T2>
   void connected_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
                       std::string stage,
                       const TileThresholds<image_t> *tile_thresholds,
                       Container &connected_fifo, Container &fifo,
-                      VID_t revisits, T vdb_accessor, T2 leaf_iter);
-  template <class Container, typename T, typename T2>
-  void
-  radius_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
-              std::string stage, const TileThresholds<image_t> *tile_thresholds,
-              Container &fifo, VID_t revisits, T vdb_accessor, T2 leaf_iter);
-  template <class Container, typename T, typename T2>
-  void
-  prune_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
-             std::string stage, const TileThresholds<image_t> *tile_thresholds,
-             Container &fifo, VID_t revisits, T vdb_accessor, T2 leaf_iter);
+                      VID_t revisits, T2 leaf_iter);
+  template <class Container, typename T2>
+  void radius_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
+                   std::string stage,
+                   const TileThresholds<image_t> *tile_thresholds,
+                   Container &fifo, VID_t revisits, T2 leaf_iter);
+  template <class Container, typename T2>
+  void prune_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
+                  std::string stage,
+                  const TileThresholds<image_t> *tile_thresholds,
+                  Container &fifo, VID_t revisits, T2 leaf_iter);
   void create_march_thread(VID_t interval_id, VID_t block_id);
 #ifdef USE_MCP3D
   void load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile);
@@ -1016,12 +1014,13 @@ void integrate_point(std::string stage, Container &fifo, T &connected_fifo,
   }
 }
 
-template <typename T, typename Container, typename T2>
 void integrate_adj_leafs(GridCoord start_coord,
                          std::vector<OffsetCoord> stencil_offsets,
-                         T &update_accessor, Container &fifo,
-                         T2 &connected_fifo, std::string stage,
-                         EnlargedPointDataGrid::Ptr grid, int offset_value) {
+                         openvdb::BoolGrid::Ptr update_grid,
+                         std::deque<VertexAttr> &fifo,
+                         std::deque<VertexAttr> &connected_fifo,
+                         std::string stage, EnlargedPointDataGrid::Ptr grid,
+                         int offset_value) {
 
   // force evaluation by saving to vector to get desired side effects
   // from integrate_point
@@ -1033,9 +1032,9 @@ void integrate_adj_leafs(GridCoord start_coord,
                          coord_add(start_coord, stencil_offset)};
       }) |
       // get the corresponding leaf from update grid
-      rng::views::transform([&update_accessor](auto coord_pair) {
+      rng::views::transform([update_grid](auto coord_pair) {
         return std::pair{/*rel. offset*/ coord_pair.first,
-                         update_accessor.probeConstLeaf(coord_pair.second)};
+                         update_grid->tree().probeConstLeaf(coord_pair.second)};
       }) |
       // does adj leaf have any border topology?
       rng::views::remove_if([](auto leaf_pair) {
@@ -1095,54 +1094,65 @@ void integrate_adj_leafs(GridCoord start_coord,
  * iterations run of march_narrow_band safely to complete the iteration
  */
 template <class image_t>
-template <typename T2>
 void Recut<image_t>::integrate_update_grid(
     EnlargedPointDataGrid::Ptr grid, std::string stage,
     std::map<GridCoord, std::deque<VertexAttr>> &fifo,
     std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo,
-    T2 update_accessor, VID_t interval_id) {
+    openvdb::BoolGrid::Ptr update_grid, VID_t interval_id) {
 
-  auto integrate_leaf = [&](auto leaf_iter) {
-    auto bbox = leaf_iter->getNodeBoundingBox();
+  auto timer = high_resolution_timer();
+  // gather all changes on 6 boundary leafs
+  {
+    auto integrate_range =
+        [&, this](const openvdb::tree::LeafManager<
+                  openvdb::points::PointDataTree>::LeafRange &range) {
+          // for each leaf with active voxels i.e. containing topology
+          for (auto leaf_iter = range.begin(); leaf_iter; ++leaf_iter) {
+            // integrate_leaf(leaf_iter);
+            auto bbox = leaf_iter->getNodeBoundingBox();
 
-    // lower corner adjacents, have an offset at that dim of -1
-    integrate_adj_leafs(bbox.min(), this->lower_stencil, update_accessor,
-                        fifo[leaf_iter->origin()],
-                        connected_fifo[leaf_iter->origin()], stage, grid, -1);
-    // upper corner adjacents, have an offset at that dim equal to leaf log2
-    // dim
-    integrate_adj_leafs(bbox.max(), this->higher_stencil, update_accessor,
-                        fifo[leaf_iter->origin()],
-                        connected_fifo[leaf_iter->origin()], stage, grid,
-                        LEAF_LENGTH);
-  };
+            // lower corner adjacents, have an offset at that dim of -1
+            integrate_adj_leafs(bbox.min(), this->lower_stencil, update_grid,
+                                fifo[leaf_iter->origin()],
+                                connected_fifo[leaf_iter->origin()], stage,
+                                grid, -1);
+            // upper corner adjacents, have an offset at that dim equal to leaf
+            // log2 dim
+            integrate_adj_leafs(bbox.max(), this->higher_stencil, update_grid,
+                                fifo[leaf_iter->origin()],
+                                connected_fifo[leaf_iter->origin()], stage,
+                                grid, LEAF_LENGTH);
+          }
+        };
 
-  auto op = [&](const openvdb::tree::LeafManager<
-                openvdb::points::PointDataTree>::LeafRange &range) {
-    // for each leaf with active voxels i.e. containing topology
-    for (auto leaf_iter = range.begin(); leaf_iter; ++leaf_iter) {
-      integrate_leaf(leaf_iter);
-    }
-  };
-
-  // Create a leaf manager for the points tree.
-  openvdb::tree::LeafManager<openvdb::points::PointDataTree> leafManager(
-      grid->tree());
-  // Evaluate in parallel
-  tbb::parallel_for(leafManager.leafRange(), op);
-
-  //auto timer = high_resolution_timer();
+    openvdb::tree::LeafManager<PointTree> grid_leaf_manager(grid->tree());
+#ifdef LOG_FULL
+    cout << "created leaf manager " << timer.elapsed() << " sec.\n";
+#endif
+    tbb::parallel_for(grid_leaf_manager.leafRange(), integrate_range);
+  }
 
   // set update_grid false, keeping active values intact on boundary for
   // the lifetime of the program for sparse checks
-  for (auto leaf_iter = this->update_grid->tree().beginLeaf(); leaf_iter;
-       ++leaf_iter) {
-    // FIXME probably a more efficient way (hierarchically?) to set all to false
-    leaf_iter->fill(false);
+  {
+    auto fill_range = [](const openvdb::tree::LeafManager<
+                          vb::BoolTree>::LeafRange &range) {
+      // for each leaf with active voxels i.e. containing topology
+      for (auto leaf_iter = range.begin(); leaf_iter; ++leaf_iter) {
+        // FIXME probably a more efficient way (hierarchically?) to set all to
+        // false
+        leaf_iter->fill(false);
+      }
+    };
+
+    timer.restart();
+    openvdb::tree::LeafManager<vb::BoolTree> update_grid_leaf_manager(
+        update_grid->tree());
+    tbb::parallel_for(update_grid_leaf_manager.leafRange(), fill_range);
+#ifdef LOG_FULL
+    cout << "\tFill to false in " << timer.elapsed() << " sec.\n";
+#endif
   }
-//#ifdef LOG_FULL
-  //cout << "\tFill to false in " << timer.elapsed() << " sec.\n";
-//#endif
 }
 
 template <class image_t> void Recut<image_t>::activate_all_intervals() {
@@ -1261,11 +1271,11 @@ void Recut<image_t>::dump_buffer(Container buffer) {
 }
 
 template <class image_t>
-template <class Container, typename T, typename T2>
+template <class Container, typename T2>
 void Recut<image_t>::connected_tile(
     const image_t *tile, VID_t interval_id, VID_t block_id, std::string stage,
     const TileThresholds<image_t> *tile_thresholds, Container &connected_fifo,
-    Container &fifo, VID_t revisits, T vdb_accessor, T2 leaf_iter) {
+    Container &fifo, VID_t revisits, T2 leaf_iter) {
 
   if (connected_fifo.empty())
     return;
@@ -1380,12 +1390,12 @@ void Recut<image_t>::connected_tile(
 }
 
 template <class image_t>
-template <class Container, typename T, typename T2>
+template <class Container, typename T2>
 void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
                                  VID_t block_id, std::string stage,
                                  const TileThresholds<image_t> *tile_thresholds,
                                  Container &fifo, VID_t revisits,
-                                 T vdb_accessor, T2 leaf_iter) {
+                                 T2 leaf_iter) {
   if (fifo.empty())
     return;
 
@@ -1464,12 +1474,11 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
 }
 
 template <class image_t>
-template <class Container, typename T, typename T2>
+template <class Container, typename T2>
 void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
                                 VID_t block_id, std::string stage,
                                 const TileThresholds<image_t> *tile_thresholds,
-                                Container &fifo, VID_t revisits, T vdb_accessor,
-                                T2 leaf_iter) {
+                                Container &fifo, VID_t revisits, T2 leaf_iter) {
   if (fifo.empty())
     return;
 
@@ -1537,12 +1546,12 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
 } // end prune_tile
 
 template <class image_t>
-template <typename T, typename T2>
+template <typename T2>
 void Recut<image_t>::march_narrow_band(
     const image_t *tile, VID_t interval_id, VID_t block_id, std::string stage,
     const TileThresholds<image_t> *tile_thresholds,
     std::deque<VertexAttr> &connected_fifo, std::deque<VertexAttr> &fifo,
-    T vdb_accessor, T2 leaf_iter) {
+    T2 leaf_iter) {
 
   //#ifdef LOG_FULL
   // VID_t visited = 0;
@@ -1555,13 +1564,13 @@ void Recut<image_t>::march_narrow_band(
 
   if (stage == "connected") {
     connected_tile(tile, interval_id, block_id, stage, tile_thresholds,
-                   connected_fifo, fifo, revisits, vdb_accessor, leaf_iter);
+                   connected_fifo, fifo, revisits, leaf_iter);
   } else if (stage == "radius") {
     radius_tile(tile, interval_id, block_id, stage, tile_thresholds, fifo,
-                revisits, vdb_accessor, leaf_iter);
+                revisits, leaf_iter);
   } else if (stage == "prune") {
     prune_tile(tile, interval_id, block_id, stage, tile_thresholds, fifo,
-               revisits, vdb_accessor, leaf_iter);
+               revisits, leaf_iter);
   } else {
     assertm(false, "Stage name not recognized");
   }
@@ -1652,7 +1661,7 @@ std::atomic<double> Recut<image_t>::process_interval(
   auto timer = high_resolution_timer();
 
   integrate_update_grid(this->topology_grid, stage, this->map_fifo,
-                        this->connected_map, vdb_accessor, interval_id);
+                        this->connected_map, this->update_grid, interval_id);
 
   // if there is a single block per interval than this while
   // loop will exit after one iteration
@@ -1660,29 +1669,15 @@ std::atomic<double> Recut<image_t>::process_interval(
   for (;; ++inner_iteration_idx) {
     auto iter_start = timer.elapsed();
 
-    // assertm(this->topology_grid, "Block count and size must match topology
-    // grid leaf size at compile time");
-    // auto leaf_iter = this->topology_grid->tree().beginLeaf();
-    //#ifdef USE_OMP_BLOCK
-    //#pragma omp parallel for
-    //#endif
-    // for (VID_t block_id = 0; block_id < interval_block_size; ++block_id) {
-    // if (input_is_vdb)
-    // assertm(leaf_iter, "Block count and size must match topology grid leaf "
-    //"size at compile time");
-    // march_narrow_band(tile, interval_id, block_id, stage, tile_thresholds,
-    // fifo[block_id], vdb_accessor, leaf_iter);
-    // if (input_is_vdb)
-    //++leaf_iter;
-    //}
+    //openvdb::tree::LeafManager<PointTree> grid_leaf_manager(this->topology_grid->tree());
+    //tbb::parallel_for(grid_leaf_manager.leafRange(), march_range);
 
     for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
          ++leaf_iter) {
       auto block_id = coord_img_to_block_id(leaf_iter->origin());
       march_narrow_band(tile, interval_id, block_id, stage, tile_thresholds,
                         this->connected_map[leaf_iter->origin()],
-                        this->map_fifo[leaf_iter->origin()], vdb_accessor,
-                        leaf_iter);
+                        this->map_fifo[leaf_iter->origin()], leaf_iter);
     }
 
 #ifdef LOG_FULL
@@ -1692,7 +1687,7 @@ std::atomic<double> Recut<image_t>::process_interval(
 
     auto integrate_start = timer.elapsed();
     integrate_update_grid(this->topology_grid, stage, this->map_fifo,
-                          this->connected_map, vdb_accessor, interval_id);
+                          this->connected_map, this->update_grid, interval_id);
 
 #ifdef LOG_FULL
     cout << "Integration in " << timer.elapsed() - integrate_start << " sec.\n";
