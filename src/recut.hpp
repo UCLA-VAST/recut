@@ -989,11 +989,11 @@ void integrate_point(std::string stage, Container &fifo, T &connected_fifo,
 #endif
 
   if (stage == "connected") {
-    //openvdb::points::AttributeHandle<uint8_t> current_flags_handle(
-        //leaf_iter->constAttributeArray("flags"));
-    //auto potential_update_ind = leaf_iter->beginIndexVoxel(potential_update);
-    //if (is_selected(current_flags_handle, potential_update_ind))
-      //return; // no work to do at this point
+    // openvdb::points::AttributeHandle<uint8_t> current_flags_handle(
+    // leaf_iter->constAttributeArray("flags"));
+    // auto potential_update_ind = leaf_iter->beginIndexVoxel(potential_update);
+    // if (is_selected(current_flags_handle, potential_update_ind))
+    // return; // no work to do at this point
 
     openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
         adj_leaf_iter->constAttributeArray("parents"));
@@ -1072,7 +1072,8 @@ void integrate_adj_leafs(GridCoord start_coord,
             if ((leaf_pair.first[dim] + start_coord[dim]) == adj_coord[dim]) {
               // find the adjacent vox back in the current leaf which touches
               // adj_coord
-              auto potential_update = coord_prod(leaf_pair.first , neg_ones) + adj_coord;
+              auto potential_update =
+                  coord_prod(leaf_pair.first, neg_ones) + adj_coord;
               integrate_point(stage, fifo, connected_fifo, adj_coord, grid,
                               adj_offsets, potential_update);
             }
@@ -1624,21 +1625,15 @@ std::atomic<double> Recut<image_t>::process_interval(
     VID_t interval_id, const image_t *tile, std::string stage,
     const TileThresholds<image_t> *tile_thresholds, T2 vdb_accessor) {
 
-  struct timespec presave_time, postmarch_time, iter_start,
-      start_iter_loop_time, end_iter_time, postsave_time;
-  double no_io_time;
-  no_io_time = 0.0;
+  auto timer = high_resolution_timer();
 
   integrate_update_grid(this->topology_grid, stage, this->map_fifo,
                         this->connected_map, vdb_accessor, interval_id);
 
-  // iterations over blocks
   // if there is a single block per interval than this while
   // loop will exit after one iteration
-  clock_gettime(CLOCK_REALTIME, &start_iter_loop_time);
-  VID_t inner_iteration_idx = 0;
-  while (true) {
-    clock_gettime(CLOCK_REALTIME, &iter_start);
+  for (VID_t inner_iteration_idx = 0;; ++inner_iteration_idx) {
+    auto iter_start = timer.elapsed();
 
     // assertm(this->topology_grid, "Block count and size must match topology
     // grid leaf size at compile time");
@@ -1666,20 +1661,19 @@ std::atomic<double> Recut<image_t>::process_interval(
     }
 
 #ifdef LOG_FULL
-    cout << "Marched narrow band";
-    clock_gettime(CLOCK_REALTIME, &postmarch_time);
-    cout << " in " << diff_time(iter_start, postmarch_time) << " sec." << '\n';
+    cout << "Marched narrow band in " << timer.elapsed() - iter_start
+         << " sec.\n";
 #endif
 
+    auto integrate_start = timer.elapsed();
     integrate_update_grid(this->topology_grid, stage, this->map_fifo,
                           this->connected_map, vdb_accessor, interval_id);
 
 #ifdef LOG_FULL
-    clock_gettime(CLOCK_REALTIME, &end_iter_time);
-    cout << "inner_iteration_idx " << inner_iteration_idx << " in "
-         << diff_time(iter_start, end_iter_time) << " sec." << '\n';
+    cout << "Integration in " << timer.elapsed() - integrate_start << " sec.\n";
 #endif
 
+    auto check_start = timer.elapsed();
     if (stage == "connected") {
       if (are_fifos_empty(this->connected_map)) {
         break;
@@ -1687,22 +1681,20 @@ std::atomic<double> Recut<image_t>::process_interval(
     } else if (are_fifos_empty(this->map_fifo)) {
       break;
     }
-    inner_iteration_idx++;
-  } // iterations per interval
 
-  clock_gettime(CLOCK_REALTIME, &presave_time);
-
-  clock_gettime(CLOCK_REALTIME, &postsave_time);
-
-  no_io_time = diff_time(start_iter_loop_time, presave_time);
-// computation_time += no_io_time;
 #ifdef LOG_FULL
-  cout << "Interval: " << interval_id << " (no I/O) within " << no_io_time
-       << " sec." << '\n';
+    cout << "Check fifos in " << timer.elapsed() - check_start << " sec.\n";
 #endif
 
+  } // iterations per interval
+
   active_intervals[interval_id] = false;
-  return no_io_time;
+
+#ifdef LOG_FULL
+  cout << "Interval: " << interval_id << " (no I/O) within " << timer.elapsed()
+       << " sec." << '\n';
+#endif
+  return timer.elapsed();
 }
 
 #ifdef USE_MCP3D
@@ -1723,8 +1715,7 @@ std::atomic<double> Recut<image_t>::process_interval(
 template <class image_t>
 void Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
 #ifdef LOG
-  struct timespec start, image_load;
-  clock_gettime(CLOCK_REALTIME, &start);
+  auto timer = high_resolution_timer();
 #endif
 
   auto tile_extents = this->interval_lengths;
@@ -1764,8 +1755,7 @@ void Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
   //#endif
 
 #ifdef LOG
-  clock_gettime(CLOCK_REALTIME, &image_load);
-  cout << "Load image in " << diff_time(start, image_load) << " sec." << '\n';
+  cout << "Load image in " << timer.elapsed() << " sec." << '\n';
 #endif
 }
 
@@ -2376,7 +2366,7 @@ const std::vector<GridCoord> Recut<image_t>::initialize() {
   cout << "User specified image root dir " << args->image_root_dir() << '\n';
 #endif
 #endif
-  struct timespec time0, time1, time2, time3;
+  struct timespec time2, time3;
   uint64_t root_64bit;
 
   // input type
@@ -2518,13 +2508,11 @@ const std::vector<GridCoord> Recut<image_t>::initialize() {
             << " blocks per interval: " << interval_block_size << '\n';
 #endif
 
-  clock_gettime(CLOCK_REALTIME, &time2);
+  auto timer = high_resolution_timer();
   initialize_globals(grid_interval_size, interval_block_size);
 
-  clock_gettime(CLOCK_REALTIME, &time3);
-
 #ifdef LOG
-  cout << "Initialized globals " << diff_time(time2, time3) << '\n';
+  cout << "Initialized globals " << timer.elapsed() << '\n';
 #endif
 
   if (this->params->force_regenerate_image) {
@@ -2640,11 +2628,10 @@ template <class image_t>
 template <typename vertex_t>
 void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
                                         bool accept_tombstone) {
-  struct timespec time0, time1;
 #ifdef FULL_PRINT
   cout << "Generating results." << '\n';
 #endif
-  clock_gettime(CLOCK_REALTIME, &time0);
+  auto timer = high_resolution_timer();
 
   // get a mapping to stable address pointers in outtree such that a markers
   // parent is valid pointer when returning just outtree
@@ -2737,9 +2724,8 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
   cout << "Total marker size: " << outtree.size() << " nodes" << '\n';
 #endif
 
-  clock_gettime(CLOCK_REALTIME, &time1);
 #ifdef FULL_PRINT
-  cout << "Finished generating results within " << diff_time(time0, time1)
+  cout << "Finished generating results within " << timer.elapsed()
        << " sec." << '\n';
 #endif
 }

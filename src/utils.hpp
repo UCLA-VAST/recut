@@ -1500,11 +1500,6 @@ template <typename T> struct atomwrapper {
   }
 };
 
-// use in conjunction with clock_gettime
-inline double diff_time(struct timespec time1, struct timespec time2) {
-  return time2.tv_sec - time1.tv_sec + (time2.tv_nsec - time1.tv_nsec) * 1e-9;
-}
-
 template <typename T> struct CompareResults {
   T false_negatives;
   T false_positives;
