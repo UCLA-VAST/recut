@@ -8,6 +8,7 @@
 #include <bitset>
 #include <cstdlib>
 #include <deque>
+#include <execution>
 #include <fstream>
 #include <future>
 #include <iostream>
@@ -129,7 +130,7 @@ public:
   void place_vertex(const VID_t nb_interval_id, VID_t block_id, VID_t nb,
                     struct VertexAttr *dst, GridCoord dst_coord,
                     OffsetCoord msg_offsets, std::string stage, T vdb_accessor);
-  bool are_fifos_empty(std::map<GridCoord, std::deque<VertexAttr>> &check_fifo);
+  bool any_fifo_active(std::map<GridCoord, std::deque<VertexAttr>> &check_fifo);
   bool are_intervals_finished();
   void activate_all_intervals();
 
@@ -180,7 +181,8 @@ public:
                          FlagsT flags_handle, RadiusT radius_handle,
                          UpdateIter update_leaf);
   void integrate_update_grid(
-      EnlargedPointDataGrid::Ptr grid, std::string stage,
+      EnlargedPointDataGrid::Ptr grid,
+      vt::LeafManager<PointTree> grid_leaf_manager, std::string stage,
       std::map<GridCoord, std::deque<VertexAttr>> &fifo,
       std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo,
       openvdb::BoolGrid::Ptr update_grid, VID_t interval_id);
@@ -1095,12 +1097,12 @@ void integrate_adj_leafs(GridCoord start_coord,
  */
 template <class image_t>
 void Recut<image_t>::integrate_update_grid(
-    EnlargedPointDataGrid::Ptr grid, std::string stage,
+    EnlargedPointDataGrid::Ptr grid,
+    vt::LeafManager<PointTree> grid_leaf_manager, std::string stage,
     std::map<GridCoord, std::deque<VertexAttr>> &fifo,
     std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo,
     openvdb::BoolGrid::Ptr update_grid, VID_t interval_id) {
 
-  auto timer = high_resolution_timer();
   // gather all changes on 6 boundary leafs
   {
     auto integrate_range =
@@ -1125,10 +1127,6 @@ void Recut<image_t>::integrate_update_grid(
           }
         };
 
-    openvdb::tree::LeafManager<PointTree> grid_leaf_manager(grid->tree());
-#ifdef LOG_FULL
-    cout << "created leaf manager " << timer.elapsed() << " sec.\n";
-#endif
     tbb::parallel_for(grid_leaf_manager.leafRange(), integrate_range);
   }
 
@@ -1145,12 +1143,12 @@ void Recut<image_t>::integrate_update_grid(
           }
         };
 
-    timer.restart();
+    auto timer = high_resolution_timer();
     openvdb::tree::LeafManager<vb::BoolTree> update_grid_leaf_manager(
         update_grid->tree());
     tbb::parallel_for(update_grid_leaf_manager.leafRange(), fill_range);
 #ifdef LOG_FULL
-    cout << "\tFill to false in " << timer.elapsed() << " sec.\n";
+    cout << "Fill to false in " << timer.elapsed() << " sec.\n";
 #endif
   }
 }
@@ -1194,29 +1192,44 @@ template <class image_t> bool Recut<image_t>::are_intervals_finished() {
  * corresponding heap is not empty
  */
 template <class image_t>
-bool Recut<image_t>::are_fifos_empty(
+bool Recut<image_t>::any_fifo_active(
     std::map<GridCoord, std::deque<VertexAttr>> &check_fifo) {
-  VID_t tot_active = 0;
-  //#ifdef LOG_FULL
-  // cout << "Blocks active: ";
-  //#endif
-  for (const auto &pair : check_fifo) {
-    if (!pair.second.empty()) {
-      tot_active++;
-      //#ifdef LOG_FULL
-      // cout << pair.first << ", ";
-      // print_iter_name(pair.second, "deque");
-      //#endif
-    }
-  }
-  if (tot_active == 0) {
-    return true;
-  } else {
+
+  // std::experimental::parallel::any_of(check_fifo.begin(), check_fifo.end(),
+  // [](const auto& pair) { return !pair.second.empty(); };
+
+  auto timer = high_resolution_timer();
+  auto found = std::any_of(
+      std::execution::par_unseq, check_fifo.begin(), check_fifo.end(),
+      [](const auto &pair) { return !pair.second.empty(); });
+
 #ifdef LOG_FULL
-    cout << '\n' << tot_active << " total blocks active" << '\n';
+  cout << "Check fifos in " << timer.elapsed() << " sec.\n";
 #endif
-    return false;
-  }
+
+  return found;
+
+  // VID_t tot_active = 0;
+  ////#ifdef LOG_FULL
+  //// cout << "Blocks active: ";
+  ////#endif
+  // for (const auto &pair : check_fifo) {
+  // if (!pair.second.empty()) {
+  // tot_active++;
+  ////#ifdef LOG_FULL
+  //// cout << pair.first << ", ";
+  //// print_iter_name(pair.second, "deque");
+  ////#endif
+  //}
+  //}
+  // if (tot_active == 0) {
+  // return true;
+  //} else {
+  //#ifdef LOG_FULL
+  // cout << '\n' << tot_active << " total blocks active" << '\n';
+  //#endif
+  // return false;
+  //}
 }
 
 // if the parent has been pruned then set the current
@@ -1660,57 +1673,52 @@ std::atomic<double> Recut<image_t>::process_interval(
 
   auto timer = high_resolution_timer();
 
-  openvdb::tree::LeafManager<PointTree> grid_leaf_manager(
-      this->topology_grid->tree());
+  vt::LeafManager<PointTree> grid_leaf_manager(this->topology_grid->tree());
 
-  integrate_update_grid(this->topology_grid, stage, this->map_fifo,
-                        this->connected_map, this->update_grid, interval_id);
+  integrate_update_grid(this->topology_grid, grid_leaf_manager, stage,
+                        this->map_fifo, this->connected_map, this->update_grid,
+                        interval_id);
+
+  auto march_range = [&,
+                      this](const openvdb::tree::LeafManager<
+                            openvdb::points::PointDataTree>::LeafRange &range) {
+    // for each leaf with active voxels i.e. containing topology
+    for (auto leaf_iter = range.begin(); leaf_iter; ++leaf_iter) {
+      auto block_id = coord_img_to_block_id(leaf_iter->origin());
+      march_narrow_band(tile, interval_id, block_id, stage, tile_thresholds,
+                        this->connected_map[leaf_iter->origin()],
+                        this->map_fifo[leaf_iter->origin()], leaf_iter);
+    }
+  };
+
+  auto is_active = [&, this]() {
+    if (stage == "connected") {
+      return any_fifo_active(this->connected_map);
+    }
+    return any_fifo_active(this->map_fifo);
+  };
 
   // if there is a single block per interval than this while
   // loop will exit after one iteration
   VID_t inner_iteration_idx = 0;
-  for (;; ++inner_iteration_idx) {
+  for (; is_active(); ++inner_iteration_idx) {
     auto iter_start = timer.elapsed();
-
-    auto march_range =
-        [&, this](const openvdb::tree::LeafManager<
-                  openvdb::points::PointDataTree>::LeafRange &range) {
-          // for each leaf with active voxels i.e. containing topology
-          for (auto leaf_iter = range.begin(); leaf_iter; ++leaf_iter) {
-            auto block_id = coord_img_to_block_id(leaf_iter->origin());
-            march_narrow_band(tile, interval_id, block_id, stage,
-                              tile_thresholds,
-                              this->connected_map[leaf_iter->origin()],
-                              this->map_fifo[leaf_iter->origin()], leaf_iter);
-          }
-        };
 
     tbb::parallel_for(grid_leaf_manager.leafRange(), march_range);
 
 #ifdef LOG_FULL
-    cout << "Marched narrow band in " << timer.elapsed() - iter_start
+    cout << "\nMarched " << stage << " in " << timer.elapsed() - iter_start
          << " sec.\n";
 #endif
 
     auto integrate_start = timer.elapsed();
-    integrate_update_grid(this->topology_grid, stage, this->map_fifo,
-                          this->connected_map, this->update_grid, interval_id);
+    integrate_update_grid(this->topology_grid, grid_leaf_manager, stage,
+                          this->map_fifo, this->connected_map,
+                          this->update_grid, interval_id);
 
 #ifdef LOG_FULL
-    cout << "Integration in " << timer.elapsed() - integrate_start << " sec.\n";
-#endif
-
-    auto check_start = timer.elapsed();
-    if (stage == "connected") {
-      if (are_fifos_empty(this->connected_map)) {
-        break;
-      }
-    } else if (are_fifos_empty(this->map_fifo)) {
-      break;
-    }
-
-#ifdef LOG_FULL
-    cout << "Check fifos in " << timer.elapsed() - check_start << " sec.\n";
+    cout << "Integrated " << stage << " in "
+         << timer.elapsed() - integrate_start << " sec.\n";
 #endif
 
   } // iterations per interval
@@ -1719,7 +1727,7 @@ std::atomic<double> Recut<image_t>::process_interval(
 
 #ifdef LOG_FULL
   cout << "Interval: " << interval_id << " in " << inner_iteration_idx
-       << " iterations (no I/O) within " << timer.elapsed() << " sec." << '\n';
+       << " iterations, total " << timer.elapsed() << " sec." << '\n';
 #endif
   return timer.elapsed();
 }

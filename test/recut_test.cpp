@@ -387,7 +387,8 @@ TEST(VDB, IntegrateUpdateGrid) {
     set_if_active(update_leaf, lower_corner);
     set_if_active(update_leaf, upper_corner);
 
-    recut.integrate_update_grid(recut.topology_grid, stage, recut.map_fifo,
+  vt::LeafManager<PointTree> grid_leaf_manager(recut.topology_grid->tree());
+    recut.integrate_update_grid(recut.topology_grid, grid_leaf_manager, stage, recut.map_fifo,
                                 recut.connected_map, recut.update_grid,
                                 interval_id);
 
