@@ -2819,7 +2819,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   // adjust final parent
   auto to_swc_file = true;
   adjust_parent(to_swc_file);
-#ifdef LOG_FULL
+#ifdef LOG
   cout << "Adjust parent in " << timer.elapsed() << " sec.\n";
 #endif
 }
