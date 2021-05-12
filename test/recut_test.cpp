@@ -593,41 +593,41 @@ TEST(VDB, Connected) {
   }
 }
 
-TEST(VDBWriteOnly, DISABLED_Any) {
-  VID_t grid_size = 8;
-  auto grid_extents = GridCoord(grid_size);
-  // do no use tcase 4 since it is randomized and will not match
-  // for the second read test
-  auto tcase = 7;
-  double slt_pct = 100;
-  bool print_all = false;
-#ifdef LOG_FULL
-  // print_all = true;
-#endif
-  // auto str_path = get_data_dir();
-  // auto fn = str_path + "/test_convert_only.vdb";
-  auto fn = "test_convert_only.vdb";
+//TEST(VDBWriteOnly, DISABLED_Any) {
+  //VID_t grid_size = 8;
+  //auto grid_extents = GridCoord(grid_size);
+  //// do no use tcase 4 since it is randomized and will not match
+  //// for the second read test
+  //auto tcase = 7;
+  //double slt_pct = 100;
+  //bool print_all = false;
+//#ifdef LOG_FULL
+  //// print_all = true;
+//#endif
+  //// auto str_path = get_data_dir();
+  //// auto fn = str_path + "/test_convert_only.vdb";
+  //auto fn = "test_convert_only.vdb";
 
-  // generate an image buffer on the fly
-  // then convert to vdb
-  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-                       /*force_regenerate_image=*/true);
-  auto recut = Recut<uint16_t>(args);
-  recut.params->convert_only_ = true;
-  recut.params->out_vdb_ = fn;
-  ASSERT_FALSE(fs::exists(fn));
-  recut();
+  //// generate an image buffer on the fly
+  //// then convert to vdb
+  //auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+                       //[>force_regenerate_image=<]true);
+  //auto recut = Recut<uint16_t>(args);
+  //recut.params->convert_only_ = true;
+  //recut.params->out_vdb_ = fn;
+  //ASSERT_FALSE(fs::exists(fn));
+  //recut();
 
-  if (print_all) {
-    std::cout << "recut image grid" << endl;
-    print_image_3D(recut.generated_image, grid_extents);
-  }
+  //if (print_all) {
+    //std::cout << "recut image grid" << endl;
+    //print_image_3D(recut.generated_image, grid_extents);
+  //}
 
-  if (print_all)
-    print_vdb_mask(recut.topology_grid->getConstAccessor(), grid_extents);
+  //if (print_all)
+    //print_vdb_mask(recut.topology_grid->getConstAccessor(), grid_extents);
 
-  ASSERT_TRUE(fs::exists(fn));
-}
+  //ASSERT_TRUE(fs::exists(fn));
+//}
 
 TEST(VDB, Convert) {
   VID_t grid_size = 8;
@@ -1270,34 +1270,34 @@ TEST(CheckGlobals, DISABLED_AllFifo) {
 }
 */
 
-TEST(Scale, DISABLED_InitializeGlobals) {
-  auto grid_size = 2;
-  auto args = get_args(grid_size, grid_size, grid_size, 100, 0);
+//TEST(Scale, DISABLED_InitializeGlobals) {
+  //auto grid_size = 2;
+  //auto args = get_args(grid_size, grid_size, grid_size, 100, 0);
 
-  auto check_block_sizes = [&args](auto image_dims) {
-    for (int block_length = 1 << 4; block_length > 4; block_length >>= 1) {
-      auto recut = Recut<uint16_t>(args);
-      auto block_lengths =
-          new_grid_coord(block_length, block_length, block_length);
-      auto interval_block_lengths = coord_div(image_dims, block_lengths);
-      print_coord(interval_block_lengths, "\tinterval_block_lengths");
-      auto interval_block_size = coord_prod_accum(interval_block_lengths);
-      cout << "\tblock_length: " << block_length
-           << " interval_block_size: " << interval_block_size << '\n';
-      recut.initialize_globals(1, interval_block_size);
-      // delete recut;
-    }
-  };
+  //auto check_block_sizes = [&args](auto image_dims) {
+    //for (int block_length = 1 << 4; block_length > 4; block_length >>= 1) {
+      //auto recut = Recut<uint16_t>(args);
+      //auto block_lengths =
+          //new_grid_coord(block_length, block_length, block_length);
+      //auto interval_block_lengths = coord_div(image_dims, block_lengths);
+      //print_coord(interval_block_lengths, "\tinterval_block_lengths");
+      //auto interval_block_size = coord_prod_accum(interval_block_lengths);
+      //cout << "\tblock_length: " << block_length
+           //<< " interval_block_size: " << interval_block_size << '\n';
+      //recut.initialize_globals(1, interval_block_size);
+      //// delete recut;
+    //}
+  //};
 
-  auto xy_log2dim = 14;
-  auto z_log2dim = 9;
-  {
-    auto image_dims =
-        new_grid_coord(1 << xy_log2dim, 1 << xy_log2dim, 1 << z_log2dim);
-    print_coord(image_dims, "medium section");
-    check_block_sizes(image_dims);
-  }
-}
+  //auto xy_log2dim = 14;
+  //auto z_log2dim = 9;
+  //{
+    //auto image_dims =
+        //new_grid_coord(1 << xy_log2dim, 1 << xy_log2dim, 1 << z_log2dim);
+    //print_coord(image_dims, "medium section");
+    //check_block_sizes(image_dims);
+  //}
+//}
 
 TEST(Update, EachStageIteratively) {
   bool print_all = false;
@@ -1811,9 +1811,9 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   // with the loaded image
   bool force_regenerate_image = true;
 #ifdef USE_MCP3D
-  force_regenerate_image = false;
+  //force_regenerate_image = false;
 #endif
-  bool prune = false;
+  bool prune = true;
   std::string stage;
   auto grid_extents = GridCoord(grid_size);
   auto interval_extents = GridCoord(interval_size);
@@ -1822,8 +1822,9 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   // shared params
   // generate image so that you can read it below
   // first make sure it can pass
+  auto input_is_vdb = true;
   auto args = get_args(grid_size, interval_size, block_size, slt_pct, tcase,
-                       force_regenerate_image);
+                       force_regenerate_image, input_is_vdb);
   cout << "args.image_root_dir() " << args.image_root_dir() << '\n';
   args.recut_parameters();
   // uint16_t is image_t here
@@ -2144,7 +2145,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
 // ... check_against_selected, check_against_app2
 INSTANTIATE_TEST_CASE_P(
-    DISABLED_RecutPipelineTests, RecutPipelineParameterTests,
+    RecutPipelineTests, RecutPipelineParameterTests,
     ::testing::Values(
         std::make_tuple(4, 4, 4, 0, 100., true, false), // 0
         std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
