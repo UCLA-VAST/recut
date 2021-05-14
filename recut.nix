@@ -19,12 +19,6 @@ in
 
   enableParallelBuilding = true;
 
-  # if test all benchmarks on, you can define these for benchmarks
-  #TEST_IMAGE = "/curr/kdmarrett/data/tcase6_image";
-  #TEST_MARKER = "/curr/kdmarrett/data/tcase6_marker";
-  TEST_IMAGE = "~/data/TME07-1/point.vdb";
-  TEST_MARKER = "~/data/TME07-1/marker_files";
-
   cmakeFlags = ["-DUSE_VDB=ON -DLOG=ON -DLOG_FULL=OFF -DFULL_PRINT=OFF -DUSE_OMP_BLOCK=OFF -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MODULE_PATH=${openvdb.defaultPackage.x86_64-linux}/lib/cmake/OpenVDB"];
 
   nativeBuildInputs = [ cmake gcc11 ];

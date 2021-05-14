@@ -313,24 +313,24 @@ auto print_marker_3D = [](auto markers, auto interval_lengths,
 };
 
 // only values strictly greater than bkg_thresh are valid
-template <typename T>
-std::unique_ptr<uint16_t[]> create_vdb_mask(T grid,
-                                            const GridCoord &lengths, GridCoord offsets=GridCoord(0)) {
+auto create_vdb_mask(EnlargedPointDataGrid::Ptr grid,
+                                            const openvdb::math::CoordBBox &bbox) {
   cout << "create_vdb_mask(): \n";
-  auto mask = std::make_unique<uint16_t[]>(coord_prod_accum(lengths));
-  for (int z = 0; z < lengths[2]; z++) {
-    for (int y = 0; y < lengths[1]; y++) {
-      for (int x = 0; x < lengths[0]; x++) {
+  cout << bbox.volume() << '\n';
+  cout << bbox.dim() << '\n';
+  auto mask = std::make_unique<uint16_t[]>(bbox.volume());
+  for (int z = bbox.min()[2]; z < bbox.max()[2]; z++) {
+    for (int y =bbox.min()[1]; y < bbox.max()[1]; y++) {
+      for (int x =bbox.min()[0]; x < bbox.max()[0]; x++) {
         openvdb::Coord xyz(x, y, z);
-        xyz += offsets;
         auto leaf_iter = grid->tree().probeConstLeaf(xyz);
         auto ind = leaf_iter->beginIndexVoxel(xyz);
         if (ind) {
           cout << "on " << xyz << '\n';
-          mask[coord_to_id(xyz, lengths)] = 1;
+          mask[coord_to_id(xyz, bbox.dim())] = 1;
         } else {
           cout << "off " << xyz << '\n';
-          mask[coord_to_id(xyz, lengths)] = 0;
+          mask[coord_to_id(xyz, bbox.dim())] = 0;
         }
       }
     }

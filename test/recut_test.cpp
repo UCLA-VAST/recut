@@ -1787,7 +1787,7 @@ class RecutPipelineParameterTests
     : public ::testing::TestWithParam<
           std::tuple<int, int, int, int, double, bool, bool>> {};
 
-TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
+TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
 
   // documents the meaning of each tuple member
   auto grid_size = std::get<0>(GetParam());
@@ -1835,16 +1835,15 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
                       recut.map_fifo, recut.connected_map);
 
   if (print_all) {
-    std::cout << "check topo\n";
+    std::cout << recut.image_bbox << '\n';
     print_all_points(recut.topology_grid, recut.image_bbox, "label");
-    std::cout << "check topo again\n";
-    print_vdb_mask(recut.topology_grid->getConstAccessor(), grid_extents);
+    //std::cout << "check topo again\n";
+    //print_vdb_mask(recut.topology_grid->getConstAccessor(), grid_extents);
   }
 
   std::unique_ptr<uint16_t[]> mask;
   if (check_against_app2) {
-    mask = create_vdb_mask(recut.topology_grid,
-                           grid_extents, args.image_offsets);
+    mask = create_vdb_mask(recut.topology_grid, recut.image_bbox);
     if (print_all) {
       print_image_3D(mask.get(), grid_extents);
     }
