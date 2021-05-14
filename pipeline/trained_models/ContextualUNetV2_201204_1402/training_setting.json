@@ -1,0 +1,114 @@
+{
+    "model_root_dir": "/media/muyezhu/Dima/project_files/deep_learning/neurite+soma_segmentation/model_training",
+    "model_name": "ContextualUNetV2",
+    "dataset_directories": {
+        "training": [
+            "/media/muyezhu/Dima/project_files/deep_learning/neurite+soma_segmentation/image_data/d2/training/2019-05-22_09.57.08_DLS_histogram_matched_reverse_high_sample_rate",
+            "/media/muyezhu/Dima/project_files/deep_learning/neurite+soma_segmentation/image_data/rbp4/training/rbp4_str_cropped_less_dense_resolution0_tif_high_sample_rate"
+        ],
+        "validation": [
+            "/media/muyezhu/Dima/project_files/deep_learning/neurite+soma_segmentation/image_data/d2/validation/2019-05-22_09.57.08_DLS_histogram_matched_reverse_high_sample_rate",
+            "/media/muyezhu/Dima/project_files/deep_learning/neurite+soma_segmentation/image_data/rbp4/validation/rbp4_str_cropped_less_dense_resolution0_tif_high_sample_rate"
+        ],
+        "test": null,
+        "inference": null
+    },
+    "dataset_selections": {
+        "offsets": [],
+        "extents": []
+    },
+    "trained_model": {
+        "model_path": null,
+        "previous_epochs": 0,
+        "reset_optimizer": false
+    },
+    "label_rules": {
+        "label_input_colors": {
+            "soma": [
+                255,
+                0,
+                0
+            ],
+            "neurite": [
+                0,
+                255,
+                0
+            ],
+            "background": [
+                0,
+                0,
+                0
+            ]
+        },
+        "label_weights": {
+            "soma": 16,
+            "background": 1,
+            "neurite": 16
+        }
+    },
+    "batch_iterator": {
+        "retrieve_pattern": "context",
+        "has_paired_data": true,
+        "training": true,
+        "high_sample_rate": false,
+        "data_fit_in_memory": true,
+        "sequence_length": 3,
+        "n_shards": 1,
+        "start_scale": 0,
+        "patch_height": 256,
+        "patch_width": 256,
+        "n_scales": 1,
+        "patch_x_overlap_percent": 0.25,
+        "patch_y_overlap_percent": 0.25,
+        "batch_size": 8,
+        "preprocess_method": "norm"
+    },
+    "transformation": {
+        "params": {
+            "rotation": [
+                8,
+                [
+                    0,
+                    90,
+                    180,
+                    270,
+                    "random",
+                    "random",
+                    "random",
+                    "random"
+                ]
+            ],
+            "gaussian": [
+                1,
+                [
+                    0,
+                    3
+                ]
+            ],
+            "reverse": [
+                1,
+                []
+            ]
+        },
+        "nesting_orders": [
+            [
+                "gaussian",
+                "rotation"
+            ],
+            [
+                "gaussian",
+                "rotation",
+                "reverse"
+            ]
+        ],
+        "include_identity": false
+    },
+    "net": {
+        "n_epochs": 500,
+        "learning_rate": 0.001,
+        "learning_rate_decay": 0.01,
+        "save_output_batch_interval": 100,
+        "save_model_epoch_interval": 100,
+        "model_kwargs": {}
+    }
+}
