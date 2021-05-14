@@ -61,7 +61,7 @@ void check_recut_error(Recut<uint16_t> &recut, DataType *ground_truth,
 
         auto coord_offset = coord - leaf_iter->origin();
         VID_t vid = coord_to_id(coord, recut.image_lengths);
-        //auto interval_id = recut.id_img_to_interval_id(vid);
+        // auto interval_id = recut.id_img_to_interval_id(vid);
 
         auto find_vid = [&]() {
           for (const auto &local_vertex : fifo[leaf_iter->origin()]) {
@@ -276,7 +276,7 @@ TEST(VDB, InitializeGlobals) {
   auto grid_extents = GridCoord(grid_size);
   auto tcase = 7;
   double slt_pct = 100;
-  bool print_all = true;
+  bool print_all = false;
   // generate an image buffer on the fly
   // then convert to vdb
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
@@ -387,10 +387,10 @@ TEST(VDB, IntegrateUpdateGrid) {
     set_if_active(update_leaf, lower_corner);
     set_if_active(update_leaf, upper_corner);
 
-  vt::LeafManager<PointTree> grid_leaf_manager(recut.topology_grid->tree());
-    recut.integrate_update_grid(recut.topology_grid, grid_leaf_manager, stage, recut.map_fifo,
-                                recut.connected_map, recut.update_grid,
-                                interval_id);
+    vt::LeafManager<PointTree> grid_leaf_manager(recut.topology_grid->tree());
+    recut.integrate_update_grid(recut.topology_grid, grid_leaf_manager, stage,
+                                recut.map_fifo, recut.connected_map,
+                                recut.update_grid, interval_id);
 
     cout << "Finished integrate\n";
 
@@ -489,16 +489,16 @@ TEST(VDB, CreatePointDataGrid) {
   // tbb::parallel_for(leafManager.leafRange(), op);
 }
 
-TEST(Globals, Map) {
-  auto map_fifo = std::map<GridCoord, std::deque<VertexAttr>>();
-}
+// TEST(Coord, CoordToId) {
+// GridCoord coord(;
+//}
 
 TEST(VDB, ActivateVids) {
   VID_t grid_size = 8;
   auto grid_extents = GridCoord(grid_size);
   auto tcase = 7;
   double slt_pct = 100;
-  bool print_all = true;
+  bool print_all = false;
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
                        /*force_regenerate_image=*/false,
                        /*input_is_vdb=*/true);
@@ -593,40 +593,40 @@ TEST(VDB, Connected) {
   }
 }
 
-//TEST(VDBWriteOnly, DISABLED_Any) {
-  //VID_t grid_size = 8;
-  //auto grid_extents = GridCoord(grid_size);
-  //// do no use tcase 4 since it is randomized and will not match
-  //// for the second read test
-  //auto tcase = 7;
-  //double slt_pct = 100;
-  //bool print_all = false;
+// TEST(VDBWriteOnly, DISABLED_Any) {
+// VID_t grid_size = 8;
+// auto grid_extents = GridCoord(grid_size);
+//// do no use tcase 4 since it is randomized and will not match
+//// for the second read test
+// auto tcase = 7;
+// double slt_pct = 100;
+// bool print_all = false;
 //#ifdef LOG_FULL
-  //// print_all = true;
+//// print_all = true;
 //#endif
-  //// auto str_path = get_data_dir();
-  //// auto fn = str_path + "/test_convert_only.vdb";
-  //auto fn = "test_convert_only.vdb";
+//// auto str_path = get_data_dir();
+//// auto fn = str_path + "/test_convert_only.vdb";
+// auto fn = "test_convert_only.vdb";
 
-  //// generate an image buffer on the fly
-  //// then convert to vdb
-  //auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-                       //[>force_regenerate_image=<]true);
-  //auto recut = Recut<uint16_t>(args);
-  //recut.params->convert_only_ = true;
-  //recut.params->out_vdb_ = fn;
-  //ASSERT_FALSE(fs::exists(fn));
-  //recut();
+//// generate an image buffer on the fly
+//// then convert to vdb
+// auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+//[>force_regenerate_image=<]true);
+// auto recut = Recut<uint16_t>(args);
+// recut.params->convert_only_ = true;
+// recut.params->out_vdb_ = fn;
+// ASSERT_FALSE(fs::exists(fn));
+// recut();
 
-  //if (print_all) {
-    //std::cout << "recut image grid" << endl;
-    //print_image_3D(recut.generated_image, grid_extents);
-  //}
+// if (print_all) {
+// std::cout << "recut image grid" << endl;
+// print_image_3D(recut.generated_image, grid_extents);
+//}
 
-  //if (print_all)
-    //print_vdb_mask(recut.topology_grid->getConstAccessor(), grid_extents);
+// if (print_all)
+// print_vdb_mask(recut.topology_grid->getConstAccessor(), grid_extents);
 
-  //ASSERT_TRUE(fs::exists(fn));
+// ASSERT_TRUE(fs::exists(fn));
 //}
 
 TEST(VDB, Convert) {
@@ -1270,41 +1270,38 @@ TEST(CheckGlobals, DISABLED_AllFifo) {
 }
 */
 
-//TEST(Scale, DISABLED_InitializeGlobals) {
-  //auto grid_size = 2;
-  //auto args = get_args(grid_size, grid_size, grid_size, 100, 0);
+// TEST(Scale, DISABLED_InitializeGlobals) {
+// auto grid_size = 2;
+// auto args = get_args(grid_size, grid_size, grid_size, 100, 0);
 
-  //auto check_block_sizes = [&args](auto image_dims) {
-    //for (int block_length = 1 << 4; block_length > 4; block_length >>= 1) {
-      //auto recut = Recut<uint16_t>(args);
-      //auto block_lengths =
-          //new_grid_coord(block_length, block_length, block_length);
-      //auto interval_block_lengths = coord_div(image_dims, block_lengths);
-      //print_coord(interval_block_lengths, "\tinterval_block_lengths");
-      //auto interval_block_size = coord_prod_accum(interval_block_lengths);
-      //cout << "\tblock_length: " << block_length
-           //<< " interval_block_size: " << interval_block_size << '\n';
-      //recut.initialize_globals(1, interval_block_size);
-      //// delete recut;
-    //}
-  //};
+// auto check_block_sizes = [&args](auto image_dims) {
+// for (int block_length = 1 << 4; block_length > 4; block_length >>= 1) {
+// auto recut = Recut<uint16_t>(args);
+// auto block_lengths =
+// new_grid_coord(block_length, block_length, block_length);
+// auto interval_block_lengths = coord_div(image_dims, block_lengths);
+// print_coord(interval_block_lengths, "\tinterval_block_lengths");
+// auto interval_block_size = coord_prod_accum(interval_block_lengths);
+// cout << "\tblock_length: " << block_length
+//<< " interval_block_size: " << interval_block_size << '\n';
+// recut.initialize_globals(1, interval_block_size);
+//// delete recut;
+//}
+//};
 
-  //auto xy_log2dim = 14;
-  //auto z_log2dim = 9;
-  //{
-    //auto image_dims =
-        //new_grid_coord(1 << xy_log2dim, 1 << xy_log2dim, 1 << z_log2dim);
-    //print_coord(image_dims, "medium section");
-    //check_block_sizes(image_dims);
-  //}
+// auto xy_log2dim = 14;
+// auto z_log2dim = 9;
+//{
+// auto image_dims =
+// new_grid_coord(1 << xy_log2dim, 1 << xy_log2dim, 1 << z_log2dim);
+// print_coord(image_dims, "medium section");
+// check_block_sizes(image_dims);
+//}
 //}
 
 TEST(Update, EachStageIteratively) {
   bool print_all = false;
   bool print_csv = false;
-#ifdef LOG
-  print_all = true;
-#endif
   bool prune = true;
   // for circular test cases app2's accuracy_radius is not correct
   // in terms of hops, 1-norm, manhattan-distance, cell-centered euclidean
@@ -1811,7 +1808,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   // with the loaded image
   bool force_regenerate_image = true;
 #ifdef USE_MCP3D
-  //force_regenerate_image = false;
+  // force_regenerate_image = false;
 #endif
   bool prune = true;
   std::string stage;
@@ -1826,30 +1823,32 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   auto args = get_args(grid_size, interval_size, block_size, slt_pct, tcase,
                        force_regenerate_image, input_is_vdb);
   cout << "args.image_root_dir() " << args.image_root_dir() << '\n';
-  args.recut_parameters();
+  cout << "image lengths " << grid_extents << '\n';
+  cout << "image offsets " << args.image_offsets << '\n';
   // uint16_t is image_t here
   TileThresholds<uint16_t> *tile_thresholds;
-  bool print_all = false;
-#ifdef FULL_PRINT
-  print_all = true;
-#endif
+  bool print_all = true;
 
   auto recut = Recut<uint16_t>(args);
   auto root_coords = recut.initialize();
   recut.activate_vids(recut.topology_grid, root_coords, "connected",
                       recut.map_fifo, recut.connected_map);
 
-#ifdef USE_MCP3D
-  mcp3d::MImage image(args.image_root_dir());
-  if (check_against_app2) {
-    read_tiff(args.image_root_dir(), args.image_offsets, args.image_lengths,
-              image);
+  if (print_all) {
+    std::cout << "check topo\n";
+    print_all_points(recut.topology_grid, recut.image_bbox, "label");
+    std::cout << "check topo again\n";
+    print_vdb_mask(recut.topology_grid->getConstAccessor(), grid_extents);
+  }
 
+  std::unique_ptr<uint16_t[]> mask;
+  if (check_against_app2) {
+    mask = create_vdb_mask(recut.topology_grid,
+                           grid_extents, args.image_offsets);
     if (print_all) {
-      print_image_3D(image.Volume<uint16_t>(0), grid_extents);
+      print_image_3D(mask.get(), grid_extents);
     }
   }
-#endif
 
   // establish the tile thresholds for the entire test run (recut and
   // sequential)
@@ -1857,11 +1856,12 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     // tile_thresholds = recut.get_tile_thresholds(image);
     // bkg_thresh table: 421 ~.01 foreground
     // if any pixels are found above or below these values it will fail
-    tile_thresholds = new TileThresholds<uint16_t>(30000, 0, 421);
+    // tile_thresholds = new TileThresholds<uint16_t>(30000, 0, 421);
+    tile_thresholds = new TileThresholds<uint16_t>(/*max value*/ 2, 0, 0);
   } else {
     // note these default thresholds apply to any generated image
     // thus they will only be replaced if we're reading a real image
-    tile_thresholds = new TileThresholds<uint16_t>(2, 0, 0);
+    tile_thresholds = new TileThresholds<uint16_t>(/*max value*/ 2, 0, 0);
   }
   // std::cout << "Using bkg_thresh: " << tile_thresholds->bkg_thresh << '\n';
   RecordProperty("bkg_thresh", tile_thresholds->bkg_thresh);
@@ -1946,7 +1946,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     recut.adjust_parent(false);
     recut.convert_to_markers(
         recut_output_tree_prune,
-        /*accept_band*/ true); // this fills args.output_tree
+        /*accept_band*/ false); // this fills args.output_tree
   }
 
   double actual_slt_pct = (100. * args.output_tree.size()) / tol_sz;
@@ -1993,10 +1993,20 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
   // selected number should be unless you compare it to another
   // reconstruction method or manual ground truth
   if (check_against_app2) {
+
     // convert roots into markers (vector)
     std::vector<MyMarker *> root_markers;
     if (tcase == 6) {
-      root_markers = coords_to_markers(root_coords);
+      // cout << root_coords << '\n';
+      print_iter(root_coords);
+      auto adjusted_roots = root_coords |
+                            rng::views::transform([&args](auto coord) {
+                              return coord - args.image_offsets;
+                            }) |
+                            rng::to_vector;
+      // cout << adjusted_root << '\n';
+      print_iter(adjusted_roots);
+      root_markers = coords_to_markers(adjusted_roots);
     } else {
       root_markers = {get_central_root(grid_size)};
     }
@@ -2005,8 +2015,8 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     std::vector<MyMarker *> app2_output_tree_prune;
     std::vector<MyMarker> targets;
     auto timer = new high_resolution_timer();
-    fastmarching_tree(root_markers, targets, image.Volume<uint16_t>(0),
-                      app2_output_tree, grid_size, grid_size, grid_size, 1,
+    fastmarching_tree(root_markers, targets, mask.get(), app2_output_tree,
+                      grid_size, grid_size, grid_size, 1,
                       tile_thresholds->bkg_thresh, tile_thresholds->max_int,
                       tile_thresholds->min_int);
 
@@ -2055,8 +2065,8 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
     if (prune) {
       // run the seq version from app2 to compare
-      happ(app2_output_tree, app2_output_tree_prune, image.Volume<uint16_t>(0),
-           grid_size, grid_size, grid_size, tile_thresholds->bkg_thresh, 0.);
+      happ(app2_output_tree, app2_output_tree_prune, mask.get(), grid_size,
+           grid_size, grid_size, tile_thresholds->bkg_thresh, 0.);
 
       if (print_all) {
         std::cout << "APP2 prune\n";
@@ -2066,22 +2076,21 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
         print_marker_3D(app2_output_tree_prune, interval_extents, "radius");
       }
 
-      auto mask = std::make_unique<uint8_t[]>(tol_sz);
-      create_coverage_mask_accurate(recut_output_tree_prune, mask.get(),
+      auto prune_mask = std::make_unique<uint8_t[]>(tol_sz);
+      create_coverage_mask_accurate(recut_output_tree_prune, prune_mask.get(),
                                     grid_extents);
-      auto results = check_coverage(mask.get(), image.Volume<uint16_t>(0),
-                                    tol_sz, tile_thresholds->bkg_thresh);
+      auto results = check_coverage(prune_mask.get(), mask.get(), tol_sz,
+                                    tile_thresholds->bkg_thresh);
 
       auto app2_mask = std::make_unique<uint8_t[]>(tol_sz);
       create_coverage_mask_accurate(app2_output_tree_prune, app2_mask.get(),
                                     grid_extents);
-      auto app2_results =
-          check_coverage(app2_mask.get(), image.Volume<uint16_t>(0), tol_sz,
-                         tile_thresholds->bkg_thresh);
+      auto app2_results = check_coverage(app2_mask.get(), mask.get(), tol_sz,
+                                         tile_thresholds->bkg_thresh);
 
       if (print_all) {
         std::cout << "Recut coverage mask\n";
-        print_image_3D(mask.get(), interval_extents);
+        print_image_3D(prune_mask.get(), interval_extents);
 
         std::cout << "APP2 coverage mask\n";
         print_image_3D(app2_mask.get(), interval_extents);
@@ -2147,109 +2156,108 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 INSTANTIATE_TEST_CASE_P(
     RecutPipelineTests, RecutPipelineParameterTests,
     ::testing::Values(
-        std::make_tuple(4, 4, 4, 0, 100., true, false), // 0
-        std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
-        std::make_tuple(4, 4, 4, 2, 100., true, false), // 2
-        std::make_tuple(4, 2, 2, 2, 100., true, false)  // 3
-#ifdef USE_MCP3D
-        ,
-        // check_against_app2 (final boolean below) currently uses
-        // MCP3D's reading of image to ensure that both sequential and recut
-        // use the same iamge, to include these test while testing against
-        // sequential change the implementation so that the generated image
-        // from recut is saved and pass it to fastmarching_tree
-        std::make_tuple(4, 4, 4, 4, 50., true, true), // 4
-        // multi-interval small
-        std::make_tuple(4, 2, 2, 4, 50., true, true), // 5
-        // multi-block small
-        std::make_tuple(4, 4, 2, 4, 50., true, true) // 6
-#ifdef TEST_ALL_BENCHMARKS // test larger portions that must be verified for
-        // these must have TEST_IMAGE and TEST_MARKER environment variables
-        // set
-        ,
-        // make sure if bkg_thresh is 0, all vertices are selected for real
-        std::make_tuple(4, 4, 4, 6, 100., false, true), // 7
+        // std::make_tuple(4, 4, 4, 0, 100., true, false), // 0
+        // std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
+        // std::make_tuple(4, 4, 4, 2, 100., true, false), // 2
+        // std::make_tuple(4, 2, 2, 2, 100., true, false)  // 3
+        //#ifdef USE_MCP3D
+        //,
+        //// check_against_app2 (final boolean below) currently uses
+        //// MCP3D's reading of image to ensure that both sequential and recut
+        //// use the same iamge, to include these test while testing against
+        //// sequential change the implementation so that the generated image
+        //// from recut is saved and pass it to fastmarching_tree
+        // std::make_tuple(4, 4, 4, 4, 50., true, true), // 4
+        //// multi-interval small
+        // std::make_tuple(4, 2, 2, 4, 50., true, true), // 5
+        //// multi-block small
+        // std::make_tuple(4, 4, 2, 4, 50., true, true) // 6
+        //#ifdef TEST_ALL_BENCHMARKS // test larger portions that must be
+        // verified for
+        //// these must have TEST_IMAGE and TEST_MARKER environment variables
+        //// set
+        //,
+        //// make sure if bkg_thresh is 0, all vertices are selected for real
+        // std::make_tuple(4, 4, 4, 6, 100., false, true), // 7
         // make sure fastmarching_tree and recut produce exact match for real
-        std::make_tuple(8, 8, 8, 6, 100., false, true), // 8
-        // real data multi-block
-        std::make_tuple(8, 8, 4, 6, 100., false, true), // 9
+        std::make_tuple(8, 8, 8, 6, 100., false, true) // 8
         // real data multi-interval
-        std::make_tuple(8, 4, 4, 6, 100., false, true), // 10
+        // std::make_tuple(8, 4, 4, 6, 100., false, true), // 10
         // interval grid ratio tests
-        std::make_tuple(128, 64, 64, 6, 1, false, true),    // 11
-        std::make_tuple(256, 128, 128, 6, 1, false, true),  // 12
-        std::make_tuple(512, 256, 256, 6, 1, false, true),  // 13
-        std::make_tuple(1024, 512, 512, 6, 1, false, true), // 14
-        std::make_tuple(2048, 1024, 1024, 6, 1, false,
-                        false), // out of memory for fastmarching_tree
-        // std::make_tuple(4096, 2048, 2048, 6, 1, false, false), // 16
-        // std::make_tuple(8192, 4096, 4096, 6, 1, false, false), // 17
+        // std::make_tuple(128, 64, 64, 6, 1, false, true),    // 11
+        // std::make_tuple(256, 128, 128, 6, 1, false, true),  // 12
+        // std::make_tuple(512, 256, 256, 6, 1, false, true),  // 13
+        // std::make_tuple(1024, 512, 512, 6, 1, false, true), // 14
+        // std::make_tuple(2048, 1024, 1024, 6, 1, false,
+        // false), // out of memory for fastmarching_tree
+        //// std::make_tuple(4096, 2048, 2048, 6, 1, false, false), // 16
+        //// std::make_tuple(8192, 4096, 4096, 6, 1, false, false), // 17
 
-        std::make_tuple(128, 32, 32, 6, 1, false, true), // 18
-        std::make_tuple(256, 64, 64, 6, 1, false, true),
-        std::make_tuple(512, 128, 128, 6, 1, false, true),
-        std::make_tuple(1024, 256, 256, 6, 1, false, true),
-        std::make_tuple(2048, 512, 512, 6, 1, false, false),
-        std::make_tuple(4096, 1024, 1024, 6, 1, false, false),
-        // std::make_tuple(8192, 2048, 2048, 6, 1, false, false), // 24
+        // std::make_tuple(128, 32, 32, 6, 1, false, true), // 18
+        // std::make_tuple(256, 64, 64, 6, 1, false, true),
+        // std::make_tuple(512, 128, 128, 6, 1, false, true),
+        // std::make_tuple(1024, 256, 256, 6, 1, false, true),
+        // std::make_tuple(2048, 512, 512, 6, 1, false, false),
+        // std::make_tuple(4096, 1024, 1024, 6, 1, false, false),
+        //// std::make_tuple(8192, 2048, 2048, 6, 1, false, false), // 24
 
-        std::make_tuple(128, 16, 16, 6, 1, false, true), // 25
-        std::make_tuple(256, 32, 32, 6, 1, false, true),
-        std::make_tuple(512, 64, 64, 6, 1, false, true),
-        std::make_tuple(1024, 128, 128, 6, 1, false, true),
-        std::make_tuple(2048, 256, 256, 6, 1, false, false),
-        std::make_tuple(4096, 512, 512, 6, 1, false, false),
-        std::make_tuple(8192, 1024, 1024, 6, 1, false, false), // 31
+        // std::make_tuple(128, 16, 16, 6, 1, false, true), // 25
+        // std::make_tuple(256, 32, 32, 6, 1, false, true),
+        // std::make_tuple(512, 64, 64, 6, 1, false, true),
+        // std::make_tuple(1024, 128, 128, 6, 1, false, true),
+        // std::make_tuple(2048, 256, 256, 6, 1, false, false),
+        // std::make_tuple(4096, 512, 512, 6, 1, false, false),
+        // std::make_tuple(8192, 1024, 1024, 6, 1, false, false), // 31
 
-        // 1:1 grid:interval ratios
-        std::make_tuple(16, 16, 16, 6, 1, false, true), // 32
-        std::make_tuple(32, 32, 32, 6, 1, false, true),
-        std::make_tuple(64, 64, 64, 6, 1, false, true),
-        std::make_tuple(128, 128, 128, 6, 1, false, true),
-        std::make_tuple(256, 256, 256, 6, 1, false, true),
-        std::make_tuple(512, 512, 512, 6, 1, false, true),
-        std::make_tuple(1024, 1024, 1024, 6, 1, false, true), // 38
+        //// 1:1 grid:interval ratios
+        // std::make_tuple(16, 16, 16, 6, 1, false, true), // 32
+        // std::make_tuple(32, 32, 32, 6, 1, false, true),
+        // std::make_tuple(64, 64, 64, 6, 1, false, true),
+        // std::make_tuple(128, 128, 128, 6, 1, false, true),
+        // std::make_tuple(256, 256, 256, 6, 1, false, true),
+        // std::make_tuple(512, 512, 512, 6, 1, false, true),
+        // std::make_tuple(1024, 1024, 1024, 6, 1, false, true), // 38
 
-        // block parallelism
-        std::make_tuple(512, 512, 8, 6, 1, false, true), // 39
-        std::make_tuple(512, 512, 16, 6, 1, false, true),
-        std::make_tuple(512, 512, 32, 6, 1, false, true),
-        std::make_tuple(512, 512, 64, 6, 1, false, true),
-        std::make_tuple(512, 512, 128, 6, 1, false, true),
-        std::make_tuple(512, 512, 256, 6, 1, false, true),
-        std::make_tuple(512, 512, 512, 6, 1, false, true),
+        //// block parallelism
+        // std::make_tuple(512, 512, 8, 6, 1, false, true), // 39
+        // std::make_tuple(512, 512, 16, 6, 1, false, true),
+        // std::make_tuple(512, 512, 32, 6, 1, false, true),
+        // std::make_tuple(512, 512, 64, 6, 1, false, true),
+        // std::make_tuple(512, 512, 128, 6, 1, false, true),
+        // std::make_tuple(512, 512, 256, 6, 1, false, true),
+        // std::make_tuple(512, 512, 512, 6, 1, false, true),
 
-        std::make_tuple(1024, 512, 32, 6, 1, false, true), // 46
-        std::make_tuple(1024, 512, 64, 6, 1, false, true),
-        std::make_tuple(1024, 512, 128, 6, 1, false, true),
-        std::make_tuple(1024, 512, 256, 6, 1, false, true),
-        std::make_tuple(1024, 512, 512, 6, 1, false, true),
+        // std::make_tuple(1024, 512, 32, 6, 1, false, true), // 46
+        // std::make_tuple(1024, 512, 64, 6, 1, false, true),
+        // std::make_tuple(1024, 512, 128, 6, 1, false, true),
+        // std::make_tuple(1024, 512, 256, 6, 1, false, true),
+        // std::make_tuple(1024, 512, 512, 6, 1, false, true),
 
-        std::make_tuple(2048, 512, 32, 6, 1, false, false), // 49
-        std::make_tuple(2048, 512, 64, 6, 1, false, false),
-        std::make_tuple(2048, 512, 128, 6, 1, false, false),
-        std::make_tuple(2048, 512, 256, 6, 1, false, false),
-        std::make_tuple(2048, 512, 512, 6, 1, false, false),
+        // std::make_tuple(2048, 512, 32, 6, 1, false, false), // 49
+        // std::make_tuple(2048, 512, 64, 6, 1, false, false),
+        // std::make_tuple(2048, 512, 128, 6, 1, false, false),
+        // std::make_tuple(2048, 512, 256, 6, 1, false, false),
+        // std::make_tuple(2048, 512, 512, 6, 1, false, false),
 
-        std::make_tuple(4096, 512, 32, 6, 1, false, false), // 54
-        std::make_tuple(4096, 512, 64, 6, 1, false, false),
-        std::make_tuple(4096, 512, 128, 6, 1, false, false),
-        std::make_tuple(4096, 512, 256, 6, 1, false, false),
-        std::make_tuple(4096, 512, 512, 6, 1, false, false),
+        // std::make_tuple(4096, 512, 32, 6, 1, false, false), // 54
+        // std::make_tuple(4096, 512, 64, 6, 1, false, false),
+        // std::make_tuple(4096, 512, 128, 6, 1, false, false),
+        // std::make_tuple(4096, 512, 256, 6, 1, false, false),
+        // std::make_tuple(4096, 512, 512, 6, 1, false, false),
 
-        std::make_tuple(8192, 512, 32, 6, 1, false, false), // 59
-        std::make_tuple(8192, 512, 64, 6, 1, false, false),
-        std::make_tuple(8192, 512, 128, 6, 1, false, false),
-        std::make_tuple(8192, 512, 256, 6, 1, false, false),
-        std::make_tuple(8192, 512, 512, 6, 1, false, false),
+        // std::make_tuple(8192, 512, 32, 6, 1, false, false), // 59
+        // std::make_tuple(8192, 512, 64, 6, 1, false, false),
+        // std::make_tuple(8192, 512, 128, 6, 1, false, false),
+        // std::make_tuple(8192, 512, 256, 6, 1, false, false),
+        // std::make_tuple(8192, 512, 512, 6, 1, false, false),
 
-        std::make_tuple(1024, 1024, 128, 6, 1, false, false), // 63
-        std::make_tuple(2048, 2048, 128, 6, 1, false, false), // 64
-        std::make_tuple(4096, 4096, 128, 6, 1, false, false), // 65
-        std::make_tuple(8192, 8192, 128, 6, 1, false, false)
-#endif
-#endif
-            ));
+        // std::make_tuple(1024, 1024, 128, 6, 1, false, false), // 63
+        // std::make_tuple(2048, 2048, 128, 6, 1, false, false), // 64
+        // std::make_tuple(4096, 4096, 128, 6, 1, false, false), // 65
+        // std::make_tuple(8192, 8192, 128, 6, 1, false, false)
+        //#endif
+        //#endif
+        ));
 
 TEST(RecutPipeline, PrintDefaultInfo) {
   auto v1 = new VertexAttr();

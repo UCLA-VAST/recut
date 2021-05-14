@@ -114,11 +114,11 @@ auto coord_sub = [](auto x, auto y) {
   return GridCoord(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
 };
 
-auto coord_div = [](const auto& x, const auto& y) {
+auto coord_div = [](const auto &x, const auto &y) {
   return GridCoord(x[0] / y[0], x[1] / y[1], x[2] / y[2]);
 };
 
-auto coord_prod = [](const auto& x, const auto& y) {
+auto coord_prod = [](const auto &x, const auto &y) {
   return GridCoord(x[0] * y[0], x[1] * y[1], x[2] * y[2]);
 };
 
@@ -314,7 +314,33 @@ auto print_marker_3D = [](auto markers, auto interval_lengths,
 
 // only values strictly greater than bkg_thresh are valid
 template <typename T>
-void print_vdb_mask(T vdb_accessor, const GridCoord lengths,
+std::unique_ptr<uint16_t[]> create_vdb_mask(T grid,
+                                            const GridCoord &lengths, GridCoord offsets=GridCoord(0)) {
+  cout << "create_vdb_mask(): \n";
+  auto mask = std::make_unique<uint16_t[]>(coord_prod_accum(lengths));
+  for (int z = 0; z < lengths[2]; z++) {
+    for (int y = 0; y < lengths[1]; y++) {
+      for (int x = 0; x < lengths[0]; x++) {
+        openvdb::Coord xyz(x, y, z);
+        xyz += offsets;
+        auto leaf_iter = grid->tree().probeConstLeaf(xyz);
+        auto ind = leaf_iter->beginIndexVoxel(xyz);
+        if (ind) {
+          cout << "on " << xyz << '\n';
+          mask[coord_to_id(xyz, lengths)] = 1;
+        } else {
+          cout << "off " << xyz << '\n';
+          mask[coord_to_id(xyz, lengths)] = 0;
+        }
+      }
+    }
+  }
+  return mask;
+}
+
+// only values strictly greater than bkg_thresh are valid
+template <typename T>
+void print_vdb_mask(T vdb_accessor, const GridCoord &lengths,
                     const int bkg_thresh = -1) {
   cout << "print_vdb_mask(): \n";
   for (int z = 0; z < lengths[2]; z++) {
@@ -497,7 +523,7 @@ auto print_positions = [](auto grid) {
   }
 };
 
-auto print_all_points = [](auto grid, openvdb::math::CoordBBox bbox,
+auto print_all_points = [](const EnlargedPointDataGrid::Ptr grid, openvdb::math::CoordBBox bbox,
                            std::string stage = "label") {
   std::cout << "Print all points " << stage << "\n";
   // 3D visual
@@ -524,6 +550,7 @@ auto print_all_points = [](auto grid, openvdb::math::CoordBBox bbox,
             leaf_iter->constAttributeArray("parents"));
 
         if (ind) {
+          cout << "on " << xyz << '\n';
           if (stage == "radius") {
             cout << +(radius_handle.get(*ind)) << " ";
           } else if (stage == "valid") {
@@ -1203,6 +1230,9 @@ RecutCommandLineArgs get_args(int grid_size, int interval_length,
   params.set_marker_file_path(
       str_path + "/test_markers/" + std::to_string(grid_size) + "/tcase" +
       std::to_string(tcase) + "/slt_pct" + std::to_string(slt_pct) + "/");
+  auto lengths = GridCoord(grid_size);
+  args.set_image_lengths(lengths);
+  args.set_image_offsets(zeros());
 
   // tcase 6 means use real data, in which case we need to either
   // set max and min explicitly (to save time) or recompute what the
@@ -1215,7 +1245,9 @@ RecutCommandLineArgs get_args(int grid_size, int interval_length,
     // domain and check that all were used
 
     // first marker is at 58, 230, 111 : 7333434
-    args.set_image_offsets({57, 228, 110});
+    // args.set_image_offsets({57, 228, 110});
+    // root at {1125, 12949, 344}
+    args.set_image_offsets({1123, 12947, 342});
     args.set_image_lengths({grid_size, grid_size, grid_size});
 
     if (const char *env_p = std::getenv("TEST_IMAGE")) {
@@ -1268,9 +1300,6 @@ RecutCommandLineArgs get_args(int grid_size, int interval_length,
   params.slt_pct = slt_pct;
   params.selected = img_vox_num * (slt_pct / (float)100);
   params.root_vid = get_central_vid(grid_size);
-  auto lengths = new_grid_coord(grid_size, grid_size, grid_size);
-  args.set_image_lengths(lengths);
-  args.set_image_offsets(zeros());
 
   // For now, params are only saved if this
   // function is called, in the future

@@ -358,6 +358,10 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
   auto local_bbox =
       openvdb::math::CoordBBox(grid_offsets, grid_offsets + grid_extents);
 
+#ifdef LOG
+  cout << "Processing region: " << local_bbox << '\n';
+#endif
+
   if (params->marker_file_path().empty())
     return {};
 
@@ -370,7 +374,6 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
           "Marker file path must exist");
 
   // gather all markers within directory
-  // std::vector<MyMarker> inmarkers{};
   auto inmarkers = std::vector<MyMarker>();
   rng::for_each(
       fs::directory_iterator(params->marker_file_path()),
@@ -2672,12 +2675,13 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
 
   // get a mapping to stable address pointers in outtree such that a markers
   // parent is valid pointer when returning just outtree
-  map<VID_t, MyMarker *> vid_to_marker_ptr;
+  std::map<GridCoord, MyMarker *> coord_to_marker_ptr;
 
   // iterate all active vertices ahead of time so each marker
   // can have a pointer to it's parent marker
   for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
        ++leaf_iter) {
+    //cout << leaf_iter->getNodeBoundingBox() << '\n';
 
     openvdb::points::AttributeHandle<uint8_t> flags_handle(
         leaf_iter->constAttributeArray("flags"));
@@ -2688,13 +2692,16 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
     openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
         leaf_iter->constAttributeArray("parents"));
 
+    //openvdb::points::AttributeHandle<OffsetCoord> position_handle(
+        //leaf_iter->constAttributeArray("P"));
+
     for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
       // get coord
       auto coord = ind.getCoord();
-      auto vid = coord_to_id(coord, this->image_lengths);
       // create all valid new marker objects
       if (is_valid(flags_handle, ind, accept_tombstone)) {
-        assertm(vid_to_marker_ptr.count(vid) == 0,
+        //std::cout << "\t " << coord<< '\n';
+        assertm(coord_to_marker_ptr.count(coord) == 0,
                 "Can't have two matching vids");
         // get original i, j, k
         auto marker = new MyMarker(coord[0], coord[1], coord[2]);
@@ -2704,12 +2711,10 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
         }
         marker->radius = radius_handle.get(*ind);
         // save this marker ptr to a map
-        vid_to_marker_ptr[vid] = marker;
-#ifdef FULL_PRINT
-        std::cout << "\t " << coord_to_str(coord) << " -> "
-                  << (coord + parents_handle.get(*ind)) << " " << marker->radius
-                  << '\n';
-#endif
+        coord_to_marker_ptr[coord] = marker;
+        //std::cout << "\t " << coord_to_str(coord) << " -> "
+                  //<< (coord + parents_handle.get(*ind)) << " " << marker->radius
+                  //<< '\n';
         assertm(marker->radius, "can't have 0 radius");
         outtree.push_back(marker);
       }
@@ -2735,10 +2740,9 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
       if (is_valid(flags_handle, ind, accept_tombstone)) {
         // get coord
         auto coord = ind.getCoord();
-        auto vid = coord_to_id(coord, this->image_lengths);
-        assertm(vid_to_marker_ptr.count(vid),
+        assertm(coord_to_marker_ptr.count(coord),
                 "did not find vertex in marker map");
-        auto marker = vid_to_marker_ptr[vid]; // get the ptr
+        auto marker = coord_to_marker_ptr[coord]; // get the ptr
         if (is_root(flags_handle, ind)) {
           // a marker with a parent of 0, must be a root
           marker->parent = 0;
@@ -2746,11 +2750,10 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
           auto parent_coord = parents_handle.get(*ind) + coord;
 
           // find parent
-          auto parent_vid = coord_to_id(parent_coord, this->image_lengths);
-          assertm(vid_to_marker_ptr.count(parent_vid),
+          assertm(coord_to_marker_ptr.count(parent_coord),
                   "did not find parent in marker map");
 
-          auto parent = vid_to_marker_ptr[parent_vid]; // adjust
+          auto parent = coord_to_marker_ptr[parent_coord]; // adjust
           marker->parent = parent;
         }
       }

@@ -427,7 +427,9 @@ bool fastmarching_tree(std::vector<MyMarker *> roots, vector<MyMarker> &target,
                   ? 1.0
                   : ((offset == 2) ? 1.414214
                                    : ((offset == 3) ? 1.732051 : 0.0));
+          //cout << w << ' ' << h << ' ' << d << '\n';
           long index = d * sz01 + h * sz0 + w;
+          //cout << index << '\n';
           // discard background pixels
           if (inimg1d[index] <= bkg_thresh) {
             continue;

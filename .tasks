@@ -24,7 +24,7 @@ command=nix-env -f . -i
 cwd=<root>
 
 [project-test]
-command=recut_test
+command=recut_test --gtest_also_run_disabled_tests
 ;command=result/bin/./recut_test 
 ;command=result/bin/./recut_test --gtest_filter=Scale.InitializeGlobals
 ;command=result/bin/./recut_test --gtest_filter=VDB.IntegrateUpdateGrid
