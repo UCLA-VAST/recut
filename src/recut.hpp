@@ -2654,7 +2654,7 @@ template <class image_t> void Recut<image_t>::adjust_parent(bool to_swc_file) {
         std::cout << coord << " -> " << coord + v.parent << '\n';
 #endif
         parents_handle.set(*ind, v.parent);
-        print_vertex_swc(coord, v, this->image_lengths, this->out);
+        print_vertex_swc(coord, v, this->image_lengths, this->image_bbox, this->out, /*adjust*/true);
       }
     }
   }

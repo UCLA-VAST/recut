@@ -314,23 +314,23 @@ auto print_marker_3D = [](auto markers, auto interval_lengths,
 
 // only values strictly greater than bkg_thresh are valid
 auto create_vdb_mask(EnlargedPointDataGrid::Ptr grid,
-                                            const openvdb::math::CoordBBox &bbox) {
+                     const openvdb::math::CoordBBox &bbox) {
   cout << "create_vdb_mask(): \n";
-  cout << bbox.volume() << '\n';
-  cout << bbox.dim() << '\n';
-  auto mask = std::make_unique<uint16_t[]>(bbox.volume());
+  auto inclusive_dim = bbox.dim().offsetBy(-1);
+  cout << inclusive_dim << '\n';
+  auto mask = std::make_unique<uint16_t[]>(coord_prod_accum(inclusive_dim));
   for (int z = bbox.min()[2]; z < bbox.max()[2]; z++) {
-    for (int y =bbox.min()[1]; y < bbox.max()[1]; y++) {
-      for (int x =bbox.min()[0]; x < bbox.max()[0]; x++) {
+    for (int y = bbox.min()[1]; y < bbox.max()[1]; y++) {
+      for (int x = bbox.min()[0]; x < bbox.max()[0]; x++) {
         openvdb::Coord xyz(x, y, z);
         auto leaf_iter = grid->tree().probeConstLeaf(xyz);
         auto ind = leaf_iter->beginIndexVoxel(xyz);
+        auto buffer_coord = xyz - bbox.min();
+        auto id = coord_to_id(buffer_coord, inclusive_dim);
         if (ind) {
-          cout << "on " << xyz << '\n';
-          mask[coord_to_id(xyz, bbox.dim())] = 1;
+          mask[id] = 1;
         } else {
-          cout << "off " << xyz << '\n';
-          mask[coord_to_id(xyz, bbox.dim())] = 0;
+          mask[id] = 0;
         }
       }
     }
@@ -523,7 +523,8 @@ auto print_positions = [](auto grid) {
   }
 };
 
-auto print_all_points = [](const EnlargedPointDataGrid::Ptr grid, openvdb::math::CoordBBox bbox,
+auto print_all_points = [](const EnlargedPointDataGrid::Ptr grid,
+                           openvdb::math::CoordBBox bbox,
                            std::string stage = "label") {
   std::cout << "Print all points " << stage << "\n";
   // 3D visual
@@ -550,7 +551,6 @@ auto print_all_points = [](const EnlargedPointDataGrid::Ptr grid, openvdb::math:
             leaf_iter->constAttributeArray("parents"));
 
         if (ind) {
-          cout << "on " << xyz << '\n';
           if (stage == "radius") {
             cout << +(radius_handle.get(*ind)) << " ";
           } else if (stage == "valid") {
@@ -1555,9 +1555,6 @@ auto get_vids_sorted = [](auto tree, auto lengths) {
 // prints mismatches between two trees in uid sorted order no assertions
 auto compare_tree = [](auto truth_tree, auto check_tree, auto lengths) {
   bool print = false;
-#ifdef LOG
-  print = true;
-#endif
 
   if (print)
     std::cout << "compare tree\n";
@@ -1771,30 +1768,41 @@ auto check_coverage(const T mask, const T2 inimg1d, const VID_t tol_sz,
 
 // n,type,x,y,z,radius,parent
 // for more info see:
+// http://www.neuronland.org/NLMorphologyConverter/MorphologyFormats/SWC/Spec.html
 // https://github.com/HumanBrainProject/swcPlus/blob/master/SWCplus_specification.html
-auto print_vertex_swc = [](GridCoord &coord, const struct VertexAttr &current,
-                           const GridCoord &image_lengths, std::ofstream &out) {
+auto print_vertex_swc = [](const GridCoord &coord,
+                           const struct VertexAttr &current,
+                           const GridCoord &image_lengths, 
+                           const CoordBBox &image_bbox, std::ofstream &out,
+                           bool bbox_adjust = false) {
   std::ostringstream line;
 
+  GridCoord swc_coord = coord;
+  GridCoord swc_lengths = image_lengths;
+  if (bbox_adjust) {
+    swc_coord = swc_coord - image_bbox.min();
+    swc_lengths = image_bbox.dim().offsetBy(-1);
+  }
+
   // n
-  line << coord_to_id(coord, image_lengths) << ' ';
+  line << coord_to_id(swc_coord, swc_lengths) << ' ';
 
   // type_id
   if (current.root()) {
-    line << "-1" << ' ';
+    line << "1" << ' ';
   } else {
-    line << '0' << ' ';
+    line << '3' << ' ';
   }
 
   // coordinates
-  line << coord[0] << ' ' << coord[1] << ' ' << coord[2] << ' ';
+  line << swc_coord[0] << ' ' << swc_coord[1] << ' ' << swc_coord[2] << ' ';
 
   // radius
   line << +(current.radius) << ' ';
 
   // parent
-  auto parent_coord = coord_add(coord, current.parent);
-  auto parent_vid = coord_to_id(parent_coord, image_lengths);
+  auto parent_coord = coord_add(swc_coord, current.parent);
+  auto parent_vid = coord_to_id(parent_coord, swc_lengths);
   if (current.root()) {
     line << "-1";
   } else {

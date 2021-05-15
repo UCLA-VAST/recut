@@ -25,6 +25,7 @@ using GridCoord = openvdb::Coord;
 using PositionT = openvdb::Vec3f; // equiv. to Vec3s, both are <float>
 using FPCodec = openvdb::points::FixedPointCodec</*1-byte=*/true,
                                                  openvdb::points::UnitRange>;
+using openvdb::math::CoordBBox;
 
 namespace vb = openvdb::v8_1;
 namespace vt = openvdb::tree;
@@ -75,16 +76,5 @@ using GridCoord = std::vector<int32_t>;
 
 // Set the pruning / coverage semantics by defining what adjacent hop count
 // qualifies as covering its neighbor.
-// depending on your prune semantics a radius of 1 may cover its neighbor
-// therefore account for this by subtracting 1 from all radii values
-// open accumulate_prune function, if a neighbor has a radius of 1 or greater
-// is the current considered pruned
-// if only radii 2 or greater cover a neighbor then the erosion factor would
-// be 1. While a high erosion factor creates prevents redundant coverage of
-// radii, it means the effective coverage may be lower
-// keep in mind this is merely a heuristic statistic to judge pruning methods
-// you should refer to the actual pruning method semantics
-// when checking 1 hop away (adjacent) from current,
-// all radii greater than 1 imply some redundancy in coverage
-// but this may be desired with DILATION_FACTORS higher than 1
-#define DILATION_FACTOR 0
+// Must be 1 or greater
+#define DILATION_FACTOR 1

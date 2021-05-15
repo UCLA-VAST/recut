@@ -1787,7 +1787,7 @@ class RecutPipelineParameterTests
     : public ::testing::TestWithParam<
           std::tuple<int, int, int, int, double, bool, bool>> {};
 
-TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
+TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 
   // documents the meaning of each tuple member
   auto grid_size = std::get<0>(GetParam());
@@ -1833,13 +1833,6 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
   auto root_coords = recut.initialize();
   recut.activate_vids(recut.topology_grid, root_coords, "connected",
                       recut.map_fifo, recut.connected_map);
-
-  if (print_all) {
-    std::cout << recut.image_bbox << '\n';
-    print_all_points(recut.topology_grid, recut.image_bbox, "label");
-    //std::cout << "check topo again\n";
-    //print_vdb_mask(recut.topology_grid->getConstAccessor(), grid_extents);
-  }
 
   std::unique_ptr<uint16_t[]> mask;
   if (check_against_app2) {
@@ -1939,10 +1932,14 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
     std::cout << "Recut radii post prune\n";
     print_all_points(recut.topology_grid, recut.image_bbox, "radius");
 
-    std::cout << "Recut parent post prune\n";
-    print_all_points(recut.topology_grid, recut.image_bbox, "parent");
+                  std::cout << "Recut post prune valid\n";
+                  print_all_points(recut.topology_grid, recut.image_bbox,
+                                   "valid");
 
-    recut.adjust_parent(false);
+    //std::cout << "Recut parent post prune\n";
+    //print_all_points(recut.topology_grid, recut.image_bbox, "parent");
+
+    recut.adjust_parent(true);
     recut.convert_to_markers(
         recut_output_tree_prune,
         /*accept_band*/ false); // this fills args.output_tree
