@@ -470,6 +470,14 @@ auto is_valid = [](auto flags_handle, auto ind, bool accept_tombstone = false) {
   return false;
 };
 
+auto keep_root = [](auto flags_handle, auto ind) {
+  return is_valid(flags_handle, ind) && is_root(flags_handle, ind);
+};
+
+auto not_root = [](auto flags_handle, auto ind) {
+  return is_valid(flags_handle, ind) && !is_root(flags_handle, ind);
+};
+
 auto print_point_count = [](auto grid) {
   openvdb::Index64 count = openvdb::points::pointCount(grid->tree());
   std::cout << "Point count: " << count << '\n';

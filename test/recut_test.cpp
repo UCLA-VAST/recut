@@ -1634,7 +1634,7 @@ TEST(Update, EachStageIteratively) {
                                     recut.map_fifo, recut.connected_map);
                 recut.update(stage, recut.map_fifo);
 
-                recut.adjust_parent(false);
+                recut.finalize_parent();
                 if (print_all) {
                   std::cout << "Recut prune\n";
                   std::cout << iteration_trace.str();
@@ -1653,6 +1653,8 @@ TEST(Update, EachStageIteratively) {
                 }
 
                 std::cout << iteration_trace.str();
+                recut.print_to_swc();
+
                 // recut.convert_to_markers(recut_output_tree_prune, true);
                 recut.convert_to_markers(recut_output_tree_prune, false);
               }
@@ -1939,7 +1941,10 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     //std::cout << "Recut parent post prune\n";
     //print_all_points(recut.topology_grid, recut.image_bbox, "parent");
 
-    recut.adjust_parent(true);
+    recut.finalize_parent();
+
+    recut.print_to_swc();
+
     recut.convert_to_markers(
         recut_output_tree_prune,
         /*accept_band*/ false); // this fills args.output_tree

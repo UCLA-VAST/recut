@@ -112,12 +112,15 @@ public:
       : args(&args), params(&(args.recut_parameters())) {}
 
   void operator()();
+  void print_to_swc();
+  void finalize_parent();
 
   void initialize_globals(const VID_t &grid_interval_size,
                           const VID_t &interval_block_size);
 
   bool filter_by_label(VertexAttr *v, bool accept_tombstone);
-  void adjust_parent(bool to_swc_file);
+  template <typename FilterP, typename Pred>
+  void visit(FilterP keep_if, Pred predicate);
 
   image_t get_img_val(const image_t *tile, GridCoord coord);
   inline VID_t rotate_index(VID_t img_coord, const VID_t current,
@@ -1268,7 +1271,7 @@ Recut<image_t>::adjust_vertex_parent(OffsetCoord parent_offset,
     }
   }
 
-  // parent is now unpruned and traceable from vertex
+  // parent guaranteed unpruned and upward traceable from current
   return coord_sub(parent_coord, original_coord);
 }
 
@@ -2618,17 +2621,9 @@ bool Recut<image_t>::filter_by_label(VertexAttr *v, bool accept_tombstone) {
   return true;
 };
 
-template <class image_t> void Recut<image_t>::adjust_parent(bool to_swc_file) {
-#ifdef LOG
-  cout << "Start stage adjust_parent\n";
-#endif
-
-  if (to_swc_file) {
-    this->out.open(this->args->swc_path());
-    std::ostringstream line;
-    line << "#id type_id x y z radius parent_id\n";
-    this->out << line.str();
-  }
+template <class image_t>
+template <typename FilterP, typename Pred>
+void Recut<image_t>::visit(FilterP keep_if, Pred predicate) {
 
   // iterate all active vertices ahead of time so each marker
   // can have a pointer to it's parent marker
@@ -2645,22 +2640,11 @@ template <class image_t> void Recut<image_t>::adjust_parent(bool to_swc_file) {
         leaf_iter->attributeArray("parents"));
 
     for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
-      if (is_valid(flags_handle, ind)) {
-        auto coord = ind.getCoord();
-        auto v = VertexAttr(flags_handle.get(*ind), /*ignored*/ zeros_off(),
-                            parents_handle.get(*ind), radius_handle.get(*ind));
-        v.parent = adjust_vertex_parent(v.parent, coord);
-#ifdef FULL_PRINT
-        std::cout << coord << " -> " << coord + v.parent << '\n';
-#endif
-        parents_handle.set(*ind, v.parent);
-        print_vertex_swc(coord, v, this->image_lengths, this->image_bbox, this->out, /*adjust*/true);
+      if (keep_if(flags_handle, ind)) {
+        predicate(flags_handle, parents_handle, radius_handle, ind);
       }
     }
   }
-
-  if (this->out.is_open())
-    this->out.close();
 }
 
 // accept_tombstone is a way to see pruned vertices still in active_vertex
@@ -2681,7 +2665,7 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
   // can have a pointer to it's parent marker
   for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
        ++leaf_iter) {
-    //cout << leaf_iter->getNodeBoundingBox() << '\n';
+    // cout << leaf_iter->getNodeBoundingBox() << '\n';
 
     openvdb::points::AttributeHandle<uint8_t> flags_handle(
         leaf_iter->constAttributeArray("flags"));
@@ -2692,15 +2676,15 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
     openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
         leaf_iter->constAttributeArray("parents"));
 
-    //openvdb::points::AttributeHandle<OffsetCoord> position_handle(
-        //leaf_iter->constAttributeArray("P"));
+    // openvdb::points::AttributeHandle<OffsetCoord> position_handle(
+    // leaf_iter->constAttributeArray("P"));
 
     for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
       // get coord
       auto coord = ind.getCoord();
       // create all valid new marker objects
       if (is_valid(flags_handle, ind, accept_tombstone)) {
-        //std::cout << "\t " << coord<< '\n';
+        // std::cout << "\t " << coord<< '\n';
         assertm(coord_to_marker_ptr.count(coord) == 0,
                 "Can't have two matching vids");
         // get original i, j, k
@@ -2712,9 +2696,9 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
         marker->radius = radius_handle.get(*ind);
         // save this marker ptr to a map
         coord_to_marker_ptr[coord] = marker;
-        //std::cout << "\t " << coord_to_str(coord) << " -> "
-                  //<< (coord + parents_handle.get(*ind)) << " " << marker->radius
-                  //<< '\n';
+        // std::cout << "\t " << coord_to_str(coord) << " -> "
+        //<< (coord + parents_handle.get(*ind)) << " " << marker->radius
+        //<< '\n';
         assertm(marker->radius, "can't have 0 radius");
         outtree.push_back(marker);
       }
@@ -2770,6 +2754,41 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
 #endif
 }
 
+template <class image_t>
+void Recut<image_t>::finalize_parent() {
+  auto adjust_parent = [this](auto &flags_handle, auto &parents_handle,
+                          auto &radius_handle, auto &ind) {
+    auto coord = ind.getCoord();
+    auto parent = this->adjust_vertex_parent(parents_handle.get(*ind), coord);
+    parents_handle.set(*ind, parent);
+#ifdef FULL_PRINT
+    std::cout << coord << " -> " << coord + parent << '\n';
+#endif
+  };
+  visit(is_valid, adjust_parent);
+}
+
+template <class image_t>
+void Recut<image_t>::print_to_swc() {
+  auto to_swc = [this](const auto &flags_handle, const auto &parents_handle,
+                       const auto &radius_handle, const auto &ind) {
+    auto coord = ind.getCoord();
+    auto v = VertexAttr(flags_handle.get(*ind), /*ignored*/ zeros_off(),
+                        parents_handle.get(*ind), radius_handle.get(*ind));
+    print_vertex_swc(coord, v, this->image_lengths, this->image_bbox, this->out,
+                     /*adjust*/ true);
+  };
+
+  this->out.open(this->args->swc_path());
+  this->out << "#id type_id x y z radius parent_id\n";
+
+  visit(keep_root, to_swc);
+  visit(not_root, to_swc);
+
+  if (this->out.is_open())
+    this->out.close();
+}
+
 template <class image_t> void Recut<image_t>::operator()() {
   std::string stage;
   // create a list of root vids
@@ -2819,10 +2838,10 @@ template <class image_t> void Recut<image_t>::operator()() {
   this->update(stage, map_fifo);
 
   auto timer = high_resolution_timer();
-  // adjust final parent
-  auto to_swc_file = true;
-  adjust_parent(to_swc_file);
+  finalize_parent();
 #ifdef LOG
   cout << "Adjust parent in " << timer.elapsed() << " sec.\n";
 #endif
+
+  print_to_swc();
 }
