@@ -44,17 +44,17 @@
         ]
       },
       "locked": {
-        "lastModified": 1619199673,
-        "narHash": "sha256-c44FJa4VaJD1D4iWo2EDwGJX7ZePbFz2jaLg2Xp2upg=",
+        "lastModified": 1621273539,
+        "narHash": "sha256-ZvmAr86FQo6XnW9fsCdldJH2QjlSnjeneM5ICn2FLys=",
         "ref": "master",
-        "rev": "1b95d06460fcd431738ab657488b0a24b0e4bf7f",
-        "revCount": 2783,
+        "rev": "380595ddb513ca7464a7ed1a403454a5c2b52c23",
+        "revCount": 2871,
         "type": "git",
-        "url": "ssh://git@github.com/kdmarrett/openvdb"
+        "url": "ssh://git@github.com/UCLA-VAST/openvdb"
       },
       "original": {
         "type": "git",
-        "url": "ssh://git@github.com/kdmarrett/openvdb"
+        "url": "ssh://git@github.com/UCLA-VAST/openvdb"
       }
     },
     "pinned": {

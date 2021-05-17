@@ -387,6 +387,8 @@ auto setbit = [](auto field_, auto bit_offset) {
   return field_ | 1 << bit_offset;
 };
 
+auto unsetbit = [](auto field_, auto bit_offset) { return field_ &= ~(1 << bit_offset); };
+
 auto set_root = [](auto handle, auto ind) {
   // ???? 1???
   handle.set(*ind, setbit(handle.get(*ind), 3));
@@ -418,6 +420,11 @@ auto set_prune_visited = [](auto handle, auto ind) {
 auto is_prune_visited = [](auto handle, auto ind) {
   // XXX? XXXX
   return testbit(handle.get(*ind), 4);
+};
+
+auto unset_tombstone = [](auto handle, auto ind) {
+  // ??0? ????
+  handle.set(*ind, unsetbit(handle.get(*ind), 5));
 };
 
 auto set_tombstone = [](auto handle, auto ind) {
@@ -479,6 +486,10 @@ auto not_root = [](const auto &flags_handle, const auto &parents_handle,
                    const auto &radius_handle, auto ind) {
   return is_valid(flags_handle, ind) && !is_root(flags_handle, ind);
 };
+
+auto prunes_visited = [](auto &flags_handle, const auto &parents_handle,
+                         const auto &radius_handle,
+                         const auto &ind) { set_tombstone(flags_handle, ind); };
 
 auto print_point_count = [](auto grid) {
   openvdb::Index64 count = openvdb::points::pointCount(grid->tree());

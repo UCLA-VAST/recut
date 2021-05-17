@@ -14,6 +14,7 @@
 #include <iostream>
 #include <map>
 #include <openvdb/tools/Composite.h>
+#include <openvdb/tools/VolumeToSpheres.h> // for fillWithSpheres
 #include <set>
 #include <stdexcept>
 #include <type_traits>
@@ -2804,12 +2805,7 @@ template <class image_t> void Recut<image_t>::prune_radii() {
            ((parents[0] + parents[1] + parents[2]) < MIN_LENGTH);
   };
 
-  auto prune_filtered = [](auto &flags_handle, const auto &parents_handle,
-                           const auto &radius_handle, const auto &ind) {
-    set_tombstone(flags_handle, ind);
-  };
-
-  visit(filter_radii, prune_filtered);
+  visit(filter_radii, prunes_visited);
 }
 
 template <class image_t> void Recut<image_t>::operator()() {
@@ -2847,27 +2843,58 @@ template <class image_t> void Recut<image_t>::operator()() {
                       this->connected_map);
   this->update(stage, map_fifo);
 
-  // radius stage will consume fifo surface vertices
-  stage = "radius";
-  this->setup_radius(map_fifo);
-  this->update(stage, map_fifo);
+  auto spheres = std::vector<openvdb::Vec4s>();
+  const auto sphere_count = openvdb::math::Vec2i(1, 50000);
+  openvdb::v8_1::tools::fillWithSpheres(*(this->topology_grid), spheres,
+                                        sphere_count, MIN_RADII,
+                                        std::numeric_limits<float>::max(), .5);
 
-  // starting from roots, prune stage will
-  // create final list of vertices
-  stage = "prune";
-  this->activate_vids(this->topology_grid, root_coords, stage, this->map_fifo,
-                      this->connected_map);
-  this->update(stage, map_fifo);
+  // FIXME root must still be on
+  // FIXME sort spheres into leafs
 
+  visit(not_root, prunes_visited);
+
+  cout << spheres.size() << '\n';
+  // unprune the spheres
+  rng::for_each(spheres, [this](auto sphere) {
+    auto coord = GridCoord(sphere[0], sphere[1], sphere[2]);
+    auto leaf = this->topology_grid->tree().probeLeaf(coord);
+    auto ind = leaf->beginIndexVoxel(coord);
+    // note: some attributes need mutability
+    openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
+        leaf->attributeArray("flags"));
+
+    if (ind) {
+      unset_tombstone(flags_handle, ind);
+      cout << "Sphere on: " << coord << '\n';
+    } else {
+      // might be unreachable
+      cout << "Sphere not on: " << coord << '\n';
+    }
+  });
+
+  //// radius stage will consume fifo surface vertices
+  // stage = "radius";
+  // this->setup_radius(map_fifo);
+  // this->update(stage, map_fifo);
+
+  //// starting from roots, prune stage will
+  //// create final list of vertices
+  // stage = "prune";
+  // this->activate_vids(this->topology_grid, root_coords, stage,
+  // this->map_fifo, this->connected_map);
+  // this->update(stage, map_fifo);
+
+  // make all unpruned trace a back to a root
   validate_parent();
 
-  prune_radii();
+  // prune_radii();
 
-  auto timer = high_resolution_timer();
-  validate_parent();
-#ifdef LOG
-  cout << "Adjust parent in " << timer.elapsed() << " sec.\n";
-#endif
+  // auto timer = high_resolution_timer();
+  // validate_parent();
+  //#ifdef LOG
+  // cout << "Adjust parent in " << timer.elapsed() << " sec.\n";
+  //#endif
 
   print_to_swc();
 }
