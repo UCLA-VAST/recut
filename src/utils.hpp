@@ -470,11 +470,13 @@ auto is_valid = [](auto flags_handle, auto ind, bool accept_tombstone = false) {
   return false;
 };
 
-auto keep_root = [](auto flags_handle, auto ind) {
+auto keep_root = [](const auto &flags_handle, const auto &parents_handle,
+                    const auto &radius_handle, auto ind) {
   return is_valid(flags_handle, ind) && is_root(flags_handle, ind);
 };
 
-auto not_root = [](auto flags_handle, auto ind) {
+auto not_root = [](const auto &flags_handle, const auto &parents_handle,
+                   const auto &radius_handle, auto ind) {
   return is_valid(flags_handle, ind) && !is_root(flags_handle, ind);
 };
 
@@ -1778,55 +1780,54 @@ auto check_coverage(const T mask, const T2 inimg1d, const VID_t tol_sz,
 // for more info see:
 // http://www.neuronland.org/NLMorphologyConverter/MorphologyFormats/SWC/Spec.html
 // https://github.com/HumanBrainProject/swcPlus/blob/master/SWCplus_specification.html
-auto print_vertex_swc = [](const GridCoord &coord,
-                           const struct VertexAttr &current,
-                           const GridCoord &image_lengths, 
-                           const CoordBBox &image_bbox, std::ofstream &out,
-                           bool bbox_adjust = false) {
-  std::ostringstream line;
+auto print_vertex_swc =
+    [](const GridCoord &coord, const struct VertexAttr &current,
+       const GridCoord &image_lengths, const CoordBBox &image_bbox,
+       std::ofstream &out, bool bbox_adjust = false) {
+      std::ostringstream line;
 
-  GridCoord swc_coord = coord;
-  GridCoord swc_lengths = image_lengths;
-  if (bbox_adjust) {
-    swc_coord = swc_coord - image_bbox.min();
-    swc_lengths = image_bbox.dim().offsetBy(-1);
-  }
+      GridCoord swc_coord = coord;
+      GridCoord swc_lengths = image_lengths;
+      if (bbox_adjust) {
+        swc_coord = swc_coord - image_bbox.min();
+        swc_lengths = image_bbox.dim().offsetBy(-1);
+      }
 
-  // n
-  line << coord_to_id(swc_coord, swc_lengths) << ' ';
+      // n
+      line << coord_to_id(swc_coord, swc_lengths) << ' ';
 
-  // type_id
-  if (current.root()) {
-    line << "1" << ' ';
-  } else {
-    line << '3' << ' ';
-  }
+      // type_id
+      if (current.root()) {
+        line << "1" << ' ';
+      } else {
+        line << '3' << ' ';
+      }
 
-  // coordinates
-  line << swc_coord[0] << ' ' << swc_coord[1] << ' ' << swc_coord[2] << ' ';
+      // coordinates
+      line << swc_coord[0] << ' ' << swc_coord[1] << ' ' << swc_coord[2] << ' ';
 
-  // radius
-  line << +(current.radius) << ' ';
+      // radius
+      line << +(current.radius) << ' ';
 
-  // parent
-  auto parent_coord = coord_add(swc_coord, current.parent);
-  auto parent_vid = coord_to_id(parent_coord, swc_lengths);
-  if (current.root()) {
-    line << "-1";
-  } else {
-    line << parent_vid;
-  }
+      // parent
+      auto parent_coord = coord_add(swc_coord, current.parent);
+      auto parent_vid = coord_to_id(parent_coord, swc_lengths);
+      if (current.root()) {
+        line << "-1";
+      } else {
+        line << parent_vid;
+      }
 
-  line << '\n';
+      line << '\n';
 
-  if (out.is_open()) {
-    //#pragma omp critical
-    out << line.str();
-  } else {
-    //#pragma omp critical
-    std::cout << line.str();
-  }
-};
+      if (out.is_open()) {
+        //#pragma omp critical
+        out << line.str();
+      } else {
+        //#pragma omp critical
+        std::cout << line.str();
+      }
+    };
 
 auto get_transform = []() {
   // grid_transform must use the same voxel size for all intervals

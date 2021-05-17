@@ -113,7 +113,8 @@ public:
 
   void operator()();
   void print_to_swc();
-  void finalize_parent();
+  void validate_parent();
+  void prune_radii();
 
   void initialize_globals(const VID_t &grid_interval_size,
                           const VID_t &interval_block_size);
@@ -2630,8 +2631,9 @@ void Recut<image_t>::visit(FilterP keep_if, Pred predicate) {
   for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
        ++leaf_iter) {
 
-    openvdb::points::AttributeHandle<uint8_t> flags_handle(
-        leaf_iter->constAttributeArray("flags"));
+    // note: some attributes need mutability
+    openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
+        leaf_iter->attributeArray("flags"));
 
     openvdb::points::AttributeHandle<uint8_t> radius_handle(
         leaf_iter->constAttributeArray("radius"));
@@ -2640,7 +2642,7 @@ void Recut<image_t>::visit(FilterP keep_if, Pred predicate) {
         leaf_iter->attributeArray("parents"));
 
     for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
-      if (keep_if(flags_handle, ind)) {
+      if (keep_if(flags_handle, parents_handle, radius_handle, ind)) {
         predicate(flags_handle, parents_handle, radius_handle, ind);
       }
     }
@@ -2754,10 +2756,9 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
 #endif
 }
 
-template <class image_t>
-void Recut<image_t>::finalize_parent() {
-  auto adjust_parent = [this](auto &flags_handle, auto &parents_handle,
-                          auto &radius_handle, auto &ind) {
+template <class image_t> void Recut<image_t>::validate_parent() {
+  auto adjust_parent = [this](const auto &flags_handle, auto &parents_handle,
+                              const auto &radius_handle, const auto &ind) {
     auto coord = ind.getCoord();
     auto parent = this->adjust_vertex_parent(parents_handle.get(*ind), coord);
     parents_handle.set(*ind, parent);
@@ -2765,11 +2766,15 @@ void Recut<image_t>::finalize_parent() {
     std::cout << coord << " -> " << coord + parent << '\n';
 #endif
   };
-  visit(is_valid, adjust_parent);
+
+  auto all_valid = [](const auto &flags_handle, const auto &parents_handle,
+                      const auto &radius_handle,
+                      const auto &ind) { return is_valid(flags_handle, ind); };
+
+  visit(all_valid, adjust_parent);
 }
 
-template <class image_t>
-void Recut<image_t>::print_to_swc() {
+template <class image_t> void Recut<image_t>::print_to_swc() {
   auto to_swc = [this](const auto &flags_handle, const auto &parents_handle,
                        const auto &radius_handle, const auto &ind) {
     auto coord = ind.getCoord();
@@ -2787,6 +2792,24 @@ void Recut<image_t>::print_to_swc() {
 
   if (this->out.is_open())
     this->out.close();
+}
+
+template <class image_t> void Recut<image_t>::prune_radii() {
+  auto filter_radii = [](const auto &flags_handle, const auto &parents_handle,
+                         const auto &radius_handle, const auto &ind) {
+    // return is_valid(flags_handle, ind) && (radius_handle.get(*ind) <
+    // MIN_RADII);
+    auto parents = parents_handle.get(*ind);
+    return is_valid(flags_handle, ind) && !is_root(flags_handle, ind) &&
+           ((parents[0] + parents[1] + parents[2]) < MIN_LENGTH);
+  };
+
+  auto prune_filtered = [](auto &flags_handle, const auto &parents_handle,
+                           const auto &radius_handle, const auto &ind) {
+    set_tombstone(flags_handle, ind);
+  };
+
+  visit(filter_radii, prune_filtered);
 }
 
 template <class image_t> void Recut<image_t>::operator()() {
@@ -2832,13 +2855,16 @@ template <class image_t> void Recut<image_t>::operator()() {
   // starting from roots, prune stage will
   // create final list of vertices
   stage = "prune";
-  // this->activate_vids(root_coords, stage, map_fifo);
   this->activate_vids(this->topology_grid, root_coords, stage, this->map_fifo,
                       this->connected_map);
   this->update(stage, map_fifo);
 
+  validate_parent();
+
+  prune_radii();
+
   auto timer = high_resolution_timer();
-  finalize_parent();
+  validate_parent();
 #ifdef LOG
   cout << "Adjust parent in " << timer.elapsed() << " sec.\n";
 #endif
