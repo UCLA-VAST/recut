@@ -2093,11 +2093,6 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                 positions, this->image_lengths, get_transform(),
                 local_tile_thresholds->bkg_thresh);
 
-            {
-              cout << "validate grid interval id " << interval_id << '\n';
-              validate_grid(grids[interval_id]);
-            }
-
 #ifdef FULL_PRINT
             print_vdb_mask(grids[interval_id]->getConstAccessor(),
                            this->image_lengths);
@@ -2141,18 +2136,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
       }
       this->topology_grid = grids[this->grid_interval_size - 1];
 
-      {
-        cout << "validate merged grid \n";
-        validate_grid(this->topology_grid);
-      }
-
       set_grid_meta(this->topology_grid, this->image_lengths, 0);
       this->topology_grid->tree().prune();
-
-      {
-        cout << "validate pruned grid \n";
-        validate_grid(this->topology_grid);
-      }
 
     } else if (this->args->type_ == "float") {
       set_grid_meta(this->input_grid, this->image_lengths, 0);
@@ -2455,8 +2440,11 @@ const std::vector<GridCoord> Recut<image_t>::initialize() {
   }
   this->image_bbox = openvdb::math::CoordBBox(
       this->image_offsets, this->image_offsets + this->image_lengths);
+
   // TODO move this clipping up to the read step
-  this->topology_grid->clip(this->image_bbox);
+  if (!this->params->convert_only_) {
+    this->topology_grid->clip(this->image_bbox);
+  }
 
   // save to globals the actual size of the full image
   // accounting for the input offsets and extents

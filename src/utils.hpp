@@ -1373,7 +1373,7 @@ auto convert_buffer_to_vdb_acc =
             // voxels equal to bkg_thresh are always discarded
             if (val > bkg_thresh) {
               // accessor.setValueOn(xyz);
-              accessor.setValue(xyz, val);
+              accessor.setValue(grid_xyz, val);
             }
           }
         }
