@@ -2263,7 +2263,6 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
           new openvdb::tree::LeafNode<bool, LEAF_LOG2DIM>(origin, false);
 
       // init update grid with fixed topology (active state)
-      // for (auto ind = leaf_iter->beginValueOn(); ind; ++ind) {
       for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
         // get coord
         auto coord = ind.getCoord();
@@ -2615,8 +2614,6 @@ template <class image_t>
 template <typename FilterP, typename Pred>
 void Recut<image_t>::visit(FilterP keep_if, Pred predicate) {
 
-  // iterate all active vertices ahead of time so each marker
-  // can have a pointer to it's parent marker
   for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
        ++leaf_iter) {
 
@@ -2632,7 +2629,7 @@ void Recut<image_t>::visit(FilterP keep_if, Pred predicate) {
 
     for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
       if (keep_if(flags_handle, parents_handle, radius_handle, ind)) {
-        predicate(flags_handle, parents_handle, radius_handle, ind);
+        predicate(flags_handle, parents_handle, radius_handle, ind, leaf_iter);
       }
     }
   }
@@ -2747,7 +2744,7 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
 
 template <class image_t> void Recut<image_t>::validate_parent() {
   auto adjust_parent = [this](const auto &flags_handle, auto &parents_handle,
-                              const auto &radius_handle, const auto &ind) {
+                              const auto &radius_handle, const auto &ind, auto leaf) {
     auto coord = ind.getCoord();
     auto parent = this->adjust_vertex_parent(parents_handle.get(*ind), coord);
     parents_handle.set(*ind, parent);
@@ -2765,7 +2762,7 @@ template <class image_t> void Recut<image_t>::validate_parent() {
 
 template <class image_t> void Recut<image_t>::print_to_swc() {
   auto to_swc = [this](const auto &flags_handle, const auto &parents_handle,
-                       const auto &radius_handle, const auto &ind) {
+                       const auto &radius_handle, const auto &ind, auto leaf) {
     auto coord = ind.getCoord();
     auto v = VertexAttr(flags_handle.get(*ind), /*ignored*/ zeros_off(),
                         parents_handle.get(*ind), radius_handle.get(*ind));
@@ -2798,6 +2795,7 @@ template <class image_t> void Recut<image_t>::prune_radii() {
 
 template <class image_t> void Recut<image_t>::operator()() {
   std::string stage;
+  openvdb::GridPtrVec grids;
   // create a list of root vids
   auto root_coords = this->initialize();
 
@@ -2807,7 +2805,6 @@ template <class image_t> void Recut<image_t>::operator()() {
     // mutates input_grid
     stage = "convert";
     this->update(stage, map_fifo);
-    openvdb::GridPtrVec grids;
 #ifdef LOG
     if (args->type_ == "float") {
       print_grid_metadata(this->input_grid);
@@ -2830,6 +2827,18 @@ template <class image_t> void Recut<image_t>::operator()() {
   this->activate_vids(this->topology_grid, root_coords, stage, this->map_fifo,
                       this->connected_map);
   this->update(stage, map_fifo);
+
+  auto all_invalid = [](const auto &flags_handle, const auto &parents_handle,
+                      const auto &radius_handle,
+                      const auto &ind) { return !is_selected(flags_handle, ind); };
+
+  print_point_count(this->topology_grid);
+  visit(all_invalid, inactivates_visited);
+  this->topology_grid->tree().prune();
+  print_point_count(this->topology_grid);
+  grids.push_back(this->topology_grid);
+  write_vdb_file(grids, "out.vdb");
+  return;
 
   auto spheres = std::vector<openvdb::Vec4s>();
   const auto sphere_count = openvdb::math::Vec2i(1, 50000);

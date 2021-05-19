@@ -387,7 +387,9 @@ auto setbit = [](auto field_, auto bit_offset) {
   return field_ | 1 << bit_offset;
 };
 
-auto unsetbit = [](auto field_, auto bit_offset) { return field_ &= ~(1 << bit_offset); };
+auto unsetbit = [](auto field_, auto bit_offset) {
+  return field_ &= ~(1 << bit_offset);
+};
 
 auto set_root = [](auto handle, auto ind) {
   // ???? 1???
@@ -487,13 +489,40 @@ auto not_root = [](const auto &flags_handle, const auto &parents_handle,
   return is_valid(flags_handle, ind) && !is_root(flags_handle, ind);
 };
 
+auto inactivates_visited = [](auto &flags_handle, const auto &parents_handle,
+                              const auto &radius_handle, const auto &ind,
+                              auto leaf) { leaf->setActiveState(ind, false); };
+
 auto prunes_visited = [](auto &flags_handle, const auto &parents_handle,
-                         const auto &radius_handle,
-                         const auto &ind) { set_tombstone(flags_handle, ind); };
+                         const auto &radius_handle, const auto &ind,
+                         auto leaf) { set_tombstone(flags_handle, ind); };
 
 auto print_point_count = [](auto grid) {
   openvdb::Index64 count = openvdb::points::pointCount(grid->tree());
   std::cout << "Point count: " << count << '\n';
+};
+
+auto copy_selected = [](EnlargedPointDataGrid::Ptr grid) -> openvdb::FloatGrid::Ptr {
+  auto float_grid = opevdb::FloatGrid::create();
+
+  for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
+       ++leaf_iter) {
+    auto origin = leaf_iter->getNodeBoundingBox().min();
+    auto float_leaf =
+        new openvdb::tree::LeafNode<float, LEAF_LOG2DIM>(origin, false);
+
+    // note: some attributes need mutability
+    openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
+        leaf_iter->attributeArray("flags"));
+
+    for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
+      if (is_selected(flags_handle, ind)) {
+        float_leaf->setValue(ind.getCoord(), 1.);
+      }
+    }
+    this->update_grid->tree().addLeaf(update_leaf);
+  }
+  return float_grid;
 };
 
 auto print_positions = [](auto grid) {
