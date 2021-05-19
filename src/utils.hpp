@@ -503,13 +503,15 @@ auto print_point_count = [](auto grid) {
 };
 
 auto copy_selected = [](EnlargedPointDataGrid::Ptr grid) -> openvdb::FloatGrid::Ptr {
-  auto float_grid = opevdb::FloatGrid::create();
 
-  for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
+  auto float_grid = openvdb::FloatGrid::create();
+  VID_t vcount = 0;
+
+  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter;
        ++leaf_iter) {
     auto origin = leaf_iter->getNodeBoundingBox().min();
     auto float_leaf =
-        new openvdb::tree::LeafNode<float, LEAF_LOG2DIM>(origin, false);
+        new openvdb::tree::LeafNode<float, LEAF_LOG2DIM>(origin, 0.);
 
     // note: some attributes need mutability
     openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
@@ -518,10 +520,14 @@ auto copy_selected = [](EnlargedPointDataGrid::Ptr grid) -> openvdb::FloatGrid::
     for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
       if (is_selected(flags_handle, ind)) {
         float_leaf->setValue(ind.getCoord(), 1.);
+        ++vcount;
       }
     }
-    this->update_grid->tree().addLeaf(update_leaf);
+    float_grid->tree().addLeaf(float_leaf);
   }
+
+  float_grid->tree().prune();
+  cout << "total active: " << vcount << '\n';
   return float_grid;
 };
 

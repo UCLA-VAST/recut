@@ -2833,11 +2833,12 @@ template <class image_t> void Recut<image_t>::operator()() {
                       const auto &ind) { return !is_selected(flags_handle, ind); };
 
   print_point_count(this->topology_grid);
-  visit(all_invalid, inactivates_visited);
-  this->topology_grid->tree().prune();
-  print_point_count(this->topology_grid);
-  grids.push_back(this->topology_grid);
-  write_vdb_file(grids, "out.vdb");
+  //visit(all_invalid, inactivates_visited);
+  //this->topology_grid->tree().prune();
+  //print_point_count(this->topology_grid);
+  auto float_grid = copy_selected(this->topology_grid);
+  grids.push_back(float_grid);
+  write_vdb_file(grids, "connected-float-grid.vdb");
   return;
 
   auto spheres = std::vector<openvdb::Vec4s>();
