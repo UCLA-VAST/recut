@@ -1592,7 +1592,8 @@ TEST(Update, EachStageIteratively) {
                 // convert roots into markers (vector)
                 std::vector<MyMarker *> root_markers;
                 if (tcase == 6) {
-                  root_markers = coords_to_markers(root_coords);
+                  auto coords = root_coords | rng::views::transform([](auto coord_radius) { return coord_radius.first; }) | rng::to_vector;
+                  root_markers = coords_to_markers(coords);
                 } else {
                   root_markers = {get_central_root(grid_size)};
                 }
@@ -1634,7 +1635,7 @@ TEST(Update, EachStageIteratively) {
                                     recut.map_fifo, recut.connected_map);
                 recut.update(stage, recut.map_fifo);
 
-                recut.validate_parent();
+                recut.adjust_parent();
                 if (print_all) {
                   std::cout << "Recut prune\n";
                   std::cout << iteration_trace.str();
@@ -1941,7 +1942,7 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     //std::cout << "Recut parent post prune\n";
     //print_all_points(recut.topology_grid, recut.image_bbox, "parent");
 
-    recut.validate_parent();
+    recut.adjust_parent();
 
     recut.print_to_swc();
 
@@ -1999,10 +2000,10 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
     std::vector<MyMarker *> root_markers;
     if (tcase == 6) {
       // cout << root_coords << '\n';
-      print_iter(root_coords);
+      //print_iter(root_coords);
       auto adjusted_roots = root_coords |
                             rng::views::transform([&args](auto coord) {
-                              return coord - args.image_offsets;
+                              return coord.first - args.image_offsets;
                             }) |
                             rng::to_vector;
       // cout << adjusted_root << '\n';

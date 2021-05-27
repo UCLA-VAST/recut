@@ -502,13 +502,12 @@ auto print_point_count = [](auto grid) {
   std::cout << "Point count: " << count << '\n';
 };
 
-auto copy_selected = [](EnlargedPointDataGrid::Ptr grid) -> openvdb::FloatGrid::Ptr {
-
+auto copy_selected =
+    [](EnlargedPointDataGrid::Ptr grid) -> openvdb::FloatGrid::Ptr {
   auto float_grid = openvdb::FloatGrid::create();
   VID_t vcount = 0;
 
-  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter;
-       ++leaf_iter) {
+  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
     auto origin = leaf_iter->getNodeBoundingBox().min();
     auto float_leaf =
         new openvdb::tree::LeafNode<float, LEAF_LOG2DIM>(origin, 0.);
@@ -1822,58 +1821,65 @@ auto check_coverage(const T mask, const T2 inimg1d, const VID_t tol_sz,
       false_negatives, false_positives, over_coverage, match_count);
 }
 
+auto covered_by_bboxs = [](const auto coord, const auto bboxs) {
+  for (const auto bbox : bboxs) {
+    if (bbox.isInside(coord))
+      return true;
+  }
+  return false;
+};
+
 // n,type,x,y,z,radius,parent
 // for more info see:
 // http://www.neuronland.org/NLMorphologyConverter/MorphologyFormats/SWC/Spec.html
 // https://github.com/HumanBrainProject/swcPlus/blob/master/SWCplus_specification.html
-auto print_vertex_swc =
-    [](const GridCoord &coord, const struct VertexAttr &current,
-       const GridCoord &image_lengths, const CoordBBox &image_bbox,
-       std::ofstream &out, bool bbox_adjust = false) {
-      std::ostringstream line;
+auto print_swc_line = [](const GridCoord &coord, bool is_root, uint8_t radius,
+                         const OffsetCoord parent_offset,
+                         const GridCoord &image_lengths,
+                         const CoordBBox &image_bbox, std::ofstream &out,
+                         bool bbox_adjust = false) {
+  std::ostringstream line;
 
-      GridCoord swc_coord = coord;
-      GridCoord swc_lengths = image_lengths;
-      if (bbox_adjust) {
-        swc_coord = swc_coord - image_bbox.min();
-        swc_lengths = image_bbox.dim().offsetBy(-1);
-      }
+  GridCoord swc_coord = coord;
+  GridCoord swc_lengths = image_lengths;
+  if (bbox_adjust) {
+    swc_coord = swc_coord - image_bbox.min();
+    swc_lengths = image_bbox.dim().offsetBy(-1);
+  }
 
-      // n
-      line << coord_to_id(swc_coord, swc_lengths) << ' ';
+  // n
+  line << coord_to_id(swc_coord, swc_lengths) << ' ';
 
-      // type_id
-      if (current.root()) {
-        line << "1" << ' ';
-      } else {
-        line << '3' << ' ';
-      }
+  // type_id
+  if (is_root) {
+    line << "1" << ' ';
+  } else {
+    line << '3' << ' ';
+  }
 
-      // coordinates
-      line << swc_coord[0] << ' ' << swc_coord[1] << ' ' << swc_coord[2] << ' ';
+  // coordinates
+  line << swc_coord[0] << ' ' << swc_coord[1] << ' ' << swc_coord[2] << ' ';
 
-      // radius
-      line << +(current.radius) << ' ';
+  // radius
+  line << +(radius) << ' ';
 
-      // parent
-      auto parent_coord = coord_add(swc_coord, current.parent);
-      auto parent_vid = coord_to_id(parent_coord, swc_lengths);
-      if (current.root()) {
-        line << "-1";
-      } else {
-        line << parent_vid;
-      }
+  // parent
+  auto parent_coord = coord_add(swc_coord, parent_offset);
+  auto parent_vid = coord_to_id(parent_coord, swc_lengths);
+  if (is_root) {
+    line << "-1";
+  } else {
+    line << parent_vid;
+  }
 
-      line << '\n';
+  line << '\n';
 
-      if (out.is_open()) {
-        //#pragma omp critical
-        out << line.str();
-      } else {
-        //#pragma omp critical
-        std::cout << line.str();
-      }
-    };
+  if (out.is_open()) {
+    out << line.str();
+  } else {
+    std::cout << line.str();
+  }
+};
 
 auto get_transform = []() {
   // grid_transform must use the same voxel size for all intervals
