@@ -541,8 +541,8 @@ auto print_positions = [](auto grid) {
     // Create a read-only AttributeHandle. Position always uses Vec3f.
     openvdb::points::AttributeHandle<PositionT> positionHandle(array);
 
-    openvdb::points::AttributeHandle<uint8_t> radius_handle(
-        leaf_iter->constAttributeArray("radius"));
+    openvdb::points::AttributeHandle<float> radius_handle(
+        leaf_iter->constAttributeArray("pscale"));
 
     openvdb::points::AttributeHandle<uint8_t> flags_handle(
         leaf_iter->constAttributeArray("flags"));
@@ -596,8 +596,8 @@ auto print_all_points = [](const EnlargedPointDataGrid::Ptr grid,
         auto leaf_iter = grid->tree().probeConstLeaf(xyz);
         auto ind = leaf_iter->beginIndexVoxel(xyz);
 
-        openvdb::points::AttributeHandle<uint8_t> radius_handle(
-            leaf_iter->constAttributeArray("radius"));
+        openvdb::points::AttributeHandle<float> radius_handle(
+            leaf_iter->constAttributeArray("pscale"));
 
         openvdb::points::AttributeHandle<uint8_t> flags_handle(
             leaf_iter->constAttributeArray("flags"));
@@ -968,10 +968,10 @@ auto append_attributes = [](auto grid) {
   // Note that this attribute type is not registered by default so needs to be
   // explicitly registered.
   using Codec = openvdb::points::NullCodec;
-  openvdb::points::TypedAttributeArray<uint8_t, Codec>::registerType();
+  openvdb::points::TypedAttributeArray<float, Codec>::registerType();
   openvdb::NamePair radiusAttribute =
-      openvdb::points::TypedAttributeArray<uint8_t, Codec>::attributeType();
-  openvdb::points::appendAttribute(grid->tree(), "radius", radiusAttribute);
+      openvdb::points::TypedAttributeArray<float, Codec>::attributeType();
+  openvdb::points::appendAttribute(grid->tree(), "pscale", radiusAttribute);
 
   // append a state flag attribute
   openvdb::points::TypedAttributeArray<uint8_t, Codec>::registerType();
