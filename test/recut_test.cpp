@@ -86,8 +86,8 @@ void check_recut_error(Recut<uint16_t> &recut, DataType *ground_truth,
         }
 
         // load
-        openvdb::points::AttributeHandle<uint8_t> radius_handle(
-            leaf_iter->constAttributeArray("radius"));
+        openvdb::points::AttributeHandle<float> radius_handle(
+            leaf_iter->constAttributeArray("pscale"));
         openvdb::points::AttributeHandle<uint8_t> flags_handle(
             leaf_iter->constAttributeArray("flags"));
         openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
@@ -1553,8 +1553,8 @@ TEST(Update, EachStageIteratively) {
                     if (recut.topology_grid->tree().isValueOn(coord)) {
                       auto leaf =
                           recut.topology_grid->tree().probeConstLeaf(coord);
-                      openvdb::points::AttributeHandle<uint8_t> radius_handle(
-                          leaf->constAttributeArray("radius"));
+                      openvdb::points::AttributeHandle<float> radius_handle(
+                          leaf->constAttributeArray("pscale"));
                       auto ind = leaf->beginIndexVoxel(coord);
                       if (ind)
                         seq_radii_grid[vid] = radius_handle.get(*ind);

@@ -503,8 +503,8 @@ void Recut<image_t>::activate_vids(
     openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
         leaf_iter->attributeArray("parents"));
 
-    openvdb::points::AttributeWriteHandle<uint8_t> radius_handle(
-        leaf_iter->attributeArray("radius"));
+    openvdb::points::AttributeWriteHandle<float> radius_handle(
+        leaf_iter->attributeArray("pscale"));
 
     auto temp_coord = new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH);
 
@@ -1020,13 +1020,13 @@ void integrate_point(std::string stage, Container &fifo, T &connected_fifo,
     connected_fifo.emplace_back(bf, adj_offsets, parents_handle.get(*ind));
 
   } else if (stage == "radius") {
-    openvdb::points::AttributeHandle<uint8_t> radius_handle(
-        adj_leaf_iter->constAttributeArray("radius"));
+    openvdb::points::AttributeHandle<float> radius_handle(
+        adj_leaf_iter->constAttributeArray("pscale"));
     fifo.emplace_back(bf, adj_offsets, zeros(), radius_handle.get(*ind));
 
   } else if (stage == "prune") {
-    openvdb::points::AttributeHandle<uint8_t> radius_handle(
-        adj_leaf_iter->constAttributeArray("radius"));
+    openvdb::points::AttributeHandle<float> radius_handle(
+        adj_leaf_iter->constAttributeArray("pscale"));
     fifo.emplace_back(bf, adj_offsets, zeros(), radius_handle.get(*ind));
   }
 }
@@ -1433,8 +1433,8 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
   openvdb::points::AttributeHandle<uint8_t> flags_handle =
       leaf_iter->constAttributeArray("flags");
   // read-write radius
-  openvdb::points::AttributeWriteHandle<uint8_t> radius_handle =
-      leaf_iter->attributeArray("radius");
+  openvdb::points::AttributeWriteHandle<float> radius_handle =
+      leaf_iter->attributeArray("pscale");
 
   VID_t visited = 0;
   while (!(fifo.empty())) {
@@ -1513,8 +1513,8 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
   auto update_leaf = this->update_grid->tree().probeLeaf(leaf_iter->origin());
   auto bbox = leaf_iter->getNodeBoundingBox();
 
-  openvdb::points::AttributeWriteHandle<uint8_t> radius_handle =
-      leaf_iter->attributeArray("radius");
+  openvdb::points::AttributeWriteHandle<float> radius_handle =
+      leaf_iter->attributeArray("pscale");
 
   openvdb::points::AttributeWriteHandle<uint8_t> flags_handle =
       leaf_iter->attributeArray("flags");
@@ -2629,8 +2629,8 @@ void Recut<image_t>::visit(FilterP keep_if, Pred predicate) {
     openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
         leaf_iter->attributeArray("flags"));
 
-    openvdb::points::AttributeHandle<uint8_t> radius_handle(
-        leaf_iter->constAttributeArray("radius"));
+    openvdb::points::AttributeHandle<float> radius_handle(
+        leaf_iter->constAttributeArray("pscale"));
 
     openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
         leaf_iter->attributeArray("parents"));
@@ -2666,8 +2666,8 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
     openvdb::points::AttributeHandle<uint8_t> flags_handle(
         leaf_iter->constAttributeArray("flags"));
 
-    openvdb::points::AttributeHandle<uint8_t> radius_handle(
-        leaf_iter->constAttributeArray("radius"));
+    openvdb::points::AttributeHandle<float> radius_handle(
+        leaf_iter->constAttributeArray("pscale"));
 
     openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
         leaf_iter->constAttributeArray("parents"));
@@ -2709,8 +2709,8 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
     openvdb::points::AttributeHandle<uint8_t> flags_handle(
         leaf_iter->constAttributeArray("flags"));
 
-    openvdb::points::AttributeHandle<uint8_t> radius_handle(
-        leaf_iter->constAttributeArray("radius"));
+    openvdb::points::AttributeHandle<float> radius_handle(
+        leaf_iter->constAttributeArray("pscale"));
 
     openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
         leaf_iter->constAttributeArray("parents"));
@@ -2858,7 +2858,6 @@ template <class image_t> void Recut<image_t>::operator()() {
   auto counter = 0;
   rng::for_each(components, [this, &counter, float_grid,
                              &root_coords](const auto component) {
-
     auto component_roots =
         root_coords | rng::views::remove_if([&component](auto coord_radius) {
           auto [coord, radius] = coord_radius;
@@ -2869,15 +2868,17 @@ template <class image_t> void Recut<image_t>::operator()() {
         component_roots | rng::views::transform([](auto coord_radius) {
           auto [coord, radius] = coord_radius;
           auto radius_off = GridCoord(radius);
-          //cout << "\troot at " << coord << ' ' << radius<< ' ' 
-               //<< openvdb::CoordBBox(coord - radius_off, coord + radius_off) << '\n';
+          // cout << "\troot at " << coord << ' ' << radius<< ' '
+          //<< openvdb::CoordBBox(coord - radius_off, coord + radius_off) <<
+          //'\n';
           return openvdb::CoordBBox(coord - radius_off, coord + radius_off);
           // filtered_spheres.emplace_back(coord[0], coord[1], coord[2],
           // radius);
         }) |
         rng::to_vector;
 
-    if (component_root_bboxs.size() < 1) return; // skip
+    if (component_root_bboxs.size() < 1)
+      return; // skip
 
     const auto sphere_count = openvdb::math::Vec2i(1, 50000);
     auto spheres = std::vector<openvdb::Vec4s>();
@@ -2913,7 +2914,8 @@ template <class image_t> void Recut<image_t>::operator()() {
             }) |
         rng::to_vector;
 
-    if (filtered_spheres.size() < SWC_MIN_LINE) return; // skip
+    if (filtered_spheres.size() < SWC_MIN_LINE)
+      return; // skip
 #ifdef LOG
     auto name = "component-" + std::to_string(counter) + ".swc";
     cout << name << " active count " << component->activeVoxelCount() << ' '
@@ -2952,12 +2954,15 @@ template <class image_t> void Recut<image_t>::operator()() {
       openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
           leaf_iter->attributeArray("parents"));
 
+      openvdb::points::AttributeWriteHandle<float> radius_handle(
+          leaf_iter->attributeArray("pscale"));
+
       auto ind = leaf_iter->beginIndexVoxel(coord);
       assertm(ind, "ind must be reachable");
 
       auto parent = adjust_vertex_parent(this->topology_grid,
                                          parents_handle.get(*ind), coord);
-      // parents_handle.set(*ind, parent);
+      parents_handle.set(*ind, parent);
       //#ifdef FULL_PRINT
       // std::cout << coord << " -> " << coord + parent << '\n';
       //#endif
@@ -2966,12 +2971,34 @@ template <class image_t> void Recut<image_t>::operator()() {
                      /*radius*/ sphere[3], parent, this->image_lengths,
                      this->image_bbox, file,
                      /*adjust*/ true);
+
+      radius_handle.set(*ind, static_cast<float>(sphere[3]));
+    });
+
+    // finalize soma attributes
+    rng::for_each(component_roots, [this](const auto &coord_radius) {
+      auto [coord, radius] = coord_radius;
+      auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
+      openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
+          leaf_iter->attributeArray("parents"));
+
+      openvdb::points::AttributeWriteHandle<float> radius_handle(
+          leaf_iter->attributeArray("pscale"));
+
+      auto ind = leaf_iter->beginIndexVoxel(coord);
+      assertm(ind, "ind must be reachable");
+      parents_handle.set(*ind, OffsetCoord(0));
+      radius_handle.set(*ind, static_cast<float>(radius));
     });
 
     if (file.is_open())
       file.close();
     ++counter;
   }); // for each component
+
+  grids.push_back(this->topology_grid);
+  write_vdb_file(grids, "final-point-grid.vdb");
+
   return;
 
   // FIXME only for this component
@@ -2979,9 +3006,6 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   // FIXME only for this component
   // print_to_swc();
-
-  // grids.push_back(float_grid);
-  // write_vdb_file(grids, "connected-float-grid.vdb");
 
   // auto spheres = std::vector<openvdb::Vec4s>();
   // openvdb::v8_1::tools::fillWithSpheres(*(this->topology_grid), spheres,
