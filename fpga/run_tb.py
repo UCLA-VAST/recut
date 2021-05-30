@@ -1,6 +1,7 @@
 import sys
 import os
 
+prj_path = '/home/basalama/recut/fpga' #put path here
 layerIndex = int(sys.argv[1])
 
 instFile = open('test.insts', 'r')
@@ -61,24 +62,53 @@ for inst in insts:
   instDict['KH_KW'			      ] = inst[38]
   instDicts.append(instDict)
 
-# for instDict in instDicts:
-#   for key in instDict:
-#     print(key)
 
 instDict = instDicts[layerIndex-1]
-# print(inst)
+
+
+if(len(sys.argv)<3):
+  load_progress = 0
+  save_progress = 0
+elif(sys.argv[2]=='ls'):
+  load_progress = 1
+  save_progress = 1
+elif(sys.argv[2]=='l'):
+  load_progress = 1
+  save_progress = 0
+elif(sys.argv[2]=='s'):
+  load_progress = 0
+  save_progress = 1
+
+
 inFile = open("cnn_sw.h", "r")
 outFile = open("temp.h", "w")
 for line in inFile:
     values = line.split()
     if(len(values)!=0):
-      if(values[0]=="#define" and values[1]=="LAYER"):
+      if(values[0]=="#define" and values[1]=="LOAD_PROGRESS"):
+        if(load_progress==1):
+          outFile.writelines("#define LOAD_PROGRESS 1\n")
+        else:
+          outFile.writelines("#define LOAD_PROGRESS 0\n")
+      elif(values[0]=="#define" and values[1]=="SAVE_PROGRESS"):
+        if(save_progress==1):
+          outFile.writelines("#define SAVE_PROGRESS 1\n")
+        else:
+          outFile.writelines("#define SAVE_PROGRESS 0\n")
+      elif(values[0]=="#define" and values[1]=="PRJ_PATH"):
+        outFile.writelines("#define PRJ_PATH \""+prj_path+"\"\n")
+      elif(values[0]=="#define" and values[1]=="LAYER"):
         outFile.writelines("#define LAYER "+str(layerIndex)+"\n")
+      elif(values[0]=="#define" and values[1]=="CIN_OFFSET"):
+        outFile.writelines("#define CIN_OFFSET "+str(instDict['CIN_OFFSET'])+"\n")
+      elif(values[0]=="#define" and values[1]=="FILTER_S2"):
+        outFile.writelines("#define FILTER_S2 "+str(instDict['FILTER_S2'])+"\n")
       elif(values[0]=="#define" and values[1]=="OUTFILE"):
         outFile.writelines("#define OUTFILE \"/data/L"+str(layerIndex)+"_outputs.dat\"\n")
       elif(values[0]=="#define" and values[1]=="OUT_OFFSET1"):
-        offset = instDict['COUT_OFFSET']-((instDict['OUT_W_HW']+1)*instDict['OUT_NUM_HW'])
-        outFile.writelines("#define OUT_OFFSET1 "+str(offset)+"\n")
+        padding = (instDict['FILTER_S2']-1)/2
+        offset = instDict['COUT_OFFSET']-((padding*instDict['OUT_W_HW']+padding)*instDict['OUT_NUM_HW'])
+        outFile.writelines("#define OUT_OFFSET1 "+str(int(offset))+"\n")
       elif(values[0]=="#define" and values[1]=="OUT_OFFSET2"):
         outFile.writelines("#define OUT_OFFSET2 "+str(instDict['COUT_OFFSET'])+"\n")
       elif(values[0]=="#define" and values[1]=="CHANGE_LAYOUT"):
@@ -101,6 +131,6 @@ for line in inFile:
 outFile.close()
 inFile.close()
 
-os.system("conda activate tf")
-os.system("D:/Programs/Anaconda/envs/tf/python.exe d:/Winter2021/Research/FlexCNN/SDx_project/FlexCNN_opt/UNET_tf/unet.py "+str(layerIndex))
-os.system("UNET.bat sim")
+# os.system("conda activate tf")
+os.system("python3 "+prj_path+"/UNET_tf/recut.py "+str(layerIndex)+" \""+prj_path+"\"")
+os.system("./UNET.sh sim")

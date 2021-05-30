@@ -5,7 +5,7 @@
 #define IN_W_T 96
 #define OUT_H_T 12
 #define OUT_W_T 96
-#define K_T 3
+#define K_T 5
 #define K_T_S 5
 #define LAYER_NUM 20
 #define VGG_LAYERS 88
@@ -31,7 +31,7 @@
 #define LAYER1_IN_W_HW 386
 #define LAYER1_OUT_H_HW 194
 #define LAYER1_OUT_W_HW 194
-#define LAYER1_K 3
+#define LAYER1_K 5
 #define LAYER1_POOL 0
 #define STAGE2L_OUT_NUM 38
 #define STAGE2L_OUT_NUM_T 48
@@ -40,7 +40,7 @@
 #define STAGE2L_OUT_NUM_HW 48
 #define STAGE2L_OUT_H_HW 50
 #define STAGE2L_OUT_W_HW 50
-#define STAGE2L_K 3
+#define STAGE2L_K 5
 #define STAGE2R_OUT_NUM 19
 #define STAGE2R_OUT_NUM_T 48
 #define STAGE2R_OUT_H 48
@@ -48,21 +48,21 @@
 #define STAGE2R_OUT_NUM_HW 48
 #define STAGE2R_OUT_H_HW 50
 #define STAGE2R_OUT_W_HW 50
-#define STAGE2R_K 3
-#define CIN_SIZE 1991968
+#define STAGE2R_K 5
+#define CIN_SIZE 20991968
 #define WEIGHT_SIZE 560032
 #define BIAS_SIZE 16544
 #define STAGE2L_OFFSET 12160160
 #define STAGE2R_OFFSET 12280160
 #define MAX_LAYER_BATCH 1
 
-#define LAYER1
+// #define LAYER1
 
-#ifdef LAYER1
-#define LAYER 1
-#define OUTFILE "/conv2d_outputs.dat"
-#define OUT_OFFSET1 1192992
-#endif
+// #ifdef LAYER1
+// #define LAYER 1
+// #define OUTFILE "/conv2d_outputs.dat"
+// #define OUT_OFFSET1 1192992
+// #endif
 
 // #ifdef LAYER2
 // #define LAYER 2
