@@ -2854,9 +2854,10 @@ template <class image_t> void Recut<image_t>::operator()() {
   // prune all neurites topology grid
   // roots from marker files stay as ground truth
   visit(not_root, prunes_visited);
+  auto output_topology = false;
 
   auto counter = 0;
-  rng::for_each(components, [this, &counter, float_grid,
+  rng::for_each(components, [this, &counter, float_grid, output_topology,
                              &root_coords](const auto component) {
     auto component_roots =
         root_coords | rng::views::remove_if([&component](auto coord_radius) {
@@ -2975,29 +2976,33 @@ template <class image_t> void Recut<image_t>::operator()() {
       radius_handle.set(*ind, static_cast<float>(sphere[3]));
     });
 
-    // finalize soma attributes
-    rng::for_each(component_roots, [this](const auto &coord_radius) {
-      auto [coord, radius] = coord_radius;
-      auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
-      openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
-          leaf_iter->attributeArray("parents"));
+    if (output_topology) {
+      // finalize soma attributes
+      rng::for_each(component_roots, [this](const auto &coord_radius) {
+        auto [coord, radius] = coord_radius;
+        auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
+        openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
+            leaf_iter->attributeArray("parents"));
 
-      openvdb::points::AttributeWriteHandle<float> radius_handle(
-          leaf_iter->attributeArray("pscale"));
+        openvdb::points::AttributeWriteHandle<float> radius_handle(
+            leaf_iter->attributeArray("pscale"));
 
-      auto ind = leaf_iter->beginIndexVoxel(coord);
-      assertm(ind, "ind must be reachable");
-      parents_handle.set(*ind, OffsetCoord(0));
-      radius_handle.set(*ind, static_cast<float>(radius));
-    });
+        auto ind = leaf_iter->beginIndexVoxel(coord);
+        assertm(ind, "ind must be reachable");
+        parents_handle.set(*ind, OffsetCoord(0));
+        radius_handle.set(*ind, static_cast<float>(radius));
+      });
+    }
 
     if (file.is_open())
       file.close();
     ++counter;
   }); // for each component
 
-  grids.push_back(this->topology_grid);
-  write_vdb_file(grids, "final-point-grid.vdb");
+  if (output_topology) {
+    grids.push_back(this->topology_grid);
+    write_vdb_file(grids, "final-point-grid.vdb");
+  }
 
   return;
 
