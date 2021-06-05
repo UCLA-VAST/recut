@@ -202,7 +202,7 @@ def dumpLayerWeights(layerIndex):
 model = UNet()
 model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["acc"])
 model.summary()
-# plot_model(model, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
+plot_model(model, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
 
 model.load_weights(prj_path+"/UNET_tf/unet_recut.h5")
 

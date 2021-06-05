@@ -1,7 +1,7 @@
 import sys
 import os
 
-prj_path = '/home/basalama/recut/fpga' #put path here
+prj_path = '/curr/eddie/recut/fpga' #put path here
 layerIndex = int(sys.argv[1])
 
 instFile = open('test.insts', 'r')
