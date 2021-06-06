@@ -2119,6 +2119,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                                                   local_tile_thresholds,
                                                   update_accessor);
         }
+        // WARNING: mcp3d tile must be explicitly cleared
+        mcp3d_tile->ReleaseData(); // invalidates tile
       } // if the interval is active
 
     } // end one interval traversal
