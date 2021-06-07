@@ -1001,7 +1001,7 @@ void integrate_point(std::string stage, Container &fifo, T &connected_fifo,
 
 #ifdef FULL_PRINT
   std::cout << "\tintegrate_point(): " << adj_coord << '\n';
-  std::cout << "\t\tpot(): " << potential_update << ' ' << leaf_iter << '\n';
+  std::cout << "\t\tpotential update: " << potential_update << ' ' << adj_leaf_iter << '\n';
 #endif
 
   if (stage == "connected") {
@@ -1627,18 +1627,20 @@ int Recut<image_t>::get_bkg_threshold(const image_t *tile,
        << '\n';
 #endif
   assertm(foreground_percent >= 0., "foreground_percent must be 0 or positive");
-  assertm(foreground_percent <= 1., "foreground_percent must be 1.0 or less");
+  assertm(foreground_percent <= 100., "foreground_percent must be 100 or less");
+  const double foreground_ratio = foreground_percent / 100;
+  const double desired_bkg_pct = 1. - foreground_ratio;
+
   image_t above; // store next bkg_thresh value above desired bkg pct
   image_t below = 0;
   double above_diff_pct = 0.0; // pct bkg at next above value
   double below_diff_pct = 1.;  // last below percentage
-  double desired_bkg_pct = 1. - foreground_percent;
   // test different background threshold values until finding
   // percentage above desired_bkg_pct or when all pixels set to background
   VID_t bkg_count;
   for (image_t local_bkg_thresh = 0;
        local_bkg_thresh <= std::numeric_limits<image_t>::max();
-       local_bkg_thresh++) {
+       ++local_bkg_thresh) {
 
     // Count total # of pixels under current thresh
     bkg_count = 0;
@@ -1833,10 +1835,6 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
     tile_thresholds->bkg_thresh =
         get_bkg_threshold(mcp3d_tile.Volume<image_t>(0), interval_vertex_size,
                           params->foreground_percent());
-    // deprecated
-    // tile_thresholds->bkg_thresh = mcp3d::TopPercentile<image_t>(
-    // mcp3d_tile.Volume<image_t>(0), interval_dims,
-    // params->foreground_percent());
 #ifdef LOG
     cout << "Requested foreground percent: " << params->foreground_percent()
          << " yielded background threshold: " << tile_thresholds->bkg_thresh
@@ -2077,7 +2075,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           auto convert_start = timer->elapsed();
 
 #ifdef FULL_PRINT
-          print_image_3D(tile, buffer_extents);
+          //print_image_3D(tile, buffer_extents);
 #endif
           if (this->args->type_ == "float") {
             convert_buffer_to_vdb_acc(tile, buffer_extents,

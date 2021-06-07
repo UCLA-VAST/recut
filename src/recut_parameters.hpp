@@ -90,7 +90,7 @@ class RecutParameters {
     // calculation of desired background_thresh during
     // get_tile_thresholds
     void set_foreground_percent(double foreground_percent) {
-      foreground_percent_ = std::max(0.0, std::min(1.0, foreground_percent));
+      foreground_percent_ = std::max(0.0, std::min(100.0, foreground_percent));
     }
     void set_length_thresh(double length_thresh) {
       length_thresh_ = std::max(length_thresh, 1.0);

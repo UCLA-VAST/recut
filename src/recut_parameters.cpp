@@ -56,8 +56,8 @@ void RecutCommandLineArgs::PrintUsage() {
           " to max range from offset start to max length in each axis (-1, -1, "
           "-1)\n";
   cout << "--bg-thresh          [-bt] background threshold value desired\n";
-  cout << "--fg-percent         [-fp] default 0.01, percent of voxels to be "
-          "considered foreground. overrides --bg-thresh\n";
+  cout << "--fg-percent         [-fp] auto calculate a bg-thresh closest to a foreground \% between (0-100], overriding any --bg-thresh args. Value of .08 yields 8 in 10,000 voxels "
+          "as foreground\n";
   cout << "--prune              [-pr] prune 0 false, 1 true; defaults to 1 "
           "(automatically prunes)\n";
   cout << "--parallel           [-pl] thread count "
@@ -212,11 +212,6 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
                         z_end + "_y" + y_start + "_" + y_end + "_x" + x_start +
                         "_" + x_end + ".swc");
     }
-    // if neither background threshold nor foreground percent given, set
-    // foreground percent to 0.01
-    // if (args.recut_parameters().background_thresh() < 0 &&
-    // args.recut_parameters().foreground_percent() < 0)
-    // args.recut_parameters().set_foreground_percent(0.01);
     return true;
   } catch (const exception &e) {
     cout << e.what() << '\n';
