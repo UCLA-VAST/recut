@@ -7,16 +7,15 @@
         ]
       },
       "locked": {
-        "lastModified": 1609534110,
-        "narHash": "sha256-JscarEvJW8imSrBQdq0ZlAagady5HUoQNVflIudqe9w=",
-        "ref": "stable_lib",
-        "rev": "3addf1d56825cc2fe2990a659242a57e79f6d6b3",
-        "revCount": 368,
+        "lastModified": 1623356328,
+        "narHash": "sha256-P3OfYyoqqdjykbmRX8JZSPrUzwVBf2PJXp2T+E7XviU=",
+        "ref": "master",
+        "rev": "da39dd6ccf1f2618b8d8f96cb49feb008bf1967b",
+        "revCount": 433,
         "type": "git",
         "url": "ssh://git@github.com/muyezhu/mcp3d"
       },
       "original": {
-        "ref": "stable_lib",
         "type": "git",
         "url": "ssh://git@github.com/muyezhu/mcp3d"
       }
