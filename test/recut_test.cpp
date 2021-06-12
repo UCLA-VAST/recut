@@ -517,6 +517,7 @@ TEST(VDB, ActivateVids) {
   ASSERT_FALSE(recut.connected_map[GridCoord(0)].empty());
 
   GridCoord root(3, 3, 3);
+  ASSERT_EQ(root, root_coords[0].first) << root_coords[0].first;
   auto leaf_iter = recut.topology_grid->tree().probeLeaf(root);
   auto ind = leaf_iter->beginIndexVoxel(root);
   ASSERT_TRUE(leaf_iter->isValueOn(root));
@@ -1790,7 +1791,7 @@ class RecutPipelineParameterTests
     : public ::testing::TestWithParam<
           std::tuple<int, int, int, int, double, bool, bool>> {};
 
-TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
+TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
 
   // documents the meaning of each tuple member
   auto grid_size = std::get<0>(GetParam());
@@ -2158,10 +2159,10 @@ TEST_P(RecutPipelineParameterTests, ChecksIfFinalVerticesCorrect) {
 INSTANTIATE_TEST_CASE_P(
     RecutPipelineTests, RecutPipelineParameterTests,
     ::testing::Values(
-        // std::make_tuple(4, 4, 4, 0, 100., true, false), // 0
-        // std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
-        // std::make_tuple(4, 4, 4, 2, 100., true, false), // 2
-        // std::make_tuple(4, 2, 2, 2, 100., true, false)  // 3
+         std::make_tuple(4, 4, 4, 0, 100., true, false), // 0
+         std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
+         std::make_tuple(4, 4, 4, 2, 100., true, false), // 2
+         std::make_tuple(4, 2, 2, 2, 100., true, false)  // 3
         //#ifdef USE_MCP3D
         //,
         //// check_against_app2 (final boolean below) currently uses
@@ -2182,7 +2183,7 @@ INSTANTIATE_TEST_CASE_P(
         //// make sure if bkg_thresh is 0, all vertices are selected for real
         // std::make_tuple(4, 4, 4, 6, 100., false, true), // 7
         // make sure fastmarching_tree and recut produce exact match for real
-        std::make_tuple(8, 8, 8, 6, 100., false, true) // 8
+        //std::make_tuple(8, 8, 8, 6, 100., false, true) // 8
         // real data multi-interval
         // std::make_tuple(8, 4, 4, 6, 100., false, true), // 10
         // interval grid ratio tests
