@@ -202,4 +202,4 @@ class RecutCommandLineArgs {
     int resolution_level_;
 };
 
-bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args);
+RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]);

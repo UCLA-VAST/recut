@@ -56,12 +56,15 @@ void RecutCommandLineArgs::PrintUsage() {
           " to max range from offset start to max length in each axis (-1, -1, "
           "-1)\n";
   cout << "--bg-thresh          [-bt] background threshold value desired\n";
-  cout << "--fg-percent         [-fp] auto calculate a bg-thresh closest to a foreground \% between (0-100], overriding any --bg-thresh args. Value of .08 yields 8 in 10,000 voxels "
+  cout << "--fg-percent         [-fp] auto calculate a bg-thresh closest to a "
+          "foreground \% between (0-100], overriding any --bg-thresh args. "
+          "Value of .08 yields 8 in 10,000 voxels "
           "as foreground\n";
   cout << "--prune              [-pr] prune 0 false, 1 true; defaults to 1 "
           "(automatically prunes)\n";
-  cout << "--parallel           [-pl] thread count "
-          "defaults to max hardware threads\n";
+  cout << "--parallel           [-pl] thread count ";
+           "defaults to max hardware threads\n";
+  cout << "--help               [-h] print example usage\n";
 }
 
 string RecutCommandLineArgs::MetaString() {
@@ -77,14 +80,20 @@ string RecutCommandLineArgs::MetaString() {
   return meta_stream.str();
 }
 
-bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
+RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
+  RecutCommandLineArgs args;
   if (argc < 2) {
     RecutCommandLineArgs::PrintUsage();
-    return false;
+    exit(0);
   }
   try {
-    // global volume and channel selection
-    args.set_image_root_dir(argv[1]);
+    if ((strcmp(argv[1], "-h") == 0) || (strcmp(argv[1], "--help") == 0)) {
+      RecutCommandLineArgs::PrintUsage();
+      exit(0);
+    } else {
+      // global volume and channel selection
+      args.set_image_root_dir(argv[1]);
+    }
     // if the switch is given, parameter(s) corresponding to the switch is
     // expected
     for (int i = 2; i < argc; ++i) {
@@ -132,7 +141,7 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
           args.set_type(argv[i + 1]);
         } else {
           cerr << "--type option must be one of [float,point]\n";
-          return false;
+          exit(1);
         }
         ++i;
       } else if (strcmp(argv[i], "--channel") == 0 ||
@@ -212,10 +221,10 @@ bool ParseRecutArgs(int argc, char *argv[], RecutCommandLineArgs &args) {
                         z_end + "_y" + y_start + "_" + y_end + "_x" + x_start +
                         "_" + x_end + ".swc");
     }
-    return true;
+    return args;
   } catch (const exception &e) {
     cout << e.what() << '\n';
     RecutCommandLineArgs::PrintUsage();
-    return false;
+    exit(1);
   }
 }

@@ -15,7 +15,7 @@ nix-env -f . -i
 ```
 test your installation by running:
 ```
-recut
+recut --help
 ```
 
 ## CMake Only Installation

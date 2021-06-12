@@ -10,13 +10,7 @@ int main(int argc, char *argv[]) {
 #endif
 #endif
 
-  RecutCommandLineArgs args;
-  // if command line arguments invalid, do not execute further
-  if (!ParseRecutArgs(argc, argv, args))
-    return 1;
-
-  args.PrintParameters();
-
+  auto args = ParseRecutArgsOrExit(argc, argv);
   auto recut = Recut<uint16_t>(args);
   recut();
 
