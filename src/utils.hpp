@@ -594,7 +594,15 @@ auto print_all_points = [](const EnlargedPointDataGrid::Ptr grid,
       for (int x = bbox.min()[0]; x < bbox.max()[0]; x++) {
         openvdb::Coord xyz(x, y, z);
         auto leaf_iter = grid->tree().probeConstLeaf(xyz);
+        if (!leaf_iter) {
+          cout << "- ";
+          continue;
+        }
         auto ind = leaf_iter->beginIndexVoxel(xyz);
+        if (!ind) {
+          cout << "- ";
+          continue;
+        }
 
         openvdb::points::AttributeHandle<float> radius_handle(
             leaf_iter->constAttributeArray("pscale"));

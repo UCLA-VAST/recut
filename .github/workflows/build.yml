@@ -20,6 +20,9 @@ jobs:
         # Configure Nix to enable flakes
         extra_nix_config: |
           experimental-features = nix-command flakes
+    - uses: webfactory/ssh-agent@v0.5.3
+      with:
+        ssh-private-key: ${{ secrets.MCP3D_DEPLOY_KEY }}
     # Verify that the main program builds
     - run: nix build -L
     # Check global installs work
