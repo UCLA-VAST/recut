@@ -354,9 +354,12 @@ void print_vdb_mask(T vdb_accessor, const GridCoord &lengths,
       for (int x = 0; x < lengths[0]; x++) {
         openvdb::Coord xyz(x, y, z);
         auto val = vdb_accessor.isValueOn(xyz);
-        // if ((bkg_thresh > -1) && (val <= bkg_thresh)) {
         if (val) {
-          cout << val << " ";
+          //if ((bkg_thresh > -1) && (val <= bkg_thresh)) {
+            //cout << "- ";
+          //} else {
+            cout << val << " ";
+          //}
         } else {
           cout << "- ";
         }

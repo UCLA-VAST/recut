@@ -1,0 +1,23 @@
+This file should live on the desktop for reference
+
+- Click start, and start typing: wsl.exe and hit enter when a penguin and the program is highlighted
+- This opens the Ubuntu WSL 2 shell, your username is huntingtin and the password for elevated commands is also huntingtin
+- The recut command has already been installed globally in the Ubuntu shell, you can run the tests by typing: recut_test
+- If you instead type: recut it will print the options/args/parameters and their usage
+- If the command line options have unexpected behavior or issues let Karl know and he will change and update the software and make the usage instructions clearer so this document does not need to be kept up to date
+- For now Recut will be used mainly to convert stitched images to vdb and to run the pipeline after the soma detection stage has run
+
+Note:
+- Recut and mcp3d are both currently in private github repositories so updating them to a newer version requires that you have a github account and are added to the repo and have an ssh key visible to Ubuntu's ssh-agent. However, this will probably be entirely managed by Karl until it is open sourced. Just know that re-cloning or updating recut or mcp3d requires Karl to login and enter his private password for now.
+
+WSL 2 Installation Procedure:
+Anytime you open the windows shell start it instead by right clicking and selecting run as administrator
+
+Make sure hypervisor is possible, if it isn't you probably want to upgrade the windows version from basic to business or something:
+- https://www.zdnet.com/article/windows-10-tip-find-out-if-your-pc-can-run-hyper-v/
+
+Follow these directions to enable WSL 2:
+- https://pureinfotech.com/install-windows-subsystem-linux-2-windows-10/
+
+Get ubuntu 20.04 through microsoft store or by googling for a raw download:
+- https://www.omgubuntu.co.uk/how-to-install-wsl2-on-windows-10

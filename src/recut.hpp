@@ -672,6 +672,7 @@ void Recut<image_t>::accumulate_prune(
         // previously pruned vertex can transmits transitive
         // coverage info
         radius_handle.set(*ind, update_radius);
+        assertm(radius_handle.get(*ind) == update_radius, "radii doesn't match");
         dst_was_updated = true;
       }
 
@@ -2337,11 +2338,11 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     } else if (this->args->type_ == "point") {
       this->topology_grid =
           openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
-      append_attributes(this->topology_grid);
       auto [lengths, bkg_thresh] = get_metadata(topology_grid);
       input_image_lengths = lengths;
       // ignore input grid
     }
+    append_attributes(this->topology_grid);
 
 #ifdef LOG
     cout << "Read grid in: " << timer->elapsed() << " s\n";

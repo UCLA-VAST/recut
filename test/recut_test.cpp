@@ -1300,6 +1300,35 @@ TEST(CheckGlobals, DISABLED_AllFifo) {
 //}
 //}
 
+TEST(CopyToPointGrid, CopyToPointGrid) {
+  VID_t grid_size = 8;
+  auto grid_extents = GridCoord(grid_size);
+  auto bbox = openvdb::CoordBBox(zeros(), grid_extents);
+  auto tcase = 7;
+  double slt_pct = 100;
+  auto print_all = true;
+  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+                       /*force_regenerate_image=*/false,
+                       /*input_is_vdb=*/true,
+                       /*type=*/"float");
+  auto recut = Recut<uint16_t>(args);
+  // load an example float grid from pregenreated
+  auto root_coords = recut.initialize();
+
+  if (print_all) {
+    cout << "print_float:\n";
+    print_vdb_mask(recut.input_grid->getAccessor(), grid_extents);
+
+    cout << "print_topology:\n";
+    print_vdb_mask(recut.topology_grid->getAccessor(), grid_extents);
+
+    cout << "print all points:\n";
+    print_all_points(recut.topology_grid, bbox);
+  }
+
+  // for each on in flaot grid, is there a corresponding point
+}
+
 TEST(Update, EachStageIteratively) {
   bool print_all = false;
   bool print_csv = false;
@@ -1593,7 +1622,11 @@ TEST(Update, EachStageIteratively) {
                 // convert roots into markers (vector)
                 std::vector<MyMarker *> root_markers;
                 if (tcase == 6) {
-                  auto coords = root_coords | rng::views::transform([](auto coord_radius) { return coord_radius.first; }) | rng::to_vector;
+                  auto coords = root_coords |
+                                rng::views::transform([](auto coord_radius) {
+                                  return coord_radius.first;
+                                }) |
+                                rng::to_vector;
                   root_markers = coords_to_markers(coords);
                 } else {
                   root_markers = {get_central_root(grid_size)};
@@ -1824,11 +1857,13 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
   // generate image so that you can read it below
   // first make sure it can pass
   auto input_is_vdb = true;
-  auto args = get_args(grid_size, interval_size, block_size, slt_pct, tcase,
-                       force_regenerate_image, input_is_vdb);
+  auto args = get_args(grid_size, interval_size, block_size, slt_pct,
+      tcase, force_regenerate_image, input_is_vdb);
+  args.set_type("float");
   cout << "args.image_root_dir() " << args.image_root_dir() << '\n';
   cout << "image lengths " << grid_extents << '\n';
   cout << "image offsets " << args.image_offsets << '\n';
+  cout << "VDB input type " << args.type_ << '\n';
   // uint16_t is image_t here
   TileThresholds<uint16_t> *tile_thresholds;
   bool print_all = true;
@@ -1837,6 +1872,11 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
   auto root_coords = recut.initialize();
   recut.activate_vids(recut.topology_grid, root_coords, "connected",
                       recut.map_fifo, recut.connected_map);
+
+  if (print_all) {
+    cout << "print_float:\n";
+    print_vdb_mask(recut.input_grid->getAccessor(), grid_extents);
+  }
 
   std::unique_ptr<uint16_t[]> mask;
   if (check_against_app2) {
@@ -1936,12 +1976,11 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
     std::cout << "Recut radii post prune\n";
     print_all_points(recut.topology_grid, recut.image_bbox, "radius");
 
-                  std::cout << "Recut post prune valid\n";
-                  print_all_points(recut.topology_grid, recut.image_bbox,
-                                   "valid");
+    std::cout << "Recut post prune valid\n";
+    print_all_points(recut.topology_grid, recut.image_bbox, "valid");
 
-    //std::cout << "Recut parent post prune\n";
-    //print_all_points(recut.topology_grid, recut.image_bbox, "parent");
+    // std::cout << "Recut parent post prune\n";
+    // print_all_points(recut.topology_grid, recut.image_bbox, "parent");
 
     recut.adjust_parent();
 
@@ -2001,7 +2040,7 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
     std::vector<MyMarker *> root_markers;
     if (tcase == 6) {
       // cout << root_coords << '\n';
-      //print_iter(root_coords);
+      // print_iter(root_coords);
       auto adjusted_roots = root_coords |
                             rng::views::transform([&args](auto coord) {
                               return coord.first - args.image_offsets;
@@ -2159,10 +2198,11 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
 INSTANTIATE_TEST_CASE_P(
     RecutPipelineTests, RecutPipelineParameterTests,
     ::testing::Values(
-         std::make_tuple(4, 4, 4, 0, 100., true, false), // 0
-         std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
-         std::make_tuple(4, 4, 4, 2, 100., true, false), // 2
-         std::make_tuple(4, 2, 2, 2, 100., true, false)  // 3
+        // std::make_tuple(4, 4, 4, 0, 100., true, true), // 0
+        // std::make_tuple(4, 4, 4, 1, 100., true, true), // 1
+        // std::make_tuple(4, 4, 4, 2, 100., true, true), // 2
+        // std::make_tuple(4, 2, 2, 2, 100., true, true)  // 3
+        std::make_tuple(8, 8, 8, 6, .08, true, true) // 3
         //#ifdef USE_MCP3D
         //,
         //// check_against_app2 (final boolean below) currently uses
@@ -2183,7 +2223,7 @@ INSTANTIATE_TEST_CASE_P(
         //// make sure if bkg_thresh is 0, all vertices are selected for real
         // std::make_tuple(4, 4, 4, 6, 100., false, true), // 7
         // make sure fastmarching_tree and recut produce exact match for real
-        //std::make_tuple(8, 8, 8, 6, 100., false, true) // 8
+        // std::make_tuple(8, 8, 8, 6, 100., false, true) // 8
         // real data multi-interval
         // std::make_tuple(8, 4, 4, 6, 100., false, true), // 10
         // interval grid ratio tests
