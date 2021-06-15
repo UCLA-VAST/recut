@@ -1300,6 +1300,57 @@ TEST(CheckGlobals, DISABLED_AllFifo) {
 //}
 //}
 
+//TEST(VDB, DISABLED_FloatToPoint) {
+  //bool print_all = true;
+  //auto grid_size = 8;
+  //GridCoord lengths(grid_size);
+  //auto args = get_args(grid_size, grid_size, grid_size, 100, 7,
+                       //[>force_regenerate_image=<]false,
+                       //[>input_is_vdb=<]true,
+                       //[>type<] "float");
+  //auto recut = Recut<uint16_t>(args);
+  //auto root_coords = recut.initialize();
+
+  //if (print_all) {
+    //print_vdb_mask(recut.input_grid->getConstAccessor(), lengths);
+    //print_vdb_mask(recut.topology_grid->getConstAccessor(), lengths);
+    //print_all_points(recut.topology_grid, recut.image_bbox);
+  //}
+
+  //auto leaf = recut.topology_grid->probeLeaf();
+  //{
+    //auto root_ind = leaf.beginIndexVoxel(root_coords[0].first);
+    //ASSERT_FALSE(root_ind);
+  //}
+
+  //// Determine the number of points / voxel and points / leaf.
+  //openvdb::Index LEAF_VOXELS =
+      //EnlargedPointDataGrid::TreeType::LeafNodeType::SIZE;
+  //openvdb::Index pointsPerLeaf = VOXEL_POINTS * LEAF_VOXELS;
+
+  //// add indices to topology grid
+  //// Iterate over the leaf nodes in the point tree.
+  //for (auto leafIter = recut.topology_grid->tree().beginLeaf(); leafIter;
+       //++leafIter) {
+    //// Initialize the voxel offsets
+    //openvdb::Index offset(0);
+    //for (openvdb::Index index = 0; index < LEAF_VOXELS; ++index) {
+      //offset += VOXEL_POINTS;
+      //leafIter->setOffsetOn(index, offset);
+    //}
+  //}
+
+  //{
+    //auto root_ind = leaf.beginIndexVoxel(root_coords[0].first);
+    //ASSERT_TRUE(root_ind);
+  //}
+
+  //// show correct
+  //print_all_points(recut.topology_grid, recut.image_bbox);
+
+  //// recut.activa();
+//}
+
 TEST(Update, EachStageIteratively) {
   bool print_all = false;
   bool print_csv = false;
@@ -1593,7 +1644,11 @@ TEST(Update, EachStageIteratively) {
                 // convert roots into markers (vector)
                 std::vector<MyMarker *> root_markers;
                 if (tcase == 6) {
-                  auto coords = root_coords | rng::views::transform([](auto coord_radius) { return coord_radius.first; }) | rng::to_vector;
+                  auto coords = root_coords |
+                                rng::views::transform([](auto coord_radius) {
+                                  return coord_radius.first;
+                                }) |
+                                rng::to_vector;
                   root_markers = coords_to_markers(coords);
                 } else {
                   root_markers = {get_central_root(grid_size)};
@@ -1936,12 +1991,11 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
     std::cout << "Recut radii post prune\n";
     print_all_points(recut.topology_grid, recut.image_bbox, "radius");
 
-                  std::cout << "Recut post prune valid\n";
-                  print_all_points(recut.topology_grid, recut.image_bbox,
-                                   "valid");
+    std::cout << "Recut post prune valid\n";
+    print_all_points(recut.topology_grid, recut.image_bbox, "valid");
 
-    //std::cout << "Recut parent post prune\n";
-    //print_all_points(recut.topology_grid, recut.image_bbox, "parent");
+    // std::cout << "Recut parent post prune\n";
+    // print_all_points(recut.topology_grid, recut.image_bbox, "parent");
 
     recut.adjust_parent();
 
@@ -2001,7 +2055,7 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
     std::vector<MyMarker *> root_markers;
     if (tcase == 6) {
       // cout << root_coords << '\n';
-      //print_iter(root_coords);
+      // print_iter(root_coords);
       auto adjusted_roots = root_coords |
                             rng::views::transform([&args](auto coord) {
                               return coord.first - args.image_offsets;
@@ -2159,10 +2213,13 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
 INSTANTIATE_TEST_CASE_P(
     RecutPipelineTests, RecutPipelineParameterTests,
     ::testing::Values(
-         std::make_tuple(4, 4, 4, 0, 100., true, false), // 0
-         std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
-         std::make_tuple(4, 4, 4, 2, 100., true, false), // 2
-         std::make_tuple(4, 2, 2, 2, 100., true, false)  // 3
+        // check if using better parent characteristics for parent traversal 
+        // improves the overall swc quality and proofreadability
+        std::make_tuple(256, 256, 256, 6, 100., true, false) // 0
+        // std::make_tuple(4, 4, 4, 0, 100., true, false), // 0
+        // std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
+        // std::make_tuple(4, 4, 4, 2, 100., true, false), // 2
+        // std::make_tuple(4, 2, 2, 2, 100., true, false)  // 3
         //#ifdef USE_MCP3D
         //,
         //// check_against_app2 (final boolean below) currently uses
@@ -2183,7 +2240,7 @@ INSTANTIATE_TEST_CASE_P(
         //// make sure if bkg_thresh is 0, all vertices are selected for real
         // std::make_tuple(4, 4, 4, 6, 100., false, true), // 7
         // make sure fastmarching_tree and recut produce exact match for real
-        //std::make_tuple(8, 8, 8, 6, 100., false, true) // 8
+        // std::make_tuple(8, 8, 8, 6, 100., false, true) // 8
         // real data multi-interval
         // std::make_tuple(8, 4, 4, 6, 100., false, true), // 10
         // interval grid ratio tests

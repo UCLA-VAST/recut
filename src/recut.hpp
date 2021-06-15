@@ -459,6 +459,10 @@ void Recut<image_t>::activate_vids(
     std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo) {
   assertm(!(roots.empty()), "Must have at least one root");
 
+  //if (args->type_ == "float") {
+    //auto input_accessor = input_grid->getConstAccessor();
+  //}
+
   // Iterate over leaf nodes that contain topology (active)
   // checking for roots within them
   for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
@@ -513,8 +517,13 @@ void Recut<image_t>::activate_vids(
 
       rng::for_each(leaf_roots, [&](auto coord) {
         auto ind = leaf_iter->beginIndexVoxel(coord);
-        assertm(ind,
-                "All root coords must be filtered with respect to topology");
+        if (this->args->type_ == "float") {
+          assertm(this->input_grid->tree().isValueOn(coord),
+                  "All root coords must be filtered with respect to topology");
+        } else {
+          assertm(ind,
+                  "All root coords must be filtered with respect to topology");
+        }
         // place a root with proper vid and parent of itself
         // set flags as root
         set_selected(flags_handle, ind);
@@ -2337,11 +2346,11 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     } else if (this->args->type_ == "point") {
       this->topology_grid =
           openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
-      append_attributes(this->topology_grid);
       auto [lengths, bkg_thresh] = get_metadata(topology_grid);
       input_image_lengths = lengths;
       // ignore input grid
     }
+    append_attributes(this->topology_grid);
 
 #ifdef LOG
     cout << "Read grid in: " << timer->elapsed() << " s\n";
