@@ -2772,12 +2772,13 @@ template <class image_t> void Recut<image_t>::adjust_parent() {
   visit(all_valid, adjust_parent);
 }
 
+// FIXME adjust to component
 template <class image_t> void Recut<image_t>::print_to_swc() {
   auto to_swc = [this](const auto &flags_handle, const auto &parents_handle,
                        const auto &radius_handle, const auto &ind, auto leaf) {
     auto coord = ind.getCoord();
     print_swc_line(coord, is_root(flags_handle, ind), radius_handle.get(*ind),
-                   parents_handle.get(*ind), this->image_lengths,
+                   parents_handle.get(*ind), 
                    this->image_bbox, this->out,
                    /*adjust*/ true);
   };
@@ -2936,9 +2937,9 @@ template <class image_t> void Recut<image_t>::operator()() {
     file << "# id type_id x y z radius parent_id\n";
 
     // print all somas in this component
-    rng::for_each(component_roots, [this, &file](const auto &component_root) {
+    rng::for_each(component_roots, [this, &file, &component](const auto &component_root) {
       print_swc_line(component_root.first, /*root*/ true, component_root.second,
-                     zeros_off(), this->image_lengths, this->image_bbox, file,
+                     zeros_off(), component->evalActiveVoxelBoundingBox(), file,
                      /*adjust*/ true);
     });
 
@@ -2971,8 +2972,8 @@ template <class image_t> void Recut<image_t>::operator()() {
       //#endif
       // print all neurites in this component
       print_swc_line(coord, /*root*/ false,
-                     /*radius*/ sphere[3], parent, this->image_lengths,
-                     this->image_bbox, file,
+                     /*radius*/ sphere[3], parent, 
+                     component->evalActiveVoxelBoundingBox(), file,
                      /*adjust*/ true);
 
       radius_handle.set(*ind, static_cast<float>(sphere[3]));

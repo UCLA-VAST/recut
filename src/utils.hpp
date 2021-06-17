@@ -1841,21 +1841,22 @@ auto covered_by_bboxs = [](const auto coord, const auto bboxs) {
 // for more info see:
 // http://www.neuronland.org/NLMorphologyConverter/MorphologyFormats/SWC/Spec.html
 // https://github.com/HumanBrainProject/swcPlus/blob/master/SWCplus_specification.html
-auto print_swc_line = [](const GridCoord &coord, bool is_root, uint8_t radius,
-                         const OffsetCoord parent_offset,
-                         const GridCoord &image_lengths,
-                         const CoordBBox &image_bbox, std::ofstream &out,
-                         bool bbox_adjust = false) {
+auto print_swc_line = [](GridCoord swc_coord, bool is_root, uint8_t radius,
+                         const OffsetCoord parent_offset_coord,
+                         const CoordBBox &bbox, std::ofstream &out,
+                         bool bbox_adjust = true) {
   std::ostringstream line;
 
-  GridCoord swc_coord = coord;
-  GridCoord swc_lengths = image_lengths;
+  GridCoord swc_lengths = bbox.extents();
   if (bbox_adjust) {
-    swc_coord = swc_coord - image_bbox.min();
-    swc_lengths = image_bbox.dim().offsetBy(-1);
+    swc_coord = swc_coord - bbox.min();
+    // CoordBBox uses extents inclusively, but we want exclusive bbox
+    swc_lengths = bbox.extents().offsetBy(-1);
   }
 
   // n
+  auto id = coord_to_id(swc_coord, swc_lengths);
+  assertm(id < std::numeric_limits<int32_t>::max(), "id overflows int32_t limit");
   line << coord_to_id(swc_coord, swc_lengths) << ' ';
 
   // type_id
@@ -1872,8 +1873,9 @@ auto print_swc_line = [](const GridCoord &coord, bool is_root, uint8_t radius,
   line << +(radius) << ' ';
 
   // parent
-  auto parent_coord = coord_add(swc_coord, parent_offset);
+  auto parent_coord = coord_add(swc_coord, parent_offset_coord);
   auto parent_vid = coord_to_id(parent_coord, swc_lengths);
+  assertm(parent_vid < std::numeric_limits<int32_t>::max(), "id overflows int32_t limit");
   if (is_root) {
     line << "-1";
   } else {
