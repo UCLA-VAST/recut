@@ -170,7 +170,15 @@ template <typename To, typename From>
 inline To Reinterpret(const From& val){
   return reinterpret_cast<const To&>(val);
 }
-
+template <int bitWidth>
+void print(ap_uint<bitWidth> line){
+  data_t2 num;
+  for(int i=0; i<bitWidth/32; i++){
+    num = Reinterpret<data_t2>((ap_uint<32>)line((i+1)*32-1, 32*i));
+    printf("%10f\t", num);
+  }
+  printf("\n");
+}
 
 /**
  * Function name: stencil_w3

@@ -1,7 +1,7 @@
 import sys
 import os
 
-prj_path = '/curr/eddie/recut/fpga' #put path here
+prj_path = 'D:/Summer2021/recut/fpga' #put path here
 layerIndex = int(sys.argv[1])
 
 instFile = open('test.insts', 'r')
@@ -97,6 +97,8 @@ for line in inFile:
           outFile.writelines("#define SAVE_PROGRESS 0\n")
       elif(values[0]=="#define" and values[1]=="PRJ_PATH"):
         outFile.writelines("#define PRJ_PATH \""+prj_path+"\"\n")
+      elif(values[0]=="#define" and values[1]=="STRIDE"):
+        outFile.writelines("#define STRIDE "+str(instDict['STRIDE'])+"\n")
       elif(values[0]=="#define" and values[1]=="LAYER"):
         outFile.writelines("#define LAYER "+str(layerIndex)+"\n")
       elif(values[0]=="#define" and values[1]=="CIN_OFFSET"):
@@ -106,8 +108,8 @@ for line in inFile:
       elif(values[0]=="#define" and values[1]=="OUTFILE"):
         outFile.writelines("#define OUTFILE \"/data/L"+str(layerIndex)+"_outputs.dat\"\n")
       elif(values[0]=="#define" and values[1]=="OUT_OFFSET1"):
-        padding = (instDict['FILTER_S2']-1)/2
-        offset = instDict['COUT_OFFSET']-((padding*instDict['OUT_W_HW']+padding)*instDict['OUT_NUM_HW'])
+        padding = (instDict['OUT_H_HW']-instDict['OUT_H'])/2
+        offset = instDict['COUT_OFFSET']-((padding*instDict['OUT_W_HW']+padding)*instDict['OUT_NUM_T'])
         outFile.writelines("#define OUT_OFFSET1 "+str(int(offset))+"\n")
       elif(values[0]=="#define" and values[1]=="OUT_OFFSET2"):
         outFile.writelines("#define OUT_OFFSET2 "+str(instDict['COUT_OFFSET'])+"\n")
@@ -132,5 +134,6 @@ outFile.close()
 inFile.close()
 
 # os.system("conda activate tf")
-os.system("python3 "+prj_path+"/UNET_tf/recut.py "+str(layerIndex)+" \""+prj_path+"\"")
-os.system("./UNET.sh sim")
+os.system("python "+prj_path+"/UNET_tf/recut.py "+str(layerIndex)+" \""+prj_path+"\"")
+# os.system("python tconv.py")
+os.system("UNET.bat sim")

@@ -43,13 +43,14 @@ union ufloat{
 };
 
 // Macros
+// Macros
 #define U1_IN_IMG_W_T 50
 #define U1_OUT_NUM 960
 #define U1_IN_IMG_H_T 14
 #define U1_OUT_IMG_H 384
 #define U1_LAYER_BATCH 2
 #define U1_STRIDE 1
-#define U1_K 3
+#define U1_K 5
 #define U1_OUT_NUM_T 96
 #define U1_IN_IMG_W 386
 #define U1_IN_IMG_H 386
@@ -69,7 +70,7 @@ union ufloat{
 #define U1_COL_IL_FACTOR 6
 #define U1_SA_ROWS 8
 #define U1_SA_COLS 8
-#define U1_LOCAL_REG_NUM 1024
+#define U1_LOCAL_REG_NUM 864
 #define U1_LOCAL_ACCUM_NUM 108
 #define U1_SIMD_FACTOR 8
 #define U1_DATA0_FC_SIMD_FACTOR 8
@@ -86,8 +87,8 @@ union ufloat{
 #define U1_DATA0_HEAD_BUF_SIZE 672000
 #define U1_DATA1_BUF_SIZE 10368
 #define U1_DATA1_HEAD_BUF_SIZE 829440
-#define U1_DATA2_BUF_SIZE 8192
-#define U1_DATA2_HEAD_BUF_SIZE 655360
+#define U1_DATA2_BUF_SIZE 13824
+#define U1_DATA2_HEAD_BUF_SIZE 2211840
 
 // Functions and structs
 struct U1_Data0TransferChannelType{
@@ -499,7 +500,7 @@ void U1_DataFeed0Head(
 #pragma HLS DATA_PACK variable=fifo_transfer_out0
 
   // loader buffer
-  ap_uint<U1_DATA0_WIDTH * U1_DATA0_FC_SIMD_FACTOR> cin_buf[U1_IN_NUM_T * U1_IN_IMG_H_T * U1_IN_IMG_W_T / U1_DATA0_FC_SIMD_FACTOR];
+   ap_uint<U1_DATA0_WIDTH * U1_DATA0_FC_SIMD_FACTOR> cin_buf[U1_IN_NUM_T * U1_IN_IMG_H_T * U1_IN_IMG_W_T / U1_DATA0_FC_SIMD_FACTOR];
 #pragma HLS ARRAY_PARTITION variable=cin_buf dim=1 block factor=1
 
   // Read instructions
@@ -920,7 +921,7 @@ void U1_DataFeed1Head(
 
   // cout<<"U1_DataFeed1Head: "<<FILTER_D1<<endl;
   // loader buffer
-  ap_uint<U1_DATA1_WIDTH * U1_DATA1_FC_SIMD_FACTOR> weight_buf[U1_IN_NUM_T * U1_OUT_NUM_T * U1_K * U1_K / U1_DATA1_FC_SIMD_FACTOR];
+   ap_uint<U1_DATA1_WIDTH * U1_DATA1_FC_SIMD_FACTOR> weight_buf[U1_IN_NUM_T * U1_OUT_NUM_T * U1_K * U1_K / U1_DATA1_FC_SIMD_FACTOR];
 #pragma HLS ARRAY_PARTITION variable=weight_buf dim=1 block factor=1
 
   bool done1 = 0;
@@ -996,10 +997,10 @@ void U1_DataFeed1Head(
       // write to SA
       ap_uint<U1_DATA1_WIDTH * U1_DATA1_FC_SIMD_FACTOR> sel_tmp0[U1_DATA1_PACK_FACTOR / U1_DATA1_FC_SIMD_FACTOR];
 #pragma HLS ARRAY_PARTITION variable=sel_tmp0 complete dim=1
-      ap_uint<4> t0 = 0;
-      ap_uint<5> t1 = 0;
-      ap_uint<3> t2 = 0;
-      ap_uint<3> t3 = 0;
+      ap_uint<10> t0 = 0;
+      ap_uint<10> t1 = 0;
+      ap_uint<10> t2 = 0;
+      ap_uint<10> t3 = 0;
       ap_uint<11> t4 = 0;
       bool done3 = 0;
       while(!done3){
@@ -1281,13 +1282,13 @@ void U1_Data0FeedData0(
 #pragma HLS INLINE off
 
   bool more_to_feed_to_sys_arr = true;
-  ap_uint<5> c0_counter = 0;
-  ap_uint<5> c1_counter = 0;
-  ap_uint<4> c2_counter = 0;
-  ap_uint<3> c3_counter = 0;
-  ap_uint<3> c4_counter = 0;
-  ap_uint<5> c5_counter = 0;
-  ap_uint<4> i = 0;
+  ap_uint<10> c0_counter = 0;
+  ap_uint<10> c1_counter = 0;
+  ap_uint<10> c2_counter = 0;
+  ap_uint<10> c3_counter = 0;
+  ap_uint<10> c4_counter = 0;
+  ap_uint<10> c5_counter = 0;
+  ap_uint<10> i = 0;
 
   ap_uint<5> c0_counter_bound;
   if (LAYER_STRIDE == 1){
@@ -1420,14 +1421,14 @@ void U1_Data1FeedData0(
 #pragma HLS INLINE off
   bool more_to_feed_to_sys_arr = true;
 
-  ap_uint<5> c0_counter = 0;
-  ap_uint<5> c1_counter = 0;
-  ap_uint<4> c2_counter = 0;
-  ap_uint<3> c3_counter = 0;
-  ap_uint<3> c4_counter = 0;
-  ap_uint<5> c5_counter = 0;
+  ap_uint<10> c0_counter = 0;
+  ap_uint<10> c1_counter = 0;
+  ap_uint<10> c2_counter = 0;
+  ap_uint<10> c3_counter = 0;
+  ap_uint<10> c4_counter = 0;
+  ap_uint<10> c5_counter = 0;
 
-  ap_uint<5> c0_counter_bound;
+  ap_uint<10> c0_counter_bound;
   if (LAYER_STRIDE == 1){
     c0_counter_bound = LAYER_IN_IMG_H_T;
   } else if (LAYER_STRIDE == 2){
@@ -1644,20 +1645,23 @@ void U1_Data1ReadData0(
 ){
 #pragma HLS INLINE off
   bool LAST_ENGINE = (engine_id == 8 / U1_DATA1_FC_SPLIT_FACTOR - 1);
-  ap_uint<15> transfer_counter = 0;
-  ap_uint<15> data1_buf_size;
-  ap_uint<15> local_transfer_size;
+  ap_uint<20> transfer_counter = 0;
+  ap_uint<20> data1_buf_size;
+  ap_uint<20> local_transfer_size;
   bool more_to_write_to_buffer = true;
   bool more_to_feed_to_sys_arr = false;
   bool more_to_forward = true;
-  ap_uint<12> buffer_write_counter = 0;
+  ap_uint<20> buffer_write_counter = 0;
   ap_uint<1> buffer_gs_id = 0;
 
   // the first read
   data1_buf_size = LAYER_IN_NUM_T * LAYER_ROW_IL_FACTOR * LAYER_FILTER_S * LAYER_FILTER_S / U1_DATA1_FC_SIMD_FACTOR;
+  // cout<<data1_buf_size<<endl;
   local_transfer_size = data1_buf_size * (8 / U1_DATA1_FC_SPLIT_FACTOR - engine_id) * U1_DATA1_FC_GROUP_FACTOR;
-
+  // cout<<local_transfer_size<<endl;
+  int count = 0;
   while(more_to_forward){
+    count++;
 #pragma HLS PIPELINE II=1
     U1_Data1TransferChannelType data_read_from_fifo = fifo_transfer_in.read();
     bool data_is_to_buffer;
@@ -1667,6 +1671,7 @@ void U1_Data1ReadData0(
     data_is_to_forward = !LAST_ENGINE && (feeder_id != engine_id);
     if (!LAST_ENGINE){
       if (data_is_to_forward){
+        // cout<<"forwarding.."<<endl;
         fifo_transfer_out.write(data_read_from_fifo);
       }
     }
@@ -1690,7 +1695,8 @@ void U1_Data1ReadData0(
       more_to_forward = false;
     }
   }
-
+  // cout<<count<<endl;
+  // exit(0);
 }
 
 void U1_Data1ReadDataLast(
@@ -1873,8 +1879,8 @@ void U1_DataFeed0Engine0(
   //   LAYER_FILTER_S = 2;
   // // }
   // cout<<"U1_DataFeed0Engine0: "<<FILTER_D0<<endl;
-  U1_Data0TransferChannelType ping_buffer[U1_DATA0_FC_GROUP_FACTOR][U1_DATA0_BUF_SIZE / U1_DATA0_FC_SIMD_FACTOR];
-  U1_Data0TransferChannelType pong_buffer[U1_DATA0_FC_GROUP_FACTOR][U1_DATA0_BUF_SIZE / U1_DATA0_FC_SIMD_FACTOR];
+   U1_Data0TransferChannelType ping_buffer[U1_DATA0_FC_GROUP_FACTOR][U1_DATA0_BUF_SIZE / U1_DATA0_FC_SIMD_FACTOR];
+   U1_Data0TransferChannelType pong_buffer[U1_DATA0_FC_GROUP_FACTOR][U1_DATA0_BUF_SIZE / U1_DATA0_FC_SIMD_FACTOR];
 #pragma HLS RESOURCE variable=ping_buffer core=RAM_2P_BRAM
 #pragma HLS RESOURCE variable=pong_buffer core=RAM_2P_BRAM
 #pragma HLS DATA_PACK variable=ping_buffer
@@ -2181,8 +2187,8 @@ void U1_DataFeed0EngineLast(
   //   LAYER_FILTER_S = 2;
   // }
   // cout<<"U1_DataFeed0EngineLast: "<<FILTER_D0<<endl;
-  U1_Data0TransferChannelType ping_buffer[U1_DATA0_FC_GROUP_FACTOR][U1_DATA0_BUF_SIZE / U1_DATA0_FC_SIMD_FACTOR];
-  U1_Data0TransferChannelType pong_buffer[U1_DATA0_FC_GROUP_FACTOR][U1_DATA0_BUF_SIZE / U1_DATA0_FC_SIMD_FACTOR];
+   U1_Data0TransferChannelType ping_buffer[U1_DATA0_FC_GROUP_FACTOR][U1_DATA0_BUF_SIZE / U1_DATA0_FC_SIMD_FACTOR];
+   U1_Data0TransferChannelType pong_buffer[U1_DATA0_FC_GROUP_FACTOR][U1_DATA0_BUF_SIZE / U1_DATA0_FC_SIMD_FACTOR];
 #pragma HLS RESOURCE variable=ping_buffer core=RAM_2P_BRAM
 #pragma HLS RESOURCE variable=pong_buffer core=RAM_2P_BRAM
 #pragma HLS DATA_PACK variable=ping_buffer
@@ -2445,9 +2451,10 @@ void U1_DataFeed1Engine0(
   unsigned int initial_round = 0;
 
   bool done = 0;
-  ap_uint<2> layer_iter = 0;
+  ap_uint<8> layer_iter = 0;
   bool layer_start = 0;
   while(!done){
+    // cout<<initial_round<<endl;
     if (layer_start){
       // read in configurations
       LAYER_IN_NUM_T = fifo_config_in.read();
@@ -2513,10 +2520,13 @@ void U1_DataFeed1Engine0(
     }
 
     if (initial_round == 0){
+      // cout<<"here7"<<endl;
       U1_Data1ReadData0(ping_buffer, fifo_transfer_in, fifo_transfer_out, engine_id, LAYER_IN_NUM_T, LAYER_IN_IMG_H_T, FILTER_D1, LAYER_STRIDE, LAYER_ROW_IL_FACTOR, LAYER_COL_IL_FACTOR);
     } else {
       if (initial_round % 2 == 1){
+        // cout<<"here1"<<endl;
         U1_Data1ReadData0(pong_buffer, fifo_transfer_in, fifo_transfer_out, engine_id, LAYER_IN_NUM_T, LAYER_IN_IMG_H_T, FILTER_D1, LAYER_STRIDE, LAYER_ROW_IL_FACTOR, LAYER_COL_IL_FACTOR);
+        // cout<<"here2"<<endl;
         U1_Data1FeedData0(
           ping_buffer,
           fifo_feed_0,
@@ -2527,7 +2537,9 @@ void U1_DataFeed1Engine0(
           LAYER_ROW_IL_FACTOR_prev,
           LAYER_COL_IL_FACTOR_prev);
       } else {
+        // cout<<"here3"<<endl;
         U1_Data1ReadData0(ping_buffer, fifo_transfer_in, fifo_transfer_out, engine_id, LAYER_IN_NUM_T, LAYER_IN_IMG_H_T, FILTER_D1, LAYER_STRIDE, LAYER_ROW_IL_FACTOR, LAYER_COL_IL_FACTOR);
+        // cout<<"here4"<<endl;
         U1_Data1FeedData0(
           pong_buffer,
           fifo_feed_0,
@@ -2561,6 +2573,7 @@ void U1_DataFeed1Engine0(
   }
 
   if (initial_round % 2 == 1){
+    // cout<<"here5"<<endl;
     U1_Data1FeedData0(
       ping_buffer,
       fifo_feed_0,
@@ -2571,6 +2584,7 @@ void U1_DataFeed1Engine0(
       LAYER_ROW_IL_FACTOR_prev,
       LAYER_COL_IL_FACTOR_prev);
   } else {
+    // cout<<"here6"<<endl;
     U1_Data1FeedData0(
       pong_buffer,
       fifo_feed_0,
@@ -2581,6 +2595,7 @@ void U1_DataFeed1Engine0(
       LAYER_ROW_IL_FACTOR_prev,
       LAYER_COL_IL_FACTOR_prev);
   }
+  // cout<<"finished read"<<endl;
 }
 
 void U1_DataFeed1Engine0_wrapper(
@@ -5071,7 +5086,7 @@ void U1_res_transfer_wrapper(
 //   // fifo_config_out.write(LAYER_BATCH);
 
 //   U1_data_t2 local_buffer[U1_LOCAL_REG_NUM];
-//   static ap_uint<12> address = 0;
+//    ap_uint<12> address = 0;
 //   uint data_count = 0;
 //   uint config_count = 0;
 //   for (ap_uint<2> layer_iter = 0; layer_iter < LAYER_BATCH; layer_iter++){
@@ -6945,13 +6960,14 @@ void kernel(
     fifo_kernel_config_out,
     fifo_DataFeed0Head_config_out0, fifo_DataFeed0Head_config_out1
   );
+  cout<<"finished U1_DataFeed0Head"<<endl;
   // int count = 0;
-  // while(!fifo_kernel_config_out.empty()){
-  //   fifo_kernel_config_out.read();
+  // while(!fifo0_transfer0.empty()){
+  //   fifo0_transfer0.read();
   //   count++;
   // }
   // cout<<count<<endl;
-  // return;
+  // exit(0);
   // int count = 0;
   // while(!fifo0_transfer0.empty()){
   //   U1_Data0TransferChannelType item = fifo0_transfer0.read();
@@ -7058,6 +7074,7 @@ void kernel(
     fifo_DataFeed0Engine6_config_out0,
     fifo_DataFeed0Engine6_config_out1
   );
+  cout<<"finished U1_DataFeed0Engine0_wrapper"<<endl;
   // int count = 0;
   // while(!fifo0_feed0_6.empty()){
   //   U1_Data0PEChannelType item = fifo0_feed0_6.read();
@@ -7079,7 +7096,7 @@ void kernel(
     fifo_DataFeed0Engine6_config_out0,
     fifo_DataFeed0Engine7_config_out1
   );
-
+  cout<<"finished U1_DataFeed0EngineLast"<<endl;
   // int count = 0;
   // while(!fifo0_feed0_7.empty()){
   //   U1_Data0PEChannelType item = fifo0_feed0_7.read();
@@ -7100,7 +7117,7 @@ void kernel(
     fifo1_transfer0,
     fifo_DataFeed0Head_config_out1, fifo_DataFeed1Head_config_out0
   );
-
+  cout<<"finished U1_DataFeed1Head"<<endl;
   // int count = 0;
   // while(!fifo1_transfer0.empty()){
   //   U1_Data1TransferChannelType item = fifo1_transfer0.read();
@@ -7183,6 +7200,7 @@ void kernel(
     fifo_DataFeed1Engine5_config_out0,
     fifo_DataFeed1Engine6_config_out0
   );
+  cout<<"finished U1_DataFeed1Engine0_wrapper"<<endl;
   // int count = 0;
   // while(!fifo1_feed6_0.empty()){
   //   U1_Data1PEChannelType item = fifo1_feed6_0.read();
@@ -7203,7 +7221,7 @@ void kernel(
     7,
     fifo_DataFeed1Engine6_config_out0
   );
-
+  cout<<"finished U1_DataFeed1EngineLast"<<endl;
   // int count = 0;
   // while(!fifo1_feed7_0.empty()){
   //   U1_Data1PEChannelType item = fifo1_feed7_0.read();
@@ -7227,6 +7245,7 @@ void kernel(
     fifo_DataFeed0Engine0_config_out1,
     fifo_PE0_0_op0_config_out
   );
+  cout<<"finished U1_op0_transfer_wrapper"<<endl;
   // int count = 0;
   // while(!PE0_0_fifo0_local.empty()){
   //   PE0_0_fifo0_local.read();
@@ -7241,6 +7260,7 @@ void kernel(
     fifo_PE0_0_op0_config_out,
     fifo_PE0_0_op1_config_out
   );
+  cout<<"finished U1_op1_transfer_wrapper"<<endl;
   // int count = 0;
   // while(!PE0_0_fifo1_local.empty()){
   //   PE0_0_fifo1_local.read();
@@ -7256,6 +7276,7 @@ void kernel(
     fifo_PE0_0_op1_config_out,
     fifo_PE0_0_compute_config_out
   );
+  cout<<"finished U1_compute_wrapper"<<endl;
   // int tiling_f = 64;
   // float arr[512/tiling_f][tiling_f];
   // for(int j=0; j<512/tiling_f; j++){
@@ -7290,7 +7311,7 @@ void kernel(
     fifo_PE0_0_compute_config_out,
     fifo_PE0_0_res_config_out
   );
-
+  cout<<"finished U1_res_transfer_first_wrapper"<<endl;
   // float arr[64][8];
   // for(int j=0; j<64; j++){
   //   for(int i=0; i<8; i++){
@@ -9725,7 +9746,7 @@ void kernel(
     fifo_PE7_7_compute_config_out,
     fifo_PE7_7_res_config_out
   );
-
+  cout<<"finished PEs"<<endl;
   // for(int k=0; k<8; k++){
   //   cout<<"---------------iter "<<k<<"-----------------"<<endl;
   //   float arr[64][4];
@@ -9796,7 +9817,7 @@ void kernel(
     fifo_PE7_7_res_config_out,
     fifo_DataCollect2Engine7_config_out
   );
-
+  cout<<"finished U1_DataCollect2EngineLast"<<endl;
   // int count = 0;
   // while(!fifo2_transfer0.empty()){
   //   U1_Data2TransferChannelType item = fifo2_transfer0.read();
@@ -9820,6 +9841,7 @@ void kernel(
     fifo_DataCollect2Engine7_config_out,
     fifo_DataCollect2Engine6_config_out
   );
+  cout<<"finished U1_DataCollect2Engine0_wrapper"<<endl;
   // int count = 0;
   // while(!fifo2_transfer1.empty()){
   //   U1_Data2TransferChannelType item = fifo2_transfer1.read();
@@ -9899,6 +9921,7 @@ void kernel(
     fifo_DataCollect2Engine1_config_out,
     fifo_DataCollect2Engine0_config_out
   );
+  cout<<"finished U1_DataCollect2Engine0_wrapper"<<endl;
   // int count = 0;
   // while(!fifo2_transfer7.empty()){
   //   U1_Data2TransferChannelType item = fifo2_transfer7.read();
@@ -9918,7 +9941,7 @@ void kernel(
     fifo2_transfer7,
     fifo_DataCollect2Engine0_config_out
   );
-
+  cout<<"finished U1_DataCollect2Head"<<endl;
   // int count = 0;
   // while(!fifo_cout.empty()){
   //   U1_Data2TransferChannelType item = fifo_cout.read();
@@ -9972,6 +9995,7 @@ void cin_load_ddr_read(
 		uint    LAYER_IN_H_T,
 		uint    LAYER_IN_W_T,
 		uint    FILTER_S,
+    uint    FILTER_D,
 		uint    cin_offset,
 		uint    in_num_iter,
 		uint    in_h_iter,
@@ -9981,6 +10005,10 @@ void cin_load_ddr_read(
 		bool    max_pool,
 		bool    write
 ){
+  // for(int i=0; i<145; i++){
+  //   print<512>(global_cin[i]);
+  // }
+  // exit(0);
 	if ((LAYER_IN_H_HW <= IN_H_T + K_T - 1) && (LAYER_IN_W_HW <= IN_W_T + K_T - 1) && !max_pool){
 		// Load the patch as a whole if it fits in on-chip buffer.
 		uint global_cin_offset = in_num_iter * LAYER_IN_H_HW * LAYER_IN_W_HW + cin_offset;
@@ -9991,6 +10019,8 @@ void cin_load_ddr_read(
 		// o.w. ceil(N / Tn) * H * ceil(W / Tw) * Tw * Tn
 		// The data in on-chip buffer will have the data layout of Th * Tw * Tn
 		if (change && FILTER_S == 1){
+      // cout<<num_tile<<" "<<num_tile * (LAYER_IN_W_T) * (LAYER_IN_H_T) * LAYER_IN_NUM_T<<" "<<sizeof(data_t0) * LAYER_IN_NUM_T * (LAYER_IN_W_T) * (LAYER_IN_H_T)<<endl;
+      // cout<<"change layout"<<endl;
 			for (int hh = 0; hh < /*LAYER_IN_H_T + FILTER_S - */1; hh++){
 				uint local_cin_offset = 0;
 				uint global_cin_offset = cin_offset + num_tile * (LAYER_IN_W_T) * (LAYER_IN_H_T) * LAYER_IN_NUM_T;
@@ -10004,17 +10034,29 @@ void cin_load_ddr_read(
 		} else {
 			for (int hh = 0; hh < LAYER_IN_H_T + FILTER_S - 1; hh++){//change this
 				uint h = in_h_iter + hh;
-				uint local_cin_offset = hh * (LAYER_IN_W_T + FILTER_S - 1) * LAYER_IN_NUM_T;//change this
+				uint local_cin_offset = hh * (LAYER_IN_W_T + FILTER_D - 1) * LAYER_IN_NUM_T;//change this
 				uint global_cin_offset = in_num_iter * LAYER_IN_H_HW * LAYER_IN_W_HW + h * LAYER_IN_W_HW * LAYER_IN_NUM_T + in_w_iter * LAYER_IN_NUM_T + cin_offset;
+        // cout<<in_num_iter<<" "<<in_h_iter<<" "<<in_w_iter<<" "<<endl;
 #ifdef DEBUG_cin
 				if(write)
 					cout << global_cin_offset << endl;
 #endif
-        uint burstNum = (sizeof(data_t0) * LAYER_IN_NUM_T * (LAYER_IN_W_T + FILTER_S - 1)/64) + 1; //this may need a fix
-				memcpy((void*)&cin_burst_buf[local_cin_offset / BUS_PACK_FACTOR0], (void*)&global_cin[global_cin_offset / BUS_PACK_FACTOR0], burstNum*64);
-        // memcpy((void*)&cin_burst_buf[local_cin_offset / BUS_PACK_FACTOR0], (void*)&global_cin[global_cin_offset / BUS_PACK_FACTOR0], sizeof(data_t0) * LAYER_IN_NUM_T * (LAYER_IN_W_T + FILTER_S - 1));
+        // cout<<h<<endl;
+        // uint burstNum = (sizeof(data_t0) * LAYER_IN_NUM_T * (LAYER_IN_W_T + FILTER_S - 1)/64) + 1; //this may need a fix
+        // memcpy((void*)&cin_burst_buf[local_cin_offset / BUS_PACK_FACTOR0], (void*)&global_cin[global_cin_offset / BUS_PACK_FACTOR0], burstNum*64);
+        memcpy((void*)&cin_burst_buf[local_cin_offset / BUS_PACK_FACTOR0], (void*)&global_cin[global_cin_offset / BUS_PACK_FACTOR0], sizeof(data_t0) * LAYER_IN_NUM_T * (LAYER_IN_W_T + FILTER_D - 1));
+        // cout<<num_tile<<" "<<local_cin_offset<<" "<<global_cin_offset<<" "<<local_cin_offset / BUS_PACK_FACTOR0<<" "<<global_cin_offset  / BUS_PACK_FACTOR0<<" "<<sizeof(data_t0) * LAYER_IN_NUM_T * (LAYER_IN_W_T + 3 - 1)<<endl;
+        // cout<<local_cin_offset<<" "<<global_cin_offset<<" "<<global_cin_offset / BUS_PACK_FACTOR0<<endl;
+        // for(int i=0; i<5; i++)
+        //   print<512>(cin_burst_buf[i]);
+        // cout<<"global"<<endl;
+        // for(int i=0; i<5; i++)
+        //   print<512>(global_cin[local_cin_offset / BUS_PACK_FACTOR0 + i]);
         
 			}
+      // for(int j=0; j<9; j++)
+      //   for(int i=0; i<5; i++)
+      //       print<512>(cin_burst_buf[j*5+i]);
 		}
 
 	}
@@ -10030,22 +10072,24 @@ void cin_load_fifo_write(
 		uint                           LAYER_IN_NUM_T,
 		uint                           LAYER_IN_H_T,
 		uint                           LAYER_IN_W_T,
-		uint                           FILTER_S
+		uint                           FILTER_S,
+    uint                           FILTER_D
 ){
 	int ii = 0;
 	int hh = 0;
 	int ww = 0;
-	// int count=0;
 	bool done = 0;
+  // cout<<LAYER_IN_NUM_T<<" "<<LAYER_IN_H_T<<" "<<LAYER_IN_W_T<<" "<<FILTER_S<<endl;
 	while(!done){
 #pragma HLS PIPELINE II=1
+    // cout<<LAYER_IN_NUM_T<<" "<<LAYER_IN_H_T<<" "<<LAYER_IN_W_T<<" "<<FILTER_S<<endl;
 // Data layout of the buffer: Th * Tw * Tn
-		uint local_cin_idx = hh * (LAYER_IN_W_T + FILTER_S - 1) * LAYER_IN_NUM_T + ww * LAYER_IN_NUM_T + ii * DEPTH_CONV_LANE;
+		uint local_cin_idx = hh * (LAYER_IN_W_T + FILTER_D - 1) * LAYER_IN_NUM_T + ww * LAYER_IN_NUM_T + ii * DEPTH_CONV_LANE;
 		uint bus_cin_idx = local_cin_idx / BUS_PACK_FACTOR0;
 		uint bus_cin_offset = local_cin_idx % BUS_PACK_FACTOR0;
 		bus_t0 bus_cin_data = cin_burst_buf[bus_cin_idx];
 		CinLoadData0Type fifo_cin_data;
-
+    // cout<<bus_cin_idx<<endl;
 // DATA_SEL_FACTOR = BUS_PACK_FACTOR / SIMD_LANE
 // BUS_PACK_FACTOR is the number of elements packed in one to enable memory coalescing
 // Since each entry in FIFOs will be SIMD_LANE elements of the data, we should unpack based on SIMD_LANE
@@ -10170,7 +10214,7 @@ void cin_load_fifo_write(
 			cout << endl;
 		}
 #endif
-		
+
 		// Repeat until the whole tile is read
 		ww++;
 		if (ww == LAYER_IN_W_T + FILTER_S - 1){//change here
@@ -10207,7 +10251,9 @@ void cin_load_fifo_write_prev(
 	int ww = 0;
 	bool done = 0;
 	uint count = 0;
+  
 	while(!done){
+    
 #pragma HLS PIPELINE II=1
 // Data layout of the buffer: Th * Tw * Tn
 		uint local_cin_idx = hh * (LAYER_IN_W_T + FILTER_S - 1) * LAYER_IN_NUM_T + ww * LAYER_IN_NUM_T + ii * DEPTH_CONV_LANE;
@@ -10366,8 +10412,8 @@ void cin_load(
 ){
 #pragma HLS INLINE off 
 	// on-chip buffer for cin data
-	bus_t0 cin_burst_buf_ping[IN_NUM_T * (IN_H_T + K_T - 1) * (IN_W_T + K_T - 1) / BUS_PACK_FACTOR0];
-	bus_t0 cin_burst_buf_pong[IN_NUM_T * (IN_H_T + K_T - 1) * (IN_W_T + K_T - 1) / BUS_PACK_FACTOR0];
+	 bus_t0 cin_burst_buf_ping[IN_NUM_T * (IN_H_T + K_T - 1) * (IN_W_T + K_T - 1) / BUS_PACK_FACTOR0];
+	 bus_t0 cin_burst_buf_pong[IN_NUM_T * (IN_H_T + K_T - 1) * (IN_W_T + K_T - 1) / BUS_PACK_FACTOR0];
 #pragma HLS RESOURCE variable=cin_burst_buf_ping core=XPM_MEMORY uram
 #pragma HLS RESOURCE variable=cin_burst_buf_pong core=XPM_MEMORY uram  
 
@@ -10444,7 +10490,8 @@ void cin_load(
 	uint LAYER_OUT_NUM_T_prev;
 	uint LAYER_IN_H_T_prev;
 	uint LAYER_IN_W_T_prev;
-	uint FILTER_prev;
+	uint FILTER_S_prev;
+  uint FILTER_D_prev;
 	
 
 	uint task_cnt = 0;
@@ -10462,6 +10509,9 @@ void cin_load(
 	bool change_layout = 0;
 	uint inter_tile = 0;
 	uint channel_iter = 0;
+  int count_fifo = 0;
+  int count_dram = 0;
+  int count = 0;
 	while(!done){
 		// Read and extract the parameters/config from the instructions
 		// Refer to util.h or the README of the repo to find how the instructions are made
@@ -10530,7 +10580,7 @@ void cin_load(
 		K_NUM               		= config[37 + layer_iter * CONFIG_PARAMS];
 		KH_KW               		= config[38 + layer_iter * CONFIG_PARAMS];
     // cout<<LAYER_CONV_TYPE<<" "<<FILTER_D0<<" "<<FILTER_D1<<" "<<LAYER_DILATION_RATE<<" "<<LAYER_TCONV_STRIDE<<" "<<K_NUM<<" "<<KH_KW<<endl;
-
+// #define DEBUG_config_cin
 #ifdef DEBUG_config_cin
 		cout << LAYER_IN_NUM_HW << " " << LAYER_OUT_NUM_HW << " " << LAYER_IN_H_HW << " " << LAYER_IN_W_HW << " " << LAYER_OUT_H_HW << " " << LAYER_OUT_W_HW << endl;
 		cout << LAYER_IN_NUM << " " << LAYER_OUT_NUM << " " << LAYER_IN_H << " " << LAYER_IN_W << " " << LAYER_OUT_H << " " << LAYER_OUT_W << endl;
@@ -10559,6 +10609,530 @@ void cin_load(
 		// offsets
 		uint cin_offset = CIN_OFFSET;
 		uint prev_cin_offset = PREV_CIN_OFFSET;
+		// FILTER = (LAYER_CONV_TYPE == 1)? (ap_uint<4>)(KH_KW>>28) : (ap_uint<4>) FILTER_S2;
+    // FILTER = 3;
+		if (prev == 1) start_prev = 1;
+    
+		// set up some configuration signals
+		uint FILTER_S = (DEPTH_CONV_EN == 1)? (uint)FILTER_S1: ((CONV_EN == 1)? ((LAYER_CONV_TYPE == 1)? (uint)FILTER_D0 : (uint)FILTER_S2) : 1);
+    uint FILTER_D = (LAYER_CONV_TYPE == 1)? (uint)FILTER_D1 : (uint)FILTER_S2;
+		bool separable_conv = (DEPTH_CONV_EN == 1) && (CONV_EN == 1);
+		bool conv2d = (DEPTH_CONV_EN == 0) && (CONV_EN == 1);
+		bool max_pool = (DEPTH_CONV_EN == 0) && (CONV_EN == 0);
+		change_layout = (((LAYER_IN_W_HW == LAYER_IN_W) || (LAYER_IN_W_HW == LAYER_IN_W_T)) && ((LAYER_IN_H_HW == LAYER_IN_H) || (LAYER_IN_H_HW == LAYER_IN_H_T))); // if next filter = 1 : change the layout to num_tile, Th, Tw, Tn
+
+		// If it has to read from DRAM and not the stored data in on-chip storage
+		if (INTER_LOAD_EN == 0){
+			if ((max_pool && out_num_iter == 0) || separable_conv || conv2d || (UP_SAMPLE_EN && out_num_iter == 0)){
+				if (task_cnt == 0){
+					// first load cin
+					cin_load_ddr_read(global_cin, cin_burst_buf_ping, LAYER_IN_H_HW, LAYER_IN_W_HW, LAYER_IN_NUM_T, LAYER_IN_H_T, LAYER_IN_W_T, FILTER_S, FILTER_D, cin_offset, in_num_iter, in_h_iter, in_w_iter, num_tile, change_layout, max_pool, 0);
+          count_dram++;
+          // for(int i=0; i<550; i++){
+          //   for(int j=0; j<16; j++)
+          //   cout<<Reinterpret<data_t2>((ap_uint<32>)cin_burst_buf_ping[i]((j+1)*32-1, 32*j))<<endl;
+          // }
+          // for(int i=0; i<8; i++){
+		// 		num[i] = Reinterpret<data_t2>((ap_uint<32>)item((i+1)*32-1, 32*i));
+		// 		fprintf(f, "%10f\t", num[i]);
+		// 	}
+          // exit(0);
+        } else {
+					// Apply double buffering for reading the data and filling the FIFO
+					if (task_cnt % 2 == 1){
+						cin_load_ddr_read(global_cin, cin_burst_buf_pong, LAYER_IN_H_HW, LAYER_IN_W_HW, LAYER_IN_NUM_T, LAYER_IN_H_T, LAYER_IN_W_T, FILTER_S, FILTER_D, cin_offset, in_num_iter, in_h_iter, in_w_iter, num_tile, change_layout, max_pool, 0);
+						cin_load_fifo_write(cin_burst_buf_ping, fifo_cin, LAYER_IN_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, FILTER_S_prev, FILTER_D_prev);
+            count_fifo++;
+            count_dram++;
+            // int count = 0;
+            // while(!fifo_cin.empty()){
+            //   ConvData0Type item = fifo_cin.read();
+            //   count++;
+            // }
+            // cout<<count<<endl;
+            // exit(0);
+					} else {
+						cin_load_ddr_read(global_cin, cin_burst_buf_ping, LAYER_IN_H_HW, LAYER_IN_W_HW, LAYER_IN_NUM_T, LAYER_IN_H_T, LAYER_IN_W_T, FILTER_S, FILTER_D, cin_offset, in_num_iter, in_h_iter, in_w_iter, num_tile, change_layout, max_pool, 0);
+						cin_load_fifo_write(cin_burst_buf_pong, fifo_cin, LAYER_IN_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, FILTER_S_prev, FILTER_D_prev);
+            count_fifo++;
+            count_dram++;
+					}
+				}
+
+				task_cnt++;
+				LAYER_IN_NUM_T_prev = LAYER_IN_NUM_T;
+				LAYER_OUT_NUM_T_prev = LAYER_OUT_NUM_T;
+				LAYER_IN_H_T_prev = LAYER_IN_H_T;
+				LAYER_IN_W_T_prev = LAYER_IN_W_T;
+				FILTER_S_prev = FILTER_S;
+        FILTER_D_prev = FILTER_D;
+			}
+		}
+
+		// Continue until all the tiles are read
+		// Since each layer produces LAYER_OUT_NUM feature maps, 
+		// repeat reading the tiles LAYER_OUT_NUM times
+		in_num_iter += LAYER_IN_NUM_T;
+		if (in_num_iter < LAYER_IN_NUM){
+			channel_iter += ((LAYER_IN_W / LAYER_IN_W_T) * (LAYER_IN_H / LAYER_IN_H_T));
+		} else {
+			channel_iter = 0;
+			inter_tile++;
+		}
+    // num_tile++;
+
+		num_tile = conv2d==1? channel_iter + inter_tile : num_tile + 1;
+    // cout<<in_num_iter<<" "<<num_tile<<endl;
+		if (in_num_iter >= LAYER_IN_NUM){
+			in_num_iter = 0;
+			channel_iter = 0;
+			in_h_iter += LAYER_IN_H_T;
+			if (in_h_iter >= LAYER_IN_H){
+				in_h_iter = 0;
+				in_w_iter += LAYER_IN_W_T; //tweak
+				if (in_w_iter >= LAYER_IN_W){
+					in_w_iter = 0;
+					out_num_iter += LAYER_OUT_NUM_T;
+					num_tile = 0;
+					inter_tile = 0;
+					channel_iter = 0;
+					if (out_num_iter >= LAYER_OUT_NUM){
+						out_num_iter = 0;
+						layer_iter += 1;
+						prev = 0;
+						layer_start = 1;
+						if (layer_iter == LAYER_BATCH){
+							layer_iter = 0;
+							out_num_iter = 0;
+							in_h_iter = 0;
+							in_w_iter = 0;
+							done = 1;
+						}
+					}
+				}
+			}
+		}
+	}
+
+
+	// Fill the FIFOs with the data for the last tile
+	if (task_cnt % 2 == 1){
+		cin_load_fifo_write(cin_burst_buf_ping, fifo_cin, LAYER_IN_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, FILTER_S_prev, FILTER_D_prev);
+    count_fifo++;
+	} else {
+		cin_load_fifo_write(cin_burst_buf_pong, fifo_cin, LAYER_IN_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, FILTER_S_prev, FILTER_D_prev);
+    count_fifo++;
+	}
+  // cout<<"count_dram: "<<count_dram<<endl;
+  // cout<<"count_fifo: "<<count_fifo<<endl;
+  // exit(0);
+}
+
+/*
+ * Function name: cin_load
+ * Function description: This function loads and distributes cin to the previous layer and instructions.
+ */
+// void cin_load_prev(
+// 		bus_t0                         *global_cin,
+// 		hls::stream<ConfigInst>        &fifo_config_in,
+// 		hls::stream<CinLoadData0Type>  &fifo_cin_prev,
+// 		hls::stream<ConfigInst>        &fifo_config_out
+// ){
+// #pragma HLS INLINE off 
+// 	// on-chip buffer for cin data
+// 	bus_t0 prev_cin_burst_buf_ping[OUT_NUM_T * (IN_H_T + K_T - 1) * (IN_W_T + K_T - 1) / BUS_PACK_FACTOR0];
+// 	bus_t0 prev_cin_burst_buf_pong[OUT_NUM_T * (IN_H_T + K_T - 1) * (IN_W_T + K_T - 1) / BUS_PACK_FACTOR0];
+// #pragma HLS RESOURCE variable=prev_cin_burst_buf_ping core=XPM_MEMORY uram
+// #pragma HLS RESOURCE variable=prev_cin_burst_buf_pong core=XPM_MEMORY uram  
+
+
+
+// 	// tiling iterators
+// 	uint in_num_iter = 0;
+// 	uint out_num_iter = 0;
+// 	uint in_h_iter = 0;
+// 	uint in_w_iter = 0;
+// 	uint layer_iter = 0;
+
+// 	uint in_num_iter_prev = 0;
+// 	uint out_num_iter_prev = 0;
+// 	uint in_h_iter_prev = 0;
+// 	uint in_w_iter_prev = 0;
+// 	uint layer_iter_prev = 0;
+
+
+// 	uint LAYER_IN_NUM_T_prev;
+// 	uint LAYER_OUT_NUM_T_prev;
+// 	uint LAYER_IN_H_T_prev;
+// 	uint LAYER_IN_W_T_prev;
+// 	uint FILTER_S_prev;
+
+// 	ConfigInst inst0 = fifo_config_in.read();
+// 	fifo_config_out.write(inst0);
+// 	ConfigInst inst1 = fifo_config_in.read();
+// 	fifo_config_out.write(inst1);
+// 	ConfigInst inst2 = fifo_config_in.read();
+// 	fifo_config_out.write(inst2);
+// 	ConfigInst inst3 = fifo_config_in.read();
+// 	fifo_config_out.write(inst3);
+// 	ConfigInst inst4 = fifo_config_in.read();
+// 	fifo_config_out.write(inst4);
+
+// 	ap_uint<32> LAYER_BATCH = inst3(32*5+31, 32*5);
+// 	ap_uint<1>  LOAD_PREV_CIN = 0;
+
+
+// 	uint task_cnt = 0;
+// 	bool layer_start = 0;
+// 	bool layer_start_prev = 0;
+// 	bool done = 0;
+// 	// We assum that cin has been pre-padded with zeros
+// 	uint prev = 0;
+// 	uint init = 1;
+// 	uint num_tile = 0;
+// 	bool write_last_cin = 0;
+// 	bool write_last_prev_cin = 0;
+// 	bool start_prev = 0;
+// 	bool done_prev = 0;
+// 	bool change_layout = 0;
+// 	//uint prev_iter = 0;
+// 	while(!done_prev){
+
+// 		if (layer_start){
+// 			inst0 = fifo_config_in.read();
+// 			fifo_config_out.write(inst0);
+// 			inst1 = fifo_config_in.read();
+// 			fifo_config_out.write(inst1);
+// 			inst2 = fifo_config_in.read();
+// 			fifo_config_out.write(inst2);
+// 			inst3 = fifo_config_in.read();
+// 			fifo_config_out.write(inst3);
+// 			inst4 = fifo_config_in.read();
+// 			fifo_config_out.write(inst4);
+// 			layer_start = 0;
+// 		}
+
+// 		// Refer to cin_load module to understand the meaning of the instructions
+// 		// inst0
+// 		ap_uint<32> LAYER_IN_NUM_HW  = inst0(32*0+31, 32*0);
+// 		ap_uint<32> LAYER_OUT_NUM_HW = inst0(32*1+31, 32*1);
+// 		ap_uint<32> LAYER_IN_H_HW    = inst0(32*2+31, 32*2);
+// 		ap_uint<32> LAYER_IN_W_HW    = inst0(32*3+31, 32*3);
+// 		ap_uint<32> LAYER_OUT_H_HW   = inst0(32*4+31, 32*4);
+// 		ap_uint<32> LAYER_OUT_W_HW   = inst0(32*5+31, 32*5);
+// 		// inst1
+// 		ap_uint<32> LAYER_IN_NUM     = inst1(32*0+31, 32*0);
+// 		ap_uint<32> LAYER_OUT_NUM    = inst1(32*1+31, 32*1);
+// 		ap_uint<32> LAYER_IN_H       = inst1(32*2+31, 32*2);
+// 		ap_uint<32> LAYER_IN_W       = inst1(32*3+31, 32*3);
+// 		ap_uint<32> LAYER_OUT_H      = inst1(32*4+31, 32*4);
+// 		ap_uint<32> LAYER_OUT_W      = inst1(32*5+31, 32*5);
+// 		// inst2
+// 		ap_uint<32> CIN_OFFSET       = inst2(32*0+31, 32*0);
+// 		ap_uint<32> WEIGHT_OFFSET    = inst2(32*1+31, 32*1);
+// 		ap_uint<32> BIAS_OFFSET      = inst2(32*2+31, 32*2);
+// 		ap_uint<32> COUT_OFFSET      = inst2(32*3+31, 32*3);
+// 		ap_uint<16> FILTER_S1        = inst2(32*4+15, 32*4);
+// 		ap_uint<16> FILTER_S2        = inst2(32*4+31, 32*4+16);
+// 		ap_uint<32> STRIDE           = inst2(32*5+31, 32*5);
+// 		// inst3
+// 		ap_uint<32> LAYER_EN         = inst3(32*0+31, 32*0);
+// 		ap_uint<32> PREV_CIN_OFFSET  = inst3(32*1+31, 32*1);
+// 		ap_uint<16> LAYER_IN_NUM_T   = inst3(32*2+15, 32*2);
+// 		ap_uint<16> LAYER_OUT_NUM_T  = inst3(32*2+31, 32*2+16);
+// 		ap_uint<32> LAYER_IN_H_T     = inst3(32*3+31, 32*3);
+// 		ap_uint<32> LAYER_IN_W_T     = inst3(32*4+31, 32*4);
+
+// 		ap_uint<1>  CONV_1ST_EN    = LAYER_EN[0];
+// 		ap_uint<1>  DEPTH_CONV_EN  = LAYER_EN[1];
+// 		ap_uint<1>  CONV_EN        = LAYER_EN[2];
+// 		ap_uint<1>  RELU_EN        = LAYER_EN[3];
+// 		ap_uint<1>  RELU6_EN       = LAYER_EN[4];
+// 		ap_uint<1>  POOL_EN        = LAYER_EN[5];
+// 		ap_uint<1>  UP_SAMPLE_EN   = LAYER_EN[6];  // reserved
+// 		ap_uint<1>  BIAS_EN        = LAYER_EN[7];
+// 		ap_uint<1>  INTER_LOAD_EN  = LAYER_EN[8];
+// 		ap_uint<1>  INTER_WRITE_EN = LAYER_EN[9];
+// 		ap_uint<1>  BATCH_NORM_EN  = LAYER_EN[10];
+// 		LOAD_PREV_CIN  = LAYER_EN[11];
+
+
+// #ifdef DEBUG_config_cin
+// 		cout << LAYER_IN_NUM_HW << " " << LAYER_OUT_NUM_HW << " " << LAYER_IN_H_HW << " " << LAYER_IN_W_HW << " " << LAYER_OUT_H_HW << " " << LAYER_OUT_W_HW << endl;
+// 		cout << LAYER_IN_NUM << " " << LAYER_OUT_NUM << " " << LAYER_IN_H << " " << LAYER_IN_W << " " << LAYER_OUT_H << " " << LAYER_OUT_W << endl;
+// 		cout << CIN_OFFSET << " " << WEIGHT_OFFSET << " " << BIAS_OFFSET << " " << COUT_OFFSET << " " << FILTER_S1 << " " << FILTER_S2 << " " << STRIDE << endl;
+// 		cout << LAYER_EN << " " << PREV_CIN_OFFSET << " " << LAYER_IN_NUM_T << " " << LAYER_OUT_NUM_T << " " << LAYER_IN_H_T << " " << LAYER_IN_W_T << endl;
+// #endif
+
+
+// 		// offsets
+// 		uint cin_offset = CIN_OFFSET;
+// 		uint prev_cin_offset = PREV_CIN_OFFSET;
+
+// 		if (prev == 1) start_prev = 1;
+
+// 		// set up some configuration signals
+// 		uint FILTER_S = (DEPTH_CONV_EN == 1)? (uint)FILTER_S1: ((CONV_EN == 1)? (uint)FILTER_S2: 1);
+// 		bool separable_conv = (DEPTH_CONV_EN == 1) && (CONV_EN == 1);
+// 		bool conv2d = (DEPTH_CONV_EN == 0) && (CONV_EN == 1);
+// 		bool max_pool = (DEPTH_CONV_EN == 0) && (CONV_EN == 0);
+// 		change_layout = (((LAYER_OUT_W_HW == LAYER_OUT_W) || (LAYER_OUT_W_HW == LAYER_IN_W_T)) && ((LAYER_OUT_H_HW == LAYER_OUT_H) || (LAYER_OUT_H_HW == LAYER_IN_H_T))); // if next filter = 1 : change the layout to num_tile, h_t, w_t, in_t
+//     uint layer_out_h = (LAYER_IN_H_T > LAYER_OUT_H) ? LAYER_IN_H_T : LAYER_OUT_H;
+//     uint layer_out_w = (LAYER_IN_W_T > LAYER_OUT_W) ? LAYER_IN_W_T : LAYER_OUT_W;
+
+// 		if (INTER_LOAD_EN == 0){
+// 			if (((max_pool || UP_SAMPLE_EN) && out_num_iter_prev == 0) || separable_conv || conv2d){
+// 				if (task_cnt == 0){
+// 					// First load previous cin
+// 					// Load only if the enable signal for this module is on
+// 					if(LOAD_PREV_CIN == 1){
+// 						cin_load_ddr_read(global_cin, prev_cin_burst_buf_ping, layer_out_h, layer_out_w, LAYER_OUT_NUM_T, LAYER_IN_H_T, LAYER_IN_W_T, 1, prev_cin_offset, out_num_iter_prev, in_h_iter_prev, in_w_iter_prev, num_tile, change_layout, max_pool, 1);
+// 					} 
+// 				} else {
+// 					// Apply double buffering for reading the data and filling the FIFO
+// 					// Load only if the enable signal for this module is on
+// 					if(LOAD_PREV_CIN == 1){
+// 						if (task_cnt % 2 == 1){
+// 							cin_load_ddr_read(global_cin, prev_cin_burst_buf_pong, layer_out_h, layer_out_w, LAYER_OUT_NUM_T, LAYER_IN_H_T, LAYER_IN_W_T, 1, prev_cin_offset, out_num_iter_prev, in_h_iter_prev, in_w_iter_prev, num_tile, change_layout, max_pool, 1);
+// 							cin_load_fifo_write_prev(prev_cin_burst_buf_ping, fifo_cin_prev, LAYER_OUT_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, 1);
+// 						} else {
+// 							cin_load_ddr_read(global_cin, prev_cin_burst_buf_ping, layer_out_h, layer_out_w, LAYER_OUT_NUM_T, LAYER_IN_H_T, LAYER_IN_W_T, 1, prev_cin_offset, out_num_iter_prev, in_h_iter_prev, in_w_iter_prev, num_tile, change_layout, max_pool, 1);
+// 							cin_load_fifo_write_prev(prev_cin_burst_buf_pong, fifo_cin_prev, LAYER_OUT_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, 1);
+// 						}
+// 					} 
+// 				}
+
+// 				task_cnt++;
+// 				LAYER_IN_NUM_T_prev = LAYER_IN_NUM_T;
+// 				LAYER_OUT_NUM_T_prev = LAYER_OUT_NUM_T;
+// 				LAYER_IN_H_T_prev = LAYER_IN_H_T;
+// 				LAYER_IN_W_T_prev = LAYER_IN_W_T;
+// 				FILTER_S_prev = FILTER_S;
+// 			}
+// 		}
+
+// 		// Continue until all tiles are read
+// 		// No need to read tiles multiple times 
+// 		// since it's only read to add them to the result of this layer
+// 		num_tile++;
+// 		out_num_iter_prev += LAYER_OUT_NUM_T;
+// 		if (out_num_iter_prev >= LAYER_OUT_NUM){
+// 			out_num_iter_prev = 0;
+// 			in_h_iter_prev += LAYER_IN_H_T;
+// 			if (in_h_iter_prev >= LAYER_IN_H){
+// 				in_h_iter_prev = 0;
+// 				in_w_iter_prev += LAYER_IN_W_T;
+// 				if (in_w_iter_prev >= LAYER_IN_W){
+// 					in_w_iter_prev = 0;
+// 					layer_iter_prev += 1;
+// 					layer_start_prev = 1;
+// 					if (layer_iter_prev == LAYER_BATCH){
+// 						layer_iter_prev = 0;
+// 						out_num_iter_prev = 0;
+// 						in_h_iter_prev = 0;
+// 						in_w_iter_prev = 0;
+// 						done_prev = 1;
+// 					}
+// 				}
+// 			}
+// 		}
+
+
+// 	}
+
+
+	
+// 	if (LOAD_PREV_CIN){
+// 		// Load the last tile to its FIFO
+// 		if (task_cnt % 2 == 1){
+// 			cin_load_fifo_write_prev(prev_cin_burst_buf_ping, fifo_cin_prev, LAYER_OUT_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, 1);
+// 		} else {
+// 			cin_load_fifo_write_prev(prev_cin_burst_buf_pong, fifo_cin_prev, LAYER_OUT_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, 1);
+// 		}
+// 	} 
+
+// }
+
+void cin_load_prev(
+		bus_t0                         *global_cin,
+		hls::stream<ConfigInst>        &fifo_config_in,
+		hls::stream<CinLoadData0Type>  &fifo_cin,
+		hls::stream<ConfigInst>        &fifo_config_out
+){
+#pragma HLS INLINE off 
+	// on-chip buffer for cin data
+	 bus_t0 cin_burst_buf_ping[IN_NUM_T * (IN_H_T + K_T - 1) * (IN_W_T + K_T - 1) / BUS_PACK_FACTOR0];
+	 bus_t0 cin_burst_buf_pong[IN_NUM_T * (IN_H_T + K_T - 1) * (IN_W_T + K_T - 1) / BUS_PACK_FACTOR0];
+#pragma HLS RESOURCE variable=cin_burst_buf_ping core=XPM_MEMORY uram
+#pragma HLS RESOURCE variable=cin_burst_buf_pong core=XPM_MEMORY uram  
+
+
+
+	// tiling iterators
+	uint in_num_iter = 0;
+	uint out_num_iter = 0;
+	uint in_h_iter = 0;
+	uint in_w_iter = 0;
+	uint layer_iter = 0;
+
+	uint in_num_iter_prev = 0;
+	uint out_num_iter_prev = 0;
+	uint in_h_iter_prev = 0;
+	uint in_w_iter_prev = 0;
+	uint layer_iter_prev = 0;
+
+	ConfigInst inst0 = fifo_config_in.read();
+	fifo_config_out.write(inst0);
+	ConfigInst inst1 = fifo_config_in.read();
+	fifo_config_out.write(inst1);
+	ConfigInst inst2 = fifo_config_in.read();
+	fifo_config_out.write(inst2);
+	ConfigInst inst3 = fifo_config_in.read();
+	fifo_config_out.write(inst3);
+	ConfigInst inst4 = fifo_config_in.read();
+	fifo_config_out.write(inst4);
+  ConfigInst inst5 = fifo_config_in.read();
+	fifo_config_out.write(inst5);
+  ap_uint<32> LAYER_BATCH = inst3(32*5+31, 32*5);
+  ap_uint<1>  LOAD_PREV_CIN = 0;
+  
+	// parameters
+	// inst0
+	ap_uint<32> LAYER_IN_NUM_HW;
+	ap_uint<32> LAYER_OUT_NUM_HW;
+	ap_uint<32> LAYER_IN_H_HW;
+	ap_uint<32> LAYER_IN_W_HW;
+	ap_uint<32> LAYER_OUT_H_HW;
+	ap_uint<32> LAYER_OUT_W_HW;
+	// inst1
+	ap_uint<32> LAYER_IN_NUM;
+	ap_uint<32> LAYER_OUT_NUM;
+	ap_uint<32> LAYER_IN_H;
+	ap_uint<32> LAYER_IN_W;
+	ap_uint<32> LAYER_OUT_H;
+	ap_uint<32> LAYER_OUT_W;
+	// inst2
+	ap_uint<32> CIN_OFFSET;
+	ap_uint<32> WEIGHT_OFFSET;
+	ap_uint<32> BIAS_OFFSET;
+	ap_uint<32> COUT_OFFSET;
+	ap_uint<16> FILTER_S1;
+	ap_uint<16> FILTER_S2;
+	ap_uint<32> STRIDE;
+	// inst3
+	ap_uint<32> LAYER_EN;
+	ap_uint<16> LAYER_IN_NUM_T;
+	ap_uint<16> LAYER_OUT_NUM_T;
+	ap_uint<32> LAYER_IN_H_T;
+	ap_uint<32> LAYER_IN_W_T;
+	ap_uint<32> PREV_CIN_OFFSET;
+	// inst4
+	ap_uint<32> LAYER_TASK_NUM1;
+	ap_uint<32> LAYER_TASK_NUM2;
+	ap_uint<32> LAYER_LOCAL_ACCUM_NUM;
+	ap_uint<32> LAYER_LOCAL_REG_NUM;
+	ap_uint<32> LAYER_ROW_IL_FACTOR;
+	ap_uint<32> LAYER_COL_IL_FACTOR;
+	//inst5
+	ap_uint<32> LAYER_CONV_TYPE;
+	ap_uint<16> FILTER_D0;
+	ap_uint<16> FILTER_D1;
+	ap_uint<32> LAYER_DILATION_RATE;
+	ap_uint<32> LAYER_TCONV_STRIDE;
+	ap_uint<32> K_NUM;
+	ap_uint<32> KH_KW;
+
+	ap_uint<4>  FILTER;
+
+	ap_uint<1>  CONV_1ST_EN;
+
+	uint LAYER_IN_NUM_T_prev;
+	uint LAYER_OUT_NUM_T_prev;
+	uint LAYER_IN_H_T_prev;
+	uint LAYER_IN_W_T_prev;
+	uint FILTER_prev;
+	
+
+	uint task_cnt = 0;
+	bool layer_start = 0;
+	bool layer_start_prev = 0;
+	bool done = 0;
+	// We assum that cin has been pre-padded with zeros
+	uint prev = 0;
+	uint init = 1;
+	uint num_tile = 0;
+	bool write_last_cin = 0;
+	bool write_last_prev_cin = 0;
+	bool start_prev = 0;
+	bool done_prev = 0;
+	bool change_layout = 0;
+	uint inter_tile = 0;
+	uint channel_iter = 0;
+  int count_fifo = 0;
+  int count_dram = 0;
+  int count = 0;
+	while(!done){
+		LAYER_IN_NUM_HW  = inst0(32*0+31, 32*0);
+    LAYER_OUT_NUM_HW = inst0(32*1+31, 32*1);
+    LAYER_IN_H_HW    = inst0(32*2+31, 32*2);
+    LAYER_IN_W_HW    = inst0(32*3+31, 32*3);
+    LAYER_OUT_H_HW   = inst0(32*4+31, 32*4);
+    LAYER_OUT_W_HW   = inst0(32*5+31, 32*5);
+    LAYER_IN_NUM     = inst1(32*0+31, 32*0);
+    LAYER_OUT_NUM    = inst1(32*1+31, 32*1);
+    LAYER_IN_H       = inst1(32*2+31, 32*2);
+    LAYER_IN_W       = inst1(32*3+31, 32*3);
+    LAYER_OUT_H      = inst1(32*4+31, 32*4);
+    LAYER_OUT_W      = inst1(32*5+31, 32*5);
+    CIN_OFFSET       = inst2(32*0+31, 32*0);
+    WEIGHT_OFFSET    = inst2(32*1+31, 32*1);
+    BIAS_OFFSET      = inst2(32*2+31, 32*2);
+    COUT_OFFSET      = inst2(32*3+31, 32*3);
+    FILTER_S1        = inst2(32*4+15, 32*4);
+    FILTER_S2        = inst2(32*4+31, 32*4+16);
+    STRIDE           = inst2(32*5+31, 32*5);
+    LAYER_EN         = inst3(32*0+31, 32*0);
+    PREV_CIN_OFFSET  = inst3(32*1+31, 32*1);
+    LAYER_IN_NUM_T   = inst3(32*2+15, 32*2);
+    LAYER_OUT_NUM_T  = inst3(32*2+31, 32*2+16);
+    LAYER_IN_H_T     = inst3(32*3+31, 32*3);
+    LAYER_IN_W_T     = inst3(32*4+31, 32*4);
+    KH_KW 			     = inst5(32*0+31, 32*0);
+    LAYER_CONV_TYPE  = inst5(32*5+31, 32*5);
+    CONV_1ST_EN    = LAYER_EN[0];
+    ap_uint<1>  DEPTH_CONV_EN  = LAYER_EN[1];
+    ap_uint<1>  CONV_EN        = LAYER_EN[2];
+    ap_uint<1>  RELU_EN        = LAYER_EN[3];
+    ap_uint<1>  RELU6_EN       = LAYER_EN[4];
+    ap_uint<1>  POOL_EN        = LAYER_EN[5];
+    ap_uint<1>  UP_SAMPLE_EN   = LAYER_EN[6];  // reserved
+    ap_uint<1>  BIAS_EN        = LAYER_EN[7];
+    ap_uint<1>  INTER_LOAD_EN  = LAYER_EN[8];
+    ap_uint<1>  INTER_WRITE_EN = LAYER_EN[9];
+    ap_uint<1>  BATCH_NORM_EN  = LAYER_EN[10];
+    LOAD_PREV_CIN  = LAYER_EN[11];
+
+#ifdef DEBUG_config_cin
+		cout << LAYER_IN_NUM_HW << " " << LAYER_OUT_NUM_HW << " " << LAYER_IN_H_HW << " " << LAYER_IN_W_HW << " " << LAYER_OUT_H_HW << " " << LAYER_OUT_W_HW << endl;
+		cout << LAYER_IN_NUM << " " << LAYER_OUT_NUM << " " << LAYER_IN_H << " " << LAYER_IN_W << " " << LAYER_OUT_H << " " << LAYER_OUT_W << endl;
+		cout << CIN_OFFSET << " " << WEIGHT_OFFSET << " " << BIAS_OFFSET << " " << COUT_OFFSET << " " << FILTER_S1 << " " << FILTER_S2 << " " << STRIDE << endl;
+		cout << LAYER_EN << " " << PREV_CIN_OFFSET << " " << LAYER_IN_NUM_T << " " << LAYER_OUT_NUM_T << " " << LAYER_IN_H_T << " " << LAYER_IN_W_T << endl;
+#endif
+		
+		// Pass the config/instructions
+		if (layer_start){
+			fifo_config_out.write(inst0);
+			fifo_config_out.write(inst1);
+			fifo_config_out.write(inst2);
+			fifo_config_out.write(inst3);
+			fifo_config_out.write(inst4);
+			fifo_config_out.write(inst5);
+			layer_start = 0;
+		}
+    // cout<<LAYER_CONV_TYPE<<endl;
+		// offsets
+		uint cin_offset = PREV_CIN_OFFSET;
+		uint prev_cin_offset = PREV_CIN_OFFSET;
 		FILTER = (LAYER_CONV_TYPE == 1)? (ap_uint<4>)(KH_KW>>28) : (ap_uint<4>) FILTER_S2;
 
 		if (prev == 1) start_prev = 1;
@@ -10575,24 +11149,33 @@ void cin_load(
 			if ((max_pool && out_num_iter == 0) || separable_conv || conv2d || (UP_SAMPLE_EN && out_num_iter == 0)){
 				if (task_cnt == 0){
 					// first load cin
-					cin_load_ddr_read(global_cin, cin_burst_buf_ping, LAYER_IN_H_HW, LAYER_IN_W_HW, LAYER_IN_NUM_T, LAYER_IN_H_T, LAYER_IN_W_T, FILTER, cin_offset, in_num_iter, in_h_iter, in_w_iter, num_tile, change_layout, max_pool, 0);
-          // for(int i=0; i<550; i++){
-          //   for(int j=0; j<16; j++)
-          //   cout<<Reinterpret<data_t2>((ap_uint<32>)cin_burst_buf_ping[i]((j+1)*32-1, 32*j))<<endl;
-          // }
-          // for(int i=0; i<8; i++){
-		// 		num[i] = Reinterpret<data_t2>((ap_uint<32>)item((i+1)*32-1, 32*i));
-		// 		fprintf(f, "%10f\t", num[i]);
-		// 	}
-          // exit(0);
+          if(LOAD_PREV_CIN == 1){
+            cin_load_ddr_read(global_cin, cin_burst_buf_ping, LAYER_IN_H_HW, LAYER_IN_W_HW, LAYER_IN_NUM_T, LAYER_IN_H_T, LAYER_IN_W_T, FILTER, FILTER, cin_offset, in_num_iter, in_h_iter, in_w_iter, num_tile, change_layout, max_pool, 0);
+            count_dram++;
+          }
         } else {
 					// Apply double buffering for reading the data and filling the FIFO
 					if (task_cnt % 2 == 1){
-						cin_load_ddr_read(global_cin, cin_burst_buf_pong, LAYER_IN_H_HW, LAYER_IN_W_HW, LAYER_IN_NUM_T, LAYER_IN_H_T, LAYER_IN_W_T, FILTER, cin_offset, in_num_iter, in_h_iter, in_w_iter, num_tile, change_layout, max_pool, 0);
-						cin_load_fifo_write(cin_burst_buf_ping, fifo_cin, LAYER_IN_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, FILTER_prev);
+            if(LOAD_PREV_CIN == 1){
+              cin_load_ddr_read(global_cin, cin_burst_buf_pong, LAYER_IN_H_HW, LAYER_IN_W_HW, LAYER_IN_NUM_T, LAYER_IN_H_T, LAYER_IN_W_T, FILTER, FILTER, cin_offset, in_num_iter, in_h_iter, in_w_iter, num_tile, change_layout, max_pool, 0);
+              cin_load_fifo_write(cin_burst_buf_ping, fifo_cin, LAYER_IN_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, FILTER_prev, FILTER_prev);
+              count_fifo++;
+              count_dram++;
+              // int count = 0;
+              // while(!fifo_cin.empty()){
+              //   ConvData0Type item = fifo_cin.read();
+              //   count++;
+              // }
+              // cout<<count<<endl;
+              // exit(0);
+            }
 					} else {
-						cin_load_ddr_read(global_cin, cin_burst_buf_ping, LAYER_IN_H_HW, LAYER_IN_W_HW, LAYER_IN_NUM_T, LAYER_IN_H_T, LAYER_IN_W_T, FILTER, cin_offset, in_num_iter, in_h_iter, in_w_iter, num_tile, change_layout, max_pool, 0);
-						cin_load_fifo_write(cin_burst_buf_pong, fifo_cin, LAYER_IN_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, FILTER_prev);
+            if(LOAD_PREV_CIN == 1){
+              cin_load_ddr_read(global_cin, cin_burst_buf_ping, LAYER_IN_H_HW, LAYER_IN_W_HW, LAYER_IN_NUM_T, LAYER_IN_H_T, LAYER_IN_W_T, FILTER, FILTER, cin_offset, in_num_iter, in_h_iter, in_w_iter, num_tile, change_layout, max_pool, 0);
+              cin_load_fifo_write(cin_burst_buf_pong, fifo_cin, LAYER_IN_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, FILTER_prev, FILTER_prev);
+              count_fifo++;
+              count_dram++;
+            }
 					}
 				}
 
@@ -10615,7 +11198,8 @@ void cin_load(
 			channel_iter = 0;
 			inter_tile++;
 		}
-		num_tile = channel_iter + inter_tile;
+		num_tile = conv2d==1? channel_iter + inter_tile : num_tile + 1;
+    // cout<<in_num_iter<<endl;
 		if (in_num_iter >= LAYER_IN_NUM){
 			in_num_iter = 0;
 			channel_iter = 0;
@@ -10647,243 +11231,19 @@ void cin_load(
 		}
 	}
 
-
-	// Fill the FIFOs with the data for the last tile
-	if (task_cnt % 2 == 1){
-		cin_load_fifo_write(cin_burst_buf_ping, fifo_cin, LAYER_IN_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, FILTER_prev);
-	} else {
-		cin_load_fifo_write(cin_burst_buf_pong, fifo_cin, LAYER_IN_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, FILTER_prev);
-	}
-
-}
-
-/*
- * Function name: cin_load
- * Function description: This function loads and distributes cin to the previous layer and instructions.
- */
-void cin_load_prev(
-		bus_t0                         *global_cin,
-		hls::stream<ConfigInst>        &fifo_config_in,
-		hls::stream<CinLoadData0Type>  &fifo_cin_prev,
-		hls::stream<ConfigInst>        &fifo_config_out
-){
-#pragma HLS INLINE off 
-	// on-chip buffer for cin data
-	bus_t0 prev_cin_burst_buf_ping[OUT_NUM_T * (IN_H_T + K_T - 1) * (IN_W_T + K_T - 1) / BUS_PACK_FACTOR0];
-	bus_t0 prev_cin_burst_buf_pong[OUT_NUM_T * (IN_H_T + K_T - 1) * (IN_W_T + K_T - 1) / BUS_PACK_FACTOR0];
-#pragma HLS RESOURCE variable=prev_cin_burst_buf_ping core=XPM_MEMORY uram
-#pragma HLS RESOURCE variable=prev_cin_burst_buf_pong core=XPM_MEMORY uram  
-
-
-
-	// tiling iterators
-	uint in_num_iter = 0;
-	uint out_num_iter = 0;
-	uint in_h_iter = 0;
-	uint in_w_iter = 0;
-	uint layer_iter = 0;
-
-	uint in_num_iter_prev = 0;
-	uint out_num_iter_prev = 0;
-	uint in_h_iter_prev = 0;
-	uint in_w_iter_prev = 0;
-	uint layer_iter_prev = 0;
-
-
-	uint LAYER_IN_NUM_T_prev;
-	uint LAYER_OUT_NUM_T_prev;
-	uint LAYER_IN_H_T_prev;
-	uint LAYER_IN_W_T_prev;
-	uint FILTER_S_prev;
-
-	ConfigInst inst0 = fifo_config_in.read();
-	fifo_config_out.write(inst0);
-	ConfigInst inst1 = fifo_config_in.read();
-	fifo_config_out.write(inst1);
-	ConfigInst inst2 = fifo_config_in.read();
-	fifo_config_out.write(inst2);
-	ConfigInst inst3 = fifo_config_in.read();
-	fifo_config_out.write(inst3);
-	ConfigInst inst4 = fifo_config_in.read();
-	fifo_config_out.write(inst4);
-  ConfigInst inst5 = fifo_config_in.read();
-	fifo_config_out.write(inst5);
-
-	ap_uint<32> LAYER_BATCH = inst3(32*5+31, 32*5);
-	ap_uint<1>  LOAD_PREV_CIN = 0;
-
-
-	uint task_cnt = 0;
-	bool layer_start = 0;
-	bool layer_start_prev = 0;
-	bool done = 0;
-	// We assum that cin has been pre-padded with zeros
-	uint prev = 0;
-	uint init = 1;
-	uint num_tile = 0;
-	bool write_last_cin = 0;
-	bool write_last_prev_cin = 0;
-	bool start_prev = 0;
-	bool done_prev = 0;
-	bool change_layout = 0;
-	//uint prev_iter = 0;
-	while(!done_prev){
-
-		if (layer_start){
-			inst0 = fifo_config_in.read();
-			fifo_config_out.write(inst0);
-			inst1 = fifo_config_in.read();
-			fifo_config_out.write(inst1);
-			inst2 = fifo_config_in.read();
-			fifo_config_out.write(inst2);
-			inst3 = fifo_config_in.read();
-			fifo_config_out.write(inst3);
-			inst4 = fifo_config_in.read();
-			fifo_config_out.write(inst4);
-      inst5 = fifo_config_in.read();
-			fifo_config_out.write(inst5);
-			layer_start = 0;
-		}
-
-		// Refer to cin_load module to understand the meaning of the instructions
-		// inst0
-		ap_uint<32> LAYER_IN_NUM_HW  = inst0(32*0+31, 32*0);
-		ap_uint<32> LAYER_OUT_NUM_HW = inst0(32*1+31, 32*1);
-		ap_uint<32> LAYER_IN_H_HW    = inst0(32*2+31, 32*2);
-		ap_uint<32> LAYER_IN_W_HW    = inst0(32*3+31, 32*3);
-		ap_uint<32> LAYER_OUT_H_HW   = inst0(32*4+31, 32*4);
-		ap_uint<32> LAYER_OUT_W_HW   = inst0(32*5+31, 32*5);
-		// inst1
-		ap_uint<32> LAYER_IN_NUM     = inst1(32*0+31, 32*0);
-		ap_uint<32> LAYER_OUT_NUM    = inst1(32*1+31, 32*1);
-		ap_uint<32> LAYER_IN_H       = inst1(32*2+31, 32*2);
-		ap_uint<32> LAYER_IN_W       = inst1(32*3+31, 32*3);
-		ap_uint<32> LAYER_OUT_H      = inst1(32*4+31, 32*4);
-		ap_uint<32> LAYER_OUT_W      = inst1(32*5+31, 32*5);
-		// inst2
-		ap_uint<32> CIN_OFFSET       = inst2(32*0+31, 32*0);
-		ap_uint<32> WEIGHT_OFFSET    = inst2(32*1+31, 32*1);
-		ap_uint<32> BIAS_OFFSET      = inst2(32*2+31, 32*2);
-		ap_uint<32> COUT_OFFSET      = inst2(32*3+31, 32*3);
-		ap_uint<16> FILTER_S1        = inst2(32*4+15, 32*4);
-		ap_uint<16> FILTER_S2        = inst2(32*4+31, 32*4+16);
-		ap_uint<32> STRIDE           = inst2(32*5+31, 32*5);
-		// inst3
-		ap_uint<32> LAYER_EN         = inst3(32*0+31, 32*0);
-		ap_uint<32> PREV_CIN_OFFSET  = inst3(32*1+31, 32*1);
-		ap_uint<16> LAYER_IN_NUM_T   = inst3(32*2+15, 32*2);
-		ap_uint<16> LAYER_OUT_NUM_T  = inst3(32*2+31, 32*2+16);
-		ap_uint<32> LAYER_IN_H_T     = inst3(32*3+31, 32*3);
-		ap_uint<32> LAYER_IN_W_T     = inst3(32*4+31, 32*4);
-
-		ap_uint<1>  CONV_1ST_EN    = LAYER_EN[0];
-		ap_uint<1>  DEPTH_CONV_EN  = LAYER_EN[1];
-		ap_uint<1>  CONV_EN        = LAYER_EN[2];
-		ap_uint<1>  RELU_EN        = LAYER_EN[3];
-		ap_uint<1>  RELU6_EN       = LAYER_EN[4];
-		ap_uint<1>  POOL_EN        = LAYER_EN[5];
-		ap_uint<1>  UP_SAMPLE_EN   = LAYER_EN[6];  // reserved
-		ap_uint<1>  BIAS_EN        = LAYER_EN[7];
-		ap_uint<1>  INTER_LOAD_EN  = LAYER_EN[8];
-		ap_uint<1>  INTER_WRITE_EN = LAYER_EN[9];
-		ap_uint<1>  BATCH_NORM_EN  = LAYER_EN[10];
-		LOAD_PREV_CIN  = LAYER_EN[11];
-
-
-#ifdef DEBUG_config_cin
-		cout << LAYER_IN_NUM_HW << " " << LAYER_OUT_NUM_HW << " " << LAYER_IN_H_HW << " " << LAYER_IN_W_HW << " " << LAYER_OUT_H_HW << " " << LAYER_OUT_W_HW << endl;
-		cout << LAYER_IN_NUM << " " << LAYER_OUT_NUM << " " << LAYER_IN_H << " " << LAYER_IN_W << " " << LAYER_OUT_H << " " << LAYER_OUT_W << endl;
-		cout << CIN_OFFSET << " " << WEIGHT_OFFSET << " " << BIAS_OFFSET << " " << COUT_OFFSET << " " << FILTER_S1 << " " << FILTER_S2 << " " << STRIDE << endl;
-		cout << LAYER_EN << " " << PREV_CIN_OFFSET << " " << LAYER_IN_NUM_T << " " << LAYER_OUT_NUM_T << " " << LAYER_IN_H_T << " " << LAYER_IN_W_T << endl;
-#endif
-
-
-		// offsets
-		uint cin_offset = CIN_OFFSET;
-		uint prev_cin_offset = PREV_CIN_OFFSET;
-
-		if (prev == 1) start_prev = 1;
-
-		// set up some configuration signals
-		uint FILTER_S = (DEPTH_CONV_EN == 1)? (uint)FILTER_S1: ((CONV_EN == 1)? (uint)FILTER_S2: 1);
-		bool separable_conv = (DEPTH_CONV_EN == 1) && (CONV_EN == 1);
-		bool conv2d = (DEPTH_CONV_EN == 0) && (CONV_EN == 1);
-		bool max_pool = (DEPTH_CONV_EN == 0) && (CONV_EN == 0);
-		change_layout = (((LAYER_OUT_W_HW == LAYER_OUT_W) || (LAYER_OUT_W_HW == LAYER_IN_W_T)) && ((LAYER_OUT_H_HW == LAYER_OUT_H) || (LAYER_OUT_H_HW == LAYER_IN_H_T))); // if next filter = 1 : change the layout to num_tile, h_t, w_t, in_t
-    uint layer_out_h = (LAYER_IN_H_T > LAYER_OUT_H) ? LAYER_IN_H_T : LAYER_OUT_H;
-    uint layer_out_w = (LAYER_IN_W_T > LAYER_OUT_W) ? LAYER_IN_W_T : LAYER_OUT_W;
-
-		if (INTER_LOAD_EN == 0){
-			if (((max_pool || UP_SAMPLE_EN) && out_num_iter_prev == 0) || separable_conv || conv2d){
-				if (task_cnt == 0){
-					// First load previous cin
-					// Load only if the enable signal for this module is on
-					if(LOAD_PREV_CIN == 1){
-						cin_load_ddr_read(global_cin, prev_cin_burst_buf_ping, layer_out_h, layer_out_w, LAYER_OUT_NUM_T, LAYER_IN_H_T, LAYER_IN_W_T, 1, prev_cin_offset, out_num_iter_prev, in_h_iter_prev, in_w_iter_prev, num_tile, change_layout, max_pool, 1);
-					} 
-				} else {
-					// Apply double buffering for reading the data and filling the FIFO
-					// Load only if the enable signal for this module is on
-					if(LOAD_PREV_CIN == 1){
-						if (task_cnt % 2 == 1){
-							cin_load_ddr_read(global_cin, prev_cin_burst_buf_pong, layer_out_h, layer_out_w, LAYER_OUT_NUM_T, LAYER_IN_H_T, LAYER_IN_W_T, 1, prev_cin_offset, out_num_iter_prev, in_h_iter_prev, in_w_iter_prev, num_tile, change_layout, max_pool, 1);
-							cin_load_fifo_write_prev(prev_cin_burst_buf_ping, fifo_cin_prev, LAYER_OUT_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, 1);
-						} else {
-							cin_load_ddr_read(global_cin, prev_cin_burst_buf_ping, layer_out_h, layer_out_w, LAYER_OUT_NUM_T, LAYER_IN_H_T, LAYER_IN_W_T, 1, prev_cin_offset, out_num_iter_prev, in_h_iter_prev, in_w_iter_prev, num_tile, change_layout, max_pool, 1);
-							cin_load_fifo_write_prev(prev_cin_burst_buf_pong, fifo_cin_prev, LAYER_OUT_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, 1);
-						}
-					} 
-				}
-
-				task_cnt++;
-				LAYER_IN_NUM_T_prev = LAYER_IN_NUM_T;
-				LAYER_OUT_NUM_T_prev = LAYER_OUT_NUM_T;
-				LAYER_IN_H_T_prev = LAYER_IN_H_T;
-				LAYER_IN_W_T_prev = LAYER_IN_W_T;
-				FILTER_S_prev = FILTER_S;
-			}
-		}
-
-		// Continue until all tiles are read
-		// No need to read tiles multiple times 
-		// since it's only read to add them to the result of this layer
-		num_tile++;
-		out_num_iter_prev += LAYER_OUT_NUM_T;
-		if (out_num_iter_prev >= LAYER_OUT_NUM){
-			out_num_iter_prev = 0;
-			in_h_iter_prev += LAYER_IN_H_T;
-			if (in_h_iter_prev >= LAYER_IN_H){
-				in_h_iter_prev = 0;
-				in_w_iter_prev += LAYER_IN_W_T;
-				if (in_w_iter_prev >= LAYER_IN_W){
-					in_w_iter_prev = 0;
-					layer_iter_prev += 1;
-					layer_start_prev = 1;
-					if (layer_iter_prev == LAYER_BATCH){
-						layer_iter_prev = 0;
-						out_num_iter_prev = 0;
-						in_h_iter_prev = 0;
-						in_w_iter_prev = 0;
-						done_prev = 1;
-					}
-				}
-			}
-		}
-
-
-	}
-
-
-	
-	if (LOAD_PREV_CIN){
-		// Load the last tile to its FIFO
-		if (task_cnt % 2 == 1){
-			cin_load_fifo_write_prev(prev_cin_burst_buf_ping, fifo_cin_prev, LAYER_OUT_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, 1);
-		} else {
-			cin_load_fifo_write_prev(prev_cin_burst_buf_pong, fifo_cin_prev, LAYER_OUT_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, 1);
-		}
-	} 
-
+  if(LOAD_PREV_CIN == 1){
+    // Fill the FIFOs with the data for the last tile
+    if (task_cnt % 2 == 1){
+      cin_load_fifo_write(cin_burst_buf_ping, fifo_cin, LAYER_IN_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, FILTER_prev, FILTER_prev);
+      count_fifo++;
+    } else {
+      cin_load_fifo_write(cin_burst_buf_pong, fifo_cin, LAYER_IN_NUM_T_prev, LAYER_IN_H_T_prev, LAYER_IN_W_T_prev, FILTER_prev, FILTER_prev);
+      count_fifo++;
+    }
+  }
+  // cout<<"count_dram: "<<count_dram<<endl;
+  // cout<<"count_fifo: "<<count_fifo<<endl;
+  // exit(0);
 }
 
 /*
@@ -11345,9 +11705,9 @@ void weight_load_bias_write(
 	ap_uint<1>  UP_SAMPLE_EN   = LAYER_EN[6];  // reserved
 
   ap_uint<32> out_iter = relu_before_conv_flag? LAYER_IN_NUM_T : LAYER_OUT_NUM_T;
-
 	if (CONV_EN == 1){
 		if (in_num_iter + LAYER_IN_NUM_T >= LAYER_IN_NUM){
+    // if (in_num_iter + LAYER_IN_NUM_T <= LAYER_IN_NUM){
 			bias_write_loop: for (int oo = 0; oo < out_iter / SIMD_LANE; oo++){
 #pragma HLS PIPELINE II=1
 				uint local_b_idx = oo * SIMD_LANE;
@@ -11654,21 +12014,14 @@ void weight_load_depth_norm_write(
  */
 void weight_load(
 		bus_t1                           *global_weight,
-    bus_t2                           *global_bias,
 		hls::stream<ConfigInst>          &fifo_config_in,
 		hls::stream<WeightLoadData1Type> &fifo_conv_weight,
-    hls::stream<ConvData0Type>       &fifo_gamma_conv,
-    hls::stream<ConvData0Type>       &fifo_beta_conv,
 		hls::stream<ConfigInst>          &fifo_config_out
 ){
 #pragma HLS INLINE off 
 	// on-chip buffers
-	bus_t1 weight_burst_buf2[OUT_NUM_T * IN_NUM_T * K_T * K_T / BUS_PACK_FACTOR1];
-  bus_t2 beta_conv_burst_buf[OUT_NUM_T / BUS_PACK_FACTOR2];
-	bus_t2 gamma_conv_burst_buf[OUT_NUM_T / BUS_PACK_FACTOR2];
+	 bus_t1 weight_burst_buf2[OUT_NUM_T * IN_NUM_T * K_T * K_T / BUS_PACK_FACTOR1];
 #pragma HLS RESOURCE variable=weight_burst_buf2 core=XPM_MEMORY uram  
-#pragma HLS RESOURCE variable=beta_conv_burst_buf core=XPM_MEMORY uram
-#pragma HLS RESOURCE variable=gamma_conv_burst_buf core=XPM_MEMORY uram
 
 	// tiling iterators
 	uint in_num_iter = 0;
@@ -11766,7 +12119,7 @@ void weight_load(
 
     ///////inst5///////////////
 		ap_uint<32> KH_KW 			    = inst5(32*0+31, 32*0);
-		ap_uint<32> LAYER_CONV_TYPE = inst5(32*3+31, 32*3);
+		ap_uint<32> LAYER_CONV_TYPE = inst5(32*5+31, 32*5);
 
 #ifdef DEBUG_config
 		cout << LAYER_IN_NUM_HW << " " << LAYER_OUT_NUM_HW << " " << LAYER_IN_H_HW << " " << LAYER_IN_W_HW << " " << LAYER_OUT_H_HW << " " << LAYER_OUT_W_HW << endl;
@@ -11776,8 +12129,6 @@ void weight_load(
 #endif
 // #define DEBUG_weight
 		// Set up some configuration signals
-		bool bias_en = (CONV_EN == 1 && BIAS_EN == 1);
-		bool norm_depth_en = (DEPTH_CONV_EN == 1 && BATCH_NORM_EN_DEPTH == 1);;
 		bool norm_conv_en = (CONV_EN == 1 && BATCH_NORM_EN == 1);
     ap_uint<4> FILTER = (LAYER_CONV_TYPE == 2)? (ap_uint<4>)(KH_KW>>28) : (ap_uint<4>)FILTER_S2;
 
@@ -11789,152 +12140,16 @@ void weight_load(
 
 
 		// offsets
-		uint weight_offset1 = 0;
 		uint weight_offset2 = 0;
-    uint beta_conv_offset = 0;
-		uint gamma_conv_offset = 0;
-    uint bias_offset = 0;
-    if(LAYER_IN_NUM_HW<BUS_PACK_FACTOR2){
-      if(BATCH_NORM_1_EN)
-        bias_offset = BIAS_OFFSET + 2*BUS_PACK_FACTOR2;
-      else if(BIAS_1_EN)
-        bias_offset = BUS_PACK_FACTOR2;
-      else
-        bias_offset =  BIAS_OFFSET;
-    }
-    else{
-      if(BATCH_NORM_1_EN)
-        bias_offset = BIAS_OFFSET + 2*LAYER_IN_NUM_HW;
-      else if(BIAS_1_EN)
-        bias_offset = LAYER_IN_NUM_HW;
-      else
-        bias_offset =  BIAS_OFFSET;
-    }
       
-    
+		weight_offset2 = WEIGHT_OFFSET;
 
-		weight_offset1 = WEIGHT_OFFSET;
-
-    if (norm_conv_en) {
-			beta_conv_offset = bias_offset;
-			gamma_conv_offset = beta_conv_offset + LAYER_OUT_NUM_HW;
-		}
-
-		if (DEPTH_CONV_EN == 1)
-			weight_offset2 = WEIGHT_OFFSET + LAYER_IN_NUM_HW * FILTER_S1 * FILTER_S1;
-		else
-			weight_offset2 = WEIGHT_OFFSET;
-
-		// Load bias (when batch normalization is not used: final_result = computed_result + bias)
-		// Set GAMMAs to zero
-
-#ifdef DEBUG_weight
-		cout << "loaded beta and gamma" << endl;
-#endif
-
-		// Load weights of the depth conv module
-		// if (DEPTH_CONV_EN == 1){
-		// 	// load from DRAM
-		// 	uint global_weight_offset = weight_offset1 + in_num_iter * FILTER_S1 * FILTER_S1;
-		// 	if (FILTER_S1 == 1){
-		// 		memcpy((void*)&weight_burst_buf1, (void*)&global_weight[global_weight_offset / BUS_PACK_FACTOR1], sizeof(data_t1) * LAYER_IN_NUM_T * 1 * 1);
-		// 	} else if (FILTER_S1 == 3){
-		// 		memcpy((void*)&weight_burst_buf1, (void*)&global_weight[global_weight_offset / BUS_PACK_FACTOR1], sizeof(data_t1) * LAYER_IN_NUM_T * 3 * 3);
-		// 	}
-		// }
-    if (bias_en){
-			// Only write out in the last iteration
-			if (in_num_iter + LAYER_IN_NUM_T >= LAYER_IN_NUM){
-				uint global_bias_offset = bias_offset + out_num_iter;
-        for (int i = 0; i < OUT_NUM_T / BUS_PACK_FACTOR2; i++){
-        #pragma HLS pipeline
-				  gamma_conv_burst_buf[i] = 0;
-        }
-				memcpy((void*)beta_conv_burst_buf, (void*)&global_bias[global_bias_offset / BUS_PACK_FACTOR2], sizeof(data_t2) * LAYER_OUT_NUM_T);
-			}
-		} else{
-
-      	// // Load batch normalization info for depth conv
-      	// if (norm_depth_en){
-      	// 	uint global_beta_offset = beta_depth_offset + in_num_iter;
-      	// 	memcpy((void*)beta_depth_burst_buf, (void*)&global_bias[global_beta_offset / BUS_PACK_FACTOR2], sizeof(data_t2) * LAYER_IN_NUM_T);
-      		
-      	// 	uint global_gamma_offset = gamma_depth_offset + in_num_iter;
-      	// 	memcpy((void*)gamma_depth_burst_buf, (void*)&global_bias[global_gamma_offset / BUS_PACK_FACTOR2], sizeof(data_t2) * LAYER_IN_NUM_T);
-      		
-      	// }
-      
-      	// Load batch normalization info for conv
-      	if (norm_conv_en){
-      		if (in_num_iter + LAYER_IN_NUM_T >= LAYER_IN_NUM){
-      			uint global_bias_offset = beta_conv_offset + out_num_iter;
-      #ifdef DEBUG_weight
-      			cout << global_bias_offset << " beta " << beta_conv_offset << endl;
-      #endif
-      			memcpy((void*)beta_conv_burst_buf, (void*)&global_bias[global_bias_offset / BUS_PACK_FACTOR2], sizeof(data_t2) * LAYER_OUT_NUM_T);
-            // float num[8];
-            // for(int j=0; j<LAYER_OUT_NUM_T/16; j++){
-            //   for(int i=0; i<16; i++){
-            //     num[i] = Reinterpret<float>((ap_uint<32>)beta_conv_burst_buf[j]((i+1)*32-1, 32*i));
-            //     printf("%10f\t", num[i]);
-            //   }
-            //   printf("\n");
-            // }
-      		}
-      
-      		if (in_num_iter + LAYER_IN_NUM_T >= LAYER_IN_NUM){
-      			uint global_bias_offset = gamma_conv_offset + out_num_iter;
-      #ifdef DEBUG_weight
-      			cout << global_bias_offset << " gamma " << gamma_conv_offset << endl;
-      #endif
-      			memcpy((void*)gamma_conv_burst_buf, (void*)&global_bias[global_bias_offset / BUS_PACK_FACTOR2], sizeof(data_t2) * LAYER_OUT_NUM_T);
-            // float num[8];
-            // for(int j=0; j<LAYER_OUT_NUM_T/8; j++){
-            //   for(int i=0; i<8; i++){
-            //     num[i] = Reinterpret<float>((ap_uint<32>)beta_conv_burst_buf[0]((i+1)*32-1, 32*i));
-            //     printf("%10f\t", num[i]);
-            //   }
-            //   printf("\n");
-            // }
-      		}
-      	}
-    }
 		// Load weights of the conv module
 		if (CONV_EN == 1){
 			uint global_weight_offset = weight_offset2 + out_num_iter * LAYER_IN_NUM_HW * FILTER_S2 * FILTER_S2 + in_num_iter * LAYER_OUT_NUM_T * FILTER_S2 * FILTER_S2; ////this may need a fix for TCONV
       memcpy((void*)&weight_burst_buf2[0], (void*)&global_weight[global_weight_offset / BUS_PACK_FACTOR1], sizeof(data_t1) * LAYER_OUT_NUM_T * LAYER_IN_NUM_T * FILTER * FILTER);
-			// if (FILTER_S2 == 1){
-			// 	memcpy((void*)&weight_burst_buf2[0], (void*)&global_weight[global_weight_offset / BUS_PACK_FACTOR1], sizeof(data_t1) * LAYER_OUT_NUM_T * LAYER_IN_NUM_T * 1 * 1);
-			// } else if (FILTER_S2 == 3){
-			// 	memcpy((void*)&weight_burst_buf2[0], (void*)&global_weight[global_weight_offset / BUS_PACK_FACTOR1], sizeof(data_t1) * LAYER_OUT_NUM_T * LAYER_IN_NUM_T * 3 * 3);
-			// }
 		}
-    if (bias_en) {
-		  weight_load_bias_write(beta_conv_burst_buf, fifo_beta_conv, inst0, inst1, inst2, inst3, in_num_iter, out_num_iter, 0);
-      weight_load_bias_write(gamma_conv_burst_buf, fifo_gamma_conv, inst0, inst1, inst2, inst3, in_num_iter, out_num_iter, 0);
-    }
-		else if(norm_conv_en){
-			weight_load_bias_write(beta_conv_burst_buf, fifo_beta_conv, inst0, inst1, inst2, inst3, in_num_iter, out_num_iter, 0);
-			weight_load_bias_write(gamma_conv_burst_buf, fifo_gamma_conv, inst0, inst1, inst2, inst3, in_num_iter, out_num_iter, 0);
-		}
-    // int count = 0;
-    // while(!fifo_beta_conv.empty()){
-    //   ConvData0Type item = fifo_beta_conv.read();
-    //   float num[8];
-    //   // printf("output: ");
-    //   for(int i=0; i<8; i++){
-    //     num[i] = Reinterpret<float>((ap_uint<32>)item((i+1)*32-1, 32*i));
-    //     printf("%10f\t", num[i]);
-    //   }
-    //   printf("\n");
-    //   count++;
-    // }
-    // cout<<count<<endl;
-    // exit(0);
 
-#ifdef DEBUG_weight
-		cout << "loaded weights" << endl;
-#endif
 		// Fill the FIFOs with the loaded data
 		// weight_load_depth_conv_weight_write(weight_burst_buf1, fifo_depth_conv_weight, inst0, inst1, inst2, inst3, in_num_iter, out_num_iter);
 
@@ -11983,16 +12198,22 @@ void weight_load(
 void bias_load(
 		bus_t2                           *global_bias,
 		hls::stream<ConfigInst>          &fifo_config_in,
-		hls::stream<ConvData0Type>       &fifo_gamma_conv,
-		hls::stream<ConvData0Type>       &fifo_beta_conv,
+		hls::stream<ConvData0Type>       &fifo_gamma_conv_in,
+		hls::stream<ConvData0Type>       &fifo_beta_conv_in,
+    hls::stream<ConvData0Type>       &fifo_gamma_conv_out,
+    hls::stream<ConvData0Type>       &fifo_beta_conv_out,
 		hls::stream<ConfigInst>          &fifo_config_out
 ){
 #pragma HLS INLINE off 
 	// on-chip buffers
-	bus_t2 beta_conv_burst_buf[OUT_NUM_T / BUS_PACK_FACTOR2];
-	bus_t2 gamma_conv_burst_buf[OUT_NUM_T / BUS_PACK_FACTOR2];
-#pragma HLS RESOURCE variable=beta_conv_burst_buf core=XPM_MEMORY uram
-#pragma HLS RESOURCE variable=gamma_conv_burst_buf core=XPM_MEMORY uram
+	 bus_t2 beta_conv_burst_buf_in[IN_NUM_T / BUS_PACK_FACTOR2];
+	 bus_t2 gamma_conv_burst_buf_in[IN_NUM_T / BUS_PACK_FACTOR2];
+   bus_t2 beta_conv_burst_buf_out[OUT_NUM_T / BUS_PACK_FACTOR2];
+	 bus_t2 gamma_conv_burst_buf_out[OUT_NUM_T / BUS_PACK_FACTOR2];
+#pragma HLS RESOURCE variable=beta_conv_burst_buf_in core=XPM_MEMORY uram
+#pragma HLS RESOURCE variable=gamma_conv_burst_buf_in core=XPM_MEMORY uram
+#pragma HLS RESOURCE variable=beta_conv_burst_buf_out core=XPM_MEMORY uram
+#pragma HLS RESOURCE variable=gamma_conv_burst_buf_out core=XPM_MEMORY uram
 
 	// tiling iterators
 	uint in_num_iter = 0;
@@ -12026,6 +12247,7 @@ void bias_load(
 
 	bool layer_start = 0;
 	bool done = 0;
+  int count = 0;
 	// We assum that cin has been pre-padded with zeros
 	while(!done){
 		if (layer_start){
@@ -12078,12 +12300,12 @@ void bias_load(
 		ap_uint<1>  CONV_1ST_EN           = LAYER_EN[0];
 		ap_uint<1>  DEPTH_CONV_EN         = LAYER_EN[1];
 		ap_uint<1>  CONV_EN               = LAYER_EN[2];
-		// ap_uint<1>  RELU_EN               = LAYER_EN[3];
+		ap_uint<1>  RELU_EN               = LAYER_EN[3];
 		ap_uint<1>  RELU6_EN              = LAYER_EN[4];
 		ap_uint<1>  POOL_EN               = LAYER_EN[5];
 		ap_uint<1>  UP_SAMPLE_EN          = LAYER_EN[6];  // reserved
-    // ap_uint<1>  BIAS_EN               = LAYER_EN[7];
-		// ap_uint<1>  BATCH_NORM_EN         = LAYER_EN[10];
+    ap_uint<1>  BIAS_EN               = LAYER_EN[7];
+		ap_uint<1>  BATCH_NORM_EN         = LAYER_EN[10];
     ap_uint<1>  BATCH_NORM_EN_DEPTH   = LAYER_EN[12];
     ap_uint<1>  RELU_1_EN             = LAYER_EN[13];
     ap_uint<1>  BIAS_1_EN             = LAYER_EN[14];
@@ -12091,7 +12313,7 @@ void bias_load(
 
     ///////inst5///////////////
 		ap_uint<32> KH_KW 			    = inst5(32*0+31, 32*0);
-		ap_uint<32> LAYER_CONV_TYPE = inst5(32*3+31, 32*3);
+		ap_uint<32> LAYER_CONV_TYPE = inst5(32*5+31, 32*5);
 
 #ifdef DEBUG_config
 		cout << LAYER_IN_NUM_HW << " " << LAYER_OUT_NUM_HW << " " << LAYER_IN_H_HW << " " << LAYER_IN_W_HW << " " << LAYER_OUT_H_HW << " " << LAYER_OUT_W_HW << endl;
@@ -12101,125 +12323,139 @@ void bias_load(
 #endif
 // #define DEBUG_weight
 		// Set up some configuration signals
-		bool bias_en = (CONV_EN == 1 && BIAS_1_EN == 1);
-		bool norm_depth_en = (DEPTH_CONV_EN == 1 && BATCH_NORM_EN_DEPTH == 1);;
-		bool norm_conv_en = (CONV_EN == 1 && BATCH_NORM_1_EN == 1);
-    ap_uint<4> FILTER = (LAYER_CONV_TYPE == 2)? (ap_uint<4>)(KH_KW>>28) : (ap_uint<4>)FILTER_S2;
-
-    
-
-		uint beta_depth_offset = 0;
-		uint gamma_depth_offset = 0;
-		uint beta_conv_offset = 0;
-		uint gamma_conv_offset = 0;
-		uint bias_offset = BIAS_OFFSET;
-
-		// Set the offsets if batch normalization is used (final_result = gamma * computed_result + beta)
-		// Depthwise separable convolution has two sublayers of computation,
-		// one is the DW sublayer and the other is the normal 1x1 conv sublayer
-		// Both of these layers may need normalization
-		// In DRAM, for each layer, first the BETAs are stored and then the GAMMAs are stored
-		if (norm_depth_en) {
-			beta_depth_offset = bias_offset;
-			gamma_depth_offset = bias_offset + LAYER_IN_NUM_HW;
-			beta_conv_offset = gamma_depth_offset + LAYER_IN_NUM_HW;
-			gamma_conv_offset = beta_conv_offset + LAYER_OUT_NUM_HW;
-		} else if (norm_conv_en) {
-			beta_conv_offset = bias_offset;
+    //###########################################in bias load###########################################
+		bool bias_en_1 = (CONV_EN == 1 && BIAS_1_EN == 1);
+		bool norm_conv_en_1 = (CONV_EN == 1 && BATCH_NORM_1_EN == 1);
+		uint beta_conv_offset_1 = 0;
+		uint gamma_conv_offset_1 = 0;
+		uint bias_offset_1 = BIAS_OFFSET;
+    if (norm_conv_en_1) {
+			beta_conv_offset_1 = bias_offset_1;
       if(LAYER_IN_NUM_HW<BUS_PACK_FACTOR2)
-			  gamma_conv_offset = beta_conv_offset + BUS_PACK_FACTOR2;
+			  gamma_conv_offset_1 = beta_conv_offset_1 + BUS_PACK_FACTOR2;
       else
-        gamma_conv_offset = beta_conv_offset + LAYER_IN_NUM_HW;//tweak
+        gamma_conv_offset_1 = beta_conv_offset_1 + LAYER_IN_NUM_HW;//tweak
 		}
+    
+    //###########################################out bias load###########################################
+    bool bias_en = (CONV_EN == 1 && BIAS_EN == 1);
+		bool norm_conv_en = (CONV_EN == 1 && BATCH_NORM_EN == 1);  
+    uint beta_conv_offset = 0;
+		uint gamma_conv_offset = 0;
+    uint bias_offset = 0;
+    if(LAYER_IN_NUM_HW<BUS_PACK_FACTOR2){
+      if(BATCH_NORM_1_EN)
+        bias_offset = BIAS_OFFSET + 2*BUS_PACK_FACTOR2;
+      else if(BIAS_1_EN)
+        bias_offset = BUS_PACK_FACTOR2;
+      else
+        bias_offset =  BIAS_OFFSET;
+    }else{
+      if(BATCH_NORM_1_EN)
+        bias_offset = BIAS_OFFSET + 2*LAYER_IN_NUM_HW;
+      else if(BIAS_1_EN)
+        bias_offset = LAYER_IN_NUM_HW;
+      else
+        bias_offset =  BIAS_OFFSET;
+    }
 
+    // cout<<beta_conv_offset<<" "<<gamma_conv_offset<<endl;
 
-
+    //###########################################in bias load###########################################
 		// Load bias (when batch normalization is not used: final_result = computed_result + bias)
 		// Set GAMMAs to zero
-		if (bias_en){
+		if (bias_en_1){
+			// Only write out in the last iteration
+			if (in_num_iter + LAYER_IN_NUM_T >= LAYER_IN_NUM){
+				uint global_bias_offset_1 = bias_offset_1 + out_num_iter;
+        for (int i = 0; i < OUT_NUM_T / BUS_PACK_FACTOR2; i++){
+        #pragma HLS pipeline
+				  gamma_conv_burst_buf_in[i] = 0;
+        }
+				memcpy((void*)beta_conv_burst_buf_in, (void*)&global_bias[global_bias_offset_1 / BUS_PACK_FACTOR2], sizeof(data_t2) * LAYER_IN_NUM_T);
+			}
+		} else{
+
+      	// Load batch normalization info for conv
+      	if (norm_conv_en_1){
+      		if (in_num_iter + LAYER_IN_NUM_T >= LAYER_IN_NUM){//those may need to change
+      			uint global_bias_offset_1 = beta_conv_offset_1 + in_num_iter;
+      #ifdef DEBUG_weight
+      			cout << global_bias_offset_1 << " beta " << beta_conv_offset_1 << " " <<BUS_PACK_FACTOR2<<endl;
+      #endif
+      			memcpy((void*)beta_conv_burst_buf_in, (void*)&global_bias[global_bias_offset_1 / BUS_PACK_FACTOR2], sizeof(data_t2) * LAYER_IN_NUM_T);
+      		}
+
+      		if (in_num_iter + LAYER_IN_NUM_T >= LAYER_IN_NUM){//those may need to change
+      			uint global_bias_offset_1 = gamma_conv_offset_1 + in_num_iter;
+      #ifdef DEBUG_weight
+      			cout << global_bias_offset_1 << " gamma " << gamma_conv_offset_1 << " " <<BUS_PACK_FACTOR2<<endl;
+
+      #endif
+      			memcpy((void*)gamma_conv_burst_buf_in, (void*)&global_bias[global_bias_offset_1 / BUS_PACK_FACTOR2], sizeof(data_t2) * LAYER_IN_NUM_T);
+      		}
+      	}
+    }
+    //###########################################out bias load###########################################
+    if (bias_en){
 			// Only write out in the last iteration
 			if (in_num_iter + LAYER_IN_NUM_T >= LAYER_IN_NUM){
 				uint global_bias_offset = bias_offset + out_num_iter;
         for (int i = 0; i < OUT_NUM_T / BUS_PACK_FACTOR2; i++){
         #pragma HLS pipeline
-				  gamma_conv_burst_buf[i] = 0;
+				  gamma_conv_burst_buf_out[i] = 0;
         }
-				memcpy((void*)beta_conv_burst_buf, (void*)&global_bias[global_bias_offset / BUS_PACK_FACTOR2], sizeof(data_t2) * LAYER_OUT_NUM_T);
+				memcpy((void*)beta_conv_burst_buf_out, (void*)&global_bias[global_bias_offset / BUS_PACK_FACTOR2], sizeof(data_t2) * LAYER_OUT_NUM_T);
 			}
 		} else{
 
-      	// Load batch normalization info for depth conv
-      	// if (norm_depth_en){
-      	// 	uint global_beta_offset = beta_depth_offset + in_num_iter;
-      	// 	memcpy((void*)beta_depth_burst_buf, (void*)&global_bias[global_beta_offset / BUS_PACK_FACTOR2], sizeof(data_t2) * LAYER_IN_NUM_T);
-      		
-      	// 	uint global_gamma_offset = gamma_depth_offset + in_num_iter;
-      	// 	memcpy((void*)gamma_depth_burst_buf, (void*)&global_bias[global_gamma_offset / BUS_PACK_FACTOR2], sizeof(data_t2) * LAYER_IN_NUM_T);
-      		
-      	// }
-      
       	// Load batch normalization info for conv
       	if (norm_conv_en){
       		if (in_num_iter + LAYER_IN_NUM_T >= LAYER_IN_NUM){
       			uint global_bias_offset = beta_conv_offset + out_num_iter;
       #ifdef DEBUG_weight
-      			cout << global_bias_offset << " beta " << beta_conv_offset << " " <<BUS_PACK_FACTOR2<<endl;
-            float num[8];
-            for(int i=0; i<8; i++){
-              num[i] = Reinterpret<float>((ap_uint<32>)beta_conv_burst_buf[0]((i+1)*32-1, 32*i));
-              printf("%10f\t", num[i]);
-            }
-            printf("\n");
+      			cout << global_bias_offset << " beta " << beta_conv_offset << endl;
       #endif
-      			memcpy((void*)beta_conv_burst_buf, (void*)&global_bias[global_bias_offset / BUS_PACK_FACTOR2], sizeof(data_t2) * LAYER_IN_NUM_T);
+      			memcpy((void*)beta_conv_burst_buf_out, (void*)&global_bias[global_bias_offset / BUS_PACK_FACTOR2], sizeof(data_t2) * LAYER_OUT_NUM_T);
       		}
-
+      
       		if (in_num_iter + LAYER_IN_NUM_T >= LAYER_IN_NUM){
       			uint global_bias_offset = gamma_conv_offset + out_num_iter;
       #ifdef DEBUG_weight
-      			cout << global_bias_offset << " gamma " << gamma_conv_offset << " " <<BUS_PACK_FACTOR2<<endl;
-            for(int i=0; i<8; i++){
-              num[i] = Reinterpret<float>((ap_uint<32>)gamma_conv_burst_buf[0]((i+1)*32-1, 32*i));
-              printf("%10f\t", num[i]);
-            }
-            printf("\n");
+      			cout << global_bias_offset << " gamma " << gamma_conv_offset << endl;
       #endif
-      			memcpy((void*)gamma_conv_burst_buf, (void*)&global_bias[global_bias_offset / BUS_PACK_FACTOR2], sizeof(data_t2) * LAYER_IN_NUM_T);
+      			memcpy((void*)gamma_conv_burst_buf_out, (void*)&global_bias[global_bias_offset / BUS_PACK_FACTOR2], sizeof(data_t2) * LAYER_OUT_NUM_T);
       		}
       	}
     }
-
+    // exit(0);
 #ifdef DEBUG_weight
 		cout << "loaded beta and gamma" << endl;
 #endif
 
-		// Load weights of the depth conv module
-		// if (DEPTH_CONV_EN == 1){
-		// 	// load from DRAM
-		// 	uint global_weight_offset = weight_offset1 + in_num_iter * FILTER_S1 * FILTER_S1;
-		// 	if (FILTER_S1 == 1){
-		// 		memcpy((void*)&weight_burst_buf1, (void*)&global_weight[global_weight_offset / BUS_PACK_FACTOR1], sizeof(data_t1) * LAYER_IN_NUM_T * 1 * 1);
-		// 	} else if (FILTER_S1 == 3){
-		// 		memcpy((void*)&weight_burst_buf1, (void*)&global_weight[global_weight_offset / BUS_PACK_FACTOR1], sizeof(data_t1) * LAYER_IN_NUM_T * 3 * 3);
-		// 	}
-		// }
-		// Load weights of the conv module
-
-
 	// Load BETAs and GAMMAs to their FIFOs
 	// If there doesn't exist a batch normalization and it's a normal bias,
 	// beta = bias, gamma = 0
-    if (bias_en) {
-		  weight_load_bias_write(beta_conv_burst_buf, fifo_beta_conv, inst0, inst1, inst2, inst3, in_num_iter, out_num_iter,1);
-      weight_load_bias_write(gamma_conv_burst_buf, fifo_gamma_conv, inst0, inst1, inst2, inst3, in_num_iter, out_num_iter,1);
+    //###########################################in bias load###########################################
+    if (bias_en_1) {
+		  weight_load_bias_write(beta_conv_burst_buf_in, fifo_beta_conv_in, inst0, inst1, inst2, inst3, in_num_iter, out_num_iter,1);
+      weight_load_bias_write(gamma_conv_burst_buf_in, fifo_gamma_conv_in, inst0, inst1, inst2, inst3, in_num_iter, out_num_iter,1);
     }
-		else if(norm_conv_en){
-			weight_load_bias_write(beta_conv_burst_buf, fifo_beta_conv, inst0, inst1, inst2, inst3, in_num_iter, out_num_iter,1);
-			weight_load_bias_write(gamma_conv_burst_buf, fifo_gamma_conv, inst0, inst1, inst2, inst3, in_num_iter, out_num_iter,1);
+		else if(norm_conv_en_1){
+			weight_load_bias_write(beta_conv_burst_buf_in, fifo_beta_conv_in, inst0, inst1, inst2, inst3, in_num_iter, out_num_iter,1);
+			weight_load_bias_write(gamma_conv_burst_buf_in, fifo_gamma_conv_in, inst0, inst1, inst2, inst3, in_num_iter, out_num_iter,1);
 		}
 
-		// weight_load_depth_norm_write(beta_depth_burst_buf, fifo_beta_depth, inst0, inst1, inst2, inst3, in_num_iter, out_num_iter);
-		// weight_load_depth_norm_write(gamma_depth_burst_buf, fifo_gamma_depth, inst0, inst1, inst2, inst3, in_num_iter, out_num_iter);
+    //###########################################out bias load###########################################
+    if (bias_en) {
+		  weight_load_bias_write(beta_conv_burst_buf_out, fifo_beta_conv_out, inst0, inst1, inst2, inst3, in_num_iter, out_num_iter, 0);
+      weight_load_bias_write(gamma_conv_burst_buf_out, fifo_gamma_conv_out, inst0, inst1, inst2, inst3, in_num_iter, out_num_iter, 0);
+    }
+		else if(norm_conv_en){
+			weight_load_bias_write(beta_conv_burst_buf_out, fifo_beta_conv_out, inst0, inst1, inst2, inst3, in_num_iter, out_num_iter, 0);
+			weight_load_bias_write(gamma_conv_burst_buf_out, fifo_gamma_conv_out, inst0, inst1, inst2, inst3, in_num_iter, out_num_iter, 0);
+		}
+
 #ifdef DEBUG_weight
 		cout << in_num_iter << " in num iter " << endl;
 #endif
@@ -12234,8 +12470,8 @@ void bias_load(
 				in_w_iter += LAYER_IN_W_T;
 				if (in_w_iter >= LAYER_IN_W){
 					in_w_iter = 0;
-					out_num_iter += LAYER_IN_NUM_T;
-					if (out_num_iter >= LAYER_IN_NUM){
+					out_num_iter += LAYER_OUT_NUM_T;
+					if (out_num_iter >= LAYER_OUT_NUM){
 						out_num_iter = 0;
 						layer_iter += 1;
 						layer_start = 1;
@@ -13009,25 +13245,26 @@ uint LAYER_IN_W_T,
 uint FILTER_S,
 uint STRIDE
 ){
-#pragma HLS INLINE off
-for (int o = 0; o < LAYER_OUT_NUM_T; o++)
-for (int h = 0; h < LAYER_IN_H_T / STRIDE; h++)
-for (int w = 0; w < LAYER_IN_W_T / STRIDE; w++){
-if (init){
-cout_kernel[h][w][o] = 0;
-}
-for (int i = 0; i < LAYER_IN_NUM_T; i++){
-#pragma HLS PIPELINE II=1            
-for (int p = 0; p < FILTER_S; p++)
-conv_kernel_loop: for (int q = 0; q < FILTER_S; q++){
-cout_kernel[h][w][o] += cin[h * STRIDE + (STRIDE - 1) + p][w * STRIDE + (STRIDE - 1) + q][i] * weight[o][p][q][i];
-#ifdef DEBUG_conv_core
-if(o == 0)
-cout << "o:" << o << " h:" << h << " w:" << w << " i:" << i << " p:" << p << " q:" << q << " cout:" << cout_kernel[h][w][o] << " cin:" << cin[h * STRIDE + (STRIDE - 1) + p][w * STRIDE + (STRIDE - 1) + q][i] << " weight:" << weight[o][p][q][i] << endl;
-#endif
-}
-}
-}
+  #pragma HLS INLINE off
+  // #define DEBUG_conv_core
+  for (int o = 0; o < LAYER_OUT_NUM_T; o++)
+    for (int h = 0; h < LAYER_IN_H_T / STRIDE; h++)
+      for (int w = 0; w < LAYER_IN_W_T / STRIDE; w++){
+        if (init){
+        cout_kernel[h][w][o] = 0;
+        }
+        for (int i = 0; i < LAYER_IN_NUM_T; i++){
+        #pragma HLS PIPELINE II=1            
+        for (int p = 0; p < FILTER_S; p++)
+        conv_kernel_loop: for (int q = 0; q < FILTER_S; q++){
+        cout_kernel[h][w][o] += cin[h * STRIDE + (STRIDE - 1) + p][w * STRIDE + (STRIDE - 1) + q][i] * weight[o][p][q][i];
+        #ifdef DEBUG_conv_core
+        if((num == 0 || num==32) && h==0 && w==0)
+          cout << "o:" << o << " h:" << h << " w:" << w << " i:" << i << " p:" << p << " q:" << q << " cout:" << cout_kernel[h][w][o] << " cin:" << cin[h * STRIDE + (STRIDE - 1) + p][w * STRIDE + (STRIDE - 1) + q][i] << " weight:" << weight[o][p][q][i] << endl;
+        #endif
+      }
+    }
+  }
 }
 
 
@@ -13328,7 +13565,7 @@ if(DEPTH_CONV_EN){
        }
        break;
    }
-   
+
    in_num_iter += LAYER_IN_NUM_T;
    if (in_num_iter >= LAYER_IN_NUM){
      in_num_iter = 0;
@@ -13596,7 +13833,7 @@ void conv(
 		// You can replace it with your own implementations
 		// If you want to check with a simple implementation, uncomment the "kernel" module in this file
     
-		kernel_(fifo_cin, fifo_weight, fifo_cout, fifo_config_in, fifo_config_out);
+		kernel(fifo_cin, fifo_weight, fifo_cout, fifo_config_in, fifo_config_out);
 #ifdef DEBUG_kernel
 		
 #endif
@@ -13634,12 +13871,12 @@ void relu(
   ConfigInst inst5 = fifo_config_in.read();
 	fifo_config_out.write(inst5);
 
-  fifo_config_out.write(inst0);
-	fifo_config_out.write(inst1);
-	fifo_config_out.write(inst2);
-	fifo_config_out.write(inst3);
-	fifo_config_out.write(inst4);
-  fifo_config_out.write(inst5);
+  // fifo_config_out.write(inst0);
+	// fifo_config_out.write(inst1);
+	// fifo_config_out.write(inst2);
+	// fifo_config_out.write(inst3);
+	// fifo_config_out.write(inst4);
+  // fifo_config_out.write(inst5);
 
 	ap_uint<32> LAYER_BATCH = inst3(32*5+31, 32*5);
 
@@ -13742,8 +13979,8 @@ void relu(
 				int w = 0;
 				bool done1 = 0;
 
-				int w_bound = LAYER_IN_W_T / stride + FILTER_S - 1;
-				int h_bound = LAYER_IN_H_T / stride + FILTER_S - 1;
+				int w_bound = (LAYER_IN_W_T / stride + FILTER_S - 1)*LAYER_TCONV_STRIDE;
+				int h_bound = (LAYER_IN_H_T / stride + FILTER_S - 1)*LAYER_TCONV_STRIDE;
 				while(!done1){
 #pragma HLS PIPELINE II=1
 					ConvData0Type tmp = fifo_cin.read();
@@ -13802,8 +14039,8 @@ void relu(
 				int w = 0;
 				bool done2 = 0;
 
-				int w_bound = LAYER_IN_W_T / STRIDE;
-				int h_bound = LAYER_IN_H_T / STRIDE;
+				int w_bound = (LAYER_IN_W_T / STRIDE)*LAYER_TCONV_STRIDE;
+				int h_bound = (LAYER_IN_H_T / STRIDE)*LAYER_TCONV_STRIDE;
 
 				while(!done2){
 #pragma HLS PIPELINE II=1
@@ -13948,7 +14185,7 @@ void add(
 	bool layer_start = 0;
 	bool done = 0;
 	while(!done){
-
+    
 		if (layer_start){
 			inst0 = fifo_config_in.read();
 			fifo_config_out.write(inst0);
@@ -14030,7 +14267,6 @@ void add(
 		bool max_pool = (DEPTH_CONV_EN == 0) && (CONV_EN == 0);
 		uint stride = (max_pool == 1)? 1 : (uint)STRIDE;
 		bool en = LOAD_PREV_CIN;
-
 #ifdef DEBUG
 		uint relu_cout_cnt = 0;
 		ofstream relu_data;
@@ -14049,6 +14285,7 @@ void add(
 				// int h_bound = LAYER_IN_H_T / stride + FILTER_S - 1;
         int w_bound = (LAYER_IN_W_T / stride + FILTER_S - 1)*LAYER_TCONV_STRIDE;
 				int h_bound = (LAYER_IN_H_T / stride + FILTER_S - 1)*LAYER_TCONV_STRIDE;
+        // cout<<w_bound<<" "<<h_bound<<" "<<LAYER_OUT_NUM_T<<" "<<LAYER_TCONV_STRIDE<<" "<<stride<<endl;
 				while(!done1){
 #pragma HLS PIPELINE II=1
 					if(!fifo_conv.empty()/* && !fifo_cin.empty()*/){
@@ -14090,6 +14327,7 @@ void add(
 
 				while(!done2){
 #pragma HLS PIPELINE II=1
+          // cout<<(!fifo_cin.empty() && !fifo_conv.empty())<<" "<<(!fifo_cin.empty())<<" "<<(!fifo_conv.empty())<<endl;
 					if(!fifo_cin.empty() && !fifo_conv.empty()){
 						// Read the result of this layer and the previous cin
 						ConvData0Type cin_tmp = 0;
@@ -14118,8 +14356,9 @@ void add(
 							data_t0 conv_data = conv_buf[lane];
 							data_t0 tmp = cin_data + conv_data;
 							cout_buf[lane] = Reinterpret<ap_uint<DATA_W0> >(tmp);
+              // #define DEBUG_add
 #ifdef DEBUG_add
-if(lane == 1)
+            if(lane==0 && o==0)
 							cout << "cin: " << cin_data << " conv: " << conv_data << " tmp: " << tmp << endl;
 #endif
 						}
@@ -14165,7 +14404,7 @@ if(lane == 1)
 			break;
 		}
 		}
-
+    // cout<<count++<<endl;
 		// Repeat until all the tiles are read
 		// Must repeat the computation until LAYER_OUT_NUM output feature maps are generated
 		in_num_iter += LAYER_IN_NUM_T;
@@ -14238,6 +14477,7 @@ void relu_1(
 
 	bool layer_start = 0;
 	bool done = 0;
+  int count = 0;
 	while(!done){
 
 		if (layer_start){
@@ -14288,7 +14528,8 @@ void relu_1(
 		ap_uint<32> LAYER_IN_H_T     = inst3(32*3+31, 32*3);
 		ap_uint<32> LAYER_IN_W_T     = inst3(32*4+31, 32*4);
 
-    ap_uint<32> LAYER_TCONV_STRIDE 	= inst5(32*2+31, 32*2);
+    ap_uint<32> LAYER_TCONV_STRIDE 	=  inst5(32*2+31, 32*2);
+    ap_uint<32> FILTER_D0           =  inst5(32*4+31, 32*4+16);
 
 		ap_uint<1>  CONV_1ST_EN           = LAYER_EN[0];
 		ap_uint<1>  DEPTH_CONV_EN         = LAYER_EN[1];
@@ -14304,6 +14545,7 @@ void relu_1(
     ap_uint<1>  RELU_1_EN             = LAYER_EN[13];
     ap_uint<1>  BIAS_1_EN             = LAYER_EN[14];
     ap_uint<1>  BATCH_NORM_1_EN       = LAYER_EN[15];
+
     // cout<<RELU_EN<<" "<<BIAS_EN<<" "<<BATCH_NORM_EN<<endl;
 
 		data_t2 beta_buf[OUT_NUM_T / RELU_LANE][RELU_LANE];
@@ -14315,7 +14557,7 @@ void relu_1(
 #pragma HLS ARRAY_PARTITION variable=cin_buf complete
 #pragma HLS ARRAY_PARTITION variable=cout_buf complete
 		// Set up some configuration signals
-		uint FILTER_S = FILTER_S2;
+		uint FILTER_S = FILTER_D0;
 		bool separable_conv = (DEPTH_CONV_EN == 1) && (CONV_EN == 1);
 		bool conv2d = (DEPTH_CONV_EN == 0) && (CONV_EN == 1);
 		bool max_pool = (DEPTH_CONV_EN == 0) && (CONV_EN == 0);
@@ -14323,6 +14565,7 @@ void relu_1(
 		bool en = RELU_1_EN || BIAS_1_EN || RELU6_EN || BATCH_NORM_1_EN;
     bool norm_conv_en = (CONV_EN == 1 && BATCH_NORM_1_EN == 1);
     bool bias_en = (CONV_EN == 1 && BIAS_1_EN == 1);
+    ap_uint<4> padding = (LAYER_IN_W_HW - LAYER_IN_H)/2;
 
 
 #ifdef DEBUG
@@ -14330,19 +14573,21 @@ void relu_1(
 		ofstream relu_data;
 		relu_data.open("relu_patch.dat", ios::app);
 #endif
+    int count2 = 0;
     // cout<<en<<endl;
 		switch(en){
 		case 0:
 			// bypass this module
-			if (((max_pool || UP_SAMPLE_EN) && out_num_iter == 0) || (!max_pool && (in_num_iter + LAYER_IN_NUM_T >= LAYER_IN_NUM))){
+			if (((max_pool || UP_SAMPLE_EN) && out_num_iter == 0) || (!max_pool && (out_num_iter + LAYER_OUT_NUM_T <= LAYER_OUT_NUM))){
 				int o = 0;
 				int h = 0;
 				int w = 0;
 				bool done1 = 0;
         
 
-				int w_bound = (LAYER_IN_W_T / stride + FILTER_S - 1)*LAYER_TCONV_STRIDE;
-				int h_bound = (LAYER_IN_H_T / stride + FILTER_S - 1)*LAYER_TCONV_STRIDE;
+				int w_bound = (LAYER_IN_W_T / stride + FILTER_S - 1);
+				int h_bound = (LAYER_IN_H_T / stride + FILTER_S - 1);
+        
 				while(!done1){
 #pragma HLS PIPELINE II=1
 					ConvData0Type tmp = fifo_cin.read();
@@ -14354,6 +14599,7 @@ void relu_1(
 					  ConvData0Type gamma_conv = fifo_gamma_conv.read();
           }
 					// Repeat until the whole tile is read
+          // count2++;
 					w++;
 					if (w == w_bound){
 						w = 0;
@@ -14373,7 +14619,7 @@ void relu_1(
 		// compute
 		case 1:
 		{
-			if (in_num_iter + LAYER_IN_NUM_T >= LAYER_IN_NUM){
+			if (out_num_iter + LAYER_OUT_NUM_T <= LAYER_OUT_NUM){
 				// Read beta and gamma for the batch normalization
 				// If there doesn't exist a batch normalization and it's a normal bias,
 				// beta = bias, gamma = 0
@@ -14475,13 +14721,13 @@ void relu_1(
 #endif                
 					);
 
-          if(h<=1 && topPaddingFlag)
+          if(h<=(padding-1) && topPaddingFlag)
             wide_tmp = 0;
-          if(h>=h_bound-2 && downPaddingFlag)
+          if(h>=h_bound-padding && downPaddingFlag)
             wide_tmp = 0;
-          if(w<=1 && leftPaddingFlag)
+          if(w<=(padding-1) && leftPaddingFlag)
             wide_tmp = 0;
-          if(w>=w_bound-2 && rightPaddingFlag)
+          if(w>=w_bound-padding && rightPaddingFlag)
             wide_tmp = 0;
           
 					fifo_cout.write(wide_tmp);
@@ -14505,6 +14751,8 @@ void relu_1(
 			break;
 		}
 		}
+    // cout<<count2<<endl;
+    // cout<<count++<<endl;
     // cout<<LAYER_IN_H<<" "<<LAYER_IN_H_T<<endl;
 		// Repeat until all the tiles are read
 		// Must repeat the computation until LAYER_OUT_NUM output feature maps are generated
@@ -14517,8 +14765,8 @@ void relu_1(
 				in_w_iter += LAYER_IN_W_T;
 				if (in_w_iter >= LAYER_IN_W){
 					in_w_iter = 0;
-					out_num_iter += LAYER_IN_NUM_T;
-					if (out_num_iter >= LAYER_IN_NUM){
+					out_num_iter += LAYER_OUT_NUM_T;
+					if (out_num_iter >= LAYER_OUT_NUM){
 						out_num_iter = 0;
 						layer_iter += 1;
 						layer_start = 1;
@@ -14672,7 +14920,7 @@ void pool(
 		// compute
 		case 1:
 			if ((max_pool && out_num_iter == 0) || (!max_pool && (in_num_iter + LAYER_IN_NUM_T >= LAYER_IN_NUM))){
-				maxpool_w2 <data_t0, OUT_H_T, OUT_W_T, POOL_LANE, 3, DATA_W0> (fifo_cin, fifo_cout, STRIDE, POOL_EN, LAYER_OUT_NUM_T, LAYER_IN_H_T, LAYER_IN_W_T);
+				maxpool_w2 <data_t0, OUT_H_T, OUT_W_T, POOL_LANE, 2, DATA_W0> (fifo_cin, fifo_cout, STRIDE, POOL_EN, LAYER_OUT_NUM_T, LAYER_IN_H_T, LAYER_IN_W_T);
 			}
 			break;
 		}
@@ -15128,7 +15376,7 @@ void cout_write_fifo_read(
 	if (en == 0 && up_sample == 0) write = 0; // normal writing
 	else if (en == 1 && up_sample == 0) write = 1; // writing after pooling
 	else if (up_sample == 1) write = 2; // writing after upsampling
-  cout<<"cout_write_fifo_read: "<<write<<endl;
+  // cout<<"cout_write_fifo_read: "<<write<<endl;
 	// Should store the data as Th * Tw * Tn
 	// write = 2;
   int count = 0;
@@ -15173,6 +15421,7 @@ void cout_write_fifo_read(
 #endif                  
 			);
 			cout_burst_buf[local_cout_idx / BUS_PACK_FACTOR0] = wide_pack;
+      //  print<512>(cout_burst_buf[local_cout_idx / BUS_PACK_FACTOR0]);
 
 			// Repeat until the whole tile is read
 			w++;
@@ -15207,12 +15456,22 @@ void cout_write_fifo_read(
 #pragma HLS UNROLL
 				cout_buf[lane] = wide_tmp(DATA_W0 * POOL_LANE - 1, 0);
 				wide_tmp = wide_tmp >> DATA_W0 * POOL_LANE;
+        // cout<<"lane1: "<<lane<<endl;
 			}
 			PoolData0Type tmp = fifo_cout.read();
-			if (in_h_iter / 2 + h < LAYER_OUT_H && in_w_iter / 2 + w < LAYER_OUT_W)
+      // cout<<"lane2: "<<(local_cout_idx % BUS_PACK_FACTOR0) / POOL_LANE<<endl;
+      // cout<<h<<" "<<w<<" "<<o<<" "<<in_h_iter<<" "<<in_w_iter<<" "<<LAYER_OUT_H<<" "<<LAYER_OUT_W<<endl;
+			if (in_h_iter / 2 + h < LAYER_OUT_H && in_w_iter / 2 + w < LAYER_OUT_W){
 				cout_buf[(local_cout_idx % BUS_PACK_FACTOR0) / POOL_LANE] = tmp;
-			else
+        // print<256>(tmp);
+      }
+			else{
 				cout_buf[(local_cout_idx % BUS_PACK_FACTOR0) / POOL_LANE] = 0;
+      }
+      // print<256>(cout_buf[0]);
+      // print<256>(cout_buf[1]);
+      // cout<<(local_cout_idx % BUS_PACK_FACTOR0) / POOL_LANE<<endl;
+      // print<256>(cout_buf[(local_cout_idx % BUS_PACK_FACTOR0) / POOL_LANE] );
 			bus_t0 wide_pack = (
 #if DATA_SEL_FACTOR0 == 1
 					cout_buf[0]
@@ -15231,6 +15490,8 @@ void cout_write_fifo_read(
 #endif                  
 			);
 			cout_burst_buf[local_cout_idx / BUS_PACK_FACTOR0] = wide_pack;
+      // cout<<cout_burst_buf[local_cout_idx / BUS_PACK_FACTOR0]<<endl;
+      // print<512>(cout_burst_buf[local_cout_idx / BUS_PACK_FACTOR0]);
 
 			// Repeat until the whole tile is read
 			w++;
@@ -15247,6 +15508,7 @@ void cout_write_fifo_read(
 				}
 			}
 		}
+    // exit(0);
 	}
 	break;
 	case 2:
@@ -15356,7 +15618,7 @@ void cout_write_ddr_write(
 	// If filter size is 1, the data layout should change to ceil(N / Tn) * ceil(H / Th) * ceil(W / Tw) * Th * Tw * Tn
 	if (change_layout) write += 3; 
 
-  cout<<"cout_write_ddr_write: "<<write<<endl;
+  // cout<<"cout_write_ddr_write: "<<write<<" "<<cout_offset<<" "<<cout_offset + LAYER_OUT_W_HW*LAYER_OUT_H_HW*LAYER_OUT_NUM<<" "<<endl;
   // write = 2;
 	if (run){
 		switch(write){
@@ -15398,6 +15660,7 @@ void cout_write_ddr_write(
 		break;
 		case 3:
 		{
+      // cout<<num_tile<<" "<<num_tile * (LAYER_IN_W_T) * (LAYER_IN_H_T) * LAYER_OUT_NUM_T<<" "<<sizeof(data_t0) * LAYER_OUT_NUM_T * (LAYER_IN_W_T) * (LAYER_IN_H_T)<<endl;
 			// write out
 			for (int hh  = 0; hh < 1; hh++){
 				uint global_cout_idx = cout_offset + num_tile * LAYER_OUT_NUM_T * LAYER_IN_W_T * LAYER_IN_H_T;
@@ -15409,16 +15672,46 @@ void cout_write_ddr_write(
 		break;
 		case 4:
 		{
-			for (int hh = 0; hh < LAYER_IN_H_T / 2; hh++){
-				uint global_cout_idx = 0;
-				if (LAYER_IN_W_T / 2 == LAYER_OUT_W_HW) {
-					global_cout_idx = cout_offset + ind_w * LAYER_OUT_NUM_T * LAYER_IN_W_T * LAYER_IN_H_T / 4 + num_tile * LAYER_OUT_NUM_T * LAYER_IN_W_T * LAYER_IN_H_T / 4 + hh * LAYER_IN_W_T / 2 * LAYER_OUT_NUM_T;
-				} else {
-					global_cout_idx = cout_offset + ind_w * LAYER_OUT_NUM_T * LAYER_IN_W_T * LAYER_IN_H_T / 2 + num_tile * LAYER_OUT_NUM_T * LAYER_IN_W_T * LAYER_IN_H_T / 2 + ind_w_t * LAYER_OUT_NUM_T * LAYER_IN_W_T / 2 + hh * LAYER_IN_W_T * LAYER_OUT_NUM_T;
-				}
+      // write out
+			for (int hh  = 0; hh < 1; hh++){
+				uint global_cout_idx = cout_offset + num_tile * LAYER_OUT_NUM_T * (LAYER_IN_W_T/2) * (LAYER_IN_H_T/2);
+				uint local_cout_idx = hh * (LAYER_IN_W_T/2) * LAYER_OUT_NUM_T;
+        // cout<<local_cout_idx / BUS_PACK_FACTOR0<<endl;
+				memcpy((void*)&global_cout[global_cout_idx / BUS_PACK_FACTOR0], (void*)&cout_burst_buf[local_cout_idx / BUS_PACK_FACTOR0], sizeof(data_t0) * (LAYER_IN_W_T/2) * LAYER_OUT_NUM_T * (LAYER_IN_H_T/2));
+			}
+
+      LAYER_OUT_W_HW += 2;
+      LAYER_OUT_H_HW += 2;
+      cout_offset += (LAYER_OUT_W_HW-2)*(LAYER_OUT_H_HW-2)*LAYER_OUT_NUM + (LAYER_OUT_H_HW+1)*LAYER_OUT_NUM;
+
+      for (int hh = 0; hh < LAYER_IN_H_T / 2; hh++){
+				uint h = in_h_iter / 2 + hh;
+				uint global_cout_idx;
+				global_cout_idx = num_iter / LAYER_OUT_NUM_T * LAYER_OUT_H_HW * LAYER_OUT_W_HW * LAYER_OUT_NUM_T + h * LAYER_OUT_W_HW * LAYER_OUT_NUM_T + in_w_iter / 2 * LAYER_OUT_NUM_T + cout_offset;
 				uint local_cout_idx = hh * LAYER_IN_W_T / 2 * LAYER_OUT_NUM_T;
 				memcpy((void*)&global_cout[global_cout_idx / BUS_PACK_FACTOR0], (void*)&cout_burst_buf[local_cout_idx / BUS_PACK_FACTOR0], sizeof(data_t0) * LAYER_IN_W_T / 2 * LAYER_OUT_NUM_T);
 			}
+      // for (int hh  = 0; hh < 1; hh++){
+			// 	uint global_cout_idx = cout_offset + num_tile * LAYER_OUT_NUM_T * (LAYER_IN_W_T/2) * (LAYER_IN_H_T/2);
+			// 	uint local_cout_idx = hh * (LAYER_IN_W_T/2) * LAYER_OUT_NUM_T;
+      //   // cout<<local_cout_idx / BUS_PACK_FACTOR0<<endl;
+			// 	memcpy((void*)&global_cout[global_cout_idx / BUS_PACK_FACTOR0], (void*)&cout_burst_buf[local_cout_idx / BUS_PACK_FACTOR0], sizeof(data_t0) * (LAYER_IN_W_T/2) * LAYER_OUT_NUM_T * (LAYER_IN_H_T/2));
+			// }
+			// for (int hh = 0; hh < LAYER_IN_H_T / 2; hh++){
+			// 	uint global_cout_idx = 0;
+			// 	if (LAYER_IN_W_T / 2 == LAYER_OUT_W_HW) {
+			// 		global_cout_idx = cout_offset + ind_w * LAYER_OUT_NUM_T * LAYER_IN_W_T * LAYER_IN_H_T / 4 + num_tile * LAYER_OUT_NUM_T * LAYER_IN_W_T * LAYER_IN_H_T / 4 + hh * LAYER_IN_W_T / 2 * LAYER_OUT_NUM_T;
+			// 	} else {
+			// 		global_cout_idx = cout_offset + ind_w * LAYER_OUT_NUM_T * (LAYER_IN_W_T/2) * LAYER_IN_H_T / 2 + num_tile * LAYER_OUT_NUM_T * (LAYER_IN_W_T/2) * LAYER_IN_H_T / 2 + ind_w_t * LAYER_OUT_NUM_T * LAYER_IN_W_T / 2 + hh * (LAYER_IN_W_T/2) * LAYER_OUT_NUM_T;//tweak
+      //     // cout<<global_cout_idx<<" "<<cout_offset<<" "<<ind_w<<" "<<num_tile<<" "<<ind_w_t<<" "<<hh<<endl;
+      //   }
+			// 	uint local_cout_idx = hh * LAYER_IN_W_T / 2 * LAYER_OUT_NUM_T;
+      //   // cout<<local_cout_idx<<" "<<global_cout_idx<<endl;
+			// 	memcpy((void*)&global_cout[global_cout_idx / BUS_PACK_FACTOR0], (void*)&cout_burst_buf[local_cout_idx / BUS_PACK_FACTOR0], sizeof(data_t0) * LAYER_IN_W_T / 2 * LAYER_OUT_NUM_T);
+			// }
+      // for(int i=0; i<4096; i++){
+      //   print<512>(cout_burst_buf[i / BUS_PACK_FACTOR0]);
+      // }
 		}
 		break;
 		case 5:
@@ -15435,6 +15728,7 @@ void cout_write_ddr_write(
 		break;
 		}
 	}
+  // exit(0);
 }
 
 /**
@@ -15446,8 +15740,8 @@ void cout_write(
 		hls::stream<ConfigInst>     &fifo_config_in,
 		bus_t0                      *global_cout
 ){
-	bus_t0 cout_burst_buf_ping[OUT_H_T * OUT_W_T * OUT_NUM_T * 3 / 2 / BUS_PACK_FACTOR0];
-	bus_t0 cout_burst_buf_pong[OUT_H_T * OUT_W_T * OUT_NUM_T * 3 / 2 / BUS_PACK_FACTOR0];
+	 bus_t0 cout_burst_buf_ping[OUT_H_T * OUT_W_T * OUT_NUM_T / BUS_PACK_FACTOR0];
+	 bus_t0 cout_burst_buf_pong[OUT_H_T * OUT_W_T * OUT_NUM_T / BUS_PACK_FACTOR0];
 #pragma HLS RESOURCE variable=cout_burst_buf_ping core=XPM_MEMORY uram
 #pragma HLS RESOURCE variable=cout_burst_buf_pong core=XPM_MEMORY uram  
 
@@ -15546,7 +15840,7 @@ void cout_write(
   int count = 0;
 	// We assum that cin has been pre-padded with zeros
 	while(!done){
-    cout<<count++<<endl;
+    // cout<<count++<<endl;
 		if (layer_start){
 			inst0 = fifo_config_in.read();
 			inst1 = fifo_config_in.read();
@@ -15705,7 +15999,7 @@ void cout_write(
 			write_done = 0;
 			
 		}
-
+    // cout<<num_tile<<endl;
 		// Repeat until all the tiles are stored
 		if (max_pool || up_sample){
 			//num_tile = task_cnt - 1;
@@ -15914,7 +16208,7 @@ void engine(
 	// 0: cout -> cout_write
 	// 1: cout -> inter_load
 	//hls::stream<InterWriteData0Type> fifo_inter_write_0;
-	//static hls::stream<InterWriteData1Type> fifo_inter_write_1;
+	// hls::stream<InterWriteData1Type> fifo_inter_write_1;
 //#pragma HLS STREAM variable=fifo_inter_write_0 depth=64
 //#pragma HLS STREAM variable=fifo_inter_write_1 depth=64
 	// Module: upsample
@@ -15988,8 +16282,8 @@ void engine(
 
 #define DEBUG_engine
   // layer_id++;
-  FILE *f;
-  f = fopen("D:/Winter2021/Research/FlexCNN/SDx_project/FlexCNN_opt/data/test/L.dat", "w");
+  // FILE *f;
+  // f = fopen("D:/Spring2021/recut/recut/fpga/data/test/L.dat", "w");
 
 
 // #define DEBUG_engine
@@ -16015,7 +16309,6 @@ void engine(
   //     fprintf(f, "%10f\t", num[i]);
   //     count++;
   //   }
-  //   // cout<<"done"<<endl;
   //   fprintf(f, "\n");
   // }
   // cout<<count<<endl;
@@ -16048,16 +16341,24 @@ void engine(
   // cout<<count<<endl;
   // fclose(f);
   // exit(0);
-
+  // int count = 0;
+  // while(!config_bias_load.empty()){
+  //   ConvData0Type item = config_bias_load.read();
+  //   count++;
+  // }
+  // cout<<count<<endl;
+  // exit(0);
 	bias_load(
 			global_bias,
 			config_bias_load,
 			fifo_beta_conv_1, fifo_gamma_conv_1,
+      fifo_beta_conv, fifo_gamma_conv,
 			config_weight_load
 	);
 #ifdef DEBUG_engine
 	cout << "passed bias load" << endl;
 #endif
+
 	// int count = 0;
   // while(!fifo_beta_conv_1.empty()){
   //   ConvData0Type item = fifo_beta_conv_1.read();
@@ -16086,17 +16387,17 @@ void engine(
   // cout<<count<<endl;
   // exit(0);
 
+
 	weight_load(
 			global_weight,
-      global_bias,
 			config_weight_load,
 			fifo_weight_load_1,
-      fifo_beta_conv, fifo_gamma_conv,
 			config_relu_1
 	);
 #ifdef DEBUG_engine
 	cout << "passed weight load" << endl;
 #endif
+
   // int count = 0;
   // while(!fifo_weight_load_1.empty()){
   //   ReluData0Type item = fifo_weight_load_1.read();
@@ -16112,6 +16413,7 @@ void engine(
   // cout<<count<<endl;
   // fclose(f);
   // exit(0);
+
 	// int count = 0;
   // while(!fifo_weight_load_1.empty()){
   //   ConvData0Type item = fifo_weight_load_1.read();
@@ -16130,12 +16432,12 @@ void engine(
   relu_1(
 			fifo_cin_load_0, 
 			config_relu_1,
-			fifo_relu_0,
+			fifo_relu_1,
 			config_conv,
 			fifo_beta_conv_1, fifo_gamma_conv_1
 	);
 #ifdef DEBUG_engine
-	cout << "passed relu" << endl;
+	cout << "passed relu_1" << endl;
 #endif
 
 	// int count = 0;
@@ -16170,7 +16472,7 @@ void engine(
   // exit(0);
 
 	conv(
-			fifo_relu_0, fifo_weight_load_1,
+			fifo_relu_1, fifo_weight_load_1,
 			config_conv,
 			fifo_conv_0,
 			config_relu
@@ -16193,6 +16495,49 @@ void engine(
   // }
   // cout<<count<<endl;
   // fclose(f);
+  // exit(0);
+  // float output[32][32];
+  // float channel1[1024];
+  // int count = 0;
+  // while(!fifo_conv_0.empty()){
+  //   ReluData0Type item = fifo_conv_0.read();
+  //   data_t2 num[8];
+  //   for(int i=0; i<8; i++){
+  //     num[i] = Reinterpret<data_t2>((ap_uint<32>)item((i+1)*32-1, 32*i));
+  //     channel1[count] = num[i];
+  //     fprintf(f, "%10f\t", num[i]);
+      
+  //   }
+  //   count++;
+  //   // cout<<"done"<<endl;
+  //   fprintf(f, "\n");
+  // }
+  // cout<<count<<endl;
+  // fclose(f);
+  //   for (int w1 = 0; w1 < 2; w1++){
+  //     for (int h1 = 0; h1 < 2; h1++){
+  //       for(int h2 = 0; h2 < 16; h2++){
+  //         for(int w2 = 0; w2 < 16; w2++){
+  //           int h = h1 * 16 + h2;
+  //           int w = w1 * 16 + w2;
+            
+  //           int L2 = w1 * 32 * 16;
+  //           int L3 = h1 * 16 * 16;
+  //           int L4 = h2 * 16;
+  //           int L5 = w2;
+
+  //           output[h][w] = channel1[ L2 + L3 + L4 + L5 ]; 
+  //         }
+  //       }
+  //     }
+  //   }
+  // cout<<"OUTPUTS"<<endl;
+  // for(int h=0; h<32; h++){
+  //   for(int w=0; w<32; w++){
+  //     printf("%10f\t", output[h][w]);
+  //   }
+  //   printf("\n");
+  // }
   // exit(0);
 	// int count = 0;
   // while(!fifo_conv_0.empty()){
@@ -16245,7 +16590,7 @@ void engine(
 			fifo_beta_conv, fifo_gamma_conv
 	);
 #ifdef DEBUG_engine
-	cout << "passed relu_1" << endl;
+	cout << "passed relu" << endl;
 #endif
 
   // int count = 0;
@@ -16416,7 +16761,7 @@ extern "C" {
 #pragma HLS INTERFACE m_axi port=global_prev_cin offset=slave bundle=gmem3 depth=0
 #pragma HLS INTERFACE m_axi port=global_cout offset=slave bundle=gmem1 depth=826274
 #pragma HLS INTERFACE m_axi port=global_weight offset=slave bundle=gmem2 depth=34234
-#pragma HLS INTERFACE m_axi port=global_bias offset=slave bundle=gmem2 depth=1026
+#pragma HLS INTERFACE m_axi port=global_bias offset=slave bundle=gmem4 depth=1026
 #pragma HLS INTERFACE m_axi port=layer_config offset=slave bundle=gcontrol depth=2815
 
 #pragma HLS INTERFACE s_axilite port=global_cin bundle=control
