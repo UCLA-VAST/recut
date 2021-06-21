@@ -1555,3 +1555,29 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
     delete topo_segs[i];
   return true;
 }
+
+bool marker_to_swc_file(string swc_file, vector<MyMarker*> & outmarkers)
+{
+    cout<<"marker num = "<<outmarkers.size()<<", save swc file to "<<swc_file<<endl;
+    map<MyMarker*, int> ind;
+    ofstream ofs(swc_file.c_str());
+
+    if(ofs.fail())
+    {
+        cout<<"open swc file error"<<endl;
+        return false;
+    }
+    ofs<<"##n,type,x,y,z,radius,parent"<<endl;
+    for(int i = 0; i < outmarkers.size(); i++) ind[outmarkers[i]] = i+1;
+
+    for(int i = 0; i < outmarkers.size(); i++)
+    {
+        MyMarker * marker = outmarkers[i];
+        int parent_id;
+        if(marker->parent == 0) parent_id = -1;
+        else parent_id = ind[marker->parent];
+        ofs<<i+1<<" "<<marker->type<<" "<<marker->x<<" "<<marker->y<<" "<<marker->z<<" "<<marker->radius<<" "<<parent_id<<endl;
+    }
+    ofs.close();
+    return true;
+}

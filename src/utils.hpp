@@ -324,11 +324,15 @@ auto create_vdb_mask(EnlargedPointDataGrid::Ptr grid,
       for (int x = bbox.min()[0]; x < bbox.max()[0]; x++) {
         openvdb::Coord xyz(x, y, z);
         auto leaf_iter = grid->tree().probeConstLeaf(xyz);
-        auto ind = leaf_iter->beginIndexVoxel(xyz);
         auto buffer_coord = xyz - bbox.min();
         auto id = coord_to_id(buffer_coord, inclusive_dim);
-        if (ind) {
-          mask[id] = 1;
+        if (leaf_iter) {
+          auto ind = leaf_iter->beginIndexVoxel(xyz);
+          if (ind) {
+            mask[id] = 1;
+          } else {
+            mask[id] = 0;
+          }
         } else {
           mask[id] = 0;
         }
@@ -1856,7 +1860,8 @@ auto print_swc_line = [](GridCoord swc_coord, bool is_root, uint8_t radius,
 
   // n
   auto id = coord_to_id(swc_coord, swc_lengths);
-  assertm(id < std::numeric_limits<int32_t>::max(), "id overflows int32_t limit");
+  assertm(id < std::numeric_limits<int32_t>::max(),
+          "id overflows int32_t limit");
   line << coord_to_id(swc_coord, swc_lengths) << ' ';
 
   // type_id
@@ -1875,7 +1880,8 @@ auto print_swc_line = [](GridCoord swc_coord, bool is_root, uint8_t radius,
   // parent
   auto parent_coord = coord_add(swc_coord, parent_offset_coord);
   auto parent_vid = coord_to_id(parent_coord, swc_lengths);
-  assertm(parent_vid < std::numeric_limits<int32_t>::max(), "id overflows int32_t limit");
+  assertm(parent_vid < std::numeric_limits<int32_t>::max(),
+          "id overflows int32_t limit");
   if (is_root) {
     line << "-1";
   } else {

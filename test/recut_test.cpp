@@ -1300,55 +1300,55 @@ TEST(CheckGlobals, DISABLED_AllFifo) {
 //}
 //}
 
-//TEST(VDB, DISABLED_FloatToPoint) {
-  //bool print_all = true;
-  //auto grid_size = 8;
-  //GridCoord lengths(grid_size);
-  //auto args = get_args(grid_size, grid_size, grid_size, 100, 7,
-                       //[>force_regenerate_image=<]false,
-                       //[>input_is_vdb=<]true,
-                       //[>type<] "float");
-  //auto recut = Recut<uint16_t>(args);
-  //auto root_coords = recut.initialize();
+// TEST(VDB, DISABLED_FloatToPoint) {
+// bool print_all = true;
+// auto grid_size = 8;
+// GridCoord lengths(grid_size);
+// auto args = get_args(grid_size, grid_size, grid_size, 100, 7,
+//[>force_regenerate_image=<]false,
+//[>input_is_vdb=<]true,
+//[>type<] "float");
+// auto recut = Recut<uint16_t>(args);
+// auto root_coords = recut.initialize();
 
-  //if (print_all) {
-    //print_vdb_mask(recut.input_grid->getConstAccessor(), lengths);
-    //print_vdb_mask(recut.topology_grid->getConstAccessor(), lengths);
-    //print_all_points(recut.topology_grid, recut.image_bbox);
-  //}
+// if (print_all) {
+// print_vdb_mask(recut.input_grid->getConstAccessor(), lengths);
+// print_vdb_mask(recut.topology_grid->getConstAccessor(), lengths);
+// print_all_points(recut.topology_grid, recut.image_bbox);
+//}
 
-  //auto leaf = recut.topology_grid->probeLeaf();
-  //{
-    //auto root_ind = leaf.beginIndexVoxel(root_coords[0].first);
-    //ASSERT_FALSE(root_ind);
-  //}
+// auto leaf = recut.topology_grid->probeLeaf();
+//{
+// auto root_ind = leaf.beginIndexVoxel(root_coords[0].first);
+// ASSERT_FALSE(root_ind);
+//}
 
-  //// Determine the number of points / voxel and points / leaf.
-  //openvdb::Index LEAF_VOXELS =
-      //EnlargedPointDataGrid::TreeType::LeafNodeType::SIZE;
-  //openvdb::Index pointsPerLeaf = VOXEL_POINTS * LEAF_VOXELS;
+//// Determine the number of points / voxel and points / leaf.
+// openvdb::Index LEAF_VOXELS =
+// EnlargedPointDataGrid::TreeType::LeafNodeType::SIZE;
+// openvdb::Index pointsPerLeaf = VOXEL_POINTS * LEAF_VOXELS;
 
-  //// add indices to topology grid
-  //// Iterate over the leaf nodes in the point tree.
-  //for (auto leafIter = recut.topology_grid->tree().beginLeaf(); leafIter;
-       //++leafIter) {
-    //// Initialize the voxel offsets
-    //openvdb::Index offset(0);
-    //for (openvdb::Index index = 0; index < LEAF_VOXELS; ++index) {
-      //offset += VOXEL_POINTS;
-      //leafIter->setOffsetOn(index, offset);
-    //}
-  //}
+//// add indices to topology grid
+//// Iterate over the leaf nodes in the point tree.
+// for (auto leafIter = recut.topology_grid->tree().beginLeaf(); leafIter;
+//++leafIter) {
+//// Initialize the voxel offsets
+// openvdb::Index offset(0);
+// for (openvdb::Index index = 0; index < LEAF_VOXELS; ++index) {
+// offset += VOXEL_POINTS;
+// leafIter->setOffsetOn(index, offset);
+//}
+//}
 
-  //{
-    //auto root_ind = leaf.beginIndexVoxel(root_coords[0].first);
-    //ASSERT_TRUE(root_ind);
-  //}
+//{
+// auto root_ind = leaf.beginIndexVoxel(root_coords[0].first);
+// ASSERT_TRUE(root_ind);
+//}
 
-  //// show correct
-  //print_all_points(recut.topology_grid, recut.image_bbox);
+//// show correct
+// print_all_points(recut.topology_grid, recut.image_bbox);
 
-  //// recut.activa();
+//// recut.activa();
 //}
 
 TEST(Update, EachStageIteratively) {
@@ -1862,6 +1862,8 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
   RecordProperty("slt_pct", slt_pct);
   bool check_against_selected = std::get<5>(GetParam());
   bool check_against_app2 = std::get<6>(GetParam());
+
+  bool check_coverage_results = false;
   // regenerating image is random and done at run time
   // if you were to set to true tcase 4 would have a mismatch
   // with the loaded image
@@ -1886,7 +1888,7 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
   cout << "image offsets " << args.image_offsets << '\n';
   // uint16_t is image_t here
   TileThresholds<uint16_t> *tile_thresholds;
-  bool print_all = true;
+  bool print_all = false;
 
   auto recut = Recut<uint16_t>(args);
   auto root_coords = recut.initialize();
@@ -1985,17 +1987,19 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
     assertm(args.output_tree.size() != 0, "Can not have 0 selected output");
     recut_output_tree_prune.reserve(args.output_tree.size() / 100);
 
-    std::cout << "Recut prune\n";
-    print_all_points(recut.topology_grid, recut.image_bbox, "label");
+    if (print_all) {
+      std::cout << "Recut prune\n";
+      print_all_points(recut.topology_grid, recut.image_bbox, "label");
 
-    std::cout << "Recut radii post prune\n";
-    print_all_points(recut.topology_grid, recut.image_bbox, "radius");
+      std::cout << "Recut radii post prune\n";
+      print_all_points(recut.topology_grid, recut.image_bbox, "radius");
 
-    std::cout << "Recut post prune valid\n";
-    print_all_points(recut.topology_grid, recut.image_bbox, "valid");
+      std::cout << "Recut post prune valid\n";
+      print_all_points(recut.topology_grid, recut.image_bbox, "valid");
 
-    // std::cout << "Recut parent post prune\n";
-    // print_all_points(recut.topology_grid, recut.image_bbox, "parent");
+      // std::cout << "Recut parent post prune\n";
+      // print_all_points(recut.topology_grid, recut.image_bbox, "parent");
+    }
 
     recut.adjust_parent();
 
@@ -2124,6 +2128,7 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
       // run the seq version from app2 to compare
       happ(app2_output_tree, app2_output_tree_prune, mask.get(), grid_size,
            grid_size, grid_size, tile_thresholds->bkg_thresh, 0.);
+      cout << "Finished app2 happ\n";
 
       if (print_all) {
         std::cout << "APP2 prune\n";
@@ -2133,59 +2138,64 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
         print_marker_3D(app2_output_tree_prune, interval_extents, "radius");
       }
 
-      auto prune_mask = std::make_unique<uint8_t[]>(tol_sz);
-      create_coverage_mask_accurate(recut_output_tree_prune, prune_mask.get(),
-                                    grid_extents);
-      auto results = check_coverage(prune_mask.get(), mask.get(), tol_sz,
-                                    tile_thresholds->bkg_thresh);
+      if (check_coverage_results) {
+        auto prune_mask = std::make_unique<uint8_t[]>(tol_sz);
+        create_coverage_mask_accurate(recut_output_tree_prune, prune_mask.get(),
+                                      grid_extents);
+        auto results = check_coverage(prune_mask.get(), mask.get(), tol_sz,
+                                      tile_thresholds->bkg_thresh);
 
-      auto app2_mask = std::make_unique<uint8_t[]>(tol_sz);
-      create_coverage_mask_accurate(app2_output_tree_prune, app2_mask.get(),
-                                    grid_extents);
-      auto app2_results = check_coverage(app2_mask.get(), mask.get(), tol_sz,
-                                         tile_thresholds->bkg_thresh);
+        auto app2_mask = std::make_unique<uint8_t[]>(tol_sz);
+        create_coverage_mask_accurate(app2_output_tree_prune, app2_mask.get(),
+                                      grid_extents);
+        auto app2_results = check_coverage(app2_mask.get(), mask.get(), tol_sz,
+                                           tile_thresholds->bkg_thresh);
 
-      if (print_all) {
-        std::cout << "Recut coverage mask\n";
-        print_image_3D(prune_mask.get(), interval_extents);
+        if (print_all) {
+          std::cout << "Recut coverage mask\n";
+          print_image_3D(prune_mask.get(), interval_extents);
 
-        std::cout << "APP2 coverage mask\n";
-        print_image_3D(app2_mask.get(), interval_extents);
-      }
+          std::cout << "APP2 coverage mask\n";
+          print_image_3D(app2_mask.get(), interval_extents);
+        }
 
-      // compare_tree will print to log matches, false positive and negative
-      // results = compare_tree(app2_output_tree_prune,
-      // recut_output_tree_prune, grid_size, grid_size, recut);
+        // compare_tree will print to log matches, false positive and negative
+        // results = compare_tree(app2_output_tree_prune,
+        // recut_output_tree_prune, grid_size, grid_size, recut);
 
-      stage = "prune";
-      RecordProperty("False positives " + stage,
-                     results->false_positives.size());
-      RecordProperty("False negatives " + stage,
-                     results->false_negatives.size());
-      RecordProperty("Match count " + stage, results->match_count);
-      RecordProperty("Match % " + stage,
-                     (100 * results->match_count) / args.output_tree.size());
-      RecordProperty("Duplicate count " + stage, results->duplicate_count);
-      RecordProperty("Total nodes " + stage, args.output_tree.size());
-      RecordProperty("Total pruned nodes " + stage,
-                     recut_output_tree_prune.size());
-      RecordProperty("Compression factor " + stage,
-                     args.output_tree.size() / recut_output_tree_prune.size());
+        stage = "prune";
+        RecordProperty("False positives " + stage,
+                       results->false_positives.size());
+        RecordProperty("False negatives " + stage,
+                       results->false_negatives.size());
+        RecordProperty("Match count " + stage, results->match_count);
+        RecordProperty("Match % " + stage,
+                       (100 * results->match_count) / args.output_tree.size());
+        RecordProperty("Duplicate count " + stage, results->duplicate_count);
+        RecordProperty("Total nodes " + stage, args.output_tree.size());
+        RecordProperty("Total pruned nodes " + stage,
+                       recut_output_tree_prune.size());
+        RecordProperty("Compression factor " + stage,
+                       args.output_tree.size() /
+                           recut_output_tree_prune.size());
 
-      stage = "app2 prune";
-      RecordProperty("False positives " + stage,
-                     app2_results->false_positives.size());
-      RecordProperty("False negatives " + stage,
-                     app2_results->false_negatives.size());
-      RecordProperty("Match count " + stage, app2_results->match_count);
-      RecordProperty("Match % " + stage, (100 * app2_results->match_count) /
-                                             app2_output_tree.size());
-      RecordProperty("Duplicate count " + stage, app2_results->duplicate_count);
-      RecordProperty("Total nodes " + stage, app2_output_tree.size());
-      RecordProperty("Total pruned nodes " + stage,
-                     app2_output_tree_prune.size());
-      RecordProperty("Compression factor " + stage,
-                     app2_output_tree.size() / app2_output_tree_prune.size());
+        stage = "app2 prune";
+        RecordProperty("False positives " + stage,
+                       app2_results->false_positives.size());
+        RecordProperty("False negatives " + stage,
+                       app2_results->false_negatives.size());
+        RecordProperty("Match count " + stage, app2_results->match_count);
+        RecordProperty("Match % " + stage, (100 * app2_results->match_count) /
+                                               app2_output_tree.size());
+        RecordProperty("Duplicate count " + stage,
+                       app2_results->duplicate_count);
+        RecordProperty("Total nodes " + stage, app2_output_tree.size());
+        RecordProperty("Total pruned nodes " + stage,
+                       app2_output_tree_prune.size());
+        RecordProperty("Compression factor " + stage,
+                       app2_output_tree.size() / app2_output_tree_prune.size());
+
+      } // check_coverage_results
 
       // it's a problem if two markers with same vid are in a results vector
       // ASSERT_EQ(results->duplicate_count, 0);
@@ -2204,6 +2214,11 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
       //<< "In comparison, app2 is " << app2_results->false_positives.size();
       // EXPECT_EQ(results->false_negatives.size(), 0)
       //<< "In comparison, app2 is " << app2_results->false_negatives.size();
+
+      // print all SWC files for visualization of outputs
+      marker_to_swc_file("app2-checks-if.swc", app2_output_tree_prune);
+      // recut
+      marker_to_swc_file("recut-checks-if.swc", recut_output_tree_prune);
     }
   }
 #endif
@@ -2213,9 +2228,9 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
 INSTANTIATE_TEST_CASE_P(
     RecutPipelineTests, RecutPipelineParameterTests,
     ::testing::Values(
-        // check if using better parent characteristics for parent traversal 
+        // check if using better parent characteristics for parent traversal
         // improves the overall swc quality and proofreadability
-        std::make_tuple(256, 256, 256, 6, 100., true, false) // 0
+        std::make_tuple(256, 256, 256, 6, 100., false, true) // 0
         // std::make_tuple(4, 4, 4, 0, 100., true, false), // 0
         // std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
         // std::make_tuple(4, 4, 4, 2, 100., true, false), // 2
