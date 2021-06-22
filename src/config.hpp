@@ -80,5 +80,5 @@ using GridCoord = std::vector<int32_t>;
 #define DILATION_FACTOR 1
 #define MIN_RADII 1
 #define MIN_LENGTH 10
-#define DOWNSAMPLE_MARKER 1
+#define DOWNSAMPLE_MARKER 5
 #define SWC_MIN_LINE 10

@@ -313,6 +313,27 @@ auto print_marker_3D = [](auto markers, auto interval_lengths,
 };
 
 // only values strictly greater than bkg_thresh are valid
+auto copy_vdb_to_dense_buffer(openvdb::FloatGrid::Ptr grid,
+                     const openvdb::math::CoordBBox &bbox) {
+  cout << "create_vdb_mask(): \n";
+  auto inclusive_dim = bbox.dim().offsetBy(-1);
+  cout << inclusive_dim << '\n';
+  auto buffer = std::make_unique<uint16_t[]>(coord_prod_accum(inclusive_dim));
+  for (int z = bbox.min()[2]; z < bbox.max()[2]; z++) {
+    for (int y = bbox.min()[1]; y < bbox.max()[1]; y++) {
+      for (int x = bbox.min()[0]; x < bbox.max()[0]; x++) {
+        openvdb::Coord xyz(x, y, z);
+        auto val = grid->tree().getValue(xyz);
+        auto buffer_coord = xyz - bbox.min();
+        auto id = coord_to_id(buffer_coord, inclusive_dim);
+        buffer[id] = val;
+      }
+    }
+  }
+  return buffer;
+}
+
+// only values strictly greater than bkg_thresh are valid
 auto create_vdb_mask(EnlargedPointDataGrid::Ptr grid,
                      const openvdb::math::CoordBBox &bbox) {
   cout << "create_vdb_mask(): \n";
@@ -999,7 +1020,7 @@ auto append_attributes = [](auto grid) {
   cout << "appended all attributes\n";
 };
 
-auto read_vdb_file(std::string fn, std::string grid_name) {
+auto read_vdb_file(std::string fn, std::string grid_name="topology") {
 #ifdef LOG
   cout << "Reading vdb file: " << fn << " grid: " << grid_name << " ...\n";
 #endif
@@ -1314,7 +1335,8 @@ RecutCommandLineArgs get_args(int grid_size, int interval_length,
     // first marker is at 58, 230, 111 : 7333434
     // args.set_image_offsets({57, 228, 110});
     // root at {1125, 12949, 344}
-    args.set_image_offsets({1123, 12947, 342});
+    args.set_image_offsets(
+        {1123 / DOWNSAMPLE_MARKER, 12947 / DOWNSAMPLE_MARKER, 342});
     args.set_image_lengths({grid_size, grid_size, grid_size});
 
     if (const char *env_p = std::getenv("TEST_IMAGE")) {

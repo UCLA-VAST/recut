@@ -1892,12 +1892,25 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
 
   auto recut = Recut<uint16_t>(args);
   auto root_coords = recut.initialize();
+  cout << "recut.image_bbox " << recut.image_bbox << '\n';
   recut.activate_vids(recut.topology_grid, root_coords, "connected",
                       recut.map_fifo, recut.connected_map);
 
   std::unique_ptr<uint16_t[]> mask;
   if (check_against_app2) {
-    mask = create_vdb_mask(recut.topology_grid, recut.image_bbox);
+    //mask = create_vdb_mask(recut.topology_grid, recut.image_bbox);
+    // test using the actual image buffer
+    if (const char *env_p = std::getenv("TEST_FLOAT_IMAGE")) {
+      std::cout << "Using $TEST_FLOAT_IMAGE environment variable: " << env_p << '\n';
+      auto base_grid = read_vdb_file(env_p);
+      auto input_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
+      mask = copy_vdb_to_dense_buffer(input_grid, recut.image_bbox);
+    } else {
+      std::cout << "Warning likely fatal: must run: export "
+                   "TEST_FLOAT_IMAGE=\"abs/path/to/image\" to set the environment "
+                   "variable\n\n";
+      exit(1);
+    }
     if (print_all) {
       print_image_3D(mask.get(), grid_extents);
     }

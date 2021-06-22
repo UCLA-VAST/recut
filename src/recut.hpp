@@ -2327,9 +2327,8 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
                    "USE_VDB must be defined");
 #endif
 
-    std::string grid_name = "topology";
     auto timer = new high_resolution_timer();
-    auto base_grid = read_vdb_file(args->image_root_dir(), grid_name);
+    auto base_grid = read_vdb_file(args->image_root_dir());
 
 #ifdef LOG
     cout << "VDB input type " << this->args->type_ << '\n';
