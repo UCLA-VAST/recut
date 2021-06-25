@@ -314,18 +314,21 @@ auto print_marker_3D = [](auto markers, auto interval_lengths,
 
 // only values strictly greater than bkg_thresh are valid
 auto copy_vdb_to_dense_buffer(openvdb::FloatGrid::Ptr grid,
-                     const openvdb::math::CoordBBox &bbox) {
-  cout << "create_vdb_mask(): \n";
-  auto inclusive_dim = bbox.dim().offsetBy(-1);
-  cout << inclusive_dim << '\n';
-  auto buffer = std::make_unique<uint16_t[]>(coord_prod_accum(inclusive_dim));
+                              const openvdb::math::CoordBBox &bbox) {
+  // cout << "copy_vdb_to_dense_buffer of size: ";
+  // bbox's by default are inclusive of start and end indices
+  // which violates recut's model of indepedent bounding boxes
+  auto dim = bbox.dim().offsetBy(-1);
+  // cout << dim << '\n';
+  // cout << "buffer size " << coord_prod_accum(dim) << '\n';
+  auto buffer = std::make_unique<uint16_t[]>(coord_prod_accum(dim));
   for (int z = bbox.min()[2]; z < bbox.max()[2]; z++) {
     for (int y = bbox.min()[1]; y < bbox.max()[1]; y++) {
       for (int x = bbox.min()[0]; x < bbox.max()[0]; x++) {
         openvdb::Coord xyz(x, y, z);
         auto val = grid->tree().getValue(xyz);
         auto buffer_coord = xyz - bbox.min();
-        auto id = coord_to_id(buffer_coord, inclusive_dim);
+        auto id = coord_to_id(buffer_coord, dim);
         buffer[id] = val;
       }
     }
@@ -1020,7 +1023,7 @@ auto append_attributes = [](auto grid) {
   cout << "appended all attributes\n";
 };
 
-auto read_vdb_file(std::string fn, std::string grid_name="topology") {
+auto read_vdb_file(std::string fn, std::string grid_name = "topology") {
 #ifdef LOG
   cout << "Reading vdb file: " << fn << " grid: " << grid_name << " ...\n";
 #endif
@@ -1424,13 +1427,123 @@ void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
   }
 }
 
+template <typename image_t> struct Histogram {
+  // Classic histogram or an S-curve type histogram where
+  // y-values are cumulative for current and lower bins cumulatively
+  enum PrintType { Classic, S } state;
+
+  std::map<image_t, uint64_t> bin_counts;
+  image_t granularity;
+
+  // granularity : the range of pixel values for each bin
+  Histogram(image_t granularity = 8) : granularity(granularity) {
+    this->state = Classic;
+  }
+
+  void set_classic() { state = Classic; }
+
+  void set_s() { state = S; }
+
+  void operator()(image_t val) {
+    auto i = val / granularity;
+    if (bin_counts.count(i)) {
+      bin_counts[i] = bin_counts[i] + 1;
+    } else {
+      bin_counts[i] = 1;
+    }
+  }
+
+  int size() const { return bin_counts.size(); }
+
+  // print to csv
+  template <typename T>
+  friend std::ostream &operator<<(std::ostream &os, const Histogram<T> &hist) {
+    os << "range,count\n";
+    uint64_t cumulative_count = 0;
+    if (hist.state == S) {
+      Histogram<T> hist_s = hist;
+      rng::for_each(hist_s.bin_counts,
+                    [&cumulative_count](const auto kvalpair) {
+                      cumulative_count += kvalpair.second;
+                    });
+      if (cumulative_count == 0) {
+        throw std::domain_error("S-curve histogram has cumulative count of 0");
+      }
+
+      // must use ordered map for semantic correctness below
+      rng::for_each(hist_s.bin_counts, [&os, &hist_s, &cumulative_count](
+                                           const auto kvalpair) {
+        const auto [key, value] = kvalpair;
+        if (key) {
+          // the running sum
+          auto pct_double = (100 * static_cast<double>(
+                                       hist_s.bin_counts.at(key - 1) + value)) /
+                            cumulative_count;
+          os << hist_s.granularity * key << ',' << pct_double << '\n';
+        }
+      });
+
+    } else {
+      for (const auto [key, value] : hist.bin_counts) {
+        os << hist.granularity * key << ',' << value << '\n';
+      }
+    }
+    return os;
+  }
+
+uint64_t
+operator[](const image_t key) const {
+  return this->bin_counts.at(key);
+}
+
+Histogram<image_t> operator+(Histogram<image_t> const &rhistogram) {
+  if (rhistogram.size() != this->size()) {
+    throw std::runtime_error("Sizes mistmatch");
+  }
+  if (rhistogram.granularity != this->granularity) {
+    throw std::runtime_error("Granularities mistmatch");
+  }
+
+  auto histogram = Histogram<uint16_t>(this->granularity);
+  for (auto [key, value] : this->bin_counts) {
+    if (rhistogram.bin_counts.count(key)) {
+      const auto rhist_value = rhistogram[key];
+      histogram.bin_counts[key] = value + rhist_value;
+    } else {
+      throw std::runtime_error("Mismatch in keys");
+    }
+  }
+  return histogram;
+}
+
+Histogram<image_t> &operator+=(Histogram<image_t> const &rhistogram) {
+  *this = *this + rhistogram;
+  return *this;
+}
+}
+;
+
+template <typename image_t>
+Histogram<image_t> hist(image_t *buffer, GridCoord buffer_lengths,
+                        GridCoord buffer_offsets, int granularity = 8) {
+  auto histogram = Histogram<image_t>(granularity);
+  for (auto z : rng::views::iota(0, buffer_lengths[2])) {
+    for (auto y : rng::views::iota(0, buffer_lengths[1])) {
+      for (auto x : rng::views::iota(0, buffer_lengths[0])) {
+        GridCoord xyz(x, y, z);
+        GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
+        auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
+        histogram(val);
+      }
+    }
+  }
+  return histogram;
+}
+
 // keep only voxels strictly greater than bkg_thresh
 auto convert_buffer_to_vdb_acc =
     [](auto buffer, GridCoord buffer_lengths, GridCoord buffer_offsets,
        GridCoord image_offsets, auto accessor, auto bkg_thresh = 0) {
-      // print_coord(buffer_lengths, "buffer_lengths");
-      // print_coord(buffer_offsets, "buffer_offsets");
-      // print_coord(image_offsets, "image_offsets");
       for (auto z : rng::views::iota(0, buffer_lengths[2])) {
         for (auto y : rng::views::iota(0, buffer_lengths[1])) {
           for (auto x : rng::views::iota(0, buffer_lengths[0])) {

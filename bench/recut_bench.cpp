@@ -214,6 +214,7 @@ static void xy_radius(benchmark::State &state) {
   uint16_t bkg_thresh = 0;
   auto grid_size = state.range(0);
   VID_t tol_sz = (VID_t)grid_size * grid_size * grid_size;
+  auto grid_extents = GridCoord(grid_size);
   uint16_t *radii_grid_xy = new uint16_t[tol_sz];
   for (auto &tcase : tcases) {
     auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase, true);
@@ -228,7 +229,7 @@ static void xy_radius(benchmark::State &state) {
       for (VID_t i = 0; i < tol_sz; i++) {
         if (recut.generated_image[i]) {
           radii_grid_xy[i] = get_radius_hanchuan_XY(recut.generated_image,
-                                                    grid_size, i, bkg_thresh);
+                                                    grid_extents, i, bkg_thresh);
         }
       }
     }

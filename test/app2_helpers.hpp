@@ -323,6 +323,8 @@ bool fastmarching_tree(std::vector<MyMarker *> roots, vector<MyMarker> &target,
       if (inimg1d[i] < min_int)
         min_int = inimg1d[i];
     }
+    cout << "max_int: " << max_int << '\n';
+    cout << "min_int: " << min_int << '\n';
   }
 
   assertm(max_int != 0, "max_int can't be zero");
@@ -436,6 +438,8 @@ bool fastmarching_tree(std::vector<MyMarker *> roots, vector<MyMarker> &target,
           }
 
           if (state[index] != ALIVE) {
+            //assertm(min_ind < tol_sz, "min_ind can not exceed total size");
+            //assertm(index < tol_sz, "index can not exceed total size");
             double new_dist =
                 phi[min_ind] + (GI(index) + GI(min_ind)) * factor * 0.5;
             long prev_ind = min_ind;
@@ -596,17 +600,12 @@ uint16_t get_radius_accurate(const T *inimg1d, int grid_size, VID_t current_vid,
  * fastmarching based calculate radius method
  */
 template <typename T>
-uint16_t get_radius_hanchuan_XY(const T *inimg1d, int grid_size, VID_t vid,
-                                T thresh) {
-  std::vector<int> sz = {grid_size, grid_size, grid_size};
-  auto lengths = std::vector<int>{grid_size, grid_size, grid_size};
-  auto coord = id_to_coord(vid, lengths);
+uint16_t get_radius_hanchuan_XY(const T *inimg1d, GridCoord image_lengths,
+    VID_t vid, T thresh) {
+  auto coord = id_to_coord(vid, image_lengths);
 
-  long sz0 = sz[0];
-  long sz01 = sz[0] * sz[1];
-  double max_r = grid_size / 2 - 1;
-  if (max_r > sz[1] / 2)
-    max_r = sz[1] / 2;
+  long sz01 = image_lengths[0] * image_lengths[1];
+  double max_r = std::min(image_lengths[0], image_lengths[1]) / 2 - 1;
 
   double total_num, background_num;
   double ir;
@@ -623,16 +622,16 @@ uint16_t get_radius_hanchuan_XY(const T *inimg1d, int grid_size, VID_t vid,
           double r = sqrt(dx * dx + dy * dy + dz * dz);
           if (r > ir - 1 && r <= ir) {
             int64_t i = coord[0] + dx;
-            if (i < 0 || i >= sz[0])
+            if (i < 0 || i >= image_lengths[0])
               goto end1;
             int64_t j = coord[1] + dy;
-            if (j < 0 || j >= sz[1])
+            if (j < 0 || j >= image_lengths[1])
               goto end1;
             int64_t k = coord[2] + dz;
-            if (k < 0 || k >= sz[2])
+            if (k < 0 || k >= image_lengths[2])
               goto end1;
 
-            if (inimg1d[k * sz01 + j * sz0 + i] <= thresh) {
+            if (inimg1d[k * sz01 + j * image_lengths[0] + i] <= thresh) {
               background_num++;
 
               if ((background_num / total_num) > 0.001)
@@ -981,8 +980,6 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
   {
     cout << "Calculating radius for every node" << endl;
     auto in_sz = new_grid_coord(sz0, sz1, sz2);
-    assertm((sz0 == sz1) && (sz1 == sz2),
-            "happ() wasn't extended to handle different dimensions yet");
     for (int64_t i = 0; i < filter_segs.size(); i++) {
       HierarchySegment *seg = filter_segs[i];
       MyMarker *leaf_marker = seg->leaf_marker;
@@ -992,7 +989,7 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
         // assumes dim sizes are equal for now, can be easily switchd
         auto coord = new_grid_coord(p->x, p->y, p->z);
         auto vid = coord_to_id(coord, in_sz);
-        p->radius = get_radius_hanchuan_XY(inimg1d, sz0, vid, bkg_thresh);
+        p->radius = get_radius_hanchuan_XY(inimg1d, in_sz, vid, bkg_thresh);
         if (p == root_marker)
           break;
         p = p->parent;

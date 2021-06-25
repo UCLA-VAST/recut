@@ -459,8 +459,8 @@ void Recut<image_t>::activate_vids(
     std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo) {
   assertm(!(roots.empty()), "Must have at least one root");
 
-  //if (args->type_ == "float") {
-    //auto input_accessor = input_grid->getConstAccessor();
+  // if (args->type_ == "float") {
+  // auto input_accessor = input_grid->getConstAccessor();
   //}
 
   // Iterate over leaf nodes that contain topology (active)
@@ -1938,6 +1938,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   // assertm(this->topology_grid, "topology grid not initialized");
   std::vector<EnlargedPointDataGrid::Ptr> grids(this->grid_interval_size);
 
+  auto histogram = Histogram<image_t>();
+
   // Main march for loop
   // continue iterating until all intervals are finished
   // intervals can be (re)activated by neighboring intervals
@@ -2087,6 +2089,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                                       /*image_offsets=*/interval_offsets,
                                       this->input_grid->getAccessor(),
                                       local_tile_thresholds->bkg_thresh);
+            histogram += hist(tile, buffer_extents, interval_offsets);
           } else {
 
             std::vector<PositionT> positions;
@@ -2153,6 +2156,18 @@ Recut<image_t>::update(std::string stage, Container &fifo,
     } else if (this->args->type_ == "float") {
       set_grid_meta(this->input_grid, this->image_lengths, 0);
       this->input_grid->tree().prune();
+
+      auto write_to_file = [](auto out, std::string fn) {
+        std::ofstream file;
+        file.open(fn);
+        file << out;
+        file.close();
+      };
+
+      write_to_file(histogram, "hist.txt");
+
+      histogram.set_s();
+      write_to_file(histogram, "hist-s.txt");
     }
 
     auto finalize_time = timer->elapsed() - finalize_start;
@@ -2777,8 +2792,7 @@ template <class image_t> void Recut<image_t>::print_to_swc() {
                        const auto &radius_handle, const auto &ind, auto leaf) {
     auto coord = ind.getCoord();
     print_swc_line(coord, is_root(flags_handle, ind), radius_handle.get(*ind),
-                   parents_handle.get(*ind), 
-                   this->image_bbox, this->out,
+                   parents_handle.get(*ind), this->image_bbox, this->out,
                    /*adjust*/ true);
   };
 
@@ -2936,7 +2950,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     file << "# id type_id x y z radius parent_id\n";
 
     // print all somas in this component
-    rng::for_each(component_roots, [this, &file, &component](const auto &component_root) {
+    rng::for_each(component_roots, [this, &file,
+                                    &component](const auto &component_root) {
       print_swc_line(component_root.first, /*root*/ true, component_root.second,
                      zeros_off(), component->evalActiveVoxelBoundingBox(), file,
                      /*adjust*/ true);
@@ -2971,7 +2986,7 @@ template <class image_t> void Recut<image_t>::operator()() {
       //#endif
       // print all neurites in this component
       print_swc_line(coord, /*root*/ false,
-                     /*radius*/ sphere[3], parent, 
+                     /*radius*/ sphere[3], parent,
                      component->evalActiveVoxelBoundingBox(), file,
                      /*adjust*/ true);
 

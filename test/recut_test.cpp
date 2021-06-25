@@ -348,6 +348,69 @@ TEST(VDB, UpdateSemantics) {
   }
 }
 
+TEST(Histogram, Add) {
+  auto granularity = 8;
+  auto histogram = Histogram<uint16_t>(granularity);
+  histogram.bin_counts[0] = 1;
+  histogram.bin_counts[1] = 1;
+
+  auto rhistogram = Histogram<uint16_t>(granularity);
+  rhistogram.bin_counts[0] = 2;
+  rhistogram.bin_counts[1] = 2;
+
+  auto combined = histogram;
+  combined += rhistogram;
+  for (auto [key, value] : combined.bin_counts) {
+    ASSERT_EQ(value, histogram.bin_counts[key] + rhistogram.bin_counts[key]);
+  }
+}
+
+TEST(Histogram, CallAndPrint) {
+  auto n = 1 << 8;
+  auto granularity = 8;
+  auto print_all = true;
+
+  {
+    auto histogram = Histogram<uint16_t>(granularity);
+    for (int i = 0; i < n; ++i) {
+      histogram(i);
+    }
+
+    if (print_all) {
+      std::cout << histogram.size() << '\n';
+      std::cout << histogram;
+      histogram.set_s();
+      std::cout << histogram;
+    }
+
+    ASSERT_EQ(histogram.size(), n / granularity)
+        << histogram.size() << ',' << n / granularity;
+    for (auto [lower_limit, bin_count] : histogram.bin_counts) {
+      ASSERT_EQ(granularity, bin_count)
+          << granularity * lower_limit << ',' << bin_count << '\n';
+    }
+  }
+
+  {
+    auto tcase = 0;
+    auto grid_size = 2;
+    auto args = get_args(grid_size, grid_size, grid_size, 100, tcase);
+    mcp3d::MImage check(args.image_root_dir(), {"ch0"});
+    read_tiff(args.image_root_dir(), args.image_offsets, args.image_lengths,
+              check);
+    auto histogram = hist(check.Volume<uint16_t>(0), args.image_lengths,
+                          zeros(), granularity);
+    ASSERT_EQ(histogram.size(), 1)
+        << "all values are 1 so only first first bin should exist";
+    for (const auto &[lower_limit, bin_count] : histogram.bin_counts) {
+      ASSERT_EQ(lower_limit, 0)
+          << "all values are 1 so only first first bin should exist";
+      ASSERT_EQ(bin_count, grid_size * grid_size * grid_size)
+          << "all values are 1 so only first first bin should exist";
+    }
+  }
+}
+
 TEST(VDB, IntegrateUpdateGrid) {
   // just large enough for a central block and surrounding blocks
   VID_t grid_size = 24;
@@ -1505,7 +1568,7 @@ TEST(Update, EachStageIteratively) {
                   if (check_xy) {
                     // build original production version
                     app2_xy_radii_grid[i] = get_radius_hanchuan_XY(
-                        ground_truth_image.get(), grid_size, i,
+                        ground_truth_image.get(), grid_extents, i,
                         tile_thresholds->bkg_thresh);
                   }
                   ++total_visited;
@@ -1896,19 +1959,26 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
   recut.activate_vids(recut.topology_grid, root_coords, "connected",
                       recut.map_fifo, recut.connected_map);
 
+  auto dim = recut.image_bbox.dim().offsetBy(-1);
+  cout << dim << '\n';
+  cout << recut.image_lengths << '\n';
+  ASSERT_EQ(coord_prod_accum(dim), coord_prod_accum(recut.image_lengths));
+
   std::unique_ptr<uint16_t[]> mask;
   if (check_against_app2) {
-    //mask = create_vdb_mask(recut.topology_grid, recut.image_bbox);
+    // mask = create_vdb_mask(recut.topology_grid, recut.image_bbox);
     // test using the actual image buffer
     if (const char *env_p = std::getenv("TEST_FLOAT_IMAGE")) {
-      std::cout << "Using $TEST_FLOAT_IMAGE environment variable: " << env_p << '\n';
+      std::cout << "Using $TEST_FLOAT_IMAGE environment variable: " << env_p
+                << '\n';
       auto base_grid = read_vdb_file(env_p);
       auto input_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
       mask = copy_vdb_to_dense_buffer(input_grid, recut.image_bbox);
     } else {
-      std::cout << "Warning likely fatal: must run: export "
-                   "TEST_FLOAT_IMAGE=\"abs/path/to/image\" to set the environment "
-                   "variable\n\n";
+      std::cout
+          << "Warning likely fatal: must run: export "
+             "TEST_FLOAT_IMAGE=\"abs/path/to/image\" to set the environment "
+             "variable\n\n";
       exit(1);
     }
     if (print_all) {
@@ -2090,9 +2160,9 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
     std::vector<MyMarker> targets;
     auto timer = new high_resolution_timer();
     fastmarching_tree(root_markers, targets, mask.get(), app2_output_tree,
-                      grid_size, grid_size, grid_size, 1,
-                      tile_thresholds->bkg_thresh, tile_thresholds->max_int,
-                      tile_thresholds->min_int);
+                      recut.image_lengths[0], recut.image_lengths[1],
+                      recut.image_lengths[2], 1, tile_thresholds->bkg_thresh);
+    // tile_thresholds->max_int, tile_thresholds->min_int);
 
     auto interval_extents = grid_extents;
     if (print_all) {
@@ -2139,8 +2209,9 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
 
     if (prune) {
       // run the seq version from app2 to compare
-      happ(app2_output_tree, app2_output_tree_prune, mask.get(), grid_size,
-           grid_size, grid_size, tile_thresholds->bkg_thresh, 0.);
+      happ(app2_output_tree, app2_output_tree_prune, mask.get(),
+           recut.image_lengths[0], recut.image_lengths[1],
+           recut.image_lengths[2], tile_thresholds->bkg_thresh, 0.);
       cout << "Finished app2 happ\n";
 
       if (print_all) {
