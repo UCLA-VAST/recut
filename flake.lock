@@ -7,26 +7,27 @@
         ]
       },
       "locked": {
-        "lastModified": 1623356328,
-        "narHash": "sha256-P3OfYyoqqdjykbmRX8JZSPrUzwVBf2PJXp2T+E7XviU=",
+        "lastModified": 1624512044,
+        "narHash": "sha256-lxrMNct8HLWIS70TwsdLgXgozmeX88oYLvn7/6EkUuk=",
         "ref": "master",
-        "rev": "da39dd6ccf1f2618b8d8f96cb49feb008bf1967b",
-        "revCount": 433,
+        "rev": "7c0f1d78f5050c18a59e4d2c194ca99b0b6405fc",
+        "revCount": 457,
         "type": "git",
-        "url": "ssh://git@github.com/muyezhu/mcp3d"
+        "url": "ssh://git@github.com/ucla-brain/mcp3d"
       },
       "original": {
+        "ref": "master",
         "type": "git",
-        "url": "ssh://git@github.com/muyezhu/mcp3d"
+        "url": "ssh://git@github.com/ucla-brain/mcp3d"
       }
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1620351499,
-        "narHash": "sha256-OsEsKkQo9axVSMP0AGY2Xlz08kvwZB2z1DNLQkCtar4=",
+        "lastModified": 1624561540,
+        "narHash": "sha256-izJ2PYZMGMsSkg+e7c9A1x3t/yOLT+qzUM6WQsc2tqo=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "e62feb3bf4a603e26755238303bda0c24651e155",
+        "rev": "c6a049a3d32293b24c0f894a840872cf67fd7c11",
         "type": "github"
       },
       "original": {
