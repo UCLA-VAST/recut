@@ -1491,37 +1491,51 @@ template <typename image_t> struct Histogram {
     return os;
   }
 
-uint64_t
-operator[](const image_t key) const {
-  return this->bin_counts.at(key);
-}
-
-Histogram<image_t> operator+(Histogram<image_t> const &rhistogram) {
-  if (rhistogram.size() != this->size()) {
-    throw std::runtime_error("Sizes mistmatch");
-  }
-  if (rhistogram.granularity != this->granularity) {
-    throw std::runtime_error("Granularities mistmatch");
+  uint64_t operator[](const image_t key) const {
+    return this->bin_counts.at(key);
   }
 
-  auto histogram = Histogram<uint16_t>(this->granularity);
-  for (auto [key, value] : this->bin_counts) {
-    if (rhistogram.bin_counts.count(key)) {
-      const auto rhist_value = rhistogram[key];
-      histogram.bin_counts[key] = value + rhist_value;
-    } else {
-      throw std::runtime_error("Mismatch in keys");
+  // FIXME check template types match
+  Histogram<image_t> operator+(Histogram<image_t> const &rhistogram) {
+    if (rhistogram.granularity != this->granularity) {
+      throw std::runtime_error("Granularities mistmatch");
     }
-  }
-  return histogram;
-}
 
-Histogram<image_t> &operator+=(Histogram<image_t> const &rhistogram) {
-  *this = *this + rhistogram;
-  return *this;
-}
-}
-;
+    auto merged_histogram = Histogram<image_t>(this->granularity);
+
+    auto these_keys = this->bin_counts | rng::views::keys | rng::to_vector;
+    auto rhs_keys = rhistogram.bin_counts | rng::views::keys | rng::to_vector;
+
+    auto matches = rng::views::set_intersection(these_keys, rhs_keys) | rng::to_vector;
+
+    // overwrite all shared keys with summed values
+    for (auto key : matches) {
+      if (rhistogram.bin_counts.count(key)) {
+        const auto rhist_value = rhistogram[key];
+        merged_histogram.bin_counts[key] =
+            this->bin_counts.at(key) + rhistogram.bin_counts.at(key);
+      }
+    }
+
+    auto add_difference = [&matches,
+                           &merged_histogram](const auto reference_histogram, const auto keys) {
+      for (const auto key : rng::views::set_difference(keys, matches)) {
+        merged_histogram.bin_counts[key] = reference_histogram.bin_counts.at(key);
+      }
+    };
+
+    // add all potential unique keys from this
+    add_difference(*this, these_keys);
+    // add all potential unique keys from rhs
+    add_difference(rhistogram, rhs_keys);
+    return merged_histogram;
+  }
+
+  Histogram<image_t> &operator+=(Histogram<image_t> const &rhistogram) {
+    *this = *this + rhistogram;
+    return *this;
+  }
+};
 
 template <typename image_t>
 Histogram<image_t> hist(image_t *buffer, GridCoord buffer_lengths,
