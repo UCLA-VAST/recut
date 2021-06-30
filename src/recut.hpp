@@ -1938,7 +1938,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   // assertm(this->topology_grid, "topology grid not initialized");
   std::vector<EnlargedPointDataGrid::Ptr> grids(this->grid_interval_size);
 
-  auto histogram = Histogram<image_t>();
+  //auto histogram = Histogram<image_t>();
 
   // Main march for loop
   // continue iterating until all intervals are finished
@@ -2089,7 +2089,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                                       /*image_offsets=*/interval_offsets,
                                       this->input_grid->getAccessor(),
                                       local_tile_thresholds->bkg_thresh);
-            histogram += hist(tile, buffer_extents, interval_offsets);
+            //histogram += hist(tile, buffer_extents, interval_offsets);
           } else {
 
             std::vector<PositionT> positions;
@@ -2164,10 +2164,10 @@ Recut<image_t>::update(std::string stage, Container &fifo,
         file.close();
       };
 
-      write_to_file(histogram, "hist.txt");
+      //write_to_file(histogram, "hist.txt");
 
-      histogram.set_s();
-      write_to_file(histogram, "hist-s.txt");
+      //histogram.set_s();
+      //write_to_file(histogram, "hist-s.txt");
     }
 
     auto finalize_time = timer->elapsed() - finalize_start;
