@@ -1646,7 +1646,7 @@ int Recut<image_t>::get_bkg_threshold(const image_t *tile,
 
     // Count total # of pixels under current thresh
     bkg_count = 0;
-#if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
+#if defined USE_OMP_BLOCK
 #pragma omp parallel for reduction(+ : bkg_count)
 #endif
     for (VID_t i = 0; i < (VID_t)interval_vertex_size; i++) {
@@ -1671,6 +1671,9 @@ int Recut<image_t>::get_bkg_threshold(const image_t *tile,
     // or the last if it was closer
     if (test_pct >= desired_bkg_pct) {
 
+#ifdef LOG
+  cout << "Calculated bkg thresh in " << timer.elapsed() << '\n';
+#endif
       if (test_diff < below_diff_pct)
         return local_bkg_thresh;
       else
@@ -1681,9 +1684,6 @@ int Recut<image_t>::get_bkg_threshold(const image_t *tile,
     below = local_bkg_thresh;
     below_diff_pct = test_diff;
   }
-#ifdef LOG
-  cout << "Calculated bkg thresh in " << timer.elapsed() << '\n';
-#endif
   return std::numeric_limits<image_t>::max();
 }
 
