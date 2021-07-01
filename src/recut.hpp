@@ -1,5 +1,6 @@
 #pragma once
 
+#include "image/mcp3d_image_maths.hpp"
 #include "recut_parameters.hpp"
 #include "tile_thresholds.hpp"
 #include "utils.hpp"
@@ -1672,7 +1673,7 @@ int Recut<image_t>::get_bkg_threshold(const image_t *tile,
     if (test_pct >= desired_bkg_pct) {
 
 #ifdef LOG
-  cout << "Calculated bkg thresh in " << timer.elapsed() << '\n';
+      cout << "Calculated bkg thresh in " << timer.elapsed() << '\n';
 #endif
       if (test_diff < below_diff_pct)
         return local_bkg_thresh;
@@ -1836,12 +1837,15 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
   // than 0 than it was changed by a user so it takes precedence over the
   // defaults
   if (params->foreground_percent() >= 0) {
-    //tile_thresholds->bkg_thresh =
-        //get_bkg_threshold(mcp3d_tile.Volume<image_t>(0), interval_vertex_size,
-                          //params->foreground_percent());
+    // tile_thresholds->bkg_thresh =
+    // get_bkg_threshold(mcp3d_tile.Volume<image_t>(0), interval_vertex_size,
+    // params->foreground_percent());
+
+    // TopPercentile takes a fraction not a percentile
     tile_thresholds->bkg_thresh =
-        mcp3d::image::VolumeTopPercentile(mcp3d_tile.Volume<image_t>(0), interval_dims,
-                          params->foreground_percent() / 100);
+        mcp3d::VolumeTopPercentile<image_t>(static_cast<void*>(mcp3d_tile.Volume<image_t>(0)), interval_dims,
+                                   (100 - params->foreground_percent()) / 100);
+
 #ifdef LOG
     cout << "Requested foreground percent: " << params->foreground_percent()
          << " yielded background threshold: " << tile_thresholds->bkg_thresh
@@ -1941,7 +1945,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   // assertm(this->topology_grid, "topology grid not initialized");
   std::vector<EnlargedPointDataGrid::Ptr> grids(this->grid_interval_size);
 
-  //auto histogram = Histogram<image_t>();
+  // auto histogram = Histogram<image_t>();
 
   // Main march for loop
   // continue iterating until all intervals are finished
@@ -2092,7 +2096,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                                       /*image_offsets=*/interval_offsets,
                                       this->input_grid->getAccessor(),
                                       local_tile_thresholds->bkg_thresh);
-            //histogram += hist(tile, buffer_extents, interval_offsets);
+            // histogram += hist(tile, buffer_extents, interval_offsets);
           } else {
 
             std::vector<PositionT> positions;
@@ -2167,10 +2171,10 @@ Recut<image_t>::update(std::string stage, Container &fifo,
         file.close();
       };
 
-      //write_to_file(histogram, "hist.txt");
+      // write_to_file(histogram, "hist.txt");
 
-      //histogram.set_s();
-      //write_to_file(histogram, "hist-s.txt");
+      // histogram.set_s();
+      // write_to_file(histogram, "hist-s.txt");
     }
 
     auto finalize_time = timer->elapsed() - finalize_start;
