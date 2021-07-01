@@ -1836,9 +1836,12 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
   // than 0 than it was changed by a user so it takes precedence over the
   // defaults
   if (params->foreground_percent() >= 0) {
+    //tile_thresholds->bkg_thresh =
+        //get_bkg_threshold(mcp3d_tile.Volume<image_t>(0), interval_vertex_size,
+                          //params->foreground_percent());
     tile_thresholds->bkg_thresh =
-        get_bkg_threshold(mcp3d_tile.Volume<image_t>(0), interval_vertex_size,
-                          params->foreground_percent());
+        mcp3d::image::VolumeTopPercentile(mcp3d_tile.Volume<image_t>(0), interval_dims,
+                          params->foreground_percent() / 100);
 #ifdef LOG
     cout << "Requested foreground percent: " << params->foreground_percent()
          << " yielded background threshold: " << tile_thresholds->bkg_thresh
