@@ -379,8 +379,8 @@ TEST(Histogram, CallAndPrint) {
     if (print_all) {
       std::cout << histogram.size() << '\n';
       std::cout << histogram;
-      histogram.set_s();
-      std::cout << histogram;
+      //histogram.set_s();
+      //std::cout << histogram;
     }
 
     ASSERT_EQ(histogram.size(), n / granularity)
@@ -2314,7 +2314,7 @@ INSTANTIATE_TEST_CASE_P(
     ::testing::Values(
         // check if using better parent characteristics for parent traversal
         // improves the overall swc quality and proofreadability
-        std::make_tuple(256, 256, 256, 6, 100., false, true) // 0
+        std::make_tuple(2048, 2048, 2048, 6, 100., false, true) // 0
         // std::make_tuple(4, 4, 4, 0, 100., true, false), // 0
         // std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
         // std::make_tuple(4, 4, 4, 2, 100., true, false), // 2

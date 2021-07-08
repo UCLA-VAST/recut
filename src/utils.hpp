@@ -1458,34 +1458,36 @@ template <typename image_t> struct Histogram {
   // print to csv
   template <typename T>
   friend std::ostream &operator<<(std::ostream &os, const Histogram<T> &hist) {
-    os << "range,count\n";
+    os << "range,count,%\n";
     uint64_t cumulative_count = 0;
+    rng::for_each(hist.bin_counts, [&cumulative_count](const auto kvalpair) {
+      cumulative_count += kvalpair.second;
+    });
+    if (cumulative_count == 0) {
+      throw std::domain_error("S-curve histogram has cumulative count of 0");
+    }
+    os << "total," << cumulative_count << '\n';
     if (hist.state == S) {
-      Histogram<T> hist_s = hist;
-      rng::for_each(hist_s.bin_counts,
-                    [&cumulative_count](const auto kvalpair) {
-                      cumulative_count += kvalpair.second;
-                    });
-      if (cumulative_count == 0) {
-        throw std::domain_error("S-curve histogram has cumulative count of 0");
-      }
+      // Histogram<T> hist_s = hist;
 
-      // must use ordered map for semantic correctness below
-      rng::for_each(hist_s.bin_counts, [&os, &hist_s, &cumulative_count](
-                                           const auto kvalpair) {
-        const auto [key, value] = kvalpair;
-        if (key) {
-          // the running sum
-          auto pct_double = (100 * static_cast<double>(
-                                       hist_s.bin_counts.at(key - 1) + value)) /
-                            cumulative_count;
-          os << hist_s.granularity * key << ',' << pct_double << '\n';
-        }
-      });
+      //auto keys = hist_s | rng::keys() | rng::to_vector();
+
+      //// must use ordered map for semantic correctness below
+      //rng::for_each(hist_s.bin_counts, [&os, &hist_s, &cumulative_count](
+                                           //const auto kvalpair) {
+        //const auto [key, value] = kvalpair;
+        //// auto prev_value = key == 0 ? 0 : hist_s.bin_counts.at(key - 1);
+        //// the running sum
+        //auto pct_double =
+            //(100 * static_cast<double>(prev_value + value)) / cumulative_count;
+        //os << hist_s.granularity * key << ',' << pct_double << '\n';
+      //});
 
     } else {
       for (const auto [key, value] : hist.bin_counts) {
-        os << hist.granularity * key << ',' << value << '\n';
+        auto pct_double =
+            (100 * static_cast<double>(value)) / cumulative_count;
+        os << hist.granularity * key << ',' << value << ',' << pct_double <<'\n';
       }
     }
     return os;
@@ -1506,7 +1508,8 @@ template <typename image_t> struct Histogram {
     auto these_keys = this->bin_counts | rng::views::keys | rng::to_vector;
     auto rhs_keys = rhistogram.bin_counts | rng::views::keys | rng::to_vector;
 
-    auto matches = rng::views::set_intersection(these_keys, rhs_keys) | rng::to_vector;
+    auto matches =
+        rng::views::set_intersection(these_keys, rhs_keys) | rng::to_vector;
 
     // overwrite all shared keys with summed values
     for (auto key : matches) {
@@ -1517,10 +1520,11 @@ template <typename image_t> struct Histogram {
       }
     }
 
-    auto add_difference = [&matches,
-                           &merged_histogram](const auto reference_histogram, const auto keys) {
+    auto add_difference = [&matches, &merged_histogram](
+                              const auto reference_histogram, const auto keys) {
       for (const auto key : rng::views::set_difference(keys, matches)) {
-        merged_histogram.bin_counts[key] = reference_histogram.bin_counts.at(key);
+        merged_histogram.bin_counts[key] =
+            reference_histogram.bin_counts.at(key);
       }
     };
 
