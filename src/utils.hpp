@@ -1428,21 +1428,11 @@ void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
 }
 
 template <typename image_t> struct Histogram {
-  // Classic histogram or an S-curve type histogram where
-  // y-values are cumulative for current and lower bins cumulatively
-  enum PrintType { Classic, S } state;
-
   std::map<image_t, uint64_t> bin_counts;
   image_t granularity;
 
   // granularity : the range of pixel values for each bin
-  Histogram(image_t granularity = 8) : granularity(granularity) {
-    this->state = Classic;
-  }
-
-  void set_classic() { state = Classic; }
-
-  void set_s() { state = S; }
+  Histogram(image_t granularity = 8) : granularity(granularity) { }
 
   void operator()(image_t val) {
     auto i = val / granularity;
@@ -1458,7 +1448,7 @@ template <typename image_t> struct Histogram {
   // print to csv
   template <typename T>
   friend std::ostream &operator<<(std::ostream &os, const Histogram<T> &hist) {
-    os << "range,count,%\n";
+
     uint64_t cumulative_count = 0;
     rng::for_each(hist.bin_counts, [&cumulative_count](const auto kvalpair) {
       cumulative_count += kvalpair.second;
@@ -1466,30 +1456,21 @@ template <typename image_t> struct Histogram {
     if (cumulative_count == 0) {
       throw std::domain_error("S-curve histogram has cumulative count of 0");
     }
-    os << "total," << cumulative_count << '\n';
-    if (hist.state == S) {
-      // Histogram<T> hist_s = hist;
 
-      //auto keys = hist_s | rng::keys() | rng::to_vector();
+    // metadata
+    os << "# granularity " << hist.granularity << '\n';
+    os << "# total " << cumulative_count << '\n';
+    os << "range,%,cumulative %\n";
 
-      //// must use ordered map for semantic correctness below
-      //rng::for_each(hist_s.bin_counts, [&os, &hist_s, &cumulative_count](
-                                           //const auto kvalpair) {
-        //const auto [key, value] = kvalpair;
-        //// auto prev_value = key == 0 ? 0 : hist_s.bin_counts.at(key - 1);
-        //// the running sum
-        //auto pct_double =
-            //(100 * static_cast<double>(prev_value + value)) / cumulative_count;
-        //os << hist_s.granularity * key << ',' << pct_double << '\n';
-      //});
-
-    } else {
-      for (const auto [key, value] : hist.bin_counts) {
-        auto pct_double =
-            (100 * static_cast<double>(value)) / cumulative_count;
-        os << hist.granularity * key << ',' << value << ',' << pct_double <<'\n';
-      }
+    // relies on map being forward ordered for the clean cumulative impl
+    double cumulative_pct = 0.;
+    for (const auto [key, value] : hist.bin_counts) {
+      auto pct_double = (100 * static_cast<double>(value)) / cumulative_count;
+      cumulative_pct += pct_double;
+      os << hist.granularity * key << ',' << pct_double << ',' << cumulative_pct
+         << '\n';
     }
+
     return os;
   }
 

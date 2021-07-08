@@ -379,8 +379,6 @@ TEST(Histogram, CallAndPrint) {
     if (print_all) {
       std::cout << histogram.size() << '\n';
       std::cout << histogram;
-      //histogram.set_s();
-      //std::cout << histogram;
     }
 
     ASSERT_EQ(histogram.size(), n / granularity)
