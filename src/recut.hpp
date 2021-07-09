@@ -159,6 +159,16 @@ public:
                           std::string stage, T vdb_accessor);
   template <typename T2, typename FlagsT, typename ParentsT, typename PointIter,
             typename UpdateIter>
+  bool accumulate_fm(const image_t *tile, VID_t interval_id,
+                            VID_t block_id, GridCoord dst_coord, T2 ind,
+                            OffsetCoord offset_to_current, VID_t &revisits,
+                            const TileThresholds<image_t> *tile_thresholds,
+                            bool &found_adjacent_invalid, PointIter point_leaf,
+                            UpdateIter update_leaf, FlagsT flags_handle,
+                            ParentsT parents_handle,
+                            std::deque<VertexAttr> &connected_fifo);
+  template <typename T2, typename FlagsT, typename ParentsT, typename PointIter,
+            typename UpdateIter>
   bool accumulate_connected(const image_t *tile, VID_t interval_id,
                             VID_t block_id, GridCoord dst_coord, T2 ind,
                             OffsetCoord offset_to_current, VID_t &revisits,
@@ -200,6 +210,12 @@ public:
                          const TileThresholds<image_t> *tile_thresholds,
                          std::deque<VertexAttr> &connected_fifo,
                          std::deque<VertexAttr> &fifo, T2 leaf_iter);
+  template <class Container, typename T2>
+  void fm_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
+                      std::string stage,
+                      const TileThresholds<image_t> *tile_thresholds,
+                      Container &connected_fifo, Container &fifo,
+                      VID_t revisits, T2 leaf_iter);
   template <class Container, typename T2>
   void connected_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
                       std::string stage,
@@ -766,6 +782,67 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t block_id,
   }
 }
 
+
+template <class image_t>
+template <typename T2, typename FlagsT, typename ParentsT, typename PointIter,
+          typename UpdateIter>
+bool Recut<image_t>::accumulate_fm(
+    const image_t *tile, VID_t interval_id, VID_t block_id, GridCoord dst_coord,
+    T2 ind, OffsetCoord offset_to_current, VID_t &revisits,
+    const TileThresholds<image_t> *tile_thresholds,
+    bool &found_adjacent_invalid, PointIter point_leaf, UpdateIter update_leaf,
+    FlagsT flags_handle, ParentsT parents_handle,
+    std::deque<VertexAttr> &connected_fifo) {
+
+#ifdef FULL_PRINT
+  cout << "\tcheck dst: " << coord_to_str(dst_coord);
+  cout << " bkg_thresh " << +(tile_thresholds->bkg_thresh) << '\n';
+#endif
+
+  // skip backgrounds
+  // the image voxel of this dst vertex is the primary method to exclude this
+  // pixel/vertex for the remainder of all processing
+  auto found_background = false;
+  if (this->input_is_vdb) {
+    if (!point_leaf->isValueOn(dst_coord))
+      found_background = true;
+  } else {
+    auto dst_vox = get_img_val(tile, dst_coord);
+    if (dst_vox <= tile_thresholds->bkg_thresh) {
+      found_background = true;
+    }
+  }
+
+  if (found_background) {
+    found_adjacent_invalid = true;
+#ifdef FULL_PRINT
+    cout << "\t\tfailed tile_thresholds->bkg_thresh" << '\n';
+#endif
+    return false;
+  }
+
+  // all dsts are guaranteed within this domain
+  // skip already selected vertices too
+  if (is_selected(flags_handle, ind)) {
+    revisits += 1;
+    return false;
+  }
+
+  // set parents, mark selected in topology
+  set_selected(flags_handle, ind);
+  set_if_active(update_leaf, dst_coord);
+  parents_handle.set(*ind, offset_to_current);
+  auto offset = coord_mod(dst_coord, this->block_lengths);
+
+  // ensure traces a path back to root
+  connected_fifo.emplace_back(Bitfield(flags_handle.get(*ind)), offset,
+                              /*parent*/ offset_to_current);
+
+#ifdef FULL_PRINT
+  cout << "\tadded new dst to active set, vid: " << dst_coord << '\n';
+#endif
+  return true;
+}
 /**
  * accumulate is the core function of fast marching, it can only operate
  * on VertexAttr that are within the current interval_id and block_id, since
@@ -1304,6 +1381,126 @@ void Recut<image_t>::dump_buffer(Container buffer) {
 
 template <class image_t>
 template <class Container, typename T2>
+void Recut<image_t>::fm_tile(
+    const image_t *tile, VID_t interval_id, VID_t block_id, std::string stage,
+    const TileThresholds<image_t> *tile_thresholds, Container &connected_fifo,
+    Container &fifo, VID_t revisits, T2 leaf_iter) {
+  if (connected_fifo.empty())
+    return;
+
+  auto update_leaf = this->update_grid->tree().probeLeaf(leaf_iter->origin());
+  auto bbox = leaf_iter->getNodeBoundingBox();
+  assertm(update_leaf, "corresponding leaf does not exist");
+
+#ifdef FULL_PRINT
+  cout << "\nMarching " << bbox << '\n';
+#endif
+
+  // load flags
+  openvdb::points::AttributeWriteHandle<uint8_t> flags_handle =
+      leaf_iter->attributeArray("flags");
+  openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle =
+      leaf_iter->attributeArray("parents");
+  //openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle =
+      //leaf_iter->attributeArray("parents");
+
+  VertexAttr *msg_vertex;
+  VID_t visited = 0;
+  while (!(connected_fifo.empty())) {
+
+#ifdef FULL_PRINT
+    visited += 1;
+#endif
+
+    // msg_vertex might become undefined during scatter
+    // or if popping from the fifo, take needed info
+    msg_vertex = &(connected_fifo.front());
+    const bool in_domain = msg_vertex->selected();
+    auto surface = msg_vertex->surface();
+    auto msg_coord = coord_add(msg_vertex->offsets, leaf_iter->origin());
+    auto msg_off = coord_mod(msg_coord, this->block_lengths);
+    auto msg_ind = leaf_iter->beginIndexVoxel(msg_coord);
+
+#ifdef FULL_PRINT
+    cout << "check current " << msg_coord << ' ' << in_domain << '\n';
+#endif
+
+    // invalid can either be out of range of the entire global image or it
+    // can be a background vertex which occurs due to pixel value below the
+    // threshold, previously selected vertices are considered valid
+    auto found_adjacent_invalid = false;
+    auto valids =
+        // star stencil offsets to img coords
+        this->stencil |
+        rng::views::transform([&msg_coord](auto stencil_offset) {
+          return coord_add(msg_coord, stencil_offset);
+        }) |
+        // within image?
+        rng::views::remove_if([this, &found_adjacent_invalid](auto coord_img) {
+          if (this->image_bbox.isInside(coord_img))
+            return false;
+          found_adjacent_invalid = true;
+          return true;
+        }) |
+        // within leaf?
+        rng::views::remove_if([&](auto coord_img) {
+          auto mismatch = !bbox.isInside(coord_img);
+          if (mismatch) {
+            if (this->input_is_vdb) {
+              if (!this->topology_grid->tree().isValueOn(coord_img)) {
+                found_adjacent_invalid = true;
+              }
+            } else {
+              auto dst_vox = get_img_val(tile, coord_img);
+              if (dst_vox <= tile_thresholds->bkg_thresh) {
+                found_adjacent_invalid = true;
+              }
+            }
+          }
+          return mismatch;
+        }) |
+        // visit valid voxels
+        rng::views::remove_if([&](auto coord_img) {
+          auto offset_to_current = coord_sub(msg_coord, coord_img);
+          auto ind = leaf_iter->beginIndexVoxel(coord_img);
+          // is background?  ...has side-effects
+          return !accumulate_fm(
+              tile, interval_id, block_id, coord_img, ind, offset_to_current,
+              revisits, tile_thresholds, found_adjacent_invalid, leaf_iter,
+              update_leaf, flags_handle, parents_handle, connected_fifo);
+        }) |
+        rng::to_vector; // force full evaluation via vector
+
+    // ignore if already designated as surface
+    // also prevents adding to fifo twice
+    if (in_domain) {
+      if (surface ||
+          (found_adjacent_invalid && !(is_surface(flags_handle, msg_ind)))) {
+#ifdef FULL_PRINT
+        std::cout << "\tfound surface vertex in " << bbox.min() << " "
+                  << coord_to_str(msg_coord) << ' ' << msg_off << '\n';
+#endif
+
+        // save all surface vertices for the radius stage
+        // each fifo corresponds to a specific interval_id and block_id
+        // so there are no race conditions
+        // save all surface vertices for the radius stage
+        set_surface(flags_handle, msg_ind);
+        fifo.emplace_back(Bitfield(flags_handle.get(*msg_ind)), msg_off,
+                          parents_handle.get(*msg_ind));
+      }
+    }
+    // safe to remove msg now with no issue of invalidations
+    connected_fifo.pop_front(); // remove it
+  }
+
+#ifdef FULL_PRINT
+  cout << "visited vertices: " << visited << '\n';
+#endif
+}
+
+template <class image_t>
+template <class Container, typename T2>
 void Recut<image_t>::connected_tile(
     const image_t *tile, VID_t interval_id, VID_t block_id, std::string stage,
     const TileThresholds<image_t> *tile_thresholds, Container &connected_fifo,
@@ -1592,7 +1789,10 @@ void Recut<image_t>::march_narrow_band(
 
   VID_t revisits = 0;
 
-  if (stage == "connected") {
+  if (stage == "fm") {
+    fm_tile(tile, interval_id, block_id, stage, tile_thresholds,
+                   connected_fifo, fifo, revisits, leaf_iter);
+  } else if (stage == "connected") {
     connected_tile(tile, interval_id, block_id, stage, tile_thresholds,
                    connected_fifo, fifo, revisits, leaf_iter);
   } else if (stage == "radius") {
@@ -1844,7 +2044,7 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
     // TopPercentile takes a fraction not a percentile
     tile_thresholds->bkg_thresh =
         mcp3d::VolumeTopPercentile<image_t>(static_cast<void*>(mcp3d_tile.Volume<image_t>(0)), interval_dims,
-                                   (100 - params->foreground_percent()) / 100);
+                                   (params->foreground_percent()) / 100);
 
 #ifdef LOG
     cout << "Requested foreground percent: " << params->foreground_percent()
