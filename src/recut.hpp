@@ -106,6 +106,7 @@ public:
   RecutCommandLineArgs *args;
   RecutParameters *params;
   std::map<GridCoord, std::deque<VertexAttr>> map_fifo;
+  vector<local_heap> heap_vec;
   std::map<GridCoord, std::deque<VertexAttr>> connected_map;
 
   // interval specific global data structures
@@ -157,16 +158,16 @@ public:
   void check_ghost_update(VID_t interval_id, VID_t block_id,
                           GridCoord dst_coord, VertexAttr *dst,
                           std::string stage, T vdb_accessor);
-  template <typename T2, typename FlagsT, typename ParentsT, typename PointIter,
-            typename UpdateIter>
-  bool accumulate_fm(const image_t *tile, VID_t interval_id,
-                            VID_t block_id, GridCoord dst_coord, T2 ind,
-                            OffsetCoord offset_to_current, VID_t &revisits,
-                            const TileThresholds<image_t> *tile_thresholds,
-                            bool &found_adjacent_invalid, PointIter point_leaf,
-                            UpdateIter update_leaf, FlagsT flags_handle,
-                            ParentsT parents_handle,
-                            std::deque<VertexAttr> &connected_fifo);
+  template <typename IndT, typename FlagsT, typename ParentsT, typename ValueT,
+            typename PointIter, typename UpdateIter>
+  bool accumulate_fm(const image_t *tile, VID_t interval_id, VID_t block_id,
+                     GridCoord dst_coord, IndT dst_ind,
+                     OffsetCoord offset_to_current, VID_t &revisits,
+                     const TileThresholds<image_t> *tile_thresholds,
+                     bool &found_adjacent_invalid, PointIter point_leaf,
+                     UpdateIter update_leaf, FlagsT flags_handle,
+                     ParentsT parents_handle, ValueT value_handle,
+                     GridCoord current_coord, IndT current_ind, float current_vox);
   template <typename T2, typename FlagsT, typename ParentsT, typename PointIter,
             typename UpdateIter>
   bool accumulate_connected(const image_t *tile, VID_t interval_id,
@@ -177,11 +178,6 @@ public:
                             UpdateIter update_leaf, FlagsT flags_handle,
                             ParentsT parents_handle,
                             std::deque<VertexAttr> &connected_fifo);
-  bool accumulate_value(const image_t *tile, VID_t interval_id,
-                        GridCoord dst_coord, VID_t block_id,
-                        struct VertexAttr *current, VID_t &revisits,
-                        const TileThresholds<image_t> *tile_thresholds,
-                        bool &found_background);
   bool is_covered_by_parent(VID_t interval_id, VID_t block_id,
                             VertexAttr *current);
   template <class Container, typename IndT, typename RadiusT, typename FlagsT,
@@ -212,10 +208,10 @@ public:
                          std::deque<VertexAttr> &fifo, T2 leaf_iter);
   template <class Container, typename T2>
   void fm_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
-                      std::string stage,
-                      const TileThresholds<image_t> *tile_thresholds,
-                      Container &connected_fifo, Container &fifo,
-                      VID_t revisits, T2 leaf_iter);
+               std::string stage,
+               const TileThresholds<image_t> *tile_thresholds,
+               Container &connected_fifo, Container &fifo, VID_t revisits,
+               T2 leaf_iter);
   template <class Container, typename T2>
   void connected_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
                       std::string stage,
@@ -782,17 +778,17 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t block_id,
   }
 }
 
-
 template <class image_t>
-template <typename T2, typename FlagsT, typename ParentsT, typename PointIter,
-          typename UpdateIter>
+template <typename IndT, typename FlagsT, typename ParentsT, typename ValueT,
+          typename PointIter, typename UpdateIter>
 bool Recut<image_t>::accumulate_fm(
     const image_t *tile, VID_t interval_id, VID_t block_id, GridCoord dst_coord,
-    T2 ind, OffsetCoord offset_to_current, VID_t &revisits,
+    IndT dst_ind, OffsetCoord offset_to_current, VID_t &revisits,
     const TileThresholds<image_t> *tile_thresholds,
     bool &found_adjacent_invalid, PointIter point_leaf, UpdateIter update_leaf,
-    FlagsT flags_handle, ParentsT parents_handle,
-    std::deque<VertexAttr> &connected_fifo) {
+    FlagsT flags_handle, ParentsT parents_handle, ValueT value_handle,
+    GridCoord current_coord,
+    IndT current_ind, float current_vox) {
 
 #ifdef FULL_PRINT
   cout << "\tcheck dst: " << coord_to_str(dst_coord);
@@ -803,11 +799,17 @@ bool Recut<image_t>::accumulate_fm(
   // the image voxel of this dst vertex is the primary method to exclude this
   // pixel/vertex for the remainder of all processing
   auto found_background = false;
+  image_t dst_vox;
   if (this->input_is_vdb) {
-    if (!point_leaf->isValueOn(dst_coord))
+    // input grid and point grid are synonymous in terms of active topology
+    // on active point was already found to be foreground
+    if (point_leaf->isValueOn(dst_coord)) {
+      dst_vox = this->input_grid->tree().getValue(dst_coord);
+    } else {
       found_background = true;
+    }
   } else {
-    auto dst_vox = get_img_val(tile, dst_coord);
+    dst_vox = get_img_val(tile, dst_coord);
     if (dst_vox <= tile_thresholds->bkg_thresh) {
       found_background = true;
     }
@@ -821,28 +823,48 @@ bool Recut<image_t>::accumulate_fm(
     return false;
   }
 
-  // all dsts are guaranteed within this domain
-  // skip already selected vertices too
-  if (is_selected(flags_handle, ind)) {
-    revisits += 1;
-    return false;
-  }
+  // current march values
+  auto current_value = value_handle.get(*current_ind);
+  auto dst_value = value_handle.get(*dst_ind);
 
-  // set parents, mark selected in topology
-  set_selected(flags_handle, ind);
-  set_if_active(update_leaf, dst_coord);
-  parents_handle.set(*ind, offset_to_current);
-  auto offset = coord_mod(dst_coord, this->block_lengths);
+  // solve for update value
+  // dst_id linear idx relative to full image domain
+  float updated_val_attr = static_cast<float>(
+      current_value + (tile_thresholds->calc_weight(current_vox) +
+                       tile_thresholds->calc_weight(dst_vox)) *
+                          0.5);
 
-  // ensure traces a path back to root
-  connected_fifo.emplace_back(Bitfield(flags_handle.get(*ind)), offset,
-                              /*parent*/ offset_to_current);
+  // check for updates according to criterion
+  // this automatically excludes any root vertex since they have a
+  // value of 0.
+  if (dst_value > updated_val_attr) {
+    // all dsts are guaranteed within this domain
+    // skip already selected vertices too
+    if (is_selected(flags_handle, dst_ind)) {
+      revisits += 1;
+      return false;
+    }
+
+    // set parents, mark selected in topology
+    set_selected(flags_handle, dst_ind);
+    set_if_active(update_leaf, dst_coord);
+    parents_handle.set(*dst_ind, offset_to_current);
+    auto offset = coord_mod(dst_coord, this->block_lengths);
+
+    // ensure traces a path back to root
+    // TODO optimize away copy construction of the vert
+    auto vert = new VertexAttr(Bitfield(flags_handle.get(*dst_ind)), offset,
+        /*parent*/ offset_to_current, updated_val_attr);
+    heap_vec[block_id].push(vert, block_id, "value");
 
 #ifdef FULL_PRINT
-  cout << "\tadded new dst to active set, vid: " << dst_coord << '\n';
+    cout << "\tadded new dst to active set, vid: " << dst_coord << '\n';
 #endif
-  return true;
+    return true;
+  }
+  return false;
 }
+
 /**
  * accumulate is the core function of fast marching, it can only operate
  * on VertexAttr that are within the current interval_id and block_id, since
@@ -1381,10 +1403,11 @@ void Recut<image_t>::dump_buffer(Container buffer) {
 
 template <class image_t>
 template <class Container, typename T2>
-void Recut<image_t>::fm_tile(
-    const image_t *tile, VID_t interval_id, VID_t block_id, std::string stage,
-    const TileThresholds<image_t> *tile_thresholds, Container &connected_fifo,
-    Container &fifo, VID_t revisits, T2 leaf_iter) {
+void Recut<image_t>::fm_tile(const image_t *tile, VID_t interval_id,
+                             VID_t block_id, std::string stage,
+                             const TileThresholds<image_t> *tile_thresholds,
+                             Container &connected_fifo, Container &fifo,
+                             VID_t revisits, T2 leaf_iter) {
   if (connected_fifo.empty())
     return;
 
@@ -1401,12 +1424,12 @@ void Recut<image_t>::fm_tile(
       leaf_iter->attributeArray("flags");
   openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle =
       leaf_iter->attributeArray("parents");
-  //openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle =
-      //leaf_iter->attributeArray("parents");
+  openvdb::points::AttributeWriteHandle<float> value_handle =
+      leaf_iter->attributeArray("value");
 
   VertexAttr *msg_vertex;
   VID_t visited = 0;
-  while (!(connected_fifo.empty())) {
+  while (!(heap_vec[block_id].empty())) {
 
 #ifdef FULL_PRINT
     visited += 1;
@@ -1414,12 +1437,14 @@ void Recut<image_t>::fm_tile(
 
     // msg_vertex might become undefined during scatter
     // or if popping from the fifo, take needed info
-    msg_vertex = &(connected_fifo.front());
+    msg_vertex = heap_vec[block_id].pop(block_id, stage);
+
     const bool in_domain = msg_vertex->selected();
     auto surface = msg_vertex->surface();
     auto msg_coord = coord_add(msg_vertex->offsets, leaf_iter->origin());
     auto msg_off = coord_mod(msg_coord, this->block_lengths);
     auto msg_ind = leaf_iter->beginIndexVoxel(msg_coord);
+    auto msg_vox = this->input_grid->tree().getValue(msg_coord);
 
 #ifdef FULL_PRINT
     cout << "check current " << msg_coord << ' ' << in_domain << '\n';
@@ -1464,10 +1489,11 @@ void Recut<image_t>::fm_tile(
           auto offset_to_current = coord_sub(msg_coord, coord_img);
           auto ind = leaf_iter->beginIndexVoxel(coord_img);
           // is background?  ...has side-effects
-          return !accumulate_fm(
-              tile, interval_id, block_id, coord_img, ind, offset_to_current,
-              revisits, tile_thresholds, found_adjacent_invalid, leaf_iter,
-              update_leaf, flags_handle, parents_handle, connected_fifo);
+          return !accumulate_fm(tile, interval_id, block_id, coord_img, ind,
+                                offset_to_current, revisits, tile_thresholds,
+                                found_adjacent_invalid, leaf_iter, update_leaf,
+                                flags_handle, parents_handle, value_handle,
+                                coord_img, msg_ind, msg_vox);
         }) |
         rng::to_vector; // force full evaluation via vector
 
@@ -1782,7 +1808,7 @@ void Recut<image_t>::march_narrow_band(
     T2 leaf_iter) {
   //#ifdef LOG_FULL
   // VID_t visited = 0;
-  // auto timer = new high_resolution_timer();
+  // auto timer = high_resolution_timer();
   // cout << "\nMarching " << tree_to_str(interval_id, block_id) << ' '
   //<< leaf_iter->origin() << '\n';
   //#endif
@@ -1790,8 +1816,8 @@ void Recut<image_t>::march_narrow_band(
   VID_t revisits = 0;
 
   if (stage == "fm") {
-    fm_tile(tile, interval_id, block_id, stage, tile_thresholds,
-                   connected_fifo, fifo, revisits, leaf_iter);
+    fm_tile(tile, interval_id, block_id, stage, tile_thresholds, connected_fifo,
+            fifo, revisits, leaf_iter);
   } else if (stage == "connected") {
     connected_tile(tile, interval_id, block_id, stage, tile_thresholds,
                    connected_fifo, fifo, revisits, leaf_iter);
@@ -1807,7 +1833,7 @@ void Recut<image_t>::march_narrow_band(
 
   //#ifdef LOG_FULL
   // cout << "Marched interval: " << interval_id << " block: " << block_id
-  //<< " visiting " << visited << " in " << timer->elapsed() << " s" << '\n';
+  //<< " visiting " << visited << " in " << timer.elapsed() << " s" << '\n';
   //#endif
 
 } // end march_narrow_band
@@ -2042,9 +2068,9 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
     // params->foreground_percent());
 
     // TopPercentile takes a fraction not a percentile
-    tile_thresholds->bkg_thresh =
-        mcp3d::VolumeTopPercentile<image_t>(static_cast<void*>(mcp3d_tile.Volume<image_t>(0)), interval_dims,
-                                   (params->foreground_percent()) / 100);
+    tile_thresholds->bkg_thresh = mcp3d::VolumeTopPercentile<image_t>(
+        static_cast<void *>(mcp3d_tile.Volume<image_t>(0)), interval_dims,
+        (params->foreground_percent()) / 100);
 
 #ifdef LOG
     cout << "Requested foreground percent: " << params->foreground_percent()
@@ -2135,7 +2161,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #ifdef LOG
   cout << "Start updating stage " << stage << '\n';
 #endif
-  auto timer = new high_resolution_timer();
+  auto timer = high_resolution_timer();
 
   // note openvdb::initialize() must have been called before this point
   // otherwise seg faults will occur
@@ -2145,7 +2171,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   // assertm(this->topology_grid, "topology grid not initialized");
   std::vector<EnlargedPointDataGrid::Ptr> grids(this->grid_interval_size);
 
-   auto histogram = Histogram<image_t>();
+  auto histogram = Histogram<image_t>();
 
   // Main march for loop
   // continue iterating until all intervals are finished
@@ -2254,10 +2280,10 @@ Recut<image_t>::update(std::string stage, Container &fifo,
             if (!(this->params->force_regenerate_image)) {
               load_tile(interval_id, *mcp3d_tile);
               if (!local_tile_thresholds) {
-                auto thresh_start = timer->elapsed();
+                auto thresh_start = timer.elapsed();
                 local_tile_thresholds = get_tile_thresholds(*mcp3d_tile);
                 computation_time =
-                    computation_time + (timer->elapsed() - thresh_start);
+                    computation_time + (timer.elapsed() - thresh_start);
               }
               tile = mcp3d_tile->Volume<image_t>(0);
             }
@@ -2285,7 +2311,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                                          ? this->image_lengths
                                          : this->interval_lengths;
 
-          auto convert_start = timer->elapsed();
+          auto convert_start = timer.elapsed();
 
 #ifdef FULL_PRINT
           // print_image_3D(tile, buffer_extents);
@@ -2318,7 +2344,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #endif
           }
           computation_time =
-              computation_time + (timer->elapsed() - convert_start);
+              computation_time + (timer.elapsed() - convert_start);
 
           active_intervals[interval_id] = false;
 #ifdef LOG
@@ -2339,7 +2365,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   }   // finished all intervals
 
   if (stage == "convert") {
-    auto finalize_start = timer->elapsed();
+    auto finalize_start = timer.elapsed();
 
     if (args->type_ == "point") {
 
@@ -2371,13 +2397,13 @@ Recut<image_t>::update(std::string stage, Container &fifo,
         file.close();
       };
 
-       write_to_file(histogram, "hist.txt");
+      write_to_file(histogram, "hist.txt");
 
-       //histogram.set_s();
-       //write_to_file(histogram, "hist-s.txt");
+      // histogram.set_s();
+      // write_to_file(histogram, "hist-s.txt");
     }
 
-    auto finalize_time = timer->elapsed() - finalize_start;
+    auto finalize_time = timer.elapsed() - finalize_start;
     computation_time = computation_time + finalize_time;
 #ifdef LOG
     cout << "Grid finalize time: " << finalize_time << " s\n";
@@ -2392,7 +2418,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #endif
   }
 
-  auto total_update_time = timer->elapsed();
+  auto total_update_time = timer.elapsed();
   auto io_time = total_update_time - computation_time;
 #ifdef LOG
   cout << "Finished stage: " << stage << '\n';
@@ -2464,7 +2490,7 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
                                         const VID_t &interval_block_size) {
   this->active_intervals = vector(grid_interval_size, false);
 
-  auto timer = new high_resolution_timer();
+  auto timer = high_resolution_timer();
 
   if (!params->convert_only_) {
 
@@ -2487,7 +2513,9 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
          ++leaf_iter) {
       auto origin = leaf_iter->getNodeBoundingBox().min();
 
+      // per leaf fifo/pq resources
       inner[origin] = std::deque<VertexAttr>();
+      heap_vec.push_back(local_heap());
 
       // every topology_grid leaf must have a corresponding leaf explicitly
       // created
@@ -2519,7 +2547,7 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
        << '\n';
 #endif
 #ifdef LOG_FULL
-  cout << "\tCreated fifos " << timer->elapsed() << 's' << '\n';
+  cout << "\tCreated fifos " << timer.elapsed() << 's' << '\n';
 #endif
 }
 
@@ -2549,7 +2577,7 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
                    "USE_VDB must be defined");
 #endif
 
-    auto timer = new high_resolution_timer();
+    auto timer = high_resolution_timer();
     auto base_grid = read_vdb_file(args->image_root_dir());
 
 #ifdef LOG
@@ -2574,7 +2602,7 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     append_attributes(this->topology_grid);
 
 #ifdef LOG
-    cout << "Read grid in: " << timer->elapsed() << " s\n";
+    cout << "Read grid in: " << timer.elapsed() << " s\n";
 #endif
 
   } else {

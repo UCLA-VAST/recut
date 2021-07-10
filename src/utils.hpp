@@ -28,7 +28,6 @@ namespace rng = ranges;
 #endif
 
 #define PI 3.14159265
-#define assertm(exp, msg) assert(((void)msg, exp))
 // be able to change pp values into std::string
 #define XSTR(x) STR(x)
 #define STR(x) #x
@@ -1020,7 +1019,15 @@ auto append_attributes = [](auto grid) {
   openvdb::NamePair parentAttribute =
       openvdb::points::TypedAttributeArray<OffsetCoord, Codec>::attributeType();
   openvdb::points::appendAttribute(grid->tree(), "parents", parentAttribute);
+
+  // append a value attribute for fastmarching
+  openvdb::NamePair valueAttribute =
+      openvdb::points::TypedAttributeArray<float, Codec>::attributeType();
+  openvdb::points::appendAttribute(grid->tree(), "value", valueAttribute);
+
+#ifdef LOG
   cout << "appended all attributes\n";
+#endif
 };
 
 auto read_vdb_file(std::string fn, std::string grid_name = "topology") {
