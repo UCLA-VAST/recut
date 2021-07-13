@@ -160,7 +160,7 @@ public:
                           std::string stage, T vdb_accessor);
   template <typename IndT, typename FlagsT, typename ParentsT, typename ValueT,
             typename PointIter, typename UpdateIter>
-  bool accumulate_fm(const image_t *tile, VID_t interval_id, VID_t block_id,
+  bool accumulate_value(const image_t *tile, VID_t interval_id, VID_t block_id,
                      GridCoord dst_coord, IndT dst_ind,
                      OffsetCoord offset_to_current, VID_t &revisits,
                      const TileThresholds<image_t> *tile_thresholds,
@@ -207,10 +207,10 @@ public:
                          std::deque<VertexAttr> &connected_fifo,
                          std::deque<VertexAttr> &fifo, T2 leaf_iter);
   template <class Container, typename T2>
-  void fm_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
+  void value_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
                std::string stage,
                const TileThresholds<image_t> *tile_thresholds,
-               Container &connected_fifo, Container &fifo, VID_t revisits,
+               Container &fifo, VID_t revisits,
                T2 leaf_iter);
   template <class Container, typename T2>
   void connected_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
@@ -781,7 +781,7 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t block_id,
 template <class image_t>
 template <typename IndT, typename FlagsT, typename ParentsT, typename ValueT,
           typename PointIter, typename UpdateIter>
-bool Recut<image_t>::accumulate_fm(
+bool Recut<image_t>::accumulate_value(
     const image_t *tile, VID_t interval_id, VID_t block_id, GridCoord dst_coord,
     IndT dst_ind, OffsetCoord offset_to_current, VID_t &revisits,
     const TileThresholds<image_t> *tile_thresholds,
@@ -1403,12 +1403,12 @@ void Recut<image_t>::dump_buffer(Container buffer) {
 
 template <class image_t>
 template <class Container, typename T2>
-void Recut<image_t>::fm_tile(const image_t *tile, VID_t interval_id,
+void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
                              VID_t block_id, std::string stage,
                              const TileThresholds<image_t> *tile_thresholds,
-                             Container &connected_fifo, Container &fifo,
+                             Container &fifo,
                              VID_t revisits, T2 leaf_iter) {
-  if (connected_fifo.empty())
+  if (heap_vec[block_id].empty())
     return;
 
   auto update_leaf = this->update_grid->tree().probeLeaf(leaf_iter->origin());
@@ -1489,7 +1489,7 @@ void Recut<image_t>::fm_tile(const image_t *tile, VID_t interval_id,
           auto offset_to_current = coord_sub(msg_coord, coord_img);
           auto ind = leaf_iter->beginIndexVoxel(coord_img);
           // is background?  ...has side-effects
-          return !accumulate_fm(tile, interval_id, block_id, coord_img, ind,
+          return !accumulate_value(tile, interval_id, block_id, coord_img, ind,
                                 offset_to_current, revisits, tile_thresholds,
                                 found_adjacent_invalid, leaf_iter, update_leaf,
                                 flags_handle, parents_handle, value_handle,
@@ -1516,8 +1516,6 @@ void Recut<image_t>::fm_tile(const image_t *tile, VID_t interval_id,
                           parents_handle.get(*msg_ind));
       }
     }
-    // safe to remove msg now with no issue of invalidations
-    connected_fifo.pop_front(); // remove it
   }
 
 #ifdef FULL_PRINT
@@ -1815,8 +1813,8 @@ void Recut<image_t>::march_narrow_band(
 
   VID_t revisits = 0;
 
-  if (stage == "fm") {
-    fm_tile(tile, interval_id, block_id, stage, tile_thresholds, connected_fifo,
+  if (stage == "value") {
+    value_tile(tile, interval_id, block_id, stage, tile_thresholds, 
             fifo, revisits, leaf_iter);
   } else if (stage == "connected") {
     connected_tile(tile, interval_id, block_id, stage, tile_thresholds,
@@ -3084,9 +3082,9 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   // starting from the roots connected stage saves all surface vertices into
   // fifo
-  stage = "connected";
   this->activate_vids(this->topology_grid, root_coords, stage, this->map_fifo,
                       this->connected_map);
+  stage = "value";
   this->update(stage, map_fifo);
 
   auto all_invalid = [](const auto &flags_handle, const auto &parents_handle,

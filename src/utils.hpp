@@ -5,7 +5,7 @@
 #include "range/v3/all.hpp"
 #include "recut_parameters.hpp"
 #include "vertex_attr.hpp"
-#include <algorithm> //min
+#include <algorithm> //min, clamp
 #include <atomic>
 #include <chrono>
 #include <cstdlib> //rand srand
@@ -1550,6 +1550,10 @@ Histogram<image_t> hist(image_t *buffer, GridCoord buffer_lengths,
 auto convert_buffer_to_vdb_acc =
     [](auto buffer, GridCoord buffer_lengths, GridCoord buffer_offsets,
        GridCoord image_offsets, auto accessor, auto bkg_thresh = 0) {
+
+      // half-range of uint8_t, recorded max values of 8k / 64 -> ~128
+      auto val_transform = [](auto val) { return std::clamp(val / 64, 0, 127); };
+
       for (auto z : rng::views::iota(0, buffer_lengths[2])) {
         for (auto y : rng::views::iota(0, buffer_lengths[1])) {
           for (auto x : rng::views::iota(0, buffer_lengths[0])) {
@@ -1560,7 +1564,7 @@ auto convert_buffer_to_vdb_acc =
             // voxels equal to bkg_thresh are always discarded
             if (val > bkg_thresh) {
               // accessor.setValueOn(xyz);
-              accessor.setValue(grid_xyz, val);
+              accessor.setValue(grid_xyz, val_transform(val));
             }
           }
         }

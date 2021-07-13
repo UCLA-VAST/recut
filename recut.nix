@@ -25,6 +25,7 @@ in
 
   buildInputs = [
     python38Packages.matplotlib
+    python38Packages.pandas
     range-v3
     gtest
 
