@@ -14,6 +14,7 @@
 #include <math.h>
 #include <numeric>
 #include <stdlib.h> // ultoa
+#include <openvdb/tools/Composite.h>
 
 namespace fs = std::filesystem;
 namespace rng = ranges;
@@ -2085,3 +2086,32 @@ auto leaves_intersect = [](EnlargedPointDataGrid::Ptr grid,
                         other_origins.end(), std::back_inserter(out));
   return !out.empty();
 };
+
+auto read_vdb_float = [](std::string fn) {
+  auto base_grid = read_vdb_file(fn);
+  auto float_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
+#ifdef LOG
+  print_grid_metadata(float_grid);
+#endif
+  return float_grid;
+};
+
+auto combine_grids = [](std::string lhs, std::string rhs, std::string out) {
+
+  auto first_grid = read_vdb_float(lhs);
+  {
+    auto second_grid = read_vdb_float(rhs);
+
+    // arithmetic sums in-place to first_grid and empties second_grid
+    vb::tools::compSum(*first_grid, *second_grid);
+
+#ifdef LOG
+    print_grid_metadata(first_grid);
+#endif
+  }
+
+  openvdb::GridPtrVec grids;
+  grids.push_back(first_grid);
+  write_vdb_file(grids, out);
+};
+

@@ -203,6 +203,9 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--allow-gap") == 0 ||
                  strcmp(argv[i], "--ag") == 0) {
         args.recut_parameters().set_allow_gap(true);
+      } else if (strcmp(argv[i], "--combine") == 0 ) {
+        args.recut_parameters().set_combine(argv[i+1]);
+        ++i;
       } else {
         cout << "unknown option \"" << argv[i] << "\"  ...exiting\n\n";
         RecutCommandLineArgs::PrintUsage();

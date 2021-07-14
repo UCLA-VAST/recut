@@ -161,13 +161,14 @@ public:
   template <typename IndT, typename FlagsT, typename ParentsT, typename ValueT,
             typename PointIter, typename UpdateIter>
   bool accumulate_value(const image_t *tile, VID_t interval_id, VID_t block_id,
-                     GridCoord dst_coord, IndT dst_ind,
-                     OffsetCoord offset_to_current, VID_t &revisits,
-                     const TileThresholds<image_t> *tile_thresholds,
-                     bool &found_adjacent_invalid, PointIter point_leaf,
-                     UpdateIter update_leaf, FlagsT flags_handle,
-                     ParentsT parents_handle, ValueT value_handle,
-                     GridCoord current_coord, IndT current_ind, float current_vox);
+                        GridCoord dst_coord, IndT dst_ind,
+                        OffsetCoord offset_to_current, VID_t &revisits,
+                        const TileThresholds<image_t> *tile_thresholds,
+                        bool &found_adjacent_invalid, PointIter point_leaf,
+                        UpdateIter update_leaf, FlagsT flags_handle,
+                        ParentsT parents_handle, ValueT value_handle,
+                        GridCoord current_coord, IndT current_ind,
+                        float current_vox);
   template <typename T2, typename FlagsT, typename ParentsT, typename PointIter,
             typename UpdateIter>
   bool accumulate_connected(const image_t *tile, VID_t interval_id,
@@ -208,10 +209,9 @@ public:
                          std::deque<VertexAttr> &fifo, T2 leaf_iter);
   template <class Container, typename T2>
   void value_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
-               std::string stage,
-               const TileThresholds<image_t> *tile_thresholds,
-               Container &fifo, VID_t revisits,
-               T2 leaf_iter);
+                  std::string stage,
+                  const TileThresholds<image_t> *tile_thresholds,
+                  Container &fifo, VID_t revisits, T2 leaf_iter);
   template <class Container, typename T2>
   void connected_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
                       std::string stage,
@@ -787,8 +787,7 @@ bool Recut<image_t>::accumulate_value(
     const TileThresholds<image_t> *tile_thresholds,
     bool &found_adjacent_invalid, PointIter point_leaf, UpdateIter update_leaf,
     FlagsT flags_handle, ParentsT parents_handle, ValueT value_handle,
-    GridCoord current_coord,
-    IndT current_ind, float current_vox) {
+    GridCoord current_coord, IndT current_ind, float current_vox) {
 
 #ifdef FULL_PRINT
   cout << "\tcheck dst: " << coord_to_str(dst_coord);
@@ -854,7 +853,7 @@ bool Recut<image_t>::accumulate_value(
     // ensure traces a path back to root
     // TODO optimize away copy construction of the vert
     auto vert = new VertexAttr(Bitfield(flags_handle.get(*dst_ind)), offset,
-        /*parent*/ offset_to_current, updated_val_attr);
+                               /*parent*/ offset_to_current, updated_val_attr);
     heap_vec[block_id].push(vert, block_id, "value");
 
 #ifdef FULL_PRINT
@@ -1404,10 +1403,9 @@ void Recut<image_t>::dump_buffer(Container buffer) {
 template <class image_t>
 template <class Container, typename T2>
 void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
-                             VID_t block_id, std::string stage,
-                             const TileThresholds<image_t> *tile_thresholds,
-                             Container &fifo,
-                             VID_t revisits, T2 leaf_iter) {
+                                VID_t block_id, std::string stage,
+                                const TileThresholds<image_t> *tile_thresholds,
+                                Container &fifo, VID_t revisits, T2 leaf_iter) {
   if (heap_vec[block_id].empty())
     return;
 
@@ -1490,10 +1488,10 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
           auto ind = leaf_iter->beginIndexVoxel(coord_img);
           // is background?  ...has side-effects
           return !accumulate_value(tile, interval_id, block_id, coord_img, ind,
-                                offset_to_current, revisits, tile_thresholds,
-                                found_adjacent_invalid, leaf_iter, update_leaf,
-                                flags_handle, parents_handle, value_handle,
-                                coord_img, msg_ind, msg_vox);
+                                   offset_to_current, revisits, tile_thresholds,
+                                   found_adjacent_invalid, leaf_iter,
+                                   update_leaf, flags_handle, parents_handle,
+                                   value_handle, coord_img, msg_ind, msg_vox);
         }) |
         rng::to_vector; // force full evaluation via vector
 
@@ -1814,8 +1812,8 @@ void Recut<image_t>::march_narrow_band(
   VID_t revisits = 0;
 
   if (stage == "value") {
-    value_tile(tile, interval_id, block_id, stage, tile_thresholds, 
-            fifo, revisits, leaf_iter);
+    value_tile(tile, interval_id, block_id, stage, tile_thresholds, fifo,
+               revisits, leaf_iter);
   } else if (stage == "connected") {
     connected_tile(tile, interval_id, block_id, stage, tile_thresholds,
                    connected_fifo, fifo, revisits, leaf_iter);
@@ -3053,8 +3051,14 @@ template <class image_t> void Recut<image_t>::prune_radii() {
 }
 
 template <class image_t> void Recut<image_t>::operator()() {
-  std::string stage;
+  if (!params->second_grid_.empty()) {
+    combine_grids(args->image_root_dir(), params->second_grid_,
+                  this->params->out_vdb_);
+    return;
+  }
+
   openvdb::GridPtrVec grids;
+  std::string stage;
   // create a list of root vids
   auto root_coords = this->initialize();
 

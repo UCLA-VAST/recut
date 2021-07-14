@@ -83,6 +83,7 @@ class RecutParameters {
     }
     void set_prune(int prune) { prune_ = prune; }
     void set_allow_gap(bool allow_gap) { allow_gap_ = allow_gap; }
+    void set_combine(std::string second_grid) { second_grid_ = second_grid; }
     void set_background_thresh(int background_thresh) {
       background_thresh_ = std::max(background_thresh, 0);
     }
@@ -137,7 +138,7 @@ class RecutParameters {
         prune_, interval_length;
     double foreground_percent_, sr_ratio_, length_thresh_, restart_factor_,
            max_intensity_, min_intensity_;
-    std::string marker_file_path_, out_vdb_;
+    std::string marker_file_path_, out_vdb_, second_grid_;
 };
 
 class RecutCommandLineArgs {
