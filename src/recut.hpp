@@ -2089,6 +2089,13 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
       // max and min members will be set
       tile_thresholds->get_max_min(mcp3d_tile.Volume<image_t>(0),
                                    interval_vertex_size);
+#ifdef LOG_FULL
+      cout << "max_int: " << +(tile_thresholds->max_int)
+           << " min_int: " << +(tile_thresholds->min_int) << '\n';
+      cout << "bkg_thresh value = " << +(tile_thresholds->bkg_thresh) << '\n';
+      cout << "interval dims x " << interval_dims[2] << " y "
+           << interval_dims[1] << " z " << interval_dims[0] << '\n';
+#endif
     }
   } else if (this->args->recut_parameters().get_min_intensity() < 0) {
     // if max intensity was set but not a min, just use the bkg_thresh value
@@ -2102,6 +2109,13 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
         // max and min members will be set
         tile_thresholds->get_max_min(mcp3d_tile.Volume<image_t>(0),
                                      interval_vertex_size);
+#ifdef LOG_FULL
+        cout << "max_int: " << +(tile_thresholds->max_int)
+             << " min_int: " << +(tile_thresholds->min_int) << '\n';
+        cout << "bkg_thresh value = " << +(tile_thresholds->bkg_thresh) << '\n';
+        cout << "interval dims x " << interval_dims[2] << " y "
+             << interval_dims[1] << " z " << interval_dims[0] << '\n';
+#endif
       }
     }
   } else { // both values were set
@@ -2117,14 +2131,6 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
     tile_thresholds->min_int =
         this->args->recut_parameters().get_min_intensity();
   }
-
-#ifdef LOG_FULL
-  cout << "max_int: " << +(tile_thresholds->max_int)
-       << " min_int: " << +(tile_thresholds->min_int) << '\n';
-  cout << "bkg_thresh value = " << +(tile_thresholds->bkg_thresh) << '\n';
-  cout << "interval dims x " << interval_dims[2] << " y " << interval_dims[1]
-       << " z " << interval_dims[0] << '\n';
-#endif
 
   return tile_thresholds;
 } // end load_tile()
@@ -2294,7 +2300,6 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #endif
 
         if (stage == "convert") {
-#ifdef USE_VDB
           assertm(!this->input_is_vdb,
                   "input can't be vdb during convert stage");
 
@@ -2318,7 +2323,9 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                                       /*image_offsets=*/interval_offsets,
                                       this->input_grid->getAccessor(),
                                       local_tile_thresholds->bkg_thresh);
-            histogram += hist(tile, buffer_extents, buffer_offsets);
+            if (params->histogram_) {
+              histogram += hist(tile, buffer_extents, buffer_offsets);
+            }
           } else {
 
             std::vector<PositionT> positions;
@@ -2344,10 +2351,10 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
           active_intervals[interval_id] = false;
 #ifdef LOG
-          cout << "Completed interval id: " << interval_id << '\n';
+          cout << "Completed traversal of interval " << interval_id << " of "
+               << grid_interval_size << " in " << timer.elapsed() - convert_start << " s\n";
 #endif
-#endif
-          // mcp3d tile must be explicitly cleared
+          // mcp3d tile must be explicitly cleared to prevent out of memory issues
           mcp3d_tile->ClearData(); // invalidates tile
         } else {
           computation_time =
@@ -2371,7 +2378,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
         // vb::tools::compActiveLeafVoxels(grids[i]->tree(), grids[i +
         // 1]->tree());
         if (leaves_intersect(grids[i + 1], grids[i])) {
-          cout << "\nWarning: leaves intersect\n";
+          cout << "\nWarning: leaves intersect, can cause undefined behavior\n";
         }
         // leaves grids[i] empty, copies all to grids[i+1]
         grids[i + 1]->tree().merge(grids[i]->tree(),
@@ -2386,17 +2393,16 @@ Recut<image_t>::update(std::string stage, Container &fifo,
       set_grid_meta(this->input_grid, this->image_lengths, 0);
       this->input_grid->tree().prune();
 
-      auto write_to_file = [](auto out, std::string fn) {
-        std::ofstream file;
-        file.open(fn);
-        file << out;
-        file.close();
-      };
+      if (params->histogram_) {
+        auto write_to_file = [](auto out, std::string fn) {
+          std::ofstream file;
+          file.open(fn);
+          file << out;
+          file.close();
+        };
 
-      write_to_file(histogram, "hist.txt");
-
-      // histogram.set_s();
-      // write_to_file(histogram, "hist-s.txt");
+        write_to_file(histogram, "hist.txt");
+      }
     }
 
     auto finalize_time = timer.elapsed() - finalize_start;

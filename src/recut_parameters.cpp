@@ -206,6 +206,8 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--combine") == 0 ) {
         args.recut_parameters().set_combine(argv[i+1]);
         ++i;
+      } else if (strcmp(argv[i], "--histogram") == 0 ) {
+        args.recut_parameters().set_histogram(true);
       } else {
         cout << "unknown option \"" << argv[i] << "\"  ...exiting\n\n";
         RecutCommandLineArgs::PrintUsage();

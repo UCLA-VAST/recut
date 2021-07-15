@@ -20,6 +20,7 @@ class RecutParameters {
       coverage_prune_ = true;
       prune_ = 1;
       allow_gap_ = false;
+      histogram_ = false;
       background_thresh_ = -1;
       foreground_percent_ = -0.01;
       length_thresh_ = 5.0;
@@ -78,6 +79,7 @@ class RecutParameters {
     void set_restart(bool restart) { restart_ = restart; }
     void set_parallel_num(int num) { parallel_num_ = num; }
     void set_gsdt(bool is_gsdt) { gsdt_ = is_gsdt; }
+    void set_histogram(bool histogram) { histogram_ = histogram; }
     void set_coverage_prune(bool coverage_prune) {
       coverage_prune_ = coverage_prune;
     }
@@ -132,7 +134,7 @@ class RecutParameters {
     bool force_regenerate_image, convert_only_;
     int tcase, slt_pct;
     uint64_t selected, root_vid;
-    bool gsdt_, coverage_prune_, allow_gap_, cube_256_, radius_from_2d_,
+    bool histogram_, gsdt_, coverage_prune_, allow_gap_, cube_256_, radius_from_2d_,
          swc_resample_, high_intensity_, brightfield_, restart_;
     int user_thread_count_, background_thresh_, cnn_type_, parallel_num_,
         prune_, interval_length;

@@ -1468,14 +1468,14 @@ template <typename image_t> struct Histogram {
     // metadata
     os << "# granularity " << hist.granularity << '\n';
     os << "# total " << cumulative_count << '\n';
-    os << "range,%,cumulative %\n";
+    os << "range,count,%,cumulative %\n";
 
     // relies on map being forward ordered for the clean cumulative impl
     double cumulative_pct = 0.;
     for (const auto [key, value] : hist.bin_counts) {
       auto pct_double = (100 * static_cast<double>(value)) / cumulative_count;
       cumulative_pct += pct_double;
-      os << hist.granularity * key << ',' << pct_double << ',' << cumulative_pct
+      os << hist.granularity * key << ',' << value << ',' << pct_double << ',' << cumulative_pct
          << '\n';
     }
 
