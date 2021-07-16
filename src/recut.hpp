@@ -428,13 +428,17 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
                }) |
                rng::to_vector;
 
+#ifdef LOG
+    cout << "Roots in dir: " << roots.size() << '\n';
+#endif
+
   return roots | rng::views::remove_if([this, &local_bbox](auto coord_radius) {
            auto [coord, radius] = coord_radius;
            if (local_bbox.isInside(coord)) {
              if (this->topology_grid->tree().isValueOn(coord)) {
                return false;
              } else {
-#ifdef LOG
+#ifdef FULL_PRINT
                cout << "Warning: root at " << coord << " in image bbox "
                     << local_bbox
                     << " is not selected in the segmentation so it is "
@@ -3068,6 +3072,11 @@ template <class image_t> void Recut<image_t>::operator()() {
   // create a list of root vids
   auto root_coords = this->initialize();
 
+#ifdef LOG
+    cout << "Using " << root_coords.size() << " roots\n";
+#endif
+
+
   if (params->convert_only_) {
     activate_all_intervals();
 
@@ -3094,7 +3103,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   // fifo
   this->activate_vids(this->topology_grid, root_coords, stage, this->map_fifo,
                       this->connected_map);
-  stage = "value";
+  stage = "connected";
   this->update(stage, map_fifo);
 
   auto all_invalid = [](const auto &flags_handle, const auto &parents_handle,

@@ -82,3 +82,4 @@ using GridCoord = std::vector<int32_t>;
 #define MIN_LENGTH 10
 #define DOWNSAMPLE_MARKER 1
 #define SWC_MIN_LINE 10
+//#define CLEAR_ROOTS
