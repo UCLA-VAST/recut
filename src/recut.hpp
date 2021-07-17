@@ -121,7 +121,7 @@ public:
   void prune_radii();
   void convert_topology();
   void fill_components_with_spheres(
-      std::vector<std::pair<GridCoord, uint8_t>> root_coords);
+      std::vector<std::pair<GridCoord, uint8_t>> root_pair);
 
   void initialize_globals(const VID_t &grid_interval_size,
                           const VID_t &interval_block_size);
@@ -372,7 +372,7 @@ OffsetCoord Recut<image_t>::v_to_off(VID_t interval_id, VID_t block_id,
                    this->block_lengths);
 }
 
-// adds all markers to root_coords
+// adds all markers to root_pair
 template <class image_t>
 std::vector<std::pair<GridCoord, uint8_t>>
 Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
@@ -1361,7 +1361,8 @@ bool Recut<image_t>::any_fifo_active(
 // parameters are intentionally pass by value (copied)
 OffsetCoord adjust_vertex_parent(EnlargedPointDataGrid::Ptr grid,
                                  OffsetCoord parent_offset,
-                                 const GridCoord &original_coord) {
+                                 const GridCoord &original_coord,
+                                 std::vector<GridCoord> valid_list = {}) {
   GridCoord parent_coord;
   GridCoord current_coord = original_coord;
   while (true) {
@@ -1376,7 +1377,24 @@ OffsetCoord adjust_vertex_parent(EnlargedPointDataGrid::Ptr grid,
     openvdb::points::AttributeHandle<uint8_t> flags_handle(
         parent_leaf->constAttributeArray("flags"));
 
-    if (is_valid(flags_handle, parent_ind)) {
+    auto valid_parent = false;
+
+    // filter by set of known active coords, only using the topology to
+    // find the next in the valid list
+    if (valid_list.empty()) {
+      if (is_valid(flags_handle, parent_ind)) {
+        valid_parent = true;
+      }
+    } else {
+      for (const auto &coord : valid_list) {
+        if (coord_all_eq(parent_coord, coord)) {
+          valid_parent = true;
+          break;
+        }
+      }
+    }
+
+    if (valid_parent) {
       break;
     } else {
       // prep for next iteration
@@ -3066,7 +3084,7 @@ template <class image_t> void Recut<image_t>::prune_radii() {
 
 template <class image_t>
 void Recut<image_t>::fill_components_with_spheres(
-    std::vector<std::pair<GridCoord, uint8_t>> root_coords) {
+    std::vector<std::pair<GridCoord, uint8_t>> root_pair) {
   openvdb::GridPtrVec grids;
   auto all_invalid = [](const auto &flags_handle, const auto &parents_handle,
                         const auto &radius_handle, const auto &ind) {
@@ -3093,9 +3111,9 @@ void Recut<image_t>::fill_components_with_spheres(
 
   auto counter = 0;
   rng::for_each(components, [this, &counter, float_grid, output_topology,
-                             &root_coords](const auto component) {
+                             &root_pair](const auto component) {
     auto component_roots =
-        root_coords | rng::views::remove_if([&component](auto coord_radius) {
+        root_pair | rng::views::remove_if([&component](auto coord_radius) {
           auto [coord, radius] = coord_radius;
           return !component->tree().isValueOn(coord);
         });
@@ -3155,7 +3173,25 @@ void Recut<image_t>::fill_components_with_spheres(
         rng::to_vector;
 
 #else
-    auto filtered_spheres = spheres;
+
+        // filter out spheres that aren't located on an on pixel in the original topology
+    auto filtered_spheres = spheres |
+        rng::views::remove_if(
+            [this, component](const auto sphere) {
+              auto coord = GridCoord(sphere[0], sphere[1], sphere[2]);
+              if (component->tree().isValueOn(coord)) {
+                auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
+                if (leaf_iter) {
+                  auto ind = leaf_iter->beginIndexVoxel(coord);
+                  if (ind) {
+                    return false;
+                  }
+                }
+              }
+              return true;
+            }) |
+        rng::to_vector;
+
 #endif
 
     if (filtered_spheres.size() < SWC_MIN_LINE)
@@ -3183,17 +3219,23 @@ void Recut<image_t>::fill_components_with_spheres(
                      /*adjust*/ true);
     });
 
+    // build the set of all valid swc coord lines
+    std::vector<GridCoord> component_root_coords =
+        component_roots |
+        rng::views::transform([](const auto &cpair) { return cpair.first; }) | rng::to_vector;
+    std::vector<GridCoord> filtered_coords =
+        filtered_spheres | rng::views::transform([](const auto &sphere) {
+          return GridCoord(sphere[0], sphere[1], sphere[2]);
+        }) | rng::to_vector;
+    std::vector<GridCoord> valid_swc_lines =
+        rng::views::concat(component_root_coords, filtered_coords) | rng::to_vector;
+
     // adjust parents of all filtered_spheres in this component
     // make all unpruned trace a back to a root
-    rng::for_each(filtered_spheres, [this, &file, component,
-                                     float_grid](const auto &sphere) {
+    rng::for_each(filtered_spheres, [this, &file, component, float_grid,
+                                     &valid_swc_lines](const auto &sphere) {
       auto coord = GridCoord(sphere[0], sphere[1], sphere[2]);
       auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
-
-      // assertm(component->tree().isValueOn(coord), "component value must be
-      // on"); assertm(float_grid->tree().isValueOn(coord), "float value must be
-      // on"); assertm(this->topology_grid->tree().isValueOn(coord), "original
-      // value must be on");
 
       openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
           leaf_iter->attributeArray("parents"));
@@ -3204,8 +3246,9 @@ void Recut<image_t>::fill_components_with_spheres(
       auto ind = leaf_iter->beginIndexVoxel(coord);
       assertm(ind, "ind must be reachable");
 
-      auto parent = adjust_vertex_parent(this->topology_grid,
-                                         parents_handle.get(*ind), coord);
+      auto parent =
+          adjust_vertex_parent(this->topology_grid, parents_handle.get(*ind),
+                               coord, valid_swc_lines);
       parents_handle.set(*ind, parent);
       //#ifdef FULL_PRINT
       // std::cout << coord << " -> " << coord + parent << '\n';
@@ -3277,10 +3320,10 @@ template <class image_t> void Recut<image_t>::operator()() {
   }
 
   // read the list of root vids
-  auto root_coords = this->initialize();
+  auto root_pair = this->initialize();
 
 #ifdef LOG
-  cout << "Using " << root_coords.size() << " roots\n";
+  cout << "Using " << root_pair.size() << " roots\n";
 #endif
 
   if (params->convert_only_) {
@@ -3293,14 +3336,14 @@ template <class image_t> void Recut<image_t>::operator()() {
   {
     // starting from the roots connected stage saves all surface vertices into
     // fifo
-    this->activate_vids(this->topology_grid, root_coords, stage, this->map_fifo,
+    this->activate_vids(this->topology_grid, root_pair, stage, this->map_fifo,
                         this->connected_map);
     // first stage of the pipeline
     this->update(stage, map_fifo);
   }
 
   if (params->sphere_pruning_) {
-    fill_components_with_spheres(root_coords);
+    fill_components_with_spheres(root_pair);
   } else {
 
     // radius stage will consume fifo surface vertices
@@ -3314,8 +3357,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     // create final list of vertices
     {
       stage = "prune";
-      this->activate_vids(this->topology_grid, root_coords, stage,
-                          this->map_fifo, this->connected_map);
+      this->activate_vids(this->topology_grid, root_pair, stage, this->map_fifo,
+                          this->connected_map);
       this->update(stage, map_fifo);
     }
 
