@@ -129,13 +129,14 @@ class RecutParameters {
     void set_min_intensity(double min_intensity) {
       min_intensity_ = min_intensity;
     }
+    void set_sphere_pruning(bool flag) {
+      sphere_pruning_ = flag;
+    }
 
-    // no getters or setters
-    bool force_regenerate_image, convert_only_;
+    // no getters
     int tcase, slt_pct;
     uint64_t selected, root_vid;
-    bool histogram_, gsdt_, coverage_prune_, allow_gap_, cube_256_, radius_from_2d_,
-         swc_resample_, high_intensity_, brightfield_, restart_;
+    bool force_regenerate_image, convert_only_, histogram_, gsdt_, coverage_prune_, allow_gap_, cube_256_, radius_from_2d_, swc_resample_, high_intensity_, brightfield_, restart_, sphere_pruning_;
     int user_thread_count_, background_thresh_, cnn_type_, parallel_num_,
         prune_, interval_length;
     double foreground_percent_, sr_ratio_, length_thresh_, restart_factor_,

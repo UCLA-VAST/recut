@@ -3299,8 +3299,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     this->update(stage, map_fifo);
   }
 
-  auto fill_with_spheres_pruning = false;
-  if (fill_with_spheres_pruning) {
+  if (params->sphere_pruning_) {
     fill_components_with_spheres(root_coords);
   } else {
 

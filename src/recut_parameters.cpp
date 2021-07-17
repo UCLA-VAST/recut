@@ -64,6 +64,7 @@ void RecutCommandLineArgs::PrintUsage() {
           "(automatically prunes)\n";
   cout << "--parallel           [-pl] thread count ";
            "defaults to max hardware threads\n";
+  cout << "--sphere-pruning           use VDB library fill with spheres pruning strategy\n";
   cout << "--help               [-h] print example usage\n";
 }
 
@@ -208,6 +209,8 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         ++i;
       } else if (strcmp(argv[i], "--histogram") == 0 ) {
         args.recut_parameters().set_histogram(true);
+      } else if (strcmp(argv[i], "--sphere-pruning") == 0 ) {
+        args.recut_parameters().set_sphere_pruning(true);
       } else {
         cout << "unknown option \"" << argv[i] << "\"  ...exiting\n\n";
         RecutCommandLineArgs::PrintUsage();
