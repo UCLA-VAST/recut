@@ -119,6 +119,9 @@ public:
   void print_to_swc();
   void adjust_parent();
   void prune_radii();
+  void convert_topology();
+  void fill_components_with_spheres(
+      std::vector<std::pair<GridCoord, uint8_t>> root_coords);
 
   void initialize_globals(const VID_t &grid_interval_size,
                           const VID_t &interval_block_size);
@@ -429,7 +432,7 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
                rng::to_vector;
 
 #ifdef LOG
-    cout << "Roots in dir: " << roots.size() << '\n';
+  cout << "Roots in dir: " << roots.size() << '\n';
 #endif
 
   return roots | rng::views::remove_if([this, &local_bbox](auto coord_radius) {
@@ -2356,9 +2359,11 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           active_intervals[interval_id] = false;
 #ifdef LOG
           cout << "Completed traversal of interval " << interval_id << " of "
-               << grid_interval_size << " in " << timer.elapsed() - convert_start << " s\n";
+               << grid_interval_size << " in "
+               << timer.elapsed() - convert_start << " s\n";
 #endif
-          // mcp3d tile must be explicitly cleared to prevent out of memory issues
+          // mcp3d tile must be explicitly cleared to prevent out of memory
+          // issues
           mcp3d_tile->ClearData(); // invalidates tile
         } else {
           computation_time =
@@ -3027,7 +3032,6 @@ template <class image_t> void Recut<image_t>::adjust_parent() {
   visit(all_valid, adjust_parent);
 }
 
-// FIXME adjust to component
 template <class image_t> void Recut<image_t>::print_to_swc() {
   auto to_swc = [this](const auto &flags_handle, const auto &parents_handle,
                        const auto &radius_handle, const auto &ind, auto leaf) {
@@ -3060,52 +3064,10 @@ template <class image_t> void Recut<image_t>::prune_radii() {
   visit(filter_radii, prunes_visited);
 }
 
-template <class image_t> void Recut<image_t>::operator()() {
-  if (!params->second_grid_.empty()) {
-    combine_grids(args->image_root_dir(), params->second_grid_,
-                  this->params->out_vdb_);
-    return;
-  }
-
+template <class image_t>
+void Recut<image_t>::fill_components_with_spheres(
+    std::vector<std::pair<GridCoord, uint8_t>> root_coords) {
   openvdb::GridPtrVec grids;
-  std::string stage;
-  // create a list of root vids
-  auto root_coords = this->initialize();
-
-#ifdef LOG
-    cout << "Using " << root_coords.size() << " roots\n";
-#endif
-
-
-  if (params->convert_only_) {
-    activate_all_intervals();
-
-    // mutates input_grid
-    stage = "convert";
-    this->update(stage, map_fifo);
-#ifdef LOG
-    if (args->type_ == "float") {
-      print_grid_metadata(this->input_grid);
-      grids.push_back(this->input_grid);
-    } else if (args->type_ == "point") {
-      print_grid_metadata(this->topology_grid);
-      grids.push_back(this->topology_grid);
-    }
-#endif
-
-    write_vdb_file(grids, this->params->out_vdb_);
-
-    // no more work to do, exiting
-    return;
-  }
-
-  // starting from the roots connected stage saves all surface vertices into
-  // fifo
-  this->activate_vids(this->topology_grid, root_coords, stage, this->map_fifo,
-                      this->connected_map);
-  stage = "connected";
-  this->update(stage, map_fifo);
-
   auto all_invalid = [](const auto &flags_handle, const auto &parents_handle,
                         const auto &radius_handle, const auto &ind) {
     return !is_selected(flags_handle, ind);
@@ -3119,9 +3081,14 @@ template <class image_t> void Recut<image_t>::operator()() {
   std::vector<openvdb::FloatGrid::Ptr> components;
   vto::segmentActiveVoxels(*float_grid, components);
 
-  // prune all neurites topology grid
+#ifdef CLEAR_ROOTS
+  // prune all neurites topology grid by setting to tombstone
+  // this means that neurites can selectively turned back on
+  // below, if they don't fall within a soma bounding box
   // roots from marker files stay as ground truth
   visit(not_root, prunes_visited);
+#endif
+
   auto output_topology = false;
 
   auto counter = 0;
@@ -3133,6 +3100,7 @@ template <class image_t> void Recut<image_t>::operator()() {
           return !component->tree().isValueOn(coord);
         });
 
+#ifdef CLEAR_ROOTS
     auto component_root_bboxs =
         component_roots | rng::views::transform([](auto coord_radius) {
           auto [coord, radius] = coord_radius;
@@ -3148,6 +3116,8 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     if (component_root_bboxs.size() < 1)
       return; // skip
+    cout << "\n\troot count " << component_root_bboxs.size();
+#endif
 
     const auto sphere_count = openvdb::math::Vec2i(1, 50000);
     auto spheres = std::vector<openvdb::Vec4s>();
@@ -3157,6 +3127,7 @@ template <class image_t> void Recut<image_t>::operator()() {
         /*isosurface_value*/ 1.,
         /*instance_count*/ 1000);
 
+#ifdef CLEAR_ROOTS
     // filtered_spheres are not covered by previously known somas
     // and are accessible from original connected traversal
     auto filtered_spheres =
@@ -3183,13 +3154,16 @@ template <class image_t> void Recut<image_t>::operator()() {
             }) |
         rng::to_vector;
 
+#else
+    auto filtered_spheres = spheres;
+#endif
+
     if (filtered_spheres.size() < SWC_MIN_LINE)
       return; // skip
 #ifdef LOG
     auto name = "component-" + std::to_string(counter) + ".swc";
     cout << name << " active count " << component->activeVoxelCount() << ' '
          << component->evalActiveVoxelBoundingBox() << '\n';
-    cout << "\n\troot count " << component_root_bboxs.size();
     cout << "\tspheres count " << spheres.size() << '\n';
     cout << "\tfiltered spheres count " << filtered_spheres.size() << '\n';
 #endif
@@ -3216,10 +3190,10 @@ template <class image_t> void Recut<image_t>::operator()() {
       auto coord = GridCoord(sphere[0], sphere[1], sphere[2]);
       auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
 
-      assertm(component->tree().isValueOn(coord), "component value must be on");
-      assertm(float_grid->tree().isValueOn(coord), "float value must be on");
-      assertm(this->topology_grid->tree().isValueOn(coord),
-              "original value must be on");
+      // assertm(component->tree().isValueOn(coord), "component value must be
+      // on"); assertm(float_grid->tree().isValueOn(coord), "float value must be
+      // on"); assertm(this->topology_grid->tree().isValueOn(coord), "original
+      // value must be on");
 
       openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
           leaf_iter->attributeArray("parents"));
@@ -3272,66 +3246,91 @@ template <class image_t> void Recut<image_t>::operator()() {
     grids.push_back(this->topology_grid);
     write_vdb_file(grids, "final-point-grid.vdb");
   }
+}
 
-  return;
+template <class image_t> void Recut<image_t>::convert_topology() {
+  activate_all_intervals();
 
-  // FIXME only for this component
-  // adjust_parent();
+  // mutates input_grid
+  auto stage = "convert";
+  this->update(stage, map_fifo);
 
-  // FIXME only for this component
-  // print_to_swc();
+  openvdb::GridPtrVec grids;
+#ifdef LOG
+  if (args->type_ == "float") {
+    print_grid_metadata(this->input_grid);
+    grids.push_back(this->input_grid);
+  } else if (args->type_ == "point") {
+    print_grid_metadata(this->topology_grid);
+    grids.push_back(this->topology_grid);
+  }
+#endif
 
-  // auto spheres = std::vector<openvdb::Vec4s>();
-  // openvdb::v8_1::tools::fillWithSpheres(*(this->topology_grid), spheres,
-  // sphere_count, MIN_RADII,
-  // std::numeric_limits<float>::max(), .5);
+  write_vdb_file(grids, this->params->out_vdb_);
+}
 
-  //// FIXME root must still be on
-  //// FIXME sort spheres into leafs
+template <class image_t> void Recut<image_t>::operator()() {
+  if (!params->second_grid_.empty()) {
+    combine_grids(args->image_root_dir(), params->second_grid_,
+                  this->params->out_vdb_);
+    return;
+  }
 
-  // visit(not_root, prunes_visited);
+  // read the list of root vids
+  auto root_coords = this->initialize();
 
-  // cout << spheres.size() << '\n';
-  //// unprune the spheres
-  // rng::for_each(spheres, [this](auto sphere) {
-  // auto coord = GridCoord(sphere[0], sphere[1], sphere[2]);
-  // auto leaf = this->topology_grid->tree().probeLeaf(coord);
-  // auto ind = leaf->beginIndexVoxel(coord);
-  //// note: some attributes need mutability
-  // openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
-  // leaf->attributeArray("flags"));
+#ifdef LOG
+  cout << "Using " << root_coords.size() << " roots\n";
+#endif
 
-  // if (ind) {
-  // unset_tombstone(flags_handle, ind);
-  // cout << "Sphere on: " << coord << '\n';
-  //} else {
-  //// might be unreachable
-  // cout << "Sphere not on: " << coord << '\n';
-  //}
-  //});
+  if (params->convert_only_) {
+    convert_topology();
+    // no more work to do, exiting
+    return;
+  }
 
-  //// radius stage will consume fifo surface vertices
-  // stage = "radius";
-  // this->setup_radius(map_fifo);
-  // this->update(stage, map_fifo);
+  auto stage = "connected";
+  {
+    // starting from the roots connected stage saves all surface vertices into
+    // fifo
+    this->activate_vids(this->topology_grid, root_coords, stage, this->map_fifo,
+                        this->connected_map);
+    // first stage of the pipeline
+    this->update(stage, map_fifo);
+  }
 
-  //// starting from roots, prune stage will
-  //// create final list of vertices
-  // stage = "prune";
-  // this->activate_vids(this->topology_grid, root_coords, stage,
-  // this->map_fifo, this->connected_map);
-  // this->update(stage, map_fifo);
+  auto fill_with_spheres_pruning = false;
+  if (fill_with_spheres_pruning) {
+    fill_components_with_spheres(root_coords);
+  } else {
 
-  // make all unpruned trace a back to a root
-  // adjust_parent();
+    // radius stage will consume fifo surface vertices
+    {
+      stage = "radius";
+      this->setup_radius(map_fifo);
+      this->update(stage, map_fifo);
+    }
 
-  // prune_radii();
+    // starting from roots, prune stage will
+    // create final list of vertices
+    {
+      stage = "prune";
+      this->activate_vids(this->topology_grid, root_coords, stage,
+                          this->map_fifo, this->connected_map);
+      this->update(stage, map_fifo);
+    }
 
-  // auto timer = high_resolution_timer();
-  // adjust_parent();
-  //#ifdef LOG
-  // cout << "Adjust parent in " << timer.elapsed() << " sec.\n";
-  //#endif
+    // make all unpruned trace a back to a root
+    adjust_parent();
 
-  // print_to_swc();
+    prune_radii();
+
+    auto timer = high_resolution_timer();
+    adjust_parent();
+#ifdef LOG
+    cout << "Adjust parent in " << timer.elapsed() << " sec.\n";
+#endif
+
+    print_to_swc();
+  }
 }
