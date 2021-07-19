@@ -63,8 +63,11 @@ void RecutCommandLineArgs::PrintUsage() {
   cout << "--prune              [-pr] prune 0 false, 1 true; defaults to 1 "
           "(automatically prunes)\n";
   cout << "--parallel           [-pl] thread count ";
-           "defaults to max hardware threads\n";
-  cout << "--sphere-pruning           use VDB library fill with spheres pruning strategy\n";
+  "defaults to max hardware threads\n";
+  cout << "--sphere-pruning     use VDB library fill with spheres pruning "
+          "strategy\n";
+  cout << "--downsample-factor  for images scaled down in x and z dimension "
+          "scale the marker files by specified factor\n";
   cout << "--help               [-h] print example usage\n";
 }
 
@@ -198,18 +201,21 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
 #if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
         omp_set_num_threads(current_threads);
 #endif
+      } else if (strcmp(argv[i], "--downsample-factor") == 0) {
+        args.recut_parameters().set_downsample_factor(atoi(argv[i + 1]));
+        ++i;
       } else if (strcmp(argv[i], "--gsdt") == 0 ||
                  strcmp(argv[i], "-gs") == 0) {
         args.recut_parameters().set_gsdt(true);
       } else if (strcmp(argv[i], "--allow-gap") == 0 ||
                  strcmp(argv[i], "--ag") == 0) {
         args.recut_parameters().set_allow_gap(true);
-      } else if (strcmp(argv[i], "--combine") == 0 ) {
-        args.recut_parameters().set_combine(argv[i+1]);
+      } else if (strcmp(argv[i], "--combine") == 0) {
+        args.recut_parameters().set_combine(argv[i + 1]);
         ++i;
-      } else if (strcmp(argv[i], "--histogram") == 0 ) {
+      } else if (strcmp(argv[i], "--histogram") == 0) {
         args.recut_parameters().set_histogram(true);
-      } else if (strcmp(argv[i], "--sphere-pruning") == 0 ) {
+      } else if (strcmp(argv[i], "--sphere-pruning") == 0) {
         args.recut_parameters().set_sphere_pruning(true);
       } else {
         cout << "unknown option \"" << argv[i] << "\"  ...exiting\n\n";

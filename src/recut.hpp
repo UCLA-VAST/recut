@@ -423,10 +423,10 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
       });
 
   // transform to <coord, radius> of all somas/roots
-  auto roots = inmarkers | rng::views::transform([](auto marker) {
+  auto roots = inmarkers | rng::views::transform([this](auto marker) {
                  return std::pair{
-                     ones() + GridCoord(marker.x / DOWNSAMPLE_MARKER,
-                                        marker.y / DOWNSAMPLE_MARKER, marker.z),
+                     ones() + GridCoord(marker.x / params->downsample_factor_,
+                                        marker.y / params->downsample_factor_, marker.z),
                      static_cast<uint8_t>(marker.radius)};
                }) |
                rng::to_vector;

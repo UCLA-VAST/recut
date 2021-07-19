@@ -1318,7 +1318,8 @@ RecutCommandLineArgs get_args(int grid_size, int interval_length,
                               int block_size, int slt_pct, int tcase,
                               bool force_regenerate_image = false,
                               bool input_is_vdb = false,
-                              std::string type = "point") {
+                              std::string type = "point", 
+                              int downsample_factor = 1) {
 
   bool print = false;
 
@@ -1347,7 +1348,7 @@ RecutCommandLineArgs get_args(int grid_size, int interval_length,
     // args.set_image_offsets({57, 228, 110});
     // root at {1125, 12949, 344}
     args.set_image_offsets(
-        {1123 / DOWNSAMPLE_MARKER, 12947 / DOWNSAMPLE_MARKER, 342});
+        {1123 / downsample_factor, 12947 / downsample_factor, 342});
     args.set_image_lengths({grid_size, grid_size, grid_size});
 
     if (const char *env_p = std::getenv("TEST_IMAGE")) {

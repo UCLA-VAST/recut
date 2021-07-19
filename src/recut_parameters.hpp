@@ -29,6 +29,7 @@ class RecutParameters {
       sr_ratio_ = 1.0 / 3;
       cube_256_ = false;
       restart_factor_ = 0.0;
+      downsample_factor_ = 1;
       restart_ = false;
       radius_from_2d_ = true;
       swc_resample_ = true;
@@ -133,13 +134,15 @@ class RecutParameters {
     void set_sphere_pruning(bool flag) {
       sphere_pruning_ = flag;
     }
+    void set_downsample_factor(int factor) {
+      downsample_factor_ = factor;
+    }
 
     // no getters
-    int tcase, slt_pct;
     uint64_t selected, root_vid;
     bool force_regenerate_image, convert_only_, histogram_, gsdt_, coverage_prune_, allow_gap_, cube_256_, radius_from_2d_, swc_resample_, high_intensity_, brightfield_, restart_, sphere_pruning_;
     int user_thread_count_, background_thresh_, cnn_type_, parallel_num_,
-        prune_, interval_length;
+        prune_, interval_length, tcase, slt_pct, downsample_factor_;
     double foreground_percent_, sr_ratio_, length_thresh_, restart_factor_,
            max_intensity_, min_intensity_;
     std::string marker_file_path_, out_vdb_, second_grid_;
