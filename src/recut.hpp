@@ -3051,12 +3051,16 @@ template <class image_t> void Recut<image_t>::adjust_parent() {
 }
 
 template <class image_t> void Recut<image_t>::print_to_swc() {
-  auto to_swc = [this](const auto &flags_handle, const auto &parents_handle,
-                       const auto &radius_handle, const auto &ind, auto leaf) {
+
+  auto coord_to_swc_id = get_id_map();
+
+  auto to_swc = [this, &coord_to_swc_id](
+                    const auto &flags_handle, const auto &parents_handle,
+                    const auto &radius_handle, const auto &ind, auto leaf) {
     auto coord = ind.getCoord();
     print_swc_line(coord, is_root(flags_handle, ind), radius_handle.get(*ind),
                    parents_handle.get(*ind), this->image_bbox, this->out,
-                   /*adjust*/ true);
+                   /*map*/ coord_to_swc_id, /*adjust*/ true);
   };
 
   this->out.open(this->args->swc_path());
@@ -3211,28 +3215,32 @@ void Recut<image_t>::fill_components_with_spheres(
          << component->evalActiveVoxelBoundingBox() << '\n';
     file << "# id type_id x y z radius parent_id\n";
 
+  auto coord_to_swc_id = get_id_map();
     // print all somas in this component
-    rng::for_each(component_roots, [this, &file,
+    rng::for_each(component_roots, [this, &file, &coord_to_swc_id,
                                     &component](const auto &component_root) {
       print_swc_line(component_root.first, /*root*/ true, component_root.second,
                      zeros_off(), component->evalActiveVoxelBoundingBox(), file,
-                     /*adjust*/ true);
+                     /*map*/ coord_to_swc_id, /*adjust*/ true);
     });
 
     // build the set of all valid swc coord lines
     std::vector<GridCoord> component_root_coords =
         component_roots |
-        rng::views::transform([](const auto &cpair) { return cpair.first; }) | rng::to_vector;
+        rng::views::transform([](const auto &cpair) { return cpair.first; }) |
+        rng::to_vector;
     std::vector<GridCoord> filtered_coords =
         filtered_spheres | rng::views::transform([](const auto &sphere) {
           return GridCoord(sphere[0], sphere[1], sphere[2]);
-        }) | rng::to_vector;
+        }) |
+        rng::to_vector;
     std::vector<GridCoord> valid_swc_lines =
-        rng::views::concat(component_root_coords, filtered_coords) | rng::to_vector;
+        rng::views::concat(component_root_coords, filtered_coords) |
+        rng::to_vector;
 
     // adjust parents of all filtered_spheres in this component
     // make all unpruned trace a back to a root
-    rng::for_each(filtered_spheres, [this, &file, component, float_grid,
+    rng::for_each(filtered_spheres, [this, &file, component, float_grid, &coord_to_swc_id,
                                      &valid_swc_lines](const auto &sphere) {
       auto coord = GridCoord(sphere[0], sphere[1], sphere[2]);
       auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
@@ -3257,7 +3265,7 @@ void Recut<image_t>::fill_components_with_spheres(
       print_swc_line(coord, /*root*/ false,
                      /*radius*/ sphere[3], parent,
                      component->evalActiveVoxelBoundingBox(), file,
-                     /*adjust*/ true);
+                     /*map*/ coord_to_swc_id, /*adjust*/ true);
 
       radius_handle.set(*ind, static_cast<float>(sphere[3]));
     });

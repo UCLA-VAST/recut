@@ -17,6 +17,7 @@ class RecutParameters {
   public:
     RecutParameters() {
       gsdt_ = false;
+      sphere_pruning_ = false;
       coverage_prune_ = true;
       prune_ = 1;
       allow_gap_ = false;

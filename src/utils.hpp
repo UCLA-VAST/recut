@@ -13,8 +13,8 @@
 #include <filesystem>
 #include <math.h>
 #include <numeric>
-#include <stdlib.h> // ultoa
 #include <openvdb/tools/Composite.h>
+#include <stdlib.h> // ultoa
 
 namespace fs = std::filesystem;
 namespace rng = ranges;
@@ -1440,7 +1440,7 @@ template <typename image_t> struct Histogram {
   image_t granularity;
 
   // granularity : the range of pixel values for each bin
-  Histogram(image_t granularity = 8) : granularity(granularity) { }
+  Histogram(image_t granularity = 8) : granularity(granularity) {}
 
   void operator()(image_t val) {
     auto i = val / granularity;
@@ -1475,8 +1475,8 @@ template <typename image_t> struct Histogram {
     for (const auto [key, value] : hist.bin_counts) {
       auto pct_double = (100 * static_cast<double>(value)) / cumulative_count;
       cumulative_pct += pct_double;
-      os << hist.granularity * key << ',' << value << ',' << pct_double << ',' << cumulative_pct
-         << '\n';
+      os << hist.granularity * key << ',' << value << ',' << pct_double << ','
+         << cumulative_pct << '\n';
     }
 
     return os;
@@ -1548,29 +1548,29 @@ Histogram<image_t> hist(image_t *buffer, GridCoord buffer_lengths,
 }
 
 // keep only voxels strictly greater than bkg_thresh
-auto convert_buffer_to_vdb_acc =
-    [](auto buffer, GridCoord buffer_lengths, GridCoord buffer_offsets,
-       GridCoord image_offsets, auto accessor, auto bkg_thresh = 0) {
+auto convert_buffer_to_vdb_acc = [](auto buffer, GridCoord buffer_lengths,
+                                    GridCoord buffer_offsets,
+                                    GridCoord image_offsets, auto accessor,
+                                    auto bkg_thresh = 0) {
+  // half-range of uint8_t, recorded max values of 8k / 64 -> ~128
+  auto val_transform = [](auto val) { return std::clamp(val / 64, 0, 127); };
 
-      // half-range of uint8_t, recorded max values of 8k / 64 -> ~128
-      auto val_transform = [](auto val) { return std::clamp(val / 64, 0, 127); };
-
-      for (auto z : rng::views::iota(0, buffer_lengths[2])) {
-        for (auto y : rng::views::iota(0, buffer_lengths[1])) {
-          for (auto x : rng::views::iota(0, buffer_lengths[0])) {
-            GridCoord xyz(x, y, z);
-            GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
-            GridCoord grid_xyz = coord_add(xyz, image_offsets);
-            auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
-            // voxels equal to bkg_thresh are always discarded
-            if (val > bkg_thresh) {
-              // accessor.setValueOn(xyz);
-              accessor.setValue(grid_xyz, val_transform(val));
-            }
-          }
+  for (auto z : rng::views::iota(0, buffer_lengths[2])) {
+    for (auto y : rng::views::iota(0, buffer_lengths[1])) {
+      for (auto x : rng::views::iota(0, buffer_lengths[0])) {
+        GridCoord xyz(x, y, z);
+        GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
+        GridCoord grid_xyz = coord_add(xyz, image_offsets);
+        auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
+        // voxels equal to bkg_thresh are always discarded
+        if (val > bkg_thresh) {
+          // accessor.setValueOn(xyz);
+          accessor.setValue(grid_xyz, val_transform(val));
         }
       }
-    };
+    }
+  }
+};
 
 // keep only voxels strictly greater than bkg_thresh
 auto convert_buffer_to_vdb = [](auto buffer, GridCoord buffer_lengths,
@@ -1994,6 +1994,7 @@ auto covered_by_bboxs = [](const auto coord, const auto bboxs) {
 auto print_swc_line = [](GridCoord swc_coord, bool is_root, uint8_t radius,
                          const OffsetCoord parent_offset_coord,
                          const CoordBBox &bbox, std::ofstream &out,
+                         std::map<GridCoord, uint32_t> &coord_to_swc_id,
                          bool bbox_adjust = true) {
   std::ostringstream line;
 
@@ -2004,11 +2005,28 @@ auto print_swc_line = [](GridCoord swc_coord, bool is_root, uint8_t radius,
     swc_lengths = bbox.extents().offsetBy(-1);
   }
 
+  auto find_or_assign = [&coord_to_swc_id](GridCoord swc_coord) -> uint32_t {
+    auto val = coord_to_swc_id.find(swc_coord);
+    if (val == coord_to_swc_id.end()) {
+      auto new_val = coord_to_swc_id.size();
+      coord_to_swc_id[swc_coord] = new_val;
+      assertm(new_val == (coord_to_swc_id.size() - 1),
+              "map must now be 1 size larger");
+      return new_val;
+    }
+    return coord_to_swc_id[swc_coord];
+  };
+
   // n
-  auto id = coord_to_id(swc_coord, swc_lengths);
+  uint32_t id;
+  if (coord_to_swc_id.empty()) {
+    id = coord_to_id(swc_coord, swc_lengths);
+  } else {
+    id = find_or_assign(swc_coord);
+  }
   assertm(id < std::numeric_limits<int32_t>::max(),
           "id overflows int32_t limit");
-  line << coord_to_id(swc_coord, swc_lengths) << ' ';
+  line << id << ' ';
 
   // type_id
   if (is_root) {
@@ -2024,13 +2042,18 @@ auto print_swc_line = [](GridCoord swc_coord, bool is_root, uint8_t radius,
   line << +(radius) << ' ';
 
   // parent
-  auto parent_coord = coord_add(swc_coord, parent_offset_coord);
-  auto parent_vid = coord_to_id(parent_coord, swc_lengths);
-  assertm(parent_vid < std::numeric_limits<int32_t>::max(),
-          "id overflows int32_t limit");
   if (is_root) {
     line << "-1";
   } else {
+    auto parent_coord = coord_add(swc_coord, parent_offset_coord);
+    uint32_t parent_vid;
+    if (coord_to_swc_id.empty()) {
+      parent_vid = coord_to_id(parent_coord, swc_lengths);
+    } else {
+      parent_vid = find_or_assign(parent_coord);
+    }
+    assertm(parent_vid < std::numeric_limits<int32_t>::max(),
+            "id overflows int32_t limit");
     line << parent_vid;
   }
 
@@ -2097,7 +2120,6 @@ auto read_vdb_float = [](std::string fn) {
 };
 
 auto combine_grids = [](std::string lhs, std::string rhs, std::string out) {
-
   auto first_grid = read_vdb_float(lhs);
   {
     auto second_grid = read_vdb_float(rhs);
@@ -2115,3 +2137,10 @@ auto combine_grids = [](std::string lhs, std::string rhs, std::string out) {
   write_vdb_file(grids, out);
 };
 
+auto get_id_map = []() {
+  std::map<GridCoord, uint32> coord_to_swc_id;
+  // add a dummy value that will never be on to the map so that real indices
+  // start at 1
+  coord_to_swc_id[GridCoord(INT_MIN, INT_MIN, INT_MIN)] = 0;
+  return coord_to_swc_id;
+};
