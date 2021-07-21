@@ -45,7 +45,7 @@ void RecutCommandLineArgs::PrintUsage() {
           "computed automatically when --bg_thresh or --fg-percent are "
           "specified\n";
   cout << "--channel            [-c] directory of channel image default ch0\n";
-  cout << "--outswc             [-os] output tracing result default is "
+  cout << "--outswc             [-o] output tracing result default is "
           "out.swc\n";
   cout << "--resolution-level   [-rl] resolution level to perform tracing at. "
           "default is 0, ie original resolution\n";
@@ -136,7 +136,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         }
         args.set_image_lengths(lengths);
       } else if (strcmp(argv[i], "--outswc") == 0 ||
-                 strcmp(argv[i], "-os") == 0) {
+                 strcmp(argv[i], "-o") == 0) {
         args.set_swc_path(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--type") == 0) {

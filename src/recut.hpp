@@ -119,6 +119,7 @@ public:
   void print_to_swc();
   void adjust_parent();
   void prune_radii();
+  void prune_branch();
   void convert_topology();
   void fill_components_with_spheres(
       std::vector<std::pair<GridCoord, uint8_t>> root_pair);
@@ -423,13 +424,14 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
       });
 
   // transform to <coord, radius> of all somas/roots
-  auto roots = inmarkers | rng::views::transform([this](auto marker) {
-                 return std::pair{
-                     ones() + GridCoord(marker.x / params->downsample_factor_,
-                                        marker.y / params->downsample_factor_, marker.z),
-                     static_cast<uint8_t>(marker.radius)};
-               }) |
-               rng::to_vector;
+  auto roots =
+      inmarkers | rng::views::transform([this](auto marker) {
+        return std::pair{
+            ones() + GridCoord(marker.x / params->downsample_factor_,
+                               marker.y / params->downsample_factor_, marker.z),
+            static_cast<uint8_t>(marker.radius)};
+      }) |
+      rng::to_vector;
 
 #ifdef LOG
   cout << "Roots in dir: " << roots.size() << '\n';
@@ -3071,16 +3073,27 @@ template <class image_t> void Recut<image_t>::print_to_swc() {
 
   if (this->out.is_open())
     this->out.close();
+#ifdef LOG
+  cout << "Wrote output to " << this->args->swc_path() << '\n';
+#endif
+}
+
+template <class image_t> void Recut<image_t>::prune_branch() {
+  auto filter_branch = [](const auto &flags_handle, const auto &parents_handle,
+                          const auto &radius_handle, const auto &ind) {
+    auto parents = parents_handle.get(*ind);
+    return is_valid(flags_handle, ind) && !is_root(flags_handle, ind) &&
+           ((parents[0] + parents[1] + parents[2]) < MIN_LENGTH);
+  };
+
+  visit(filter_branch, prunes_visited);
 }
 
 template <class image_t> void Recut<image_t>::prune_radii() {
   auto filter_radii = [](const auto &flags_handle, const auto &parents_handle,
                          const auto &radius_handle, const auto &ind) {
-    // return is_valid(flags_handle, ind) && (radius_handle.get(*ind) <
-    // MIN_RADII);
-    auto parents = parents_handle.get(*ind);
     return is_valid(flags_handle, ind) && !is_root(flags_handle, ind) &&
-           ((parents[0] + parents[1] + parents[2]) < MIN_LENGTH);
+           (radius_handle.get(*ind) < MIN_RADII);
   };
 
   visit(filter_radii, prunes_visited);
@@ -3215,7 +3228,7 @@ void Recut<image_t>::fill_components_with_spheres(
          << component->evalActiveVoxelBoundingBox() << '\n';
     file << "# id type_id x y z radius parent_id\n";
 
-  auto coord_to_swc_id = get_id_map();
+    auto coord_to_swc_id = get_id_map();
     // print all somas in this component
     rng::for_each(component_roots, [this, &file, &coord_to_swc_id,
                                     &component](const auto &component_root) {
@@ -3240,7 +3253,8 @@ void Recut<image_t>::fill_components_with_spheres(
 
     // adjust parents of all filtered_spheres in this component
     // make all unpruned trace a back to a root
-    rng::for_each(filtered_spheres, [this, &file, component, float_grid, &coord_to_swc_id,
+    rng::for_each(filtered_spheres, [this, &file, component, float_grid,
+                                     &coord_to_swc_id,
                                      &valid_swc_lines](const auto &sphere) {
       auto coord = GridCoord(sphere[0], sphere[1], sphere[2]);
       auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
@@ -3363,19 +3377,20 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     // starting from roots, prune stage will
     // create final list of vertices
-    {
+    if (false) {
       stage = "prune";
       this->activate_vids(this->topology_grid, root_pair, stage, this->map_fifo,
                           this->connected_map);
       this->update(stage, map_fifo);
+      // make all unpruned trace a back to a root
+      // any time you remove a node you need to ensure tree validity
+      adjust_parent();
     }
-
-    // make all unpruned trace a back to a root
-    adjust_parent();
 
     prune_radii();
 
     auto timer = high_resolution_timer();
+    // make all unpruned trace a back to a root
     adjust_parent();
 #ifdef LOG
     cout << "Adjust parent in " << timer.elapsed() << " sec.\n";
