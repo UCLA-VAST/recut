@@ -424,14 +424,15 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
       });
 
   // transform to <coord, radius> of all somas/roots
-  auto roots =
-      inmarkers | rng::views::transform([this](auto marker) {
+  auto roots = inmarkers | rng::views::transform([this](auto marker) {
         return std::pair{
-            ones() + GridCoord(marker.x / params->downsample_factor_,
-                               marker.y / params->downsample_factor_, marker.z),
+            ones() + GridCoord(
+                         marker.x / params->downsample_factor_,
+                         marker.y / params->downsample_factor_,
+                         upsample_idx(params->upsample_z_, marker.z)),
             static_cast<uint8_t>(marker.radius)};
-      }) |
-      rng::to_vector;
+               }) |
+               rng::to_vector;
 
 #ifdef LOG
   cout << "Roots in dir: " << roots.size() << '\n';
@@ -2349,7 +2350,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                                       /*buffer_offsets=*/buffer_offsets,
                                       /*image_offsets=*/interval_offsets,
                                       this->input_grid->getAccessor(),
-                                      local_tile_thresholds->bkg_thresh);
+                                      local_tile_thresholds->bkg_thresh,
+                                      this->params->upsample_z_);
             if (params->histogram_) {
               histogram += hist(tile, buffer_extents, buffer_offsets);
             }
@@ -2362,7 +2364,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
             convert_buffer_to_vdb(tile, buffer_extents,
                                   /*buffer_offsets=*/buffer_offsets,
                                   /*image_offsets=*/interval_offsets, positions,
-                                  local_tile_thresholds->bkg_thresh);
+                                  local_tile_thresholds->bkg_thresh,
+                                  this->params->upsample_z_);
 
             grids[interval_id] = create_point_grid(
                 positions, this->image_lengths, get_transform(),
@@ -3033,6 +3036,7 @@ void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
 }
 
 template <class image_t> void Recut<image_t>::adjust_parent() {
+
   auto adjust_parent = [this](const auto &flags_handle, auto &parents_handle,
                               const auto &radius_handle, const auto &ind,
                               auto leaf) {

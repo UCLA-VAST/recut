@@ -68,6 +68,7 @@ void RecutCommandLineArgs::PrintUsage() {
           "strategy\n";
   cout << "--downsample-factor  for images scaled down in x and z dimension "
           "scale the marker files by specified factor\n";
+  cout << "--upsample-z         during --convert only z-dimension will be upsampled (copied) by specified factor, default is 1 i.e. no upsampling\n";
   cout << "--help               [-h] print example usage\n";
 }
 
@@ -217,6 +218,9 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         args.recut_parameters().set_histogram(true);
       } else if (strcmp(argv[i], "--sphere-pruning") == 0) {
         args.recut_parameters().set_sphere_pruning(true);
+      } else if (strcmp(argv[i], "--upsample-z") == 0) {
+        args.recut_parameters().set_upsample_z(atoi(argv[i + 1]));
+        ++i;
       } else {
         cout << "unknown option \"" << argv[i] << "\"  ...exiting\n\n";
         RecutCommandLineArgs::PrintUsage();

@@ -895,7 +895,6 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
           ASSERT_NEAR(actual_slt_pct, slt_pct, 100 * EXP_DEV_LOW);
         }
 
-        // auto topology_grid = create_vdb_grid(grid_extents, 0);
         auto float_grid = openvdb::FloatGrid::create();
         convert_buffer_to_vdb_acc(inimg1d, grid_extents, zeros(), zeros(),
                                   float_grid->getAccessor(), 0);
@@ -960,6 +959,66 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
       }
     }
   }
+}
+
+TEST(VDB, ConvertDenseToVDB) {
+  auto grid_size = 8;
+  auto grid_extents = GridCoord(grid_size, grid_size, grid_size);
+  auto tol_sz = coord_prod_accum(grid_extents);
+  auto root_vid = get_central_vid(grid_size);
+  auto root_coord = GridCoord(get_central_coord(grid_size));
+  auto upsample_z = 5;
+  auto print = true;
+  auto extended_grid_extents = GridCoord(grid_size, grid_size, grid_size * upsample_z);
+
+  cout << root_coord;
+
+  auto idx = upsample_idx(root_coord[2], upsample_z); 
+  auto root_coord_upsampled = GridCoord(root_coord[0], root_coord[1], idx);
+  
+  cout << idx << '\n';
+
+  //ASSERT_EQ(idx, root_coord[2] * upsample_z + upsample_z / 2);
+  ASSERT_EQ(idx, root_coord[2] * upsample_z);
+
+  uint16_t *inimg1d = new uint16_t[tol_sz];
+  VID_t actual_selected =
+      create_image(5, inimg1d, grid_size, 100, root_vid);
+
+  if (print) { 
+    print_image_3D(inimg1d, grid_extents);
+  }
+
+  // auto topology_grid = create_vdb_grid(extended_grid_extents, 0);
+  auto float_grid = openvdb::FloatGrid::create();
+  convert_buffer_to_vdb_acc(inimg1d, extended_grid_extents, zeros(), zeros(),
+                            float_grid->getAccessor(), 0, upsample_z);
+
+  if (print) {
+    cout << "float grid\n";
+    print_vdb_mask(float_grid->getConstAccessor(), extended_grid_extents);
+  }
+
+  std::vector<PositionT> positions;
+  convert_buffer_to_vdb(inimg1d, extended_grid_extents, zeros(), zeros(), positions, 0, upsample_z);
+  auto topology_grid =
+      create_point_grid(positions, extended_grid_extents, get_transform());
+
+  std::cout << "created vdb grid\n";
+
+  topology_grid->tree().prune();
+
+  if (print) {
+    print_vdb_mask(topology_grid->getConstAccessor(), extended_grid_extents);
+
+    // print_all_points(
+    // topology_grid,
+    // openvdb::math::CoordBBox(
+    // zeros(), extended_grid_extents));
+
+    // print_image_3D(inimg1d, extended_grid_extents);
+  }
+
 }
 
 TEST(VDB, GetSetGridMeta) {

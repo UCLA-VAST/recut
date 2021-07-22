@@ -1318,7 +1318,7 @@ RecutCommandLineArgs get_args(int grid_size, int interval_length,
                               int block_size, int slt_pct, int tcase,
                               bool force_regenerate_image = false,
                               bool input_is_vdb = false,
-                              std::string type = "point", 
+                              std::string type = "point",
                               int downsample_factor = 1) {
 
   bool print = false;
@@ -1552,7 +1552,7 @@ Histogram<image_t> hist(image_t *buffer, GridCoord buffer_lengths,
 auto convert_buffer_to_vdb_acc = [](auto buffer, GridCoord buffer_lengths,
                                     GridCoord buffer_offsets,
                                     GridCoord image_offsets, auto accessor,
-                                    auto bkg_thresh = 0) {
+                                    auto bkg_thresh = 0, int upsample_z = 1) {
   // half-range of uint8_t, recorded max values of 8k / 64 -> ~128
   auto val_transform = [](auto val) { return std::clamp(val / 64, 0, 127); };
 
@@ -1565,8 +1565,12 @@ auto convert_buffer_to_vdb_acc = [](auto buffer, GridCoord buffer_lengths,
         auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
         // voxels equal to bkg_thresh are always discarded
         if (val > bkg_thresh) {
-          // accessor.setValueOn(xyz);
-          accessor.setValue(grid_xyz, val_transform(val));
+          for (auto upsample_z_idx : rng::views::iota(0, upsample_z)) {
+            auto upsample_grid_xyz =
+                GridCoord(grid_xyz[0], grid_xyz[1],
+                          (upsample_z * grid_xyz[2]) + upsample_z_idx);
+            accessor.setValue(upsample_grid_xyz, val_transform(val));
+          }
         }
       }
     }
@@ -1577,7 +1581,7 @@ auto convert_buffer_to_vdb_acc = [](auto buffer, GridCoord buffer_lengths,
 auto convert_buffer_to_vdb = [](auto buffer, GridCoord buffer_lengths,
                                 GridCoord buffer_offsets,
                                 GridCoord image_offsets, auto &positions,
-                                auto bkg_thresh = 0) {
+                                auto bkg_thresh = 0, int upsample_z = 1) {
   print_coord(buffer_lengths, "buffer_lengths");
   print_coord(buffer_offsets, "buffer_offsets");
   print_coord(image_offsets, "image_offsets");
@@ -1590,7 +1594,11 @@ auto convert_buffer_to_vdb = [](auto buffer, GridCoord buffer_lengths,
         auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
         // voxels equal to bkg_thresh are always discarded
         if (val > bkg_thresh) {
-          positions.push_back(PositionT(grid_xyz[0], grid_xyz[1], grid_xyz[2]));
+          for (auto upsample_z_idx : rng::views::iota(0, upsample_z)) {
+            positions.push_back(
+                PositionT(grid_xyz[0], grid_xyz[1],
+                          (upsample_z * grid_xyz[2]) + upsample_z_idx));
+          }
         }
       }
     }
@@ -2145,3 +2153,12 @@ auto get_id_map = []() {
   coord_to_swc_id[GridCoord(INT_MIN, INT_MIN, INT_MIN)] = 0;
   return coord_to_swc_id;
 };
+
+auto upsample_idx = [](int original_idx, int upsample_factor) -> int {
+  /* scale the z, */
+  return upsample_factor * original_idx;
+  //return upsample_factor * original_idx +
+         /* then offset it into the center of the upsample*/
+         //(upsample_factor / 2);
+};
+

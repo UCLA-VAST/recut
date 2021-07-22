@@ -49,6 +49,7 @@ class RecutParameters {
       selected = 0;
       root_vid = std::numeric_limits<uint64_t>::max();
       interval_length = 0;
+      upsample_z_ = 1; // i.e. no upsampling
     }
     std::string MetaString();
     // getters
@@ -137,12 +138,16 @@ class RecutParameters {
     void set_downsample_factor(int factor) {
       downsample_factor_ = factor;
     }
+    void set_upsample_z(int upsample_z) {
+      upsample_z_ = upsample_z;
+    }
+
 
     // no getters
     uint64_t selected, root_vid;
     bool force_regenerate_image, convert_only_, histogram_, gsdt_, coverage_prune_, allow_gap_, cube_256_, radius_from_2d_, swc_resample_, high_intensity_, brightfield_, restart_, sphere_pruning_;
     int user_thread_count_, background_thresh_, cnn_type_, parallel_num_,
-        prune_, interval_length, tcase, slt_pct, downsample_factor_;
+        prune_, interval_length, tcase, slt_pct, downsample_factor_, upsample_z_;
     double foreground_percent_, sr_ratio_, length_thresh_, restart_factor_,
            max_intensity_, min_intensity_;
     std::string marker_file_path_, out_vdb_, second_grid_;
