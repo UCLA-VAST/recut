@@ -424,15 +424,15 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
       });
 
   // transform to <coord, radius> of all somas/roots
-  auto roots = inmarkers | rng::views::transform([this](auto marker) {
+  auto roots =
+      inmarkers | rng::views::transform([this](auto marker) {
         return std::pair{
-            ones() + GridCoord(
-                         marker.x / params->downsample_factor_,
-                         marker.y / params->downsample_factor_,
-                         upsample_idx(params->upsample_z_, marker.z)),
+            ones() + GridCoord(marker.x / params->downsample_factor_,
+                               marker.y / params->downsample_factor_,
+                               upsample_idx(params->upsample_z_, marker.z)),
             static_cast<uint8_t>(marker.radius)};
-               }) |
-               rng::to_vector;
+      }) |
+      rng::to_vector;
 
 #ifdef LOG
   cout << "Roots in dir: " << roots.size() << '\n';
@@ -3105,7 +3105,7 @@ template <class image_t> void Recut<image_t>::prune_radii() {
 
 template <class image_t>
 void Recut<image_t>::fill_components_with_spheres(
-    std::vector<std::pair<GridCoord, uint8_t>> root_pair) {
+    std::vector<std::pair<GridCoord, uint8_t>> root_pair, bool prune = true) {
   openvdb::GridPtrVec grids;
   auto all_invalid = [](const auto &flags_handle, const auto &parents_handle,
                         const auto &radius_handle, const auto &ind) {
@@ -3160,11 +3160,32 @@ void Recut<image_t>::fill_components_with_spheres(
 
     const auto sphere_count = openvdb::math::Vec2i(1, 50000);
     auto spheres = std::vector<openvdb::Vec4s>();
-    openvdb::v8_1::tools::fillWithSpheres(
-        *component, spheres, sphere_count, /*overlapping*/ false, MIN_RADII,
-        /*max_radii*/ std::numeric_limits<float>::max(),
-        /*isosurface_value*/ 1.,
-        /*instance_count*/ 1000);
+    if (prune) {
+      openvdb::v8_1::tools::fillWithSpheres(
+          *component, spheres, sphere_count, /*overlapping*/ false, MIN_RADII,
+          /*max_radii*/ std::numeric_limits<float>::max(),
+          /*isosurface_value*/ 1.,
+          /*instance_count*/ 1000);
+
+    } else { // construct spheres from underlying topology of componentn
+      // get on coords of current component
+      auto iter = component->cbeginValueOn();
+      for (const auto &val : iter) {
+        auto coord = val.getCoord();
+        auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
+        assertm(ind, "leaf must be on, since component is derived from the "
+                     "active topology of it");
+
+        openvdb::points::AttributeWriteHandle<float> radius_handle(
+            leaf_iter->attributeArray("pscale"));
+
+        auto ind = leaf_iter->beginIndexVoxel(coord);
+        assertm(ind, "ind must be on, since component is derived from the "
+                     "active topology of it");
+        auto radius = radius_handle.get(*ind, static_cast<float>(radius));
+        spheres.emplace_back(coord[0], coord[1], coord[2], radius);
+      }
+    }
 
 #ifdef CLEAR_ROOTS
     // filtered_spheres are not covered by previously known somas
@@ -3195,6 +3216,7 @@ void Recut<image_t>::fill_components_with_spheres(
 
 #else
 
+  if (!prune) {
         // filter out spheres that aren't located on an on pixel in the original topology
     auto filtered_spheres = spheres |
         rng::views::remove_if(
@@ -3212,6 +3234,7 @@ void Recut<image_t>::fill_components_with_spheres(
               return true;
             }) |
         rng::to_vector;
+  }
 
 #endif
 
@@ -3368,16 +3391,16 @@ template <class image_t> void Recut<image_t>::operator()() {
     this->update(stage, map_fifo);
   }
 
+  // radius stage will consume fifo surface vertices
+  {
+    stage = "radius";
+    this->setup_radius(map_fifo);
+    this->update(stage, map_fifo);
+  }
+
   if (params->sphere_pruning_) {
     fill_components_with_spheres(root_pair);
   } else {
-
-    // radius stage will consume fifo surface vertices
-    {
-      stage = "radius";
-      this->setup_radius(map_fifo);
-      this->update(stage, map_fifo);
-    }
 
     // starting from roots, prune stage will
     // create final list of vertices
