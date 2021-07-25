@@ -121,8 +121,9 @@ public:
   void prune_radii();
   void prune_branch();
   void convert_topology();
+  
   void fill_components_with_spheres(
-      std::vector<std::pair<GridCoord, uint8_t>> root_pair);
+      std::vector<std::pair<GridCoord, uint8_t>> root_pair, bool prune);
 
   void initialize_globals(const VID_t &grid_interval_size,
                           const VID_t &interval_block_size);
@@ -3105,7 +3106,7 @@ template <class image_t> void Recut<image_t>::prune_radii() {
 
 template <class image_t>
 void Recut<image_t>::fill_components_with_spheres(
-    std::vector<std::pair<GridCoord, uint8_t>> root_pair, bool prune = true) {
+    std::vector<std::pair<GridCoord, uint8_t>> root_pair, bool prune) {
   openvdb::GridPtrVec grids;
   auto all_invalid = [](const auto &flags_handle, const auto &parents_handle,
                         const auto &radius_handle, const auto &ind) {
@@ -3131,8 +3132,9 @@ void Recut<image_t>::fill_components_with_spheres(
   auto output_topology = false;
 
   auto counter = 0;
-  rng::for_each(components, [this, &counter, float_grid, output_topology,
+  rng::for_each(components, [this, &prune, &counter, float_grid, output_topology,
                              &root_pair](const auto component) {
+
     auto component_roots =
         root_pair | rng::views::remove_if([&component](auto coord_radius) {
           auto [coord, radius] = coord_radius;
@@ -3160,9 +3162,10 @@ void Recut<image_t>::fill_components_with_spheres(
 
     const auto sphere_count = openvdb::math::Vec2i(1, 50000);
     auto spheres = std::vector<openvdb::Vec4s>();
+    auto filtered_spheres = std::vector<openvdb::Vec4s>();
     if (prune) {
       openvdb::v8_1::tools::fillWithSpheres(
-          *component, spheres, sphere_count, /*overlapping*/ false, MIN_RADII,
+          *component, spheres, sphere_count, [>overlapping<] false, MIN_RADII,
           /*max_radii*/ std::numeric_limits<float>::max(),
           /*isosurface_value*/ 1.,
           /*instance_count*/ 1000);
@@ -3173,7 +3176,7 @@ void Recut<image_t>::fill_components_with_spheres(
       for (const auto &val : iter) {
         auto coord = val.getCoord();
         auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
-        assertm(ind, "leaf must be on, since component is derived from the "
+        assertm(leaf_iter, "leaf must be on, since component is derived from the "
                      "active topology of it");
 
         openvdb::points::AttributeWriteHandle<float> radius_handle(
@@ -3190,7 +3193,7 @@ void Recut<image_t>::fill_components_with_spheres(
 #ifdef CLEAR_ROOTS
     // filtered_spheres are not covered by previously known somas
     // and are accessible from original connected traversal
-    auto filtered_spheres =
+    filtered_spheres =
         spheres |
         rng::views::remove_if(
             [this, component, &component_root_bboxs](const auto sphere) {
@@ -3216,9 +3219,9 @@ void Recut<image_t>::fill_components_with_spheres(
 
 #else
 
-  if (!prune) {
+  if (prune) {
         // filter out spheres that aren't located on an on pixel in the original topology
-    auto filtered_spheres = spheres |
+    filtered_spheres = spheres |
         rng::views::remove_if(
             [this, component](const auto sphere) {
               auto coord = GridCoord(sphere[0], sphere[1], sphere[2]);
@@ -3234,6 +3237,8 @@ void Recut<image_t>::fill_components_with_spheres(
               return true;
             }) |
         rng::to_vector;
+  } else {
+    filtered_spheres = spheres;
   }
 
 #endif
@@ -3259,7 +3264,7 @@ void Recut<image_t>::fill_components_with_spheres(
     // print all somas in this component
     rng::for_each(component_roots, [this, &file, &coord_to_swc_id,
                                     &component](const auto &component_root) {
-      print_swc_line(component_root.first, /*root*/ true, component_root.second,
+      print_swc_line(component_root.first, [>root<] true, component_root.second,
                      zeros_off(), component->evalActiveVoxelBoundingBox(), file,
                      /*map*/ coord_to_swc_id, /*adjust*/ true);
     });
@@ -3399,7 +3404,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   }
 
   if (params->sphere_pruning_) {
-    fill_components_with_spheres(root_pair);
+    fill_components_with_spheres(root_pair, false);
   } else {
 
     // starting from roots, prune stage will
@@ -3415,13 +3420,11 @@ template <class image_t> void Recut<image_t>::operator()() {
     }
 
     prune_radii();
-
-    auto timer = high_resolution_timer();
-    // make all unpruned trace a back to a root
     adjust_parent();
-#ifdef LOG
-    cout << "Adjust parent in " << timer.elapsed() << " sec.\n";
-#endif
+
+    // produces bad reach-back artifact
+    //prune_branch();
+    //adjust_parent();
 
     print_to_swc();
   }

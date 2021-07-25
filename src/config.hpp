@@ -78,7 +78,7 @@ using GridCoord = std::vector<int32_t>;
 // qualifies as covering its neighbor.
 // Must be 1 or greater
 #define DILATION_FACTOR 1
-#define MIN_RADII 3
+#define MIN_RADII 2
 #define MIN_LENGTH 2
 #define SWC_MIN_LINE 10
 //#define CLEAR_ROOTS
