@@ -121,7 +121,7 @@ public:
   void prune_radii();
   void prune_branch();
   void convert_topology();
-  
+
   void fill_components_with_spheres(
       std::vector<std::pair<GridCoord, uint8_t>> root_pair, bool prune);
 
@@ -3132,9 +3132,9 @@ void Recut<image_t>::fill_components_with_spheres(
   auto output_topology = false;
 
   auto counter = 0;
-  rng::for_each(components, [this, &prune, &counter, float_grid, output_topology,
+  rng::for_each(components, [this, &prune, &counter, float_grid,
+                             output_topology,
                              &root_pair](const auto component) {
-
     auto component_roots =
         root_pair | rng::views::remove_if([&component](auto coord_radius) {
           auto [coord, radius] = coord_radius;
@@ -3163,32 +3163,53 @@ void Recut<image_t>::fill_components_with_spheres(
     const auto sphere_count = openvdb::math::Vec2i(1, 50000);
     auto spheres = std::vector<openvdb::Vec4s>();
     auto filtered_spheres = std::vector<openvdb::Vec4s>();
-    if (prune) {
-      openvdb::v8_1::tools::fillWithSpheres(
-          *component, spheres, sphere_count, [>overlapping<] false, MIN_RADII,
-          /*max_radii*/ std::numeric_limits<float>::max(),
-          /*isosurface_value*/ 1.,
-          /*instance_count*/ 1000);
 
-    } else { // construct spheres from underlying topology of componentn
-      // get on coords of current component
-      auto iter = component->cbeginValueOn();
-      for (const auto &val : iter) {
-        auto coord = val.getCoord();
-        auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
-        assertm(leaf_iter, "leaf must be on, since component is derived from the "
-                     "active topology of it");
+    auto emplace_coord = [this, &spheres](auto coord) {
+      auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
+      assertm(leaf_iter, "leaf must be on, since component is derived from the "
+                         "active topology of it");
 
-        openvdb::points::AttributeWriteHandle<float> radius_handle(
-            leaf_iter->attributeArray("pscale"));
+      openvdb::points::AttributeWriteHandle<float> radius_handle(
+          leaf_iter->attributeArray("pscale"));
 
-        auto ind = leaf_iter->beginIndexVoxel(coord);
-        assertm(ind, "ind must be on, since component is derived from the "
-                     "active topology of it");
-        auto radius = radius_handle.get(*ind, static_cast<float>(radius));
-        spheres.emplace_back(coord[0], coord[1], coord[2], radius);
+      auto ind = leaf_iter->beginIndexVoxel(coord);
+      assertm(ind, "ind must be on, since component is derived from the "
+                   "active topology of it");
+      auto radius = radius_handle.get(*ind);
+      spheres.emplace_back(coord[0], coord[1], coord[2], radius);
+    };
+
+    auto timer = high_resolution_timer();
+    // construct spheres from underlying topology of componentn
+    // get on coords of current component
+    for (openvdb::FloatGrid::ValueOnCIter iter = component->cbeginValueOn();
+         iter.test(); ++iter) {
+
+      if (iter.isVoxelValue()) {
+        emplace_coord(iter.getCoord());
+      } else {
+
+        openvdb::CoordBBox bbox;
+        iter.getBoundingBox(bbox);
+
+        if (true) {
+          for (auto bbox_iter = bbox.begin(); bbox_iter; ++bbox_iter) {
+            emplace_coord(*bbox_iter);
+          }
+        } else {
+          // if it's not a voxel, it has already been compacted at some level of
+          // the hierarchy
+          auto center = bbox.getCenter();
+          auto dim = bbox.dim();
+          // dim is inclusive but we want the half diameter anyway
+          auto radius = dim[0] / 2;
+          spheres.emplace_back(center[0], center[1], center[2], radius);
+        }
       }
     }
+#ifdef LOG
+    cout << "Collect component points in " << timer.elapsed() << '\n';
+#endif
 
 #ifdef CLEAR_ROOTS
     // filtered_spheres are not covered by previously known somas
@@ -3219,32 +3240,12 @@ void Recut<image_t>::fill_components_with_spheres(
 
 #else
 
-  if (prune) {
-        // filter out spheres that aren't located on an on pixel in the original topology
-    filtered_spheres = spheres |
-        rng::views::remove_if(
-            [this, component](const auto sphere) {
-              auto coord = GridCoord(sphere[0], sphere[1], sphere[2]);
-              if (component->tree().isValueOn(coord)) {
-                auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
-                if (leaf_iter) {
-                  auto ind = leaf_iter->beginIndexVoxel(coord);
-                  if (ind) {
-                    return false;
-                  }
-                }
-              }
-              return true;
-            }) |
-        rng::to_vector;
-  } else {
     filtered_spheres = spheres;
-  }
-
 #endif
 
     if (filtered_spheres.size() < SWC_MIN_LINE)
       return; // skip
+
 #ifdef LOG
     auto name = "component-" + std::to_string(counter) + ".swc";
     cout << name << " active count " << component->activeVoxelCount() << ' '
@@ -3264,21 +3265,24 @@ void Recut<image_t>::fill_components_with_spheres(
     // print all somas in this component
     rng::for_each(component_roots, [this, &file, &coord_to_swc_id,
                                     &component](const auto &component_root) {
-      print_swc_line(component_root.first, [>root<] true, component_root.second,
+      print_swc_line(component_root.first, /*root*/ true, component_root.second,
                      zeros_off(), component->evalActiveVoxelBoundingBox(), file,
                      /*map*/ coord_to_swc_id, /*adjust*/ true);
     });
 
-    // build the set of all valid swc coord lines
+    // build the set of all valid swc coord lines:
+    // somas
     std::vector<GridCoord> component_root_coords =
         component_roots |
         rng::views::transform([](const auto &cpair) { return cpair.first; }) |
         rng::to_vector;
+    // neurite points
     std::vector<GridCoord> filtered_coords =
         filtered_spheres | rng::views::transform([](const auto &sphere) {
           return GridCoord(sphere[0], sphere[1], sphere[2]);
         }) |
         rng::to_vector;
+    // somas + neurite points
     std::vector<GridCoord> valid_swc_lines =
         rng::views::concat(component_root_coords, filtered_coords) |
         rng::to_vector;
@@ -3423,8 +3427,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     adjust_parent();
 
     // produces bad reach-back artifact
-    //prune_branch();
-    //adjust_parent();
+    // prune_branch();
+    // adjust_parent();
 
     print_to_swc();
   }
