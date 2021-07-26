@@ -3192,18 +3192,8 @@ void Recut<image_t>::fill_components_with_spheres(
         openvdb::CoordBBox bbox;
         iter.getBoundingBox(bbox);
 
-        if (true) {
-          for (auto bbox_iter = bbox.begin(); bbox_iter; ++bbox_iter) {
-            emplace_coord(*bbox_iter);
-          }
-        } else {
-          // if it's not a voxel, it has already been compacted at some level of
-          // the hierarchy
-          auto center = bbox.getCenter();
-          auto dim = bbox.dim();
-          // dim is inclusive but we want the half diameter anyway
-          auto radius = dim[0] / 2;
-          spheres.emplace_back(center[0], center[1], center[2], radius);
+        for (auto bbox_iter = bbox.begin(); bbox_iter; ++bbox_iter) {
+          emplace_coord(*bbox_iter);
         }
       }
     }
