@@ -792,6 +792,17 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t block_id,
   }
 }
 
+/**
+ * accumulate is the smallest scope function of fast marching, it can only operate
+ * on a VertexAttr (voxel) that are within the current interval_id and block_id, since
+ * it is potentially adding these vertices to the unique heap of interval_id
+ * and block_id. only one parent when selected. If one of these vertexes on
+ * the edge but still within interval_id and block_id domain is updated it
+ * is the responsibility of check_ghost_update to take note of the update such
+ * that this update is propagated to the relevant interval and block see
+ * vertex in question block_id : current block id current : minimum vertex
+ * attribute selected
+ */
 template <class image_t>
 template <typename IndT, typename FlagsT, typename ParentsT, typename ValueT,
           typename PointIter, typename UpdateIter>
