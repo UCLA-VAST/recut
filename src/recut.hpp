@@ -3228,6 +3228,7 @@ template <class image_t> void Recut<image_t>::prune_radii() {
 template <class image_t>
 void Recut<image_t>::fill_components_with_spheres(
     std::vector<std::pair<GridCoord, uint8_t>> root_pair, bool prune) {
+
   openvdb::GridPtrVec grids;
   auto all_invalid = [](const auto &flags_handle, const auto &parents_handle,
                         const auto &radius_handle, const auto &ind) {
@@ -3236,11 +3237,14 @@ void Recut<image_t>::fill_components_with_spheres(
 
   print_point_count(this->topology_grid);
 
+  auto timer = high_resolution_timer();
   auto float_grid = copy_selected(this->topology_grid);
   cout << "Float active count: " << float_grid->activeVoxelCount() << '\n';
   // aggregate disjoint connected components
   std::vector<openvdb::FloatGrid::Ptr> components;
   vto::segmentActiveVoxels(*float_grid, components);
+  cout << "Segment count: " << components.size() << " in " << timer.elapsed()
+       << " s\n";
 
 #ifdef CLEAR_ROOTS
   // prune all neurites topology grid by setting to tombstone
@@ -3260,7 +3264,12 @@ void Recut<image_t>::fill_components_with_spheres(
         root_pair | rng::views::remove_if([&component](auto coord_radius) {
           auto [coord, radius] = coord_radius;
           return !component->tree().isValueOn(coord);
-        });
+        }) |
+        rng::to_vector;
+
+    cout << "\n\troot count " << component_roots.size();
+    if (component_roots.size() < 1)
+      return; // skip
 
 #ifdef CLEAR_ROOTS
     auto component_root_bboxs =
@@ -3275,11 +3284,34 @@ void Recut<image_t>::fill_components_with_spheres(
           // radius);
         }) |
         rng::to_vector;
-
-    if (component_root_bboxs.size() < 1)
-      return; // skip
-    cout << "\n\troot count " << component_root_bboxs.size();
 #endif
+
+    {
+      // copy topology to point grid
+      // Use the topology to create a PointDataTree
+      openvdb::points::PointDataTree::Ptr pointTree(
+          new openvdb::points::PointDataTree(component->tree(), 0,
+                                             openvdb::TopologyCopy()));
+
+      // Create the points grid.
+      openvdb::points::PointDataGrid::Ptr points =
+          openvdb::points::PointDataGrid::create(pointTree);
+
+      append_attributes(points);
+
+      // use this for the topology stage exclusively
+      this->topology_grid = points;
+    }
+
+    {
+      auto stage = "connected";
+      // starting from the roots connected stage saves all surface vertices into
+      // fifo
+      this->activate_vids(this->topology_grid, component_roots, stage,
+                          this->map_fifo, this->connected_map);
+      // first stage of the pipeline
+      this->update(stage, this->map_fifo);
+    }
 
     const auto sphere_count = openvdb::math::Vec2i(1, 50000);
     auto spheres = std::vector<openvdb::Vec4s>();
@@ -3288,17 +3320,22 @@ void Recut<image_t>::fill_components_with_spheres(
     // Note this can be accelerated by going in leaf order
     auto emplace_coord = [this, &spheres](auto coord) {
       auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
-      assertm(leaf_iter, "leaf must be on, since component is derived from the "
-                         "active topology of it");
+      if (leaf_iter) {
+        // assertm(leaf_iter, "leaf must be on, since component is derived from
+        // the " "active topology of it");
 
-      openvdb::points::AttributeWriteHandle<float> radius_handle(
-          leaf_iter->attributeArray("pscale"));
+        openvdb::points::AttributeWriteHandle<float> radius_handle(
+            leaf_iter->attributeArray("pscale"));
 
-      auto ind = leaf_iter->beginIndexVoxel(coord);
-      assertm(ind, "ind must be on, since component is derived from the "
-                   "active topology of it");
-      auto radius = radius_handle.get(*ind);
-      spheres.emplace_back(coord[0], coord[1], coord[2], radius);
+        auto ind = leaf_iter->beginIndexVoxel(coord);
+        // assertm(ind, "ind must be on, since component is derived from the "
+        //"active topology of it");
+
+        if (ind) {
+          auto radius = radius_handle.get(*ind);
+          spheres.emplace_back(coord[0], coord[1], coord[2], radius);
+        }
+      }
     };
 
     auto timer = high_resolution_timer();
@@ -3514,6 +3551,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     return;
   }
 
+  // constrain topology to only those reachable from roots
   auto stage = "connected";
   {
     // starting from the roots connected stage saves all surface vertices into
@@ -3524,17 +3562,16 @@ template <class image_t> void Recut<image_t>::operator()() {
     this->update(stage, map_fifo);
   }
 
-  // radius stage will consume fifo surface vertices
-  {
-    stage = "radius";
-    this->setup_radius(map_fifo);
-    this->update(stage, map_fifo);
-  }
-
   if (params->sphere_pruning_) {
-    adjust_parent();
     fill_components_with_spheres(root_pair, false);
   } else {
+
+    // radius stage will consume fifo surface vertices
+    {
+      stage = "radius";
+      this->setup_radius(map_fifo);
+      this->update(stage, map_fifo);
+    }
 
     // starting from roots, prune stage will
     // create final list of vertices
