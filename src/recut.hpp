@@ -457,6 +457,13 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
                        "mismatched or major inaccuracies in segmentation\n ";
 #endif
              }
+           } else {
+#ifdef FULL_PRINT
+             cout << "Warning: root at " << coord << " in image bbox "
+                  << local_bbox
+                  << " is not within the images bounding box so it is "
+                     "ignored\n";
+#endif
            }
            return true; // remove it
          }) |
@@ -793,14 +800,14 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t block_id,
 }
 
 /**
- * accumulate is the smallest scope function of fast marching, it can only operate
- * on a VertexAttr (voxel) that are within the current interval_id and block_id, since
- * it is potentially adding these vertices to the unique heap of interval_id
- * and block_id. only one parent when selected. If one of these vertexes on
- * the edge but still within interval_id and block_id domain is updated it
- * is the responsibility of check_ghost_update to take note of the update such
- * that this update is propagated to the relevant interval and block see
- * vertex in question block_id : current block id current : minimum vertex
+ * accumulate is the smallest scope function of fast marching, it can only
+ * operate on a VertexAttr (voxel) that are within the current interval_id and
+ * block_id, since it is potentially adding these vertices to the unique heap of
+ * interval_id and block_id. only one parent when selected. If one of these
+ * vertexes on the edge but still within interval_id and block_id domain is
+ * updated it is the responsibility of check_ghost_update to take note of the
+ * update such that this update is propagated to the relevant interval and block
+ * see vertex in question block_id : current block id current : minimum vertex
  * attribute selected
  */
 template <class image_t>
@@ -3248,10 +3255,15 @@ void Recut<image_t>::fill_components_with_spheres(
 
   print_point_count(this->topology_grid);
 
-  auto timer = high_resolution_timer();
+  // this copies only vertices that have already had flags marked as selected
   auto float_grid = copy_selected(this->topology_grid);
+
   cout << "Float active count: " << float_grid->activeVoxelCount() << '\n';
+  assertm(float_grid->activeVoxelCount(),
+          "active voxels in float grid must be > 0");
+
   // aggregate disjoint connected components
+  auto timer = high_resolution_timer();
   std::vector<openvdb::FloatGrid::Ptr> components;
   vto::segmentActiveVoxels(*float_grid, components);
   cout << "Segment count: " << components.size() << " in " << timer.elapsed()
@@ -3271,6 +3283,7 @@ void Recut<image_t>::fill_components_with_spheres(
   rng::for_each(components, [this, &prune, &counter, float_grid,
                              output_topology,
                              &root_pair](const auto component) {
+    // filter all roots within this component
     auto component_roots =
         root_pair | rng::views::remove_if([&component](auto coord_radius) {
           auto [coord, radius] = coord_radius;
@@ -3278,7 +3291,7 @@ void Recut<image_t>::fill_components_with_spheres(
         }) |
         rng::to_vector;
 
-    cout << "\n\troot count " << component_roots.size();
+    cout << "\troot count " << component_roots.size() << '\n';
     if (component_roots.size() < 1)
       return; // skip
 
@@ -3297,7 +3310,7 @@ void Recut<image_t>::fill_components_with_spheres(
         rng::to_vector;
 #endif
 
-    {
+    if (false) {
       // copy topology to point grid
       // Use the topology to create a PointDataTree
       openvdb::points::PointDataTree::Ptr pointTree(
@@ -3314,7 +3327,10 @@ void Recut<image_t>::fill_components_with_spheres(
       this->topology_grid = points;
     }
 
-    {
+    // run the connected component stage, just for this component
+    // changes are isolated to this component since the global topology_grid
+    // has been updated above
+    if (false) {
       auto stage = "connected";
       // starting from the roots connected stage saves all surface vertices into
       // fifo
@@ -3328,7 +3344,8 @@ void Recut<image_t>::fill_components_with_spheres(
     auto spheres = std::vector<openvdb::Vec4s>();
     auto filtered_spheres = std::vector<openvdb::Vec4s>();
 
-    // Note this can be accelerated by going in leaf order
+    // define local fn to add a sphere for a coord that is valid in
+    // topology_grid Note this can be accelerated by going in leaf order
     auto emplace_coord = [this, &spheres](auto coord) {
       auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
       if (leaf_iter) {
@@ -3363,6 +3380,7 @@ void Recut<image_t>::fill_components_with_spheres(
         iter.getBoundingBox(bbox);
 
         for (auto bbox_iter = bbox.begin(); bbox_iter; ++bbox_iter) {
+          // only adds if topology grid leaf and ind are also on
           emplace_coord(*bbox_iter);
         }
       }
@@ -3403,17 +3421,19 @@ void Recut<image_t>::fill_components_with_spheres(
     filtered_spheres = spheres;
 #endif
 
-    auto convert_markers_start = timer.elapsed();
-    auto markers = convert_float_to_markers(component, false);
+    if (false) {
+      auto convert_markers_start = timer.elapsed();
+      auto markers = convert_float_to_markers(component, false);
 #ifdef LOG
-    cout << "Convert to markers in " << timer.elapsed() - convert_markers_start
-         << '\n';
+      cout << "Convert to markers in "
+           << timer.elapsed() - convert_markers_start << '\n';
 #endif
 
-    cout << markers.size() << '\n';
-    cout << filtered_spheres.size() << '\n';
-    assertm(markers.size() == filtered_spheres.size(),
-            "Converted size must match");
+      cout << markers.size() << '\n';
+      cout << filtered_spheres.size() << '\n';
+      assertm(markers.size() == filtered_spheres.size(),
+              "Converted size must match");
+    }
 
     if (filtered_spheres.size() < SWC_MIN_LINE)
       return; // skip
@@ -3556,12 +3576,6 @@ template <class image_t> void Recut<image_t>::operator()() {
   cout << "Using " << root_pair.size() << " roots\n";
 #endif
 
-  if (params->convert_only_) {
-    convert_topology();
-    // no more work to do, exiting
-    return;
-  }
-
   // constrain topology to only those reachable from roots
   auto stage = "connected";
   {
@@ -3571,6 +3585,12 @@ template <class image_t> void Recut<image_t>::operator()() {
                         this->connected_map);
     // first stage of the pipeline
     this->update(stage, map_fifo);
+  }
+
+  if (params->convert_only_) {
+    convert_topology();
+    // no more work to do, exiting
+    return;
   }
 
   if (params->sphere_pruning_) {
