@@ -2157,8 +2157,61 @@ auto get_id_map = []() {
 auto upsample_idx = [](int original_idx, int upsample_factor) -> int {
   /* scale the z, */
   return upsample_factor * original_idx;
-  //return upsample_factor * original_idx +
-         /* then offset it into the center of the upsample*/
-         //(upsample_factor / 2);
+  // return upsample_factor * original_idx +
+  /* then offset it into the center of the upsample*/
+  //(upsample_factor / 2);
 };
 
+/* typically called with the topology_grid as the point_grid, and a 
+ * connected component as the float grid
+ */
+auto collect_all_points = [](EnlargedPointDataGrid::Ptr point_grid,
+                             openvdb::FloatGrid::Ptr float_grid) {
+
+  auto spheres = std::vector<openvdb::Vec4s>();
+  // define local fn to add a sphere for a coord that is valid in
+  // topology_grid Note this can be accelerated by going in leaf order
+  auto emplace_coord = [&point_grid, &spheres](auto coord) {
+    auto leaf_iter = point_grid->tree().probeLeaf(coord);
+    if (leaf_iter) {
+      // assertm(leaf_iter, "leaf must be on, since the float_grid is derived from
+      // the " "active topology of it");
+
+      openvdb::points::AttributeWriteHandle<float> radius_handle(
+          leaf_iter->attributeArray("pscale"));
+
+      auto ind = leaf_iter->beginIndexVoxel(coord);
+      // assertm(ind, "ind must be on, since the float_grid is derived from the "
+      //"active topology of it");
+
+      if (ind) {
+        auto radius = radius_handle.get(*ind);
+        spheres.emplace_back(coord[0], coord[1], coord[2], radius);
+      }
+    }
+  };
+
+  auto timer = high_resolution_timer();
+  // construct spheres from underlying topology of the float_grid
+  // get on coords of current the float_grid
+  for (openvdb::FloatGrid::ValueOnCIter iter = float_grid->cbeginValueOn();
+       iter.test(); ++iter) {
+
+    if (iter.isVoxelValue()) {
+      emplace_coord(iter.getCoord());
+    } else {
+
+      openvdb::CoordBBox bbox;
+      iter.getBoundingBox(bbox);
+
+      for (auto bbox_iter = bbox.begin(); bbox_iter; ++bbox_iter) {
+        // only adds if topology grid leaf and ind are also on
+        emplace_coord(*bbox_iter);
+      }
+    }
+  }
+#ifdef LOG
+  cout << "Collect float grid points in " << timer.elapsed() << '\n';
+#endif
+  return spheres;
+};

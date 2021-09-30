@@ -3262,6 +3262,8 @@ void Recut<image_t>::fill_components_with_spheres(
   print_point_count(this->topology_grid);
 
   // this copies only vertices that have already had flags marked as selected
+  // selected means they are reachable from a known vertex during traversal
+  // in either a connected or value stage
   auto float_grid = copy_selected(this->topology_grid);
 
   cout << "Float active count: " << float_grid->activeVoxelCount() << '\n';
@@ -3350,51 +3352,6 @@ void Recut<image_t>::fill_components_with_spheres(
     auto spheres = std::vector<openvdb::Vec4s>();
     auto filtered_spheres = std::vector<openvdb::Vec4s>();
 
-    // define local fn to add a sphere for a coord that is valid in
-    // topology_grid Note this can be accelerated by going in leaf order
-    auto emplace_coord = [this, &spheres](auto coord) {
-      auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
-      if (leaf_iter) {
-        // assertm(leaf_iter, "leaf must be on, since component is derived from
-        // the " "active topology of it");
-
-        openvdb::points::AttributeWriteHandle<float> radius_handle(
-            leaf_iter->attributeArray("pscale"));
-
-        auto ind = leaf_iter->beginIndexVoxel(coord);
-        // assertm(ind, "ind must be on, since component is derived from the "
-        //"active topology of it");
-
-        if (ind) {
-          auto radius = radius_handle.get(*ind);
-          spheres.emplace_back(coord[0], coord[1], coord[2], radius);
-        }
-      }
-    };
-
-    auto timer = high_resolution_timer();
-    // construct spheres from underlying topology of componentn
-    // get on coords of current component
-    for (openvdb::FloatGrid::ValueOnCIter iter = component->cbeginValueOn();
-         iter.test(); ++iter) {
-
-      if (iter.isVoxelValue()) {
-        emplace_coord(iter.getCoord());
-      } else {
-
-        openvdb::CoordBBox bbox;
-        iter.getBoundingBox(bbox);
-
-        for (auto bbox_iter = bbox.begin(); bbox_iter; ++bbox_iter) {
-          // only adds if topology grid leaf and ind are also on
-          emplace_coord(*bbox_iter);
-        }
-      }
-    }
-#ifdef LOG
-    cout << "Collect component points in " << timer.elapsed() << '\n';
-#endif
-
 #ifdef CLEAR_ROOTS
     // filtered_spheres are not covered by previously known somas
     // and are accessible from original connected traversal
@@ -3428,11 +3385,11 @@ void Recut<image_t>::fill_components_with_spheres(
 #endif
 
     if (false) {
-      auto convert_markers_start = timer.elapsed();
+      auto timer = high_resolution_timer();
       auto markers = convert_float_to_markers(component, false);
 #ifdef LOG
       cout << "Convert to markers in "
-           << timer.elapsed() - convert_markers_start << '\n';
+           << timer.elapsed() << '\n';
 #endif
 
       cout << markers.size() << '\n';
