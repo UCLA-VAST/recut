@@ -567,11 +567,13 @@ void Recut<image_t>::activate_vids(
         auto offsets = coord_mod(coord, temp_coord);
         if (stage == "connected") {
           connected_fifo[leaf_iter->origin()].emplace_back(
-            /*edge_state*/ flags_handle.get(*ind), offsets, zeros_off());
+              /*edge_state*/ flags_handle.get(*ind), offsets, zeros_off());
         } else if (stage == "value") {
           auto block_id = coord_img_to_block_id(leaf_iter->origin());
           // ignore the input radius size, use the root flags set above
-          auto rootv = new VertexAttr(flags_handle.get(*ind), /* offsets*/coord_sub(coord, leaf_bbox.min()), 0);
+          auto rootv =
+              new VertexAttr(flags_handle.get(*ind),
+                             /* offsets*/ coord_sub(coord, leaf_bbox.min()), 0);
           heap_vec[block_id].push(rootv, block_id, stage);
         }
       });
@@ -3350,50 +3352,52 @@ void Recut<image_t>::fill_components_with_spheres(
 
     const auto sphere_count = openvdb::math::Vec2i(1, 50000);
     auto spheres = std::vector<openvdb::Vec4s>();
+    openvdb::tools::fillWithSpheres(*component, spheres, sphere_count, false, 1, 40, 1.);
+
+    // optionally filter the set of spheres
     auto filtered_spheres = std::vector<openvdb::Vec4s>();
-
+    {
 #ifdef CLEAR_ROOTS
-    // filtered_spheres are not covered by previously known somas
-    // and are accessible from original connected traversal
-    filtered_spheres =
-        spheres |
-        rng::views::remove_if(
-            [this, component, &component_root_bboxs](const auto sphere) {
-              auto coord = GridCoord(sphere[0], sphere[1], sphere[2]);
-              if (component->tree().isValueOn(coord) &&
-                  !covered_by_bboxs(coord, component_root_bboxs)) {
-                auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
-                if (leaf_iter) {
+      // filtered_spheres are not covered by previously known somas
+      // and are accessible from original connected traversal
+      filtered_spheres =
+          spheres |
+          rng::views::remove_if(
+              [this, component, &component_root_bboxs](const auto sphere) {
+                auto coord = GridCoord(sphere[0], sphere[1], sphere[2]);
+                if (component->tree().isValueOn(coord) &&
+                    !covered_by_bboxs(coord, component_root_bboxs)) {
+                  auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
+                  if (leaf_iter) {
 
-                  openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
-                      leaf_iter->attributeArray("flags"));
+                    openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
+                        leaf_iter->attributeArray("flags"));
 
-                  auto ind = leaf_iter->beginIndexVoxel(coord);
-                  if (ind) {
-                    unset_tombstone(flags_handle, ind);
-                    return false;
+                    auto ind = leaf_iter->beginIndexVoxel(coord);
+                    if (ind) {
+                      unset_tombstone(flags_handle, ind);
+                      return false;
+                    }
                   }
                 }
-              }
-              return true;
-            }) |
-        rng::to_vector;
+                return true;
+              }) |
+          rng::to_vector;
 
 #else
-
     filtered_spheres = spheres;
 #endif
+    }
 
+    cout << "Total filtered spheres: " << filtered_spheres.size() << '\n';
     if (false) {
       auto timer = high_resolution_timer();
       auto markers = convert_float_to_markers(component, false);
 #ifdef LOG
-      cout << "Convert to markers in "
-           << timer.elapsed() << '\n';
+      cout << "Convert to markers in " << timer.elapsed() << '\n';
 #endif
 
       cout << markers.size() << '\n';
-      cout << filtered_spheres.size() << '\n';
       assertm(markers.size() == filtered_spheres.size(),
               "Converted size must match");
     }
