@@ -547,7 +547,7 @@ void Recut<image_t>::activate_vids(
 
     auto temp_coord = new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH);
 
-    if (stage == "connected") {
+    if (stage == "connected" || stage == "value") {
 
       rng::for_each(leaf_roots, [&](auto coord) {
         auto ind = leaf_iter->beginIndexVoxel(coord);
@@ -565,9 +565,15 @@ void Recut<image_t>::activate_vids(
         parents_handle.set(*ind, zeros_off());
 
         auto offsets = coord_mod(coord, temp_coord);
-        // cout << "added to " << leaf_iter->origin() << '\n';
-        connected_fifo[leaf_iter->origin()].emplace_back(
+        if (stage == "connected") {
+          connected_fifo[leaf_iter->origin()].emplace_back(
             /*edge_state*/ flags_handle.get(*ind), offsets, zeros_off());
+        } else if (stage == "value") {
+          auto block_id = coord_img_to_block_id(leaf_iter->origin());
+          // ignore the input radius size, use the root flags set above
+          auto rootv = new VertexAttr(flags_handle.get(*ind), /* offsets*/coord_sub(coord, leaf_bbox.min()), 0);
+          heap_vec[block_id].push(rootv, block_id, stage);
+        }
       });
 
     } else if (stage == "prune") {

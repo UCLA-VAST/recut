@@ -600,6 +600,61 @@ TEST(VDB, ActivateVids) {
   }
 }
 
+TEST(VDB, PriorityQueue) {
+  VID_t grid_size = 8;
+  auto grid_extents = GridCoord(grid_size);
+  // do no use tcase 4 since it is randomized and will not match
+  // for the second read test
+  auto tcase = 7;
+  double slt_pct = 100;
+  bool print_all = true;
+  // generate an image buffer on the fly
+  // then convert to vdb
+  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+                       /*force_regenerate_image=*/false,
+                       /*input_is_vdb=*/true);
+  auto recut = Recut<uint16_t>(args);
+  auto root_coords = recut.initialize();
+  auto stage = "value";
+  recut.activate_vids(recut.topology_grid, root_coords, "value",
+                      recut.map_fifo, recut.connected_map);
+  recut.update(stage, recut.map_fifo);
+
+  if (print_all) {
+    print_vdb_mask(recut.topology_grid->getConstAccessor(), grid_extents);
+    print_all_points(recut.topology_grid, recut.image_bbox);
+  }
+
+  auto known_surface = new_grid_coord(1, 1, 1);
+  auto known_selected = new_grid_coord(2, 2, 2);
+  auto known_root = new_grid_coord(3, 3, 3);
+
+  // they all are in the same leaf
+  auto leaf_iter = recut.topology_grid->tree().probeLeaf(known_surface);
+
+  openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
+      leaf_iter->attributeArray("flags"));
+
+  {
+    auto ind = leaf_iter->beginIndexVoxel(known_surface);
+    ASSERT_TRUE(is_selected(flags_handle, ind));
+    ASSERT_TRUE(is_surface(flags_handle, ind));
+  }
+
+  {
+    auto ind = leaf_iter->beginIndexVoxel(known_selected);
+    ASSERT_TRUE(is_selected(flags_handle, ind));
+    ASSERT_FALSE(is_surface(flags_handle, ind));
+  }
+
+  {
+    auto ind = leaf_iter->beginIndexVoxel(known_root);
+    ASSERT_TRUE(is_selected(flags_handle, ind));
+    ASSERT_TRUE(is_root(flags_handle, ind));
+    ASSERT_FALSE(is_surface(flags_handle, ind));
+  }
+}
+
 TEST(VDB, Connected) {
   VID_t grid_size = 8;
   auto grid_extents = GridCoord(grid_size);
