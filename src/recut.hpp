@@ -3334,85 +3334,23 @@ void Recut<image_t>::fill_components_with_spheres(
       append_attributes(points);
 
       // use this for the topology stage exclusively
-      this->topology_grid = points;
+      // this->topology_grid = points;
     }
 
-    // run the connected component stage, just for this component
-    // changes are isolated to this component since the global topology_grid
-    // has been updated above
-    if (false) {
-      auto stage = "connected";
-      // starting from the roots connected stage saves all surface vertices into
-      // fifo
-      this->activate_vids(this->topology_grid, component_roots, stage,
-                          this->map_fifo, this->connected_map);
-      // first stage of the pipeline
-      this->update(stage, this->map_fifo);
-    }
-
-    const auto sphere_count = openvdb::math::Vec2i(1, 50000);
-    auto spheres = std::vector<openvdb::Vec4s>();
-    openvdb::tools::fillWithSpheres(*component, spheres, sphere_count, false, 1, 40, 1.);
-
-    // optionally filter the set of spheres
-    auto filtered_spheres = std::vector<openvdb::Vec4s>();
-    {
-#ifdef CLEAR_ROOTS
-      // filtered_spheres are not covered by previously known somas
-      // and are accessible from original connected traversal
-      filtered_spheres =
-          spheres |
-          rng::views::remove_if(
-              [this, component, &component_root_bboxs](const auto sphere) {
-                auto coord = GridCoord(sphere[0], sphere[1], sphere[2]);
-                if (component->tree().isValueOn(coord) &&
-                    !covered_by_bboxs(coord, component_root_bboxs)) {
-                  auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
-                  if (leaf_iter) {
-
-                    openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
-                        leaf_iter->attributeArray("flags"));
-
-                    auto ind = leaf_iter->beginIndexVoxel(coord);
-                    if (ind) {
-                      unset_tombstone(flags_handle, ind);
-                      return false;
-                    }
-                  }
-                }
-                return true;
-              }) |
-          rng::to_vector;
-
-#else
-    filtered_spheres = spheres;
-#endif
-    }
-
-    cout << "Total filtered spheres: " << filtered_spheres.size() << '\n';
-    if (false) {
-      auto timer = high_resolution_timer();
-      auto markers = convert_float_to_markers(component, false);
+    auto timer = high_resolution_timer();
+    auto markers = convert_float_to_markers(component, false);
 #ifdef LOG
-      cout << "Convert to markers in " << timer.elapsed() << '\n';
+    cout << "Convert to markers in " << timer.elapsed() << '\n';
 #endif
-
-      cout << markers.size() << '\n';
-      assertm(markers.size() == filtered_spheres.size(),
-              "Converted size must match");
-    }
-
-    if (filtered_spheres.size() < SWC_MIN_LINE)
-      return; // skip
 
 #ifdef LOG
     auto name = "component-" + std::to_string(counter) + ".swc";
     cout << name << " active count " << component->activeVoxelCount() << ' '
          << component->evalActiveVoxelBoundingBox() << '\n';
-    cout << "\tspheres count " << spheres.size() << '\n';
-    cout << "\tfiltered spheres count " << filtered_spheres.size() << '\n';
+    cout << "Marker count: " << markers.size() << '\n';
 #endif
 
+#ifdef OUTPUT_SPHERES
     // start swc and add header metadata
     std::ofstream file;
     file.open(name);
@@ -3424,9 +3362,9 @@ void Recut<image_t>::fill_components_with_spheres(
     // print all somas in this component
     rng::for_each(component_roots, [this, &file, &coord_to_swc_id,
                                     &component](const auto &component_root) {
-      print_swc_line(component_root.first, /*root*/ true, component_root.second,
+      print_swc_line(component_root.first, true, component_root.second,
                      zeros_off(), component->evalActiveVoxelBoundingBox(), file,
-                     /*map*/ coord_to_swc_id, /*adjust*/ true);
+                     coord_to_swc_id, true);
     });
 
     // build the set of all valid swc coord lines:
@@ -3445,39 +3383,6 @@ void Recut<image_t>::fill_components_with_spheres(
     std::vector<GridCoord> valid_swc_lines =
         rng::views::concat(component_root_coords, filtered_coords) |
         rng::to_vector;
-
-    // adjust parents of all filtered_spheres in this component
-    // make all unpruned trace a back to a root
-    rng::for_each(filtered_spheres, [this, &file, component, float_grid,
-                                     &coord_to_swc_id,
-                                     &valid_swc_lines](const auto &sphere) {
-      auto coord = GridCoord(sphere[0], sphere[1], sphere[2]);
-      auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
-
-      openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
-          leaf_iter->attributeArray("parents"));
-
-      openvdb::points::AttributeWriteHandle<float> radius_handle(
-          leaf_iter->attributeArray("pscale"));
-
-      auto ind = leaf_iter->beginIndexVoxel(coord);
-      assertm(ind, "ind must be reachable");
-
-      auto parent =
-          adjust_vertex_parent(this->topology_grid, parents_handle.get(*ind),
-                               coord, valid_swc_lines);
-      parents_handle.set(*ind, parent);
-      //#ifdef FULL_PRINT
-      // std::cout << coord << " -> " << coord + parent << '\n';
-      //#endif
-      // print all neurites in this component
-      print_swc_line(coord, /*root*/ false,
-                     /*radius*/ sphere[3], parent,
-                     component->evalActiveVoxelBoundingBox(), file,
-                     /*map*/ coord_to_swc_id, /*adjust*/ true);
-
-      radius_handle.set(*ind, static_cast<float>(sphere[3]));
-    });
 
     if (output_topology) {
       // finalize soma attributes
@@ -3499,6 +3404,7 @@ void Recut<image_t>::fill_components_with_spheres(
 
     if (file.is_open())
       file.close();
+#endif
     ++counter;
   }); // for each component
 
@@ -3506,6 +3412,7 @@ void Recut<image_t>::fill_components_with_spheres(
     grids.push_back(this->topology_grid);
     write_vdb_file(grids, "final-point-grid.vdb");
   }
+
 }
 
 template <class image_t> void Recut<image_t>::convert_topology() {
@@ -3560,20 +3467,22 @@ template <class image_t> void Recut<image_t>::operator()() {
     return;
   }
 
-  if (params->sphere_pruning_) {
-    fill_components_with_spheres(root_pair, false);
-  } else {
+  // radius stage will consume fifo surface vertices
+  {
+    stage = "radius";
+    this->setup_radius(map_fifo);
+    this->update(stage, map_fifo);
+  }
 
-    // radius stage will consume fifo surface vertices
-    {
-      stage = "radius";
-      this->setup_radius(map_fifo);
-      this->update(stage, map_fifo);
-    }
+  if (params->sphere_pruning_) {
+    /*
+    fill_components_with_spheres(root_pair, false);
+    */
+  } else {
 
     // starting from roots, prune stage will
     // create final list of vertices
-    if (false) {
+    if (true) {
       stage = "prune";
       this->activate_vids(this->topology_grid, root_pair, stage, this->map_fifo,
                           this->connected_map);
