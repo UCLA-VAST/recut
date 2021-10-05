@@ -3359,6 +3359,9 @@ void Recut<image_t>::fill_components_with_spheres(
 
   auto pruned_markers = advantra_prune(markers);
 
+  // extract a new tree via bfs
+  auto tree = advantra_extract_trees(pruned_markers);
+
 #ifdef OUTPUT_SPHERES
     // start swc and add header metadata
     std::ofstream file;

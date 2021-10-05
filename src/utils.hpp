@@ -2259,7 +2259,7 @@ void check_nbr(vector<MyMarker *> &nX) {
 };
 
 // sphere grouping Advantra prune strategy
-std::vector<MyMarker*> advantra_prune(vector<MyMarker *> nX) {
+std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX) {
 
   std::vector<MyMarker *> nY;
 
@@ -2278,8 +2278,7 @@ std::vector<MyMarker*> advantra_prune(vector<MyMarker *> nX) {
   nY.push_back(nX[0]);
 
   // add soma nodes as independent groups at the beginning
-  for (long i = 0; i < nX.size();
-       ++i) { 
+  for (long i = 0; i < nX.size(); ++i) {
     // all somas are automatically kept
     if (nX[i]->type == 0) {
       X2Y[i] = nY.size();
@@ -2353,4 +2352,108 @@ std::vector<MyMarker*> advantra_prune(vector<MyMarker *> nX) {
   check_nbr(nY); // remove doubles and self-linkages after grouping
 
   return nY;
+}
+
+template <typename T> class BfsQueue {
+public:
+  std::queue<T> kk;
+  BfsQueue() {}
+  void enqueue(T item) { this->kk.push(item); }
+  T dequeue() {
+    T output = kk.front();
+    kk.pop();
+    return output;
+  }
+  int size() { return kk.size(); }
+  bool hasItems() { return !kk.empty(); }
+};
+
+// advantra based re-extraction of tree based on bfs
+std::vector<MyMarker *> advantra_extract_trees(std::vector<MyMarker *> nlist,
+                             bool remove_isolated_tree_with_one_node = true) {
+
+  BfsQueue<int> q;
+  std::vector<MyMarker *> tree;
+
+  vector<int> dist(nlist.size());
+  vector<int> nmap(nlist.size());
+  vector<int> parent(nlist.size());
+
+  for (int i = 0; i < nlist.size(); ++i) {
+    dist[i] = INT_MAX;
+    nmap[i] = -1;   // indexing in output tree
+    parent[i] = -1; // parent index in current tree
+  }
+
+  dist[0] = -1;
+
+  // Node tree0(nlist[0]); // first element of the nodelist is dummy both in
+  // input and output tree.clear(); tree.push_back(tree0);
+  int treecnt = 0; // independent tree counter, will be obsolete
+
+  int seed;
+
+  auto get_undiscovered2 = [](std::vector<int> dist) -> int {
+    for (int i = 1; i < dist.size(); i++) {
+      if (dist[i] == INT_MAX) {
+        return i;
+      }
+    }
+    return -1;
+  };
+
+  while ((seed = get_undiscovered2(dist)) > 0) {
+
+    treecnt++;
+
+    dist[seed] = 0;
+    nmap[seed] = -1;
+    parent[seed] = -1;
+    q.enqueue(seed);
+
+    int nodesInTree = 0;
+
+    while (q.hasItems()) {
+
+      // dequeue(), take from FIFO structure,
+      // http://en.wikipedia.org/wiki/Queue_%28abstract_data_type%29
+      int curr = q.dequeue();
+
+      auto n = new MyMarker(*nlist[curr]);
+      n->nbr.clear();
+      if (n->type != 0)
+        n->type = treecnt + 2; // vaa3d viz
+
+      if (parent[curr] > 0)
+        n->nbr.push_back(nmap[parent[curr]]);
+
+      nmap[curr] = tree.size();
+      tree.push_back(n);
+      ++nodesInTree;
+
+      // for each node adjacent to current
+      for (int j = 0; j < nlist[curr]->nbr.size(); j++) {
+
+        int adj = nlist[curr]->nbr[j];
+
+        if (dist[adj] == INT_MAX) {
+          dist[adj] = dist[curr] + 1;
+          parent[adj] = curr;
+          // enqueue(), add to FIFO structure,
+          // http://en.wikipedia.org/wiki/Queue_%28abstract_data_type%29
+          q.enqueue(adj);
+        }
+      }
+
+      // check if there were any neighbours
+      if (nodesInTree == 1 && !q.hasItems() &&
+          remove_isolated_tree_with_one_node) {
+        tree.pop_back(); // remove the one that was just added
+        nmap[curr] = -1; // cancel the last entry
+      }
+    }
+  }
+
+  cout << treecnt << " trees\n";
+  return tree;
 }
