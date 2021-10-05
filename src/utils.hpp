@@ -2216,17 +2216,60 @@ auto collect_all_points = [](EnlargedPointDataGrid::Ptr point_grid,
   return spheres;
 };
 
+// modifies the contents of the passed marker vector nX
+// ensuring that linkings are bidirectional
+// that there are no self-links or repeats in the
+// neighbor list
+void check_nbr(vector<MyMarker *> &nX) {
+
+  for (VID_t i = 0; i < nX.size(); ++i) {
+    // remove repeats
+    sort(nX[i]->nbr.begin(), nX[i]->nbr.end());
+    nX[i]->nbr.erase(unique(nX[i]->nbr.begin(), nX[i]->nbr.end()),
+                     nX[i]->nbr.end());
+
+    // remove self linkages
+    int pos =
+        find(nX[i]->nbr.begin(), nX[i]->nbr.end(), i) - nX[i]->nbr.begin();
+    if (pos >= 0 && pos < nX[i]->nbr.size())
+      nX[i]->nbr.erase(nX[i]->nbr.begin() + pos); // remove at pos
+  }
+
+  // ensure linkings are bidirectional, add if not
+  for (VID_t i = 0; i < nX.size(); ++i) {
+    for (VID_t j = 0; j < nX[i]->nbr.size(); ++j) {
+      if (i != j) {
+        bool fnd = false;
+        for (int k = 0; k < nX[nX[i]->nbr[j]]->nbr.size(); ++k) {
+          if (nX[nX[i]->nbr[j]]->nbr[k] == i) {
+            fnd = true;
+            break;
+          }
+        }
+
+        if (!fnd) {
+          // enforce link
+          nX[nX[i]->nbr[j]]->nbr.push_back(i);
+          cout << "enforced bidirectional link: " << nX[i]->nbr[j] << " -- "
+               << i << '\n';
+        }
+      }
+    }
+  }
+};
+
 // sphere grouping Advantra prune strategy
-void advantra_prune(vector<MyMarker*> nX) { 
-  
+void advantra_prune(vector<MyMarker *> nX) {
+
   std::vector<MyMarker *> nY;
 
-  //nX[0].corr = FLT_MAX; // so that the dummy node gets index 0 again, larges correlation
+  // nX[0].corr = FLT_MAX; // so that the dummy node gets index 0 again, larges
+  // correlation
   vector<long> indices(nX.size());
   for (long i = 0; i < indices.size(); ++i)
     indices[i] = i;
   // TODO sort by float value if possible
-  //sort(indices.begin(), indices.end(), CompareIndicesByNodeCorrVal(&nX));
+  // sort(indices.begin(), indices.end(), CompareIndicesByNodeCorrVal(&nX));
 
   // translate a dense linear idx of X to the sparse linear idx of y
   vector<long> X2Y(nX.size(), -1);
@@ -2277,7 +2320,9 @@ void advantra_prune(vector<MyMarker*> nX) {
 
               // TODO modify marker to have a set of markers
               for (int k = 0; k < nX[j]->nbr.size(); ++k) {
-                nYi->nbr.push_back( nX[j]->nbr[k]); // append the neighbours of the group members
+                nYi->nbr.push_back(
+                    nX[j]
+                        ->nbr[k]); // append the neighbours of the group members
               }
 
               // update local average with x,y,z,sig elements from nX[j]
@@ -2293,7 +2338,7 @@ void advantra_prune(vector<MyMarker*> nX) {
       }
     }
 
-    //nYi.type = Node::AXON; // enforce type
+    // nYi.type = Node::AXON; // enforce type
     nY.push_back(nYi);
   }
 
@@ -2306,6 +2351,5 @@ void advantra_prune(vector<MyMarker*> nX) {
     }
   }
 
-  // TODO is this necessary
-  //check_nbr(nY); // remove doubles and self-linkages after grouping
+  check_nbr(nY); // remove doubles and self-linkages after grouping
 }
