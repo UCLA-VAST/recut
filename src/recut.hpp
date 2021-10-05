@@ -2973,6 +2973,9 @@ Recut<image_t>::convert_float_to_markers(openvdb::FloatGrid::Ptr component,
   // parent is valid pointer when returning just outtree
   std::map<GridCoord, MyMarker *> coord_to_marker_ptr;
 
+  // temporary for advantra prune method
+  std::map<GridCoord, VID_t> coord_to_idx;
+
   // iterate all active vertices ahead of time so each marker
   // can have a pointer to it's parent marker
   // iterate by leaf markers since attributes are stored in chunks
@@ -3016,6 +3019,8 @@ Recut<image_t>::convert_float_to_markers(openvdb::FloatGrid::Ptr component,
           // save this marker ptr to a map
           coord_to_marker_ptr[coord] = marker;
           assertm(marker->radius, "can't have 0 radius");
+
+          coord_to_idx[coord] = outtree.size();
           outtree.push_back(marker);
         }
       }
@@ -3059,6 +3064,8 @@ Recut<image_t>::convert_float_to_markers(openvdb::FloatGrid::Ptr component,
             // find parent
             auto parent = coord_to_marker_ptr[parent_coord]; // adjust
             marker->parent = parent;
+
+            marker->nbr.push_back(coord_to_idx[parent_coord]);
           }
         }
       }

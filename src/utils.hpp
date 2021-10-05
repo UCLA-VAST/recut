@@ -2276,9 +2276,9 @@ void advantra_prune(vector<MyMarker*> nX) {
               X2Y[j] = nY.size();
 
               // TODO modify marker to have a set of markers
-              //for (int k = 0; k < nX[j]->nbr.size(); ++k) {
-                //nYi->nbr.push_back( nX[j].nbr[k]); // append the neighbours of the group members
-              //}
+              for (int k = 0; k < nX[j]->nbr.size(); ++k) {
+                nYi->nbr.push_back( nX[j]->nbr[k]); // append the neighbours of the group members
+              }
 
               // update local average with x,y,z,sig elements from nX[j]
               ++grp_size;
@@ -2300,11 +2300,11 @@ void advantra_prune(vector<MyMarker*> nX) {
   // once complete mapping is established, update the indices from
   // the original linear index to the new sparse group index according
   // to the X2Y idx map vector
-  //for (int i = 1; i < nY.size(); ++i) {
-    //for (int j = 0; j < nY[i]->nbr.size(); ++j) {
-      //nY[i]->nbr[j] = X2Y[nY[i]->nbr[j]];
-    //}
-  //}
+  for (int i = 1; i < nY.size(); ++i) {
+    for (int j = 0; j < nY[i]->nbr.size(); ++j) {
+      nY[i]->nbr[j] = X2Y[nY[i]->nbr[j]];
+    }
+  }
 
   // TODO is this necessary
   //check_nbr(nY); // remove doubles and self-linkages after grouping

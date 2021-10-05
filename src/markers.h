@@ -44,6 +44,10 @@ struct MyMarker
 	};
 	int type;
 	MyMarker* parent;
+    // temporary solution for Advantra prune
+    // assumes all markers have been placed in a dense array
+    // and can be accessed via a linear idx, taking from advantra method
+    std::vector<VID_t> nbr;
 	MyMarker(){x=y=z=radius=0.0; type = 3; parent=0;}
 	MyMarker(double _x, double _y, double _z) {x = _x; y = _y; z = _z; radius = 0.0; type = 3; parent = 0;}
 	MyMarker(const MyMarker & v){x=v.x; y=v.y; z=v.z; radius = v.radius; type = v.type; parent = v.parent;}
