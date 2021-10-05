@@ -2162,26 +2162,26 @@ auto upsample_idx = [](int original_idx, int upsample_factor) -> int {
   //(upsample_factor / 2);
 };
 
-/* typically called with the topology_grid as the point_grid, and a 
+/* typically called with the topology_grid as the point_grid, and a
  * connected component as the float grid
  */
 auto collect_all_points = [](EnlargedPointDataGrid::Ptr point_grid,
                              openvdb::FloatGrid::Ptr float_grid) {
-
   auto spheres = std::vector<openvdb::Vec4s>();
   // define local fn to add a sphere for a coord that is valid in
   // topology_grid Note this can be accelerated by going in leaf order
   auto emplace_coord = [&point_grid, &spheres](auto coord) {
     auto leaf_iter = point_grid->tree().probeLeaf(coord);
     if (leaf_iter) {
-      // assertm(leaf_iter, "leaf must be on, since the float_grid is derived from
-      // the " "active topology of it");
+      // assertm(leaf_iter, "leaf must be on, since the float_grid is derived
+      // from the " "active topology of it");
 
       openvdb::points::AttributeWriteHandle<float> radius_handle(
           leaf_iter->attributeArray("pscale"));
 
       auto ind = leaf_iter->beginIndexVoxel(coord);
-      // assertm(ind, "ind must be on, since the float_grid is derived from the "
+      // assertm(ind, "ind must be on, since the float_grid is derived from the
+      // "
       //"active topology of it");
 
       if (ind) {
@@ -2215,3 +2215,97 @@ auto collect_all_points = [](EnlargedPointDataGrid::Ptr point_grid,
 #endif
   return spheres;
 };
+
+// sphere grouping Advantra prune strategy
+void advantra_prune(vector<MyMarker*> nX) { 
+  
+  std::vector<MyMarker *> nY;
+
+  //nX[0].corr = FLT_MAX; // so that the dummy node gets index 0 again, larges correlation
+  vector<long> indices(nX.size());
+  for (long i = 0; i < indices.size(); ++i)
+    indices[i] = i;
+  // TODO sort by float value if possible
+  //sort(indices.begin(), indices.end(), CompareIndicesByNodeCorrVal(&nX));
+
+  // translate a dense linear idx of X to the sparse linear idx of y
+  vector<long> X2Y(nX.size(), -1);
+  X2Y[0] = 0; // first one is with max. correlation
+
+  nY.push_back(nX[0]);
+
+  /*
+  for (long i = 1; i < nX.size();
+       ++i) { // add soma nodes as independent groups at the beginning
+    if (nX[i].type == Node::SOMA) {
+      X2Y[i] = nY.size();
+      Node nYi(nX[i]);
+      nYi.type = Node::SOMA;
+      nY.push_back(nYi);
+    }
+  }
+  */
+
+  for (long i = 1; i < indices.size(); ++i) { // add the rest of the nodes
+
+    long ci = indices[i];
+
+    if (X2Y[ci] != -1)
+      continue; // skip if it was added to a group already
+
+    X2Y[ci] = nY.size();
+    // create a new marker in the sparse set starting from an existing one
+    // that has not been pruned yet
+    auto nYi = new MyMarker(*(nX[ci]));
+    float grp_size = 1;
+
+    float r2 = GROUP_RADIUS * GROUP_RADIUS; // sig2rad * nX[ci].sig;
+    float d2;
+    // TODO optimize this for closest point
+    for (long j = 1; j < nX.size();
+         ++j) { // check the rest that was not grouped
+      if (j != ci && X2Y[j] == -1) {
+        d2 = pow(nX[j]->x - nX[ci]->x, 2);
+        if (d2 <= r2) {
+          d2 += pow(nX[j]->y - nX[ci]->y, 2);
+          if (d2 <= r2) {
+            d2 += pow(nX[j]->z - nX[ci]->z, 2);
+            if (d2 <= r2) {
+
+              // mark the idx, since nY is being accumulated to
+              X2Y[j] = nY.size();
+
+              // TODO modify marker to have a set of markers
+              //for (int k = 0; k < nX[j]->nbr.size(); ++k) {
+                //nYi->nbr.push_back( nX[j].nbr[k]); // append the neighbours of the group members
+              //}
+
+              // update local average with x,y,z,sig elements from nX[j]
+              ++grp_size;
+              float a = (grp_size - 1) / grp_size;
+              float b = (1.0 / grp_size);
+              nYi->x = a * nYi->x + b * nX[j]->x;
+              nYi->y = a * nYi->y + b * nX[j]->y;
+              nYi->z = a * nYi->z + b * nX[j]->z;
+            }
+          }
+        }
+      }
+    }
+
+    //nYi.type = Node::AXON; // enforce type
+    nY.push_back(nYi);
+  }
+
+  // once complete mapping is established, update the indices from
+  // the original linear index to the new sparse group index according
+  // to the X2Y idx map vector
+  //for (int i = 1; i < nY.size(); ++i) {
+    //for (int j = 0; j < nY[i]->nbr.size(); ++j) {
+      //nY[i]->nbr[j] = X2Y[nY[i]->nbr[j]];
+    //}
+  //}
+
+  // TODO is this necessary
+  //check_nbr(nY); // remove doubles and self-linkages after grouping
+}

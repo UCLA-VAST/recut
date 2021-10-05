@@ -81,4 +81,6 @@ using GridCoord = std::vector<int32_t>;
 #define MIN_RADII 2
 #define MIN_LENGTH 2
 #define SWC_MIN_LINE 10
+// node grouping radius, defines the sampling density
+#define GROUP_RADIUS 2.
 //#define CLEAR_ROOTS
