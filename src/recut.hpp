@@ -3357,6 +3357,8 @@ void Recut<image_t>::fill_components_with_spheres(
     cout << "Marker count: " << markers.size() << '\n';
 #endif
 
+  auto pruned_markers = advantra_prune(markers);
+
 #ifdef OUTPUT_SPHERES
     // start swc and add header metadata
     std::ofstream file;

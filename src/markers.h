@@ -50,7 +50,7 @@ struct MyMarker
     std::vector<VID_t> nbr;
 	MyMarker(){x=y=z=radius=0.0; type = 3; parent=0;}
 	MyMarker(double _x, double _y, double _z) {x = _x; y = _y; z = _z; radius = 0.0; type = 3; parent = 0;}
-	MyMarker(const MyMarker & v){x=v.x; y=v.y; z=v.z; radius = v.radius; type = v.type; parent = v.parent;}
+	MyMarker(const MyMarker & v){x=v.x; y=v.y; z=v.z; radius = v.radius; type = v.type; parent = v.parent; nbr = v.nbr;}
 
 
 	double & operator [] (const int i) {

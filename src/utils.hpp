@@ -2259,7 +2259,7 @@ void check_nbr(vector<MyMarker *> &nX) {
 };
 
 // sphere grouping Advantra prune strategy
-void advantra_prune(vector<MyMarker *> nX) {
+std::vector<MyMarker*> advantra_prune(vector<MyMarker *> nX) {
 
   std::vector<MyMarker *> nY;
 
@@ -2277,17 +2277,16 @@ void advantra_prune(vector<MyMarker *> nX) {
 
   nY.push_back(nX[0]);
 
-  /*
-  for (long i = 1; i < nX.size();
-       ++i) { // add soma nodes as independent groups at the beginning
-    if (nX[i].type == Node::SOMA) {
+  // add soma nodes as independent groups at the beginning
+  for (long i = 0; i < nX.size();
+       ++i) { 
+    // all somas are automatically kept
+    if (nX[i]->type == 0) {
       X2Y[i] = nY.size();
-      Node nYi(nX[i]);
-      nYi.type = Node::SOMA;
+      auto nYi = new MyMarker(*nX[i]);
       nY.push_back(nYi);
     }
   }
-  */
 
   for (long i = 1; i < indices.size(); ++i) { // add the rest of the nodes
 
@@ -2352,4 +2351,6 @@ void advantra_prune(vector<MyMarker *> nX) {
   }
 
   check_nbr(nY); // remove doubles and self-linkages after grouping
+
+  return nY;
 }
