@@ -3058,6 +3058,9 @@ Recut<image_t>::convert_float_to_markers(openvdb::FloatGrid::Ptr component,
             auto parent_coord = parents_handle.get(*leaf_ind) + coord;
 
             if (coord_to_marker_ptr.count(parent_coord) < 1) {
+              cout << coord << '\n';
+              cout << parents_handle.get(*leaf_ind) << '\n';
+              cout << parent_coord << '\n';
               throw std::runtime_error("did not find parent in marker map");
             }
 
@@ -3357,12 +3360,11 @@ void Recut<image_t>::fill_components_with_spheres(
     cout << "Marker count: " << markers.size() << '\n';
 #endif
 
-  auto pruned_markers = advantra_prune(markers);
+    auto pruned_markers = advantra_prune(markers);
 
-  // extract a new tree via bfs
-  auto tree = advantra_extract_trees(pruned_markers);
+    // extract a new tree via bfs
+    auto tree = advantra_extract_trees(pruned_markers);
 
-#ifdef OUTPUT_SPHERES
     // start swc and add header metadata
     std::ofstream file;
     file.open(name);
@@ -3370,10 +3372,36 @@ void Recut<image_t>::fill_components_with_spheres(
          << component->evalActiveVoxelBoundingBox() << '\n';
     file << "# id type_id x y z radius parent_id\n";
 
+    // start a new blank map for coord to a unique swc id
     auto coord_to_swc_id = get_id_map();
+    // iter those marker*
+    rng::for_each(tree, [this, &file, &coord_to_swc_id,
+                         &component](const auto marker) {
+      auto coord = GridCoord(marker->x, marker->y, marker->z);
+      auto parent_coord =
+          GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
+      auto parent_offset = coord_sub(parent_coord, coord);
+      // print_swc_line() expects an offset to a parent
+      print_swc_line(coord,
+                     /*is_root*/ marker->type == 0, marker->radius,
+                     parent_offset, component->evalActiveVoxelBoundingBox(),
+                     file, coord_to_swc_id, true);
+    });
+
+#ifdef OUTPUT_SPHERES
     // print all somas in this component
     rng::for_each(component_roots, [this, &file, &coord_to_swc_id,
                                     &component](const auto &component_root) {
+      auto [coord, radius] = coord_radius;
+      auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
+      assertm(leaf_iter, "leaf_iter must be reachable");
+      openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
+          leaf_iter->attributeArray("parents"));
+
+      auto ind = leaf_iter->beginIndexVoxel(coord);
+      assertm(ind, "ind must be reachable");
+      auto parent_offset = parents_handle.get(*ind);
+      auto parent_offset = coord_sub(parent_coord, component_root.first);
       print_swc_line(component_root.first, true, component_root.second,
                      zeros_off(), component->evalActiveVoxelBoundingBox(), file,
                      coord_to_swc_id, true);
@@ -3424,7 +3452,6 @@ void Recut<image_t>::fill_components_with_spheres(
     grids.push_back(this->topology_grid);
     write_vdb_file(grids, "final-point-grid.vdb");
   }
-
 }
 
 template <class image_t> void Recut<image_t>::convert_topology() {
@@ -3487,9 +3514,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   }
 
   if (params->sphere_pruning_) {
-    /*
     fill_components_with_spheres(root_pair, false);
-    */
   } else {
 
     // starting from roots, prune stage will
