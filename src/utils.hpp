@@ -2262,6 +2262,7 @@ void check_nbr(vector<MyMarker *> &nX) {
 std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX) {
 
   std::vector<MyMarker *> nY;
+  auto no_neighbor_count = 0;
 
   // nX[0].corr = FLT_MAX; // so that the dummy node gets index 0 again, larges
   // correlation
@@ -2287,7 +2288,7 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX) {
     }
   }
 
-  for (long i = 1; i < indices.size(); ++i) { // add the rest of the nodes
+  for (long i = 0; i < indices.size(); ++i) { // add the rest of the nodes
 
     long ci = indices[i];
 
@@ -2301,9 +2302,12 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX) {
     float grp_size = 1;
 
     float r2 = GROUP_RADIUS * GROUP_RADIUS; // sig2rad * nX[ci].sig;
+    //auto node_radius = nYi->radius;
+    //auto node_radius_upsampled =  node_radius * 5; // for anisotropic images
+    //float r2 = node_radius_upsampled * node_radius_upsampled;
     float d2;
     // TODO optimize this for closest point
-    for (long j = 1; j < nX.size();
+    for (long j = 0; j < nX.size();
          ++j) { // check the rest that was not grouped
       if (j != ci && X2Y[j] == -1) {
         d2 = pow(nX[j]->x - nX[ci]->x, 2);
@@ -2336,6 +2340,16 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX) {
       }
     }
 
+    if (nYi->nbr.size() == 0) {
+      ++no_neighbor_count;
+      if (nYi->parent == nullptr)
+        throw std::runtime_error("parent is also invalid");
+      // cout << "nXi coord " << nX[ci]->x << ',' << nX[ci]->y << ',' <<
+      // nX[ci]->z << '\n'; cout << "nYi coord " << nYi->x << ',' << nYi->y <<
+      // ',' << nYi->z << '\n'; cout << "  parent coord " << nYi->parent->x <<
+      // ',' << nYi->parent->y << ',' << nYi->parent->z << '\n';
+    }
+
     // nYi.type = Node::AXON; // enforce type
     nY.push_back(nYi);
   }
@@ -2350,6 +2364,9 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX) {
   }
 
   check_nbr(nY); // remove doubles and self-linkages after grouping
+
+  cout << nY.size() << '\n';
+  cout << no_neighbor_count << '\n';
 
   return nY;
 }
@@ -2369,8 +2386,9 @@ public:
 };
 
 // advantra based re-extraction of tree based on bfs
-std::vector<MyMarker *> advantra_extract_trees(std::vector<MyMarker *> nlist,
-                             bool remove_isolated_tree_with_one_node = true) {
+std::vector<MyMarker *>
+advantra_extract_trees(std::vector<MyMarker *> nlist,
+                       bool remove_isolated_tree_with_one_node = false) {
 
   BfsQueue<int> q;
   std::vector<MyMarker *> tree;
@@ -2424,8 +2442,26 @@ std::vector<MyMarker *> advantra_extract_trees(std::vector<MyMarker *> nlist,
       if (n->type != 0)
         n->type = treecnt + 2; // vaa3d viz
 
-      if (parent[curr] > 0)
+      // choose the best single parent of the possible neighbors
+      if (parent[curr] > 0) {
         n->nbr.push_back(nmap[parent[curr]]);
+        // get the ptr to the marker from the id of the parent of the current
+        n->parent = nlist[parent[curr]];
+      } else if (nlist[curr]->nbr.size() != 0) {
+        // get the ptr to the marker from the id of the min element of nbr
+        // the smaller the id of an element, the higher precedence it has
+        auto nbrs = nlist[curr]->nbr;
+        auto min_idx = 0;
+        auto min_element = nbrs[min_idx];
+        for (int i = 0; i < nbrs.size(); ++i) {
+          if (nbrs[i] < min_element) {
+            min_element = nbrs[i];
+          }
+        }
+        n->parent = nlist[min_element];
+      } else {
+        throw std::runtime_error("node can't have 0 nbrs");
+      }
 
       nmap[curr] = tree.size();
       tree.push_back(n);
@@ -2456,4 +2492,114 @@ std::vector<MyMarker *> advantra_extract_trees(std::vector<MyMarker *> nlist,
 
   cout << treecnt << " trees\n";
   return tree;
+}
+
+// accept_tombstone is a way to see pruned vertices still in active_vertex
+std::vector<MyMarker *> convert_to_markers(EnlargedPointDataGrid::Ptr grid,
+                                           bool accept_tombstone) {
+
+  std::vector<MyMarker *> outtree;
+#ifdef FULL_PRINT
+  cout << "Generating results." << '\n';
+#endif
+  auto timer = high_resolution_timer();
+
+  // get a mapping to stable address pointers in outtree such that a markers
+  // parent is valid pointer when returning just outtree
+  std::map<GridCoord, MyMarker *> coord_to_marker_ptr;
+  std::map<GridCoord, VID_t> coord_to_idx;
+
+  // iterate all active vertices ahead of time so each marker
+  // can have a pointer to it's parent marker
+  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+    // cout << leaf_iter->getNodeBoundingBox() << '\n';
+
+    openvdb::points::AttributeHandle<uint8_t> flags_handle(
+        leaf_iter->constAttributeArray("flags"));
+
+    openvdb::points::AttributeHandle<float> radius_handle(
+        leaf_iter->constAttributeArray("pscale"));
+
+    openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
+        leaf_iter->constAttributeArray("parents"));
+
+    // openvdb::points::AttributeHandle<OffsetCoord> position_handle(
+    // leaf_iter->constAttributeArray("P"));
+
+    for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
+      // get coord
+      auto coord = ind.getCoord();
+      // create all valid new marker objects
+      if (is_valid(flags_handle, ind, accept_tombstone)) {
+        // std::cout << "\t " << coord<< '\n';
+        assertm(coord_to_marker_ptr.count(coord) == 0,
+                "Can't have two matching vids");
+        // get original i, j, k
+        auto marker = new MyMarker(coord[0], coord[1], coord[2]);
+        if (is_root(flags_handle, ind)) {
+          // a marker with a type of 0, must be a root
+          marker->type = 0;
+        }
+        marker->radius = radius_handle.get(*ind);
+        // save this marker ptr to a map
+        coord_to_marker_ptr[coord] = marker;
+        coord_to_idx[coord] = outtree.size();
+        // std::cout << "\t " << coord_to_str(coord) << " -> "
+        //<< (coord + parents_handle.get(*ind)) << " " << marker->radius
+        //<< '\n';
+        assertm(marker->radius, "can't have 0 radius");
+        outtree.push_back(marker);
+      }
+    }
+  }
+
+  // now that a pointer to all desired markers is known
+  // iterate and complete the marker definition
+  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+
+    openvdb::points::AttributeHandle<uint8_t> flags_handle(
+        leaf_iter->constAttributeArray("flags"));
+
+    openvdb::points::AttributeHandle<float> radius_handle(
+        leaf_iter->constAttributeArray("pscale"));
+
+    openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
+        leaf_iter->constAttributeArray("parents"));
+
+    for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
+      // create all valid new marker objects
+      if (is_valid(flags_handle, ind, accept_tombstone)) {
+        // get coord
+        auto coord = ind.getCoord();
+        assertm(coord_to_marker_ptr.count(coord),
+                "did not find vertex in marker map");
+        auto marker = coord_to_marker_ptr[coord]; // get the ptr
+        if (is_root(flags_handle, ind)) {
+          // a marker with a parent of 0, must be a root
+          marker->parent = 0;
+        } else {
+          auto parent_coord = parents_handle.get(*ind) + coord;
+
+          // find parent
+          assertm(coord_to_marker_ptr.count(parent_coord),
+                  "did not find parent in marker map");
+
+          auto parent = coord_to_marker_ptr[parent_coord]; // adjust marker->parent = parent;
+          marker->parent = parent;
+          marker->nbr.push_back(coord_to_idx[parent_coord]);
+        }
+      }
+    }
+  }
+
+#ifdef LOG
+  cout << "Total marker size: " << outtree.size() << " nodes" << '\n';
+#endif
+
+#ifdef FULL_PRINT
+  cout << "Finished generating results within " << timer.elapsed() << " sec."
+       << '\n';
+#endif
+
+  return outtree;
 }

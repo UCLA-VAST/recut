@@ -1860,7 +1860,7 @@ TEST(Update, EachStageIteratively) {
               {
                 // save the topologyto output_tree before starting
                 std::cout << iteration_trace.str();
-                recut.convert_to_markers(args.output_tree, false);
+                args.output_tree = convert_to_markers(recut.topology_grid, false);
                 auto stage = std::string{"prune"};
                 recut.activate_vids(recut.topology_grid, root_coords, stage,
                                     recut.map_fifo, recut.connected_map);
@@ -1887,8 +1887,7 @@ TEST(Update, EachStageIteratively) {
                 std::cout << iteration_trace.str();
                 recut.print_to_swc();
 
-                // recut.convert_to_markers(recut_output_tree_prune, true);
-                recut.convert_to_markers(recut_output_tree_prune, false);
+                recut_output_tree_prune = convert_to_markers(recut.topology_grid, false);
               }
 
               auto mask = std::make_unique<uint8_t[]>(tol_sz);
@@ -2167,9 +2166,7 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
 
   // save the output_tree early before it is pruned to compare
   // to app2
-  recut.convert_to_markers(
-      args.output_tree,
-      /*accept_band*/ false); // this fills args.output_tree
+  args.output_tree = convert_to_markers(recut.topology_grid,  /*accept_band*/ false);
 
   // PRUNE
   auto recut_output_tree_prune = std::vector<MyMarker *>();
@@ -2200,9 +2197,7 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
 
     recut.print_to_swc();
 
-    recut.convert_to_markers(
-        recut_output_tree_prune,
-        /*accept_band*/ false); // this fills args.output_tree
+    recut_output_tree_prune = convert_to_markers(recut.topology_grid,  /*accept_band*/ false); // this fills args.output_tree
   }
 
   double actual_slt_pct = (100. * args.output_tree.size()) / tol_sz;

@@ -3250,10 +3250,18 @@ void Recut<image_t>::fill_components_with_spheres(
     cout << "Marker count: " << markers.size() << '\n';
 #endif
 
+    timer.restart();
     auto pruned_markers = advantra_prune(markers);
+#ifdef LOG
+    cout << "Prune markers to size " << pruned_markers.size() << " in " << timer.elapsed() << '\n';
+#endif
 
+    timer.restart();
     // extract a new tree via bfs
     auto tree = advantra_extract_trees(pruned_markers);
+#ifdef LOG
+    cout << "Extract trees to size: " << tree.size() << " in " << timer.elapsed() << '\n';
+#endif
 
     // start swc and add header metadata
     std::ofstream file;
@@ -3268,6 +3276,7 @@ void Recut<image_t>::fill_components_with_spheres(
     rng::for_each(tree, [this, &file, &coord_to_swc_id,
                          &component](const auto marker) {
       auto coord = GridCoord(marker->x, marker->y, marker->z);
+      
       auto parent_coord =
           GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
       auto parent_offset = coord_sub(parent_coord, coord);
