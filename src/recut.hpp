@@ -106,7 +106,7 @@ public:
   RecutCommandLineArgs *args;
   RecutParameters *params;
   std::map<GridCoord, std::deque<VertexAttr>> map_fifo;
-  vector<local_heap> heap_vec;
+  std::map<GridCoord, local_heap> heap_map;
   std::map<GridCoord, std::deque<VertexAttr>> connected_map;
 
   // interval specific global data structures
@@ -571,7 +571,7 @@ void Recut<image_t>::activate_vids(
           auto rootv =
               new VertexAttr(flags_handle.get(*ind),
                              /* offsets*/ coord_sub(coord, leaf_bbox.min()), 0);
-          heap_vec[block_id].push(rootv, block_id, stage);
+          heap_map[leaf_iter->origin()].push(rootv, block_id, stage);
         }
       });
 
@@ -891,7 +891,7 @@ bool Recut<image_t>::accumulate_value(
     // TODO optimize away copy construction of the vert
     auto vert = new VertexAttr(Bitfield(flags_handle.get(*dst_ind)), offset,
                                /*parent*/ offset_to_current, updated_val_attr);
-    heap_vec[block_id].push(vert, block_id, "value");
+    heap_map[point_leaf->origin()].push(vert, block_id, "value");
 
 #ifdef FULL_PRINT
     cout << "\tadded new dst to active set, vid: " << dst_coord << '\n';
@@ -1125,9 +1125,10 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
 }
 
 // adds to iterable but not to active vertices since its from outside domain
-template <typename Container, typename T, typename T2>
+template <typename Container, typename T>
 void integrate_point(std::string stage, Container &fifo, T &connected_fifo,
-                     T2 adj_coord, EnlargedPointDataGrid::Ptr grid,
+                     local_heap heap,
+                     GridCoord adj_coord, EnlargedPointDataGrid::Ptr grid,
                      OffsetCoord adj_offsets, GridCoord potential_update) {
   // FIXME this might be slow to lookup every time
   // auto leaf_iter = grid->tree().probeConstLeaf(potential_update);
@@ -1161,6 +1162,16 @@ void integrate_point(std::string stage, Container &fifo, T &connected_fifo,
         adj_leaf_iter->constAttributeArray("parents"));
     connected_fifo.emplace_back(bf, adj_offsets, parents_handle.get(*ind));
 
+  } else if (stage == "value") {
+    // TODO pass value of vertex for shortest path
+    openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
+        adj_leaf_iter->constAttributeArray("parents"));
+    auto point = new VertexAttr(
+        flags_handle.get(*ind),
+        /* offsets*/ coord_sub(adj_coord, adj_leaf_iter->origin()), 0);
+    //auto block_id = coord_img_to_block_id(adj_leaf_iter->origin());
+    heap.push(point, 0, stage);
+
   } else if (stage == "radius") {
     openvdb::points::AttributeHandle<float> radius_handle(
         adj_leaf_iter->constAttributeArray("pscale"));
@@ -1178,12 +1189,12 @@ void integrate_adj_leafs(GridCoord start_coord,
                          openvdb::BoolGrid::Ptr update_grid,
                          std::deque<VertexAttr> &fifo,
                          std::deque<VertexAttr> &connected_fifo,
+                         local_heap heap, 
                          std::string stage, EnlargedPointDataGrid::Ptr grid,
                          int offset_value) {
   // force evaluation by saving to vector to get desired side effects
   // from integrate_point
-  auto _ =
-      // from one corner find 3 adj leafs via 1 vox offset
+  auto _ = // from one corner find 3 adj leafs via 1 vox offset
       stencil_offsets |
       rng::views::transform([&start_coord](auto stencil_offset) {
         return std::pair{/*rel. offset*/ stencil_offset,
@@ -1236,8 +1247,8 @@ void integrate_adj_leafs(GridCoord start_coord,
               // adj_coord
               auto potential_update = adj_coord;
               potential_update[dim] = start_coord[dim];
-              integrate_point(stage, fifo, connected_fifo, adj_coord, grid,
-                              adj_offsets, potential_update);
+              integrate_point(stage, fifo, connected_fifo, heap, adj_coord,
+                              grid, adj_offsets, potential_update);
             }
           }
         }
@@ -1271,14 +1282,14 @@ void Recut<image_t>::integrate_update_grid(
             // lower corner adjacents, have an offset at that dim of -1
             integrate_adj_leafs(bbox.min(), this->lower_stencil, update_grid,
                                 fifo[leaf_iter->origin()],
-                                connected_fifo[leaf_iter->origin()], stage,
-                                grid, -1);
+                                connected_fifo[leaf_iter->origin()],
+                                heap_map[leaf_iter->origin()], stage, grid, -1);
             // upper corner adjacents, have an offset at that dim equal to
             // leaf log2 dim
-            integrate_adj_leafs(bbox.max(), this->higher_stencil, update_grid,
-                                fifo[leaf_iter->origin()],
-                                connected_fifo[leaf_iter->origin()], stage,
-                                grid, LEAF_LENGTH);
+            integrate_adj_leafs(
+                bbox.max(), this->higher_stencil, update_grid,
+                fifo[leaf_iter->origin()], connected_fifo[leaf_iter->origin()],
+                heap_map[leaf_iter->origin()], stage, grid, LEAF_LENGTH);
           }
         };
 
@@ -1303,7 +1314,7 @@ void Recut<image_t>::integrate_update_grid(
         update_grid->tree());
     tbb::parallel_for(update_grid_leaf_manager.leafRange(), fill_range);
 #ifdef LOG_FULL
-    cout << "Fill to false in " << timer.elapsed() << " sec.\n";
+    cout << "Fill update_grid to false in " << timer.elapsed() << " sec.\n";
 #endif
   }
 }
@@ -1461,7 +1472,8 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
                                 VID_t block_id, std::string stage,
                                 const TileThresholds<image_t> *tile_thresholds,
                                 Container &fifo, VID_t revisits, T2 leaf_iter) {
-  if (heap_vec[block_id].empty())
+  auto current_heap = heap_map[leaf_iter->origin()];
+  if (current_heap.empty())
     return;
 
   auto update_leaf = this->update_grid->tree().probeLeaf(leaf_iter->origin());
@@ -1482,7 +1494,7 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
 
   VertexAttr *msg_vertex;
   VID_t visited = 0;
-  while (!(heap_vec[block_id].empty())) {
+  while (!(current_heap.empty())) {
 
 #ifdef FULL_PRINT
     visited += 1;
@@ -1490,7 +1502,7 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
 
     // msg_vertex might become undefined during scatter
     // or if popping from the fifo, take needed info
-    msg_vertex = heap_vec[block_id].pop(block_id, stage);
+    msg_vertex = current_heap.pop(block_id, stage);
 
     const bool in_domain = msg_vertex->selected();
     auto surface = msg_vertex->surface();
@@ -1857,12 +1869,11 @@ void Recut<image_t>::march_narrow_band(
     const TileThresholds<image_t> *tile_thresholds,
     std::deque<VertexAttr> &connected_fifo, std::deque<VertexAttr> &fifo,
     T2 leaf_iter) {
-  //#ifdef LOG_FULL
-  // VID_t visited = 0;
-  // auto timer = high_resolution_timer();
-  // cout << "\nMarching " << tree_to_str(interval_id, block_id) << ' '
-  //<< leaf_iter->origin() << '\n';
-  //#endif
+#ifdef LOG_FULL
+  auto timer = high_resolution_timer();
+  auto loc = tree_to_str(interval_id, block_id);
+  cout << "\nMarching " << loc << ' ' << leaf_iter->origin() << '\n';
+#endif
 
   VID_t revisits = 0;
 
@@ -1882,10 +1893,9 @@ void Recut<image_t>::march_narrow_band(
     assertm(false, "Stage name not recognized");
   }
 
-  //#ifdef LOG_FULL
-  // cout << "Marched interval: " << interval_id << " block: " << block_id
-  //<< " visiting " << visited << " in " << timer.elapsed() << " s" << '\n';
-  //#endif
+#ifdef LOG_FULL
+  cout << "Marched " << loc << " in " << timer.elapsed() << " s" << '\n';
+#endif
 
 } // end march_narrow_band
 
@@ -1991,8 +2001,14 @@ std::atomic<double> Recut<image_t>::process_interval(
   };
 
   auto is_active = [&, this]() {
+    // connected or value stages are determined finished by the status of their
+    // fifo or heaps respectively
     if (stage == "connected") {
       return any_fifo_active(this->connected_map);
+    } else if (stage == "value") {
+      return std::any_of(
+          std::execution::par_unseq, heap_map.begin(), heap_map.end(),
+          [](const auto &kv_pair) { return !kv_pair.second.empty(); });
     }
     return any_fifo_active(this->map_fifo);
   };
@@ -2576,7 +2592,7 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
 
       // per leaf fifo/pq resources
       inner[origin] = std::deque<VertexAttr>();
-      heap_vec.push_back(local_heap());
+      heap_map[origin] = local_heap();
 
       // every topology_grid leaf must have a corresponding leaf explicitly
       // created
@@ -3253,14 +3269,16 @@ void Recut<image_t>::fill_components_with_spheres(
     timer.restart();
     auto pruned_markers = advantra_prune(markers);
 #ifdef LOG
-    cout << "Prune markers to size " << pruned_markers.size() << " in " << timer.elapsed() << '\n';
+    cout << "Prune markers to size " << pruned_markers.size() << " in "
+         << timer.elapsed() << '\n';
 #endif
 
     timer.restart();
     // extract a new tree via bfs
     auto tree = advantra_extract_trees(pruned_markers);
 #ifdef LOG
-    cout << "Extract trees to size: " << tree.size() << " in " << timer.elapsed() << '\n';
+    cout << "Extract trees to size: " << tree.size() << " in "
+         << timer.elapsed() << '\n';
 #endif
 
     // start swc and add header metadata
@@ -3276,7 +3294,7 @@ void Recut<image_t>::fill_components_with_spheres(
     rng::for_each(tree, [this, &file, &coord_to_swc_id,
                          &component](const auto marker) {
       auto coord = GridCoord(marker->x, marker->y, marker->z);
-      
+
       auto parent_coord =
           GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
       auto parent_offset = coord_sub(parent_coord, coord);

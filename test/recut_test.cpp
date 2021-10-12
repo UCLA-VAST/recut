@@ -616,7 +616,7 @@ TEST(VDB, PriorityQueue) {
   auto recut = Recut<uint16_t>(args);
   auto root_coords = recut.initialize();
   auto stage = "value";
-  recut.activate_vids(recut.topology_grid, root_coords, "value",
+  recut.activate_vids(recut.topology_grid, root_coords, stage,
                       recut.map_fifo, recut.connected_map);
   recut.update(stage, recut.map_fifo);
 
@@ -671,7 +671,7 @@ TEST(VDB, Connected) {
   auto recut = Recut<uint16_t>(args);
   auto root_coords = recut.initialize();
   auto stage = "connected";
-  recut.activate_vids(recut.topology_grid, root_coords, "connected",
+  recut.activate_vids(recut.topology_grid, root_coords, stage,
                       recut.map_fifo, recut.connected_map);
   recut.update(stage, recut.map_fifo);
 

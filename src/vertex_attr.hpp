@@ -240,7 +240,7 @@ public:
     elems.reserve(10000);
   }
 
-  void print(std::string stage) {
+  void print(std::string stage) const {
     if (stage == "radius") {
       for (auto &vert : elems) {
         cout << +(vert->radius) << " ";
@@ -254,7 +254,7 @@ public:
   }
 
   // equivalent to peek, read only
-  T *top() {
+  T *top() const {
     if (empty()) {
       throw;
       return 0;
@@ -263,7 +263,7 @@ public:
     }
   }
 
-  void check_empty() {
+  void check_empty() const {
     if (empty())
       throw;
   }
@@ -306,7 +306,7 @@ public:
     stats_update();
   }
 
-  handle_t find(handle_t vid) {
+  handle_t find(handle_t vid) const {
     for (handle_t i = 0; i < elems.size(); i++) {
       if (elems[i]->vid == vid) {
         return i;
@@ -316,7 +316,7 @@ public:
     return std::numeric_limits<handle_t>::max();
   }
 
-  bool empty() { return elems.empty(); }
+  bool empty() const { return elems.empty(); }
 
   template <typename TNew>
   void update(T *updated_node, VID_t ib, TNew new_field,
