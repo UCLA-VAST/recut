@@ -50,8 +50,8 @@ template <class image_t> struct TileThresholds {
 
   double calc_weight(image_t pixel) const {
     std::ostringstream err;
-    cout << +( pixel ) << '\n';
-    cout << +( this->max_int) << '\n';
+    //cout << +( pixel ) << '\n';
+    //cout << +( this->max_int) << '\n';
     assertm(pixel <= this->max_int, "pixel can not exceed max int");
     assertm(pixel >= this->min_int, "pixel can not be below min int");
     // max and min set as double to align with look up table for value

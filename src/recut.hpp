@@ -870,10 +870,14 @@ bool Recut<image_t>::accumulate_value(
                        tile_thresholds->calc_weight(dst_vox)) *
                           0.5);
 
+  //cout << "updated value " << updated_val_attr << '\n';
+
   // check for updates according to criterion
-  // this automatically excludes any root vertex since they have a
-  // value of 0.
-  if (dst_value > updated_val_attr) {
+  // starting background values are 0 
+  // traditionally background values should be INF or FLOAT_MAX
+  // but 0s are more compressible and simpler
+  // must check all are not root though since root has distance 0 by definition
+  if (((dst_value == 0) && !is_root(flags_handle, dst_ind)) || (dst_value > updated_val_attr)) {
     // all dsts are guaranteed within this domain
     // skip already selected vertices too
     if (is_selected(flags_handle, dst_ind)) {
@@ -1471,8 +1475,7 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
                                 VID_t block_id, std::string stage,
                                 const TileThresholds<image_t> *tile_thresholds,
                                 Container &fifo, VID_t revisits, T2 leaf_iter) {
-  auto current_heap = heap_map[leaf_iter->origin()];
-  if (current_heap.empty())
+  if (heap_map[leaf_iter->origin()].empty())
     return;
 
   auto update_leaf = this->update_grid->tree().probeLeaf(leaf_iter->origin());
@@ -1493,7 +1496,7 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
 
   VertexAttr *msg_vertex;
   VID_t visited = 0;
-  while (!(current_heap.empty())) {
+  while (!(heap_map[leaf_iter->origin()].empty())) {
 
 #ifdef FULL_PRINT
     visited += 1;
@@ -1501,7 +1504,7 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
 
     // msg_vertex might become undefined during scatter
     // or if popping from the fifo, take needed info
-    msg_vertex = current_heap.pop(block_id, stage);
+    msg_vertex = heap_map[leaf_iter->origin()].pop(block_id, stage);
 
     const bool in_domain = msg_vertex->selected();
     auto surface = msg_vertex->surface();
@@ -1582,6 +1585,7 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
     }
   }
 
+  assertm(heap_map[leaf_iter->origin()].empty(), "not empty");
 #ifdef FULL_PRINT
   cout << "visited vertices: " << visited << '\n';
 #endif
