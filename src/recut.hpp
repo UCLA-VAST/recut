@@ -551,10 +551,10 @@ void Recut<image_t>::activate_vids(
         if (this->args->type_ == "float") {
           assertm(this->input_grid->tree().isValueOn(coord),
                   "All root coords must be filtered with respect to topology");
-        } else {
-          assertm(ind,
-                  "All root coords must be filtered with respect to topology");
         }
+        assertm(ind,
+                "All root coords must be filtered with respect to topology");
+
         // place a root with proper vid and parent of itself
         // set flags as root
         set_selected(flags_handle, ind);
@@ -1127,9 +1127,9 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
 // adds to iterable but not to active vertices since its from outside domain
 template <typename Container, typename T>
 void integrate_point(std::string stage, Container &fifo, T &connected_fifo,
-                     local_heap heap,
-                     GridCoord adj_coord, EnlargedPointDataGrid::Ptr grid,
-                     OffsetCoord adj_offsets, GridCoord potential_update) {
+                     local_heap heap, GridCoord adj_coord,
+                     EnlargedPointDataGrid::Ptr grid, OffsetCoord adj_offsets,
+                     GridCoord potential_update) {
   // FIXME this might be slow to lookup every time
   // auto leaf_iter = grid->tree().probeConstLeaf(potential_update);
   auto adj_leaf_iter = grid->tree().probeConstLeaf(adj_coord);
@@ -1169,7 +1169,7 @@ void integrate_point(std::string stage, Container &fifo, T &connected_fifo,
     auto point = new VertexAttr(
         flags_handle.get(*ind),
         /* offsets*/ coord_sub(adj_coord, adj_leaf_iter->origin()), 0);
-    //auto block_id = coord_img_to_block_id(adj_leaf_iter->origin());
+    // auto block_id = coord_img_to_block_id(adj_leaf_iter->origin());
     heap.push(point, 0, stage);
 
   } else if (stage == "radius") {
@@ -1189,9 +1189,8 @@ void integrate_adj_leafs(GridCoord start_coord,
                          openvdb::BoolGrid::Ptr update_grid,
                          std::deque<VertexAttr> &fifo,
                          std::deque<VertexAttr> &connected_fifo,
-                         local_heap heap, 
-                         std::string stage, EnlargedPointDataGrid::Ptr grid,
-                         int offset_value) {
+                         local_heap heap, std::string stage,
+                         EnlargedPointDataGrid::Ptr grid, int offset_value) {
   // force evaluation by saving to vector to get desired side effects
   // from integrate_point
   auto _ = // from one corner find 3 adj leafs via 1 vox offset

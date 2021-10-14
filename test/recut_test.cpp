@@ -612,9 +612,23 @@ TEST(VDB, PriorityQueue) {
   // then convert to vdb
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
                        /*force_regenerate_image=*/false,
-                       /*input_is_vdb=*/true);
+                       /*input_is_vdb=*/true,
+                       /* type =*/ "float"); // priority queue must have type float
   auto recut = Recut<uint16_t>(args);
   auto root_coords = recut.initialize();
+
+  // TODO switch this to a more formal method
+  // set the topology_grid mainly from file for this test
+  // overwrite the attempt to convert float to pointgrid
+  auto point_args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+                       /*force_regenerate_image=*/false,
+                       /*input_is_vdb=*/true,
+                       /* type =*/ "point");
+  auto base_grid = read_vdb_file(point_args.image_root_dir());
+  recut.topology_grid = 
+          openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
+  append_attributes(recut.topology_grid);
+
   auto stage = "value";
   recut.activate_vids(recut.topology_grid, root_coords, stage,
                       recut.map_fifo, recut.connected_map);
