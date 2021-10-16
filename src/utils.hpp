@@ -2302,9 +2302,9 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX) {
     float grp_size = 1;
 
     float r2 = GROUP_RADIUS * GROUP_RADIUS; // sig2rad * nX[ci].sig;
-    //auto node_radius = nYi->radius;
-    //auto node_radius_upsampled =  node_radius * 5; // for anisotropic images
-    //float r2 = node_radius_upsampled * node_radius_upsampled;
+    // auto node_radius = nYi->radius;
+    // auto node_radius_upsampled =  node_radius * 5; // for anisotropic images
+    // float r2 = node_radius_upsampled * node_radius_upsampled;
     float d2;
     // TODO optimize this for closest point
     for (long j = 0; j < nX.size();
@@ -2584,7 +2584,9 @@ std::vector<MyMarker *> convert_to_markers(EnlargedPointDataGrid::Ptr grid,
           assertm(coord_to_marker_ptr.count(parent_coord),
                   "did not find parent in marker map");
 
-          auto parent = coord_to_marker_ptr[parent_coord]; // adjust marker->parent = parent;
+          auto parent =
+              coord_to_marker_ptr[parent_coord]; // adjust marker->parent =
+                                                 // parent;
           marker->parent = parent;
           marker->nbr.push_back(coord_to_idx[parent_coord]);
         }
@@ -2603,3 +2605,83 @@ std::vector<MyMarker *> convert_to_markers(EnlargedPointDataGrid::Ptr grid,
 
   return outtree;
 }
+
+// modify the radius value within the point grid to reflect a predetermined
+// radius mutates the value that was previously calculated usually somas have a
+// more accurate radius value determined before Recut processes so it is
+// appropriate to rewrite with these more accurate radii values before a prune
+// step
+auto adjust_soma_radii =
+    [](const std::vector<std::pair<GridCoord, uint8_t>> &roots,
+       EnlargedPointDataGrid::Ptr grid) -> EnlargedPointDataGrid::Ptr {
+  // Iterate over leaf nodes that contain topology (active)
+  // checking for roots within them
+  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+    auto leaf_bbox = leaf_iter->getNodeBoundingBox();
+
+    // FILTER for those in this leaf
+    auto leaf_roots =
+        roots | rng::views::remove_if([&leaf_bbox](const auto &coord_radius) {
+          const auto [coord, radius] = coord_radius;
+          return !leaf_bbox.isInside(coord);
+        }) |
+        rng::to_vector;
+
+    if (leaf_roots.empty())
+      continue;
+
+   std::cout << "Leaf BBox: " << leaf_bbox << '\n';
+
+    rng::for_each(leaf_roots, [&leaf_iter, &grid](const auto &coord_radius) {
+      const auto [coord, radius] = coord_radius;
+      assertm(leaf_iter, "corresponding leaf of passed root must be active");
+      auto ind = leaf_iter->beginIndexVoxel(coord);
+      assertm(ind, "corresponding voxel of passed root must be active");
+
+      // modify the radius value
+      openvdb::points::AttributeWriteHandle<float> radius_handle(
+          leaf_iter->attributeArray("pscale"));
+
+      auto previous_radius = radius_handle.get(*ind);
+      radius_handle.set(*ind, radius);
+
+#ifdef FULL_PRINT
+      cout << "Adjusted " << coord << " radius " << previous_radius << " -> "
+           << radius_handle.get(*ind) << '\n';
+#endif
+    });
+  }
+
+  return grid;
+};
+
+// modify the radius value within the point grid to reflect a predetermined
+// radius mutates the value that was previously calculated usually somas have a
+// more accurate radius value determined before Recut processes so it is
+// appropriate to rewrite with these more accurate radii values before a prune
+// step
+auto adjust_soma_radii_deprecated =
+    [](const std::vector<std::pair<GridCoord, uint8_t>> &roots,
+       EnlargedPointDataGrid::Ptr grid) -> EnlargedPointDataGrid::Ptr {
+  rng::for_each(roots, [grid](const auto &coord_radius) {
+    const auto [coord, radius] = coord_radius;
+    const auto leaf = grid->tree().probeLeaf(coord);
+    assertm(leaf, "corresponding leaf of passed root must be active");
+    auto ind = leaf->beginIndexVoxel(coord);
+    assertm(ind, "corresponding voxel of passed root must be active");
+
+    // modify the radius value
+    openvdb::points::AttributeWriteHandle<float> radius_handle(
+        leaf->attributeArray("pscale"));
+
+    auto previous_radius = radius_handle.get(*ind);
+    radius_handle.set(*ind, radius);
+
+#ifdef FULL_PRINT
+    cout << "Adjusted " << coord << " radius " << previous_radius << " -> "
+         << radius_handle.get(*ind) << '\n';
+#endif
+  });
+
+  return grid;
+};

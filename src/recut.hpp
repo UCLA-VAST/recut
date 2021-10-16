@@ -488,11 +488,8 @@ void Recut<image_t>::activate_vids(
     const std::vector<std::pair<GridCoord, uint8_t>> &roots,
     const std::string stage, std::map<GridCoord, std::deque<VertexAttr>> &fifo,
     std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo) {
-  assertm(!(roots.empty()), "Must have at least one root");
 
-  // if (args->type_ == "float") {
-  // auto input_accessor = input_grid->getConstAccessor();
-  //}
+  assertm(!(roots.empty()), "Must have at least one root");
 
   // Iterate over leaf nodes that contain topology (active)
   // checking for roots within them
@@ -501,8 +498,6 @@ void Recut<image_t>::activate_vids(
     // std::cout << "Leaf BBox: " << leaf_bbox << '\n';
 
     // FILTER for those in this leaf
-    // auto leaf_roots = remove_outside_bound(roots, leaf_bbox) |
-    // auto leaf_roots = roots | remove_outside_bound | rng::to_vector;
     auto leaf_roots = roots | rng::views::transform([](auto coord_radius) {
                         return coord_radius.first;
                       }) |

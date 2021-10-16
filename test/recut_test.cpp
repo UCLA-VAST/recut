@@ -610,10 +610,11 @@ TEST(VDB, PriorityQueue) {
   bool print_all = true;
   // generate an image buffer on the fly
   // then convert to vdb
-  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-                       /*force_regenerate_image=*/false,
-                       /*input_is_vdb=*/true,
-                       /* type =*/ "float"); // priority queue must have type float
+  auto args =
+      get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+               /*force_regenerate_image=*/false,
+               /*input_is_vdb=*/true,
+               /* type =*/"float"); // priority queue must have type float
   auto recut = Recut<uint16_t>(args);
   auto root_coords = recut.initialize();
 
@@ -621,17 +622,16 @@ TEST(VDB, PriorityQueue) {
   // set the topology_grid mainly from file for this test
   // overwrite the attempt to convert float to pointgrid
   auto point_args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-                       /*force_regenerate_image=*/false,
-                       /*input_is_vdb=*/true,
-                       /* type =*/ "point");
+                             /*force_regenerate_image=*/false,
+                             /*input_is_vdb=*/true,
+                             /* type =*/"point");
   auto base_grid = read_vdb_file(point_args.image_root_dir());
-  recut.topology_grid = 
-          openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
+  recut.topology_grid = openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
   append_attributes(recut.topology_grid);
 
   auto stage = "value";
-  recut.activate_vids(recut.topology_grid, root_coords, stage,
-                      recut.map_fifo, recut.connected_map);
+  recut.activate_vids(recut.topology_grid, root_coords, stage, recut.map_fifo,
+                      recut.connected_map);
   recut.update(stage, recut.map_fifo);
 
   if (print_all) {
@@ -669,6 +669,73 @@ TEST(VDB, PriorityQueue) {
   }
 }
 
+TEST(Utils, AdjustSomaRadii) {
+  VID_t grid_size = 4;
+  auto grid_extents = GridCoord(grid_size);
+
+  // do no use tcase 4 since it is randomized and will not match
+  // for the second read test
+  auto tcase = 7;
+  double slt_pct = 100;
+  bool print_all = true;
+  // generate an image buffer on the fly
+  // then convert to vdb
+  auto args =
+      get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+               /*force_regenerate_image=*/false,
+               /*input_is_vdb=*/true,
+               /* type =*/"float"); // priority queue must have type float
+
+  auto recut = Recut<uint16_t>(args);
+  auto root_coords = recut.initialize();
+  cout << root_coords[0].first << '\n';
+
+  const auto coord = root_coords[0].first ;
+  const auto leaf = recut.topology_grid->tree().probeLeaf(coord);
+  auto leaf_bbox = leaf->getNodeBoundingBox();
+  cout << leaf_bbox << ' ' << coord << '\n';
+
+  //assertm(leaf, "corresponding leaf of passed root must be active");
+  //auto ind = leaf->beginIndexVoxel(coord);
+  //assertm(ind, "corresponding voxel of passed root must be active");
+
+  //// check all root radii are 0
+  //rng::for_each(root_coords, [&recut](const auto &coord_radius) {
+    //const auto [coord, radius] = coord_radius;
+    //const auto leaf = recut.topology_grid->tree().probeLeaf(coord);
+    //cout << coord << ' ' << radius << '\n';
+    //assertm(leaf, "corresponding leaf of passed root must be active");
+    //auto ind = leaf->beginIndexVoxel(coord);
+    //assertm(ind, "corresponding voxel of passed root must be active");
+
+    //// modify the radius value
+    //openvdb::points::AttributeWriteHandle<float> radius_handle(
+        //leaf->attributeArray("pscale"));
+
+    //auto previous_radius = radius_handle.get(*ind);
+    //ASSERT_EQ(previous_radius, 0);
+  //});
+
+  adjust_soma_radii(root_coords, recut.topology_grid);
+
+  // check all root radii have been changed
+  rng::for_each(root_coords, [&recut](const auto &coord_radius) {
+    const auto [coord, radius] = coord_radius;
+    const auto leaf = recut.topology_grid->tree().probeLeaf(coord);
+    assertm(leaf, "corresponding leaf of passed root must be active");
+    cout << leaf->getNodeBoundingBox() << '\n';
+    auto ind = leaf->beginIndexVoxel(coord);
+    assertm(ind, "corresponding voxel of passed root must be active");
+
+    // modify the radius value
+    openvdb::points::AttributeWriteHandle<float> radius_handle(
+        leaf->attributeArray("pscale"));
+
+    auto previous_radius = radius_handle.get(*ind);
+    ASSERT_NE(previous_radius, 0);
+  });
+}
+
 TEST(VDB, Connected) {
   VID_t grid_size = 8;
   auto grid_extents = GridCoord(grid_size);
@@ -685,8 +752,8 @@ TEST(VDB, Connected) {
   auto recut = Recut<uint16_t>(args);
   auto root_coords = recut.initialize();
   auto stage = "connected";
-  recut.activate_vids(recut.topology_grid, root_coords, stage,
-                      recut.map_fifo, recut.connected_map);
+  recut.activate_vids(recut.topology_grid, root_coords, stage, recut.map_fifo,
+                      recut.connected_map);
   recut.update(stage, recut.map_fifo);
 
   if (print_all) {
@@ -1038,23 +1105,23 @@ TEST(VDB, ConvertDenseToVDB) {
   auto root_coord = GridCoord(get_central_coord(grid_size));
   auto upsample_z = 5;
   auto print = true;
-  auto extended_grid_extents = GridCoord(grid_size, grid_size, grid_size * upsample_z);
+  auto extended_grid_extents =
+      GridCoord(grid_size, grid_size, grid_size * upsample_z);
 
   cout << root_coord;
 
-  auto idx = upsample_idx(root_coord[2], upsample_z); 
+  auto idx = upsample_idx(root_coord[2], upsample_z);
   auto root_coord_upsampled = GridCoord(root_coord[0], root_coord[1], idx);
-  
+
   cout << idx << '\n';
 
-  //ASSERT_EQ(idx, root_coord[2] * upsample_z + upsample_z / 2);
+  // ASSERT_EQ(idx, root_coord[2] * upsample_z + upsample_z / 2);
   ASSERT_EQ(idx, root_coord[2] * upsample_z);
 
   uint16_t *inimg1d = new uint16_t[tol_sz];
-  VID_t actual_selected =
-      create_image(5, inimg1d, grid_size, 100, root_vid);
+  VID_t actual_selected = create_image(5, inimg1d, grid_size, 100, root_vid);
 
-  if (print) { 
+  if (print) {
     print_image_3D(inimg1d, grid_extents);
   }
 
@@ -1069,7 +1136,8 @@ TEST(VDB, ConvertDenseToVDB) {
   }
 
   std::vector<PositionT> positions;
-  convert_buffer_to_vdb(inimg1d, extended_grid_extents, zeros(), zeros(), positions, 0, upsample_z);
+  convert_buffer_to_vdb(inimg1d, extended_grid_extents, zeros(), zeros(),
+                        positions, 0, upsample_z);
   auto topology_grid =
       create_point_grid(positions, extended_grid_extents, get_transform());
 
@@ -1087,7 +1155,6 @@ TEST(VDB, ConvertDenseToVDB) {
 
     // print_image_3D(inimg1d, extended_grid_extents);
   }
-
 }
 
 TEST(VDB, GetSetGridMeta) {
@@ -1874,7 +1941,8 @@ TEST(Update, EachStageIteratively) {
               {
                 // save the topologyto output_tree before starting
                 std::cout << iteration_trace.str();
-                args.output_tree = convert_to_markers(recut.topology_grid, false);
+                args.output_tree =
+                    convert_to_markers(recut.topology_grid, false);
                 auto stage = std::string{"prune"};
                 recut.activate_vids(recut.topology_grid, root_coords, stage,
                                     recut.map_fifo, recut.connected_map);
@@ -1901,7 +1969,8 @@ TEST(Update, EachStageIteratively) {
                 std::cout << iteration_trace.str();
                 recut.print_to_swc();
 
-                recut_output_tree_prune = convert_to_markers(recut.topology_grid, false);
+                recut_output_tree_prune =
+                    convert_to_markers(recut.topology_grid, false);
               }
 
               auto mask = std::make_unique<uint8_t[]>(tol_sz);
@@ -2180,7 +2249,8 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
 
   // save the output_tree early before it is pruned to compare
   // to app2
-  args.output_tree = convert_to_markers(recut.topology_grid,  /*accept_band*/ false);
+  args.output_tree =
+      convert_to_markers(recut.topology_grid, /*accept_band*/ false);
 
   // PRUNE
   auto recut_output_tree_prune = std::vector<MyMarker *>();
@@ -2211,7 +2281,9 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
 
     recut.print_to_swc();
 
-    recut_output_tree_prune = convert_to_markers(recut.topology_grid,  /*accept_band*/ false); // this fills args.output_tree
+    recut_output_tree_prune = convert_to_markers(
+        recut.topology_grid,
+        /*accept_band*/ false); // this fills args.output_tree
   }
 
   double actual_slt_pct = (100. * args.output_tree.size()) / tol_sz;
