@@ -670,9 +670,8 @@ TEST(VDB, PriorityQueue) {
 }
 
 TEST(Utils, AdjustSomaRadii) {
-  VID_t grid_size = 4;
+  VID_t grid_size = 8;
   auto grid_extents = GridCoord(grid_size);
-
   // do no use tcase 4 since it is randomized and will not match
   // for the second read test
   auto tcase = 7;
@@ -685,36 +684,46 @@ TEST(Utils, AdjustSomaRadii) {
                /*force_regenerate_image=*/false,
                /*input_is_vdb=*/true,
                /* type =*/"float"); // priority queue must have type float
-
   auto recut = Recut<uint16_t>(args);
   auto root_coords = recut.initialize();
-  cout << root_coords[0].first << '\n';
+
+  // TODO switch this to a more formal method
+  // set the topology_grid mainly from file for this test
+  // overwrite the attempt to convert float to pointgrid
+  auto point_args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+                             /*force_regenerate_image=*/false,
+                             /*input_is_vdb=*/true,
+                             /* type =*/"point");
+  auto base_grid = read_vdb_file(point_args.image_root_dir());
+  recut.topology_grid = openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
+  append_attributes(recut.topology_grid);
+  cout << root_coords[0].first << root_coords[0].second << '\n';
 
   const auto coord = root_coords[0].first ;
   const auto leaf = recut.topology_grid->tree().probeLeaf(coord);
   auto leaf_bbox = leaf->getNodeBoundingBox();
   cout << leaf_bbox << ' ' << coord << '\n';
 
-  //assertm(leaf, "corresponding leaf of passed root must be active");
-  //auto ind = leaf->beginIndexVoxel(coord);
-  //assertm(ind, "corresponding voxel of passed root must be active");
+  assertm(leaf, "corresponding leaf of passed root must be active");
+  auto ind = leaf->beginIndexVoxel(coord);
+  assertm(ind, "corresponding voxel of passed root must be active");
 
-  //// check all root radii are 0
-  //rng::for_each(root_coords, [&recut](const auto &coord_radius) {
-    //const auto [coord, radius] = coord_radius;
-    //const auto leaf = recut.topology_grid->tree().probeLeaf(coord);
-    //cout << coord << ' ' << radius << '\n';
-    //assertm(leaf, "corresponding leaf of passed root must be active");
-    //auto ind = leaf->beginIndexVoxel(coord);
-    //assertm(ind, "corresponding voxel of passed root must be active");
+  // check all root radii are 0
+  rng::for_each(root_coords, [&recut](const auto &coord_radius) {
+    const auto [coord, radius] = coord_radius;
+    const auto leaf = recut.topology_grid->tree().probeLeaf(coord);
+    cout << coord << ' ' << radius << '\n';
+    assertm(leaf, "corresponding leaf of passed root must be active");
+    auto ind = leaf->beginIndexVoxel(coord);
+    assertm(ind, "corresponding voxel of passed root must be active");
 
-    //// modify the radius value
-    //openvdb::points::AttributeWriteHandle<float> radius_handle(
-        //leaf->attributeArray("pscale"));
+    // modify the radius value
+    openvdb::points::AttributeWriteHandle<float> radius_handle(
+        leaf->attributeArray("pscale"));
 
-    //auto previous_radius = radius_handle.get(*ind);
-    //ASSERT_EQ(previous_radius, 0);
-  //});
+    auto previous_radius = radius_handle.get(*ind);
+    ASSERT_EQ(previous_radius, 0);
+  });
 
   adjust_soma_radii(root_coords, recut.topology_grid);
 
