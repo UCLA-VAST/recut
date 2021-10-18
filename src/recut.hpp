@@ -252,9 +252,6 @@ public:
   GridCoord get_input_image_lengths(bool force_regenerate_image,
                                     RecutCommandLineArgs *args);
   std::vector<std::pair<GridCoord, uint8_t>> initialize();
-  std::vector<MyMarker *>
-  convert_float_to_markers(openvdb::FloatGrid::Ptr component,
-                           bool accept_tombstone = false);
   inline VID_t sub_block_to_block_id(VID_t iblock, VID_t jblock, VID_t kblock);
   template <class Container> void setup_radius(Container &fifo);
   void
@@ -425,6 +422,12 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
         cout << "Read marker assigning radius: " << markers[0].radius << '\n';
 #endif
 
+        // delete this later
+        // cout << "Warning: temporarily adjusting x,y,z of marker\n";
+        // markers[0].x += this->image_offsets[0];
+        // markers[0].y += this->image_offsets[1];
+        // markers[0].z += this->image_offsets[2];
+
         inmarkers.insert(inmarkers.end(), markers.begin(), markers.end());
       });
 
@@ -449,7 +452,7 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
              if (this->topology_grid->tree().isValueOn(coord)) {
                return false;
              } else {
-#ifdef FULL_PRINT
+#ifdef LOG
                cout << "Warning: root at " << coord << " in image bbox "
                     << local_bbox
                     << " is not selected in the segmentation so it is "
@@ -459,7 +462,7 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
 #endif
              }
            } else {
-#ifdef FULL_PRINT
+#ifdef LOG
              cout << "Warning: root at " << coord << " in image bbox "
                   << local_bbox
                   << " is not within the images bounding box so it is "
@@ -2974,134 +2977,6 @@ void Recut<image_t>::visit(FilterP keep_if, Pred predicate) {
   }
 }
 
-// accept_tombstone is a way to see pruned vertices still in active_vertex
-template <class image_t>
-vector<MyMarker *>
-Recut<image_t>::convert_float_to_markers(openvdb::FloatGrid::Ptr component,
-                                         bool accept_tombstone) {
-#ifdef FULL_PRINT
-  cout << "Convert" << '\n';
-#endif
-  auto timer = high_resolution_timer();
-  std::vector<MyMarker *> outtree;
-
-  // get a mapping to stable address pointers in outtree such that a markers
-  // parent is valid pointer when returning just outtree
-  std::map<GridCoord, MyMarker *> coord_to_marker_ptr;
-
-  // temporary for advantra prune method
-  std::map<GridCoord, VID_t> coord_to_idx;
-
-  // iterate all active vertices ahead of time so each marker
-  // can have a pointer to it's parent marker
-  // iterate by leaf markers since attributes are stored in chunks
-  // of leaf size
-  for (auto float_leaf = component->tree().beginLeaf(); float_leaf;
-       ++float_leaf) {
-
-    auto point_leaf =
-        this->topology_grid->tree().probeLeaf(float_leaf->origin());
-    assertm(point_leaf, "leaf must be on, since component is derived from the "
-                        "active topology of it");
-
-    openvdb::points::AttributeHandle<uint8_t> flags_handle(
-        point_leaf->constAttributeArray("flags"));
-
-    openvdb::points::AttributeHandle<float> radius_handle(
-        point_leaf->constAttributeArray("pscale"));
-
-    openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
-        point_leaf->constAttributeArray("parents"));
-
-    for (auto leaf_ind = point_leaf->beginIndexOn(); leaf_ind; ++leaf_ind) {
-      // Extract the world-space position of the voxel
-      const auto coord = leaf_ind.getCoord();
-
-      // its possible a single leaf is split between two components
-      // therefore use only those known in this float connected component grid
-      if (float_leaf->isValueOn(coord)) {
-        // create all valid new marker objects
-        if (is_valid(flags_handle, leaf_ind, accept_tombstone)) {
-          // std::cout << "\t " << coord<< '\n';
-          assertm(coord_to_marker_ptr.count(coord) == 0,
-                  "Can't have two matching vids");
-          // get original i, j, k
-          auto marker = new MyMarker(coord[0], coord[1], coord[2]);
-          if (is_root(flags_handle, leaf_ind)) {
-            // a marker with a type of 0, must be a root
-            marker->type = 0;
-          }
-          marker->radius = radius_handle.get(*leaf_ind);
-          // save this marker ptr to a map
-          coord_to_marker_ptr[coord] = marker;
-          assertm(marker->radius, "can't have 0 radius");
-
-          coord_to_idx[coord] = outtree.size();
-          outtree.push_back(marker);
-        }
-      }
-    }
-  }
-
-  // now that a pointer to all desired markers is known
-  // iterate and complete the marker definition
-  for (auto float_leaf = this->topology_grid->tree().beginLeaf(); float_leaf;
-       ++float_leaf) {
-
-    auto point_leaf =
-        this->topology_grid->tree().probeLeaf(float_leaf->origin());
-    openvdb::points::AttributeHandle<uint8_t> flags_handle(
-        point_leaf->constAttributeArray("flags"));
-
-    openvdb::points::AttributeHandle<float> radius_handle(
-        point_leaf->constAttributeArray("pscale"));
-
-    openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
-        point_leaf->constAttributeArray("parents"));
-
-    for (auto leaf_ind = point_leaf->beginIndexOn(); leaf_ind; ++leaf_ind) {
-      const auto coord = leaf_ind.getCoord();
-      if (float_leaf->isValueOn(coord)) {
-        // create all valid new marker objects
-        if (is_valid(flags_handle, leaf_ind, accept_tombstone)) {
-          assertm(coord_to_marker_ptr.count(coord),
-                  "did not find vertex in marker map");
-          auto marker = coord_to_marker_ptr[coord]; // get the ptr
-          if (is_root(flags_handle, leaf_ind)) {
-            // a marker with a parent of 0, must be a root
-            marker->parent = 0;
-          } else {
-            auto parent_coord = parents_handle.get(*leaf_ind) + coord;
-
-            if (coord_to_marker_ptr.count(parent_coord) < 1) {
-              cout << coord << '\n';
-              cout << parents_handle.get(*leaf_ind) << '\n';
-              cout << parent_coord << '\n';
-              throw std::runtime_error("did not find parent in marker map");
-            }
-
-            // find parent
-            auto parent = coord_to_marker_ptr[parent_coord]; // adjust
-            marker->parent = parent;
-
-            marker->nbr.push_back(coord_to_idx[parent_coord]);
-          }
-        }
-      }
-    }
-  }
-
-#ifdef LOG
-  cout << "Total marker size: " << outtree.size() << " nodes" << '\n';
-#endif
-
-#ifdef FULL_PRINT
-  cout << "Finished generating results within " << timer.elapsed() << " sec."
-       << '\n';
-#endif
-  return outtree;
-}
-
 template <class image_t> void Recut<image_t>::adjust_parent() {
 
   auto adjust_parent = [this](const auto &flags_handle, auto &parents_handle,
@@ -3175,12 +3050,9 @@ void Recut<image_t>::fill_components_with_spheres(
     std::vector<std::pair<GridCoord, uint8_t>> root_pair, bool prune) {
 
   openvdb::GridPtrVec grids;
-  auto all_invalid = [](const auto &flags_handle, const auto &parents_handle,
-                        const auto &radius_handle, const auto &ind) {
-    return !is_selected(flags_handle, ind);
-  };
-
+#ifdef LOG
   print_point_count(this->topology_grid);
+#endif
 
   // this copies only vertices that have already had flags marked as selected
   // selected means they are reachable from a known vertex during traversal
@@ -3265,7 +3137,9 @@ void Recut<image_t>::fill_components_with_spheres(
     }
 
     auto timer = high_resolution_timer();
-    auto markers = convert_to_markers(this->topology_grid, false);
+    auto markers =
+        convert_float_to_markers(component, this->topology_grid, false);
+    // auto markers = convert_to_markers(this->topology_grid, false);
 #ifdef LOG
     cout << "Convert to markers in " << timer.elapsed() << '\n';
 #endif

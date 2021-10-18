@@ -734,6 +734,9 @@ TEST(Utils, AdjustSomaRadii) {
   });
 }
 
+TEST(Utils, ConvertFloatToMarkers) {
+}
+
 TEST(VDB, Connected) {
   VID_t grid_size = 8;
   auto grid_extents = GridCoord(grid_size);
