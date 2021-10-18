@@ -411,16 +411,20 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
         const auto full_marker_name =
             params->marker_file_path() + marker_file.path().filename().string();
         auto markers = readMarker_file(full_marker_name);
-#ifdef SOMA_RADII
         assertm(markers.size() == 1, "only 1 marker file per soma");
+
         if (markers[0].radius == 0) {
           std::string mass; // mass is the last number of the file name
           while (std::getline(fn, mass, '_')) {
           }
+          assertm(!mass.empty(), "can not deduce radius size of input marker");
           markers[0].radius =
               static_cast<int>(std::cbrt(std::stoi(mass) / (4 * PI / 3)));
         }
+#ifdef FULL_PRINT
+        cout << "Read marker assigning radius: " << markers[0].radius << '\n';
 #endif
+
         inmarkers.insert(inmarkers.end(), markers.begin(), markers.end());
       });
 
@@ -865,14 +869,15 @@ bool Recut<image_t>::accumulate_value(
                        tile_thresholds->calc_weight(dst_vox)) *
                           0.5);
 
-  //cout << "updated value " << updated_val_attr << '\n';
+  // cout << "updated value " << updated_val_attr << '\n';
 
   // check for updates according to criterion
-  // starting background values are 0 
+  // starting background values are 0
   // traditionally background values should be INF or FLOAT_MAX
   // but 0s are more compressible and simpler
   // must check all are not root though since root has distance 0 by definition
-  if (((dst_value == 0) && !is_root(flags_handle, dst_ind)) || (dst_value > updated_val_attr)) {
+  if (((dst_value == 0) && !is_root(flags_handle, dst_ind)) ||
+      (dst_value > updated_val_attr)) {
     // all dsts are guaranteed within this domain
     // skip already selected vertices too
     if (is_selected(flags_handle, dst_ind)) {
@@ -1867,7 +1872,7 @@ void Recut<image_t>::march_narrow_band(
     const TileThresholds<image_t> *tile_thresholds,
     std::deque<VertexAttr> &connected_fifo, std::deque<VertexAttr> &fifo,
     T2 leaf_iter) {
-#ifdef LOG_FULL
+#ifdef FULL_PRINT
   auto timer = high_resolution_timer();
   auto loc = tree_to_str(interval_id, block_id);
   cout << "\nMarching " << loc << ' ' << leaf_iter->origin() << '\n';
@@ -1891,7 +1896,7 @@ void Recut<image_t>::march_narrow_band(
     assertm(false, "Stage name not recognized");
   }
 
-#ifdef LOG_FULL
+#ifdef FULL_PRINT
   cout << "Marched " << loc << " in " << timer.elapsed() << " s" << '\n';
 #endif
 
@@ -3219,6 +3224,14 @@ void Recut<image_t>::fill_components_with_spheres(
     if (component_roots.size() < 1)
       return; // skip
 
+    // FIXME delete this once performance improves
+    auto voxel_count = component->activeVoxelCount();
+    if (voxel_count > 110000) {
+      cout << "Skipping component with high voxel count: " << voxel_count
+           << '\n';
+      return; // skip
+    }
+
 #ifdef CLEAR_ROOTS
     auto component_root_bboxs =
         component_roots | rng::views::transform([](auto coord_radius) {
@@ -3426,6 +3439,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     stage = "radius";
     this->setup_radius(map_fifo);
     this->update(stage, map_fifo);
+    // redefine soma radii based off info read in original files
+    adjust_soma_radii(root_pair, this->topology_grid);
   }
 
   if (params->sphere_pruning_) {

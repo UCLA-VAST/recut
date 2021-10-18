@@ -697,22 +697,12 @@ TEST(Utils, AdjustSomaRadii) {
   auto base_grid = read_vdb_file(point_args.image_root_dir());
   recut.topology_grid = openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
   append_attributes(recut.topology_grid);
-  cout << root_coords[0].first << root_coords[0].second << '\n';
-
-  const auto coord = root_coords[0].first ;
-  const auto leaf = recut.topology_grid->tree().probeLeaf(coord);
-  auto leaf_bbox = leaf->getNodeBoundingBox();
-  cout << leaf_bbox << ' ' << coord << '\n';
-
-  assertm(leaf, "corresponding leaf of passed root must be active");
-  auto ind = leaf->beginIndexVoxel(coord);
-  assertm(ind, "corresponding voxel of passed root must be active");
+  //cout << root_coords[0].first << ' ' << +(root_coords[0].second) << '\n';
 
   // check all root radii are 0
   rng::for_each(root_coords, [&recut](const auto &coord_radius) {
     const auto [coord, radius] = coord_radius;
     const auto leaf = recut.topology_grid->tree().probeLeaf(coord);
-    cout << coord << ' ' << radius << '\n';
     assertm(leaf, "corresponding leaf of passed root must be active");
     auto ind = leaf->beginIndexVoxel(coord);
     assertm(ind, "corresponding voxel of passed root must be active");
@@ -732,7 +722,6 @@ TEST(Utils, AdjustSomaRadii) {
     const auto [coord, radius] = coord_radius;
     const auto leaf = recut.topology_grid->tree().probeLeaf(coord);
     assertm(leaf, "corresponding leaf of passed root must be active");
-    cout << leaf->getNodeBoundingBox() << '\n';
     auto ind = leaf->beginIndexVoxel(coord);
     assertm(ind, "corresponding voxel of passed root must be active");
 
@@ -989,6 +978,9 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         if ((tcase == 4) && (slt_pct > 5))
           continue;
 
+        auto radius = grid_size / 4;
+        if ((tcase == 4) || (radius < 1)) radius = 1;
+
         std::string base(get_data_dir());
         std::string delim("/");
         std::string fn_marker(base);
@@ -1001,7 +993,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         fn_marker = fn_marker + std::to_string((int)slt_pct);
         // fn_marker = fn_marker + delim;
         // record the root
-        write_marker(x, y, z, fn_marker);
+        write_marker(x, y, z, radius, fn_marker);
 
         auto image_dir = base + "/test_images/";
         image_dir = image_dir + std::to_string(grid_size);

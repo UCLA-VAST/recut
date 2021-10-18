@@ -1413,7 +1413,8 @@ RecutCommandLineArgs get_args(int grid_size, int interval_length,
   return args;
 }
 
-void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
+void write_marker(VID_t x, VID_t y, VID_t z, unsigned int radius,
+                  std::string fn) {
   auto print = false;
 #ifdef LOG
   print = true;
@@ -1428,8 +1429,8 @@ void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
     fn = fn + "/marker";
     std::ofstream mf;
     mf.open(fn);
-    mf << "# x,y,z\n";
-    mf << x << "," << y << "," << z;
+    mf << "# x,y,z,radius\n";
+    mf << x << ',' << y << ',' << z << ',' << radius;
     mf.close();
     if (print)
       cout << "      Wrote marker: " << fn << '\n';
@@ -2250,8 +2251,8 @@ void check_nbr(vector<MyMarker *> &nX) {
         if (!fnd) {
           // enforce link
           nX[nX[i]->nbr[j]]->nbr.push_back(i);
-          cout << "enforced bidirectional link: " << nX[i]->nbr[j] << " -- "
-               << i << '\n';
+          //cout << "enforced bidirectional link: " << nX[i]->nbr[j] << " -- "
+               //<< i << '\n';
         }
       }
     }
@@ -2278,22 +2279,7 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX) {
 
   nY.push_back(nX[0]);
 
-  // add soma nodes as independent groups at the beginning
-  for (long i = 0; i < nX.size(); ++i) {
-    // all somas are automatically kept
-    if (nX[i]->type == 0) {
-      X2Y[i] = nY.size();
-      auto nYi = new MyMarker(*nX[i]);
-      nY.push_back(nYi);
-    }
-  }
-
-  for (long i = 0; i < indices.size(); ++i) { // add the rest of the nodes
-
-    long ci = indices[i];
-
-    if (X2Y[ci] != -1)
-      continue; // skip if it was added to a group already
+  auto check_node = [&](const long ci) {
 
     X2Y[ci] = nY.size();
     // create a new marker in the sparse set starting from an existing one
@@ -2301,10 +2287,17 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX) {
     auto nYi = new MyMarker(*(nX[ci]));
     float grp_size = 1;
 
-    float r2 = GROUP_RADIUS * GROUP_RADIUS; // sig2rad * nX[ci].sig;
-    // auto node_radius = nYi->radius;
-    // auto node_radius_upsampled =  node_radius * 5; // for anisotropic images
-    // float r2 = node_radius_upsampled * node_radius_upsampled;
+    auto node_radius = nYi->radius;
+    if (nYi->type != 0) { // not soma
+      // upsample by factor to account for anisotropic images
+      node_radius *= GROUP_RADIUS;   
+    } else {
+      // increase reported radius slightly to remove nodes on edge
+      // and decrease proofreading efforts
+      node_radius *= 1.2;   
+    }
+    float r2 = node_radius * node_radius;
+
     float d2;
     // TODO optimize this for closest point
     for (long j = 0; j < nX.size();
@@ -2352,6 +2345,36 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX) {
 
     // nYi.type = Node::AXON; // enforce type
     nY.push_back(nYi);
+  };
+
+  //// add soma nodes as independent groups at the beginning
+  //for (long i = 0; i < nX.size(); ++i) {
+    //// all somas are automatically kept
+    //if (nX[i]->type == 0) {
+      //X2Y[i] = nY.size();
+      //auto nYi = new MyMarker(*nX[i]);
+      //nY.push_back(nYi);
+    //}
+  //}
+
+  // add soma nodes first
+  for (long i = 0; i < indices.size(); ++i) { 
+    long ci = indices[i];
+
+    if (nX[ci]->type != 0)
+      continue; // skip unless it's a root/soma
+
+    check_node(ci);
+  }
+
+  // add remaining nodes
+  for (long i = 0; i < indices.size(); ++i) {
+    long ci = indices[i];
+
+    if (X2Y[ci] != -1)
+      continue; // skip if it was added to a group already
+
+    check_node(ci);
   }
 
   // once complete mapping is established, update the indices from
@@ -2364,9 +2387,6 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX) {
   }
 
   check_nbr(nY); // remove doubles and self-linkages after grouping
-
-  cout << nY.size() << '\n';
-  cout << no_neighbor_count << '\n';
 
   return nY;
 }
@@ -2614,61 +2634,16 @@ std::vector<MyMarker *> convert_to_markers(EnlargedPointDataGrid::Ptr grid,
 auto adjust_soma_radii =
     [](const std::vector<std::pair<GridCoord, uint8_t>> &roots,
        EnlargedPointDataGrid::Ptr grid) -> EnlargedPointDataGrid::Ptr {
-  // Iterate over leaf nodes that contain topology (active)
-  // checking for roots within them
-  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
-    auto leaf_bbox = leaf_iter->getNodeBoundingBox();
-
-    // FILTER for those in this leaf
-    auto leaf_roots =
-        roots | rng::views::remove_if([&leaf_bbox](const auto &coord_radius) {
-          const auto [coord, radius] = coord_radius;
-          return !leaf_bbox.isInside(coord);
-        }) |
-        rng::to_vector;
-
-    if (leaf_roots.empty())
-      continue;
-
-   std::cout << "Leaf BBox: " << leaf_bbox << '\n';
-
-    rng::for_each(leaf_roots, [&leaf_iter, &grid](const auto &coord_radius) {
-      const auto [coord, radius] = coord_radius;
-      assertm(leaf_iter, "corresponding leaf of passed root must be active");
-      auto ind = leaf_iter->beginIndexVoxel(coord);
-      assertm(ind, "corresponding voxel of passed root must be active");
-
-      // modify the radius value
-      openvdb::points::AttributeWriteHandle<float> radius_handle(
-          leaf_iter->attributeArray("pscale"));
-
-      auto previous_radius = radius_handle.get(*ind);
-      radius_handle.set(*ind, radius);
-
-#ifdef FULL_PRINT
-      cout << "Adjusted " << coord << " radius " << previous_radius << " -> "
-           << radius_handle.get(*ind) << '\n';
-#endif
-    });
-  }
-
-  return grid;
-};
-
-// modify the radius value within the point grid to reflect a predetermined
-// radius mutates the value that was previously calculated usually somas have a
-// more accurate radius value determined before Recut processes so it is
-// appropriate to rewrite with these more accurate radii values before a prune
-// step
-auto adjust_soma_radii_deprecated =
-    [](const std::vector<std::pair<GridCoord, uint8_t>> &roots,
-       EnlargedPointDataGrid::Ptr grid) -> EnlargedPointDataGrid::Ptr {
+  assertm(roots.size() > 0, "passed roots is empty");
   rng::for_each(roots, [grid](const auto &coord_radius) {
     const auto [coord, radius] = coord_radius;
     const auto leaf = grid->tree().probeLeaf(coord);
+
+    // sanity checks
     assertm(leaf, "corresponding leaf of passed root must be active");
     auto ind = leaf->beginIndexVoxel(coord);
     assertm(ind, "corresponding voxel of passed root must be active");
+    assertm(radius, "passed radii value of 0 is invalid");
 
     // modify the radius value
     openvdb::points::AttributeWriteHandle<float> radius_handle(
