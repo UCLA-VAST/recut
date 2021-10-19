@@ -2833,3 +2833,26 @@ void visit_float(openvdb::FloatGrid::Ptr float_grid,
   }
 }
 
+template <typename FilterP, typename Pred>
+void visit(EnlargedPointDataGrid::Ptr grid, FilterP keep_if, Pred predicate) {
+  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter;
+       ++leaf_iter) {
+
+    // note: some attributes need mutability
+    openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
+        leaf_iter->attributeArray("flags"));
+
+    openvdb::points::AttributeHandle<float> radius_handle(
+        leaf_iter->constAttributeArray("pscale"));
+
+    openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
+        leaf_iter->attributeArray("parents"));
+
+    for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
+      if (keep_if(flags_handle, parents_handle, radius_handle, ind)) {
+        predicate(flags_handle, parents_handle, radius_handle, ind, leaf_iter);
+      }
+    }
+  }
+}
+

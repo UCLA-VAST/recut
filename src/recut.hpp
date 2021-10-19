@@ -129,8 +129,6 @@ public:
                           const VID_t &interval_block_size);
 
   bool filter_by_label(VertexAttr *v, bool accept_tombstone);
-  template <typename FilterP, typename Pred>
-  void visit(FilterP keep_if, Pred predicate);
 
   image_t get_img_val(const image_t *tile, GridCoord coord);
   inline VID_t rotate_index(VID_t img_coord, const VID_t current,
@@ -2953,30 +2951,6 @@ bool Recut<image_t>::filter_by_label(VertexAttr *v, bool accept_tombstone) {
   return true;
 };
 
-template <class image_t>
-template <typename FilterP, typename Pred>
-void Recut<image_t>::visit(FilterP keep_if, Pred predicate) {
-  for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
-       ++leaf_iter) {
-
-    // note: some attributes need mutability
-    openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
-        leaf_iter->attributeArray("flags"));
-
-    openvdb::points::AttributeHandle<float> radius_handle(
-        leaf_iter->constAttributeArray("pscale"));
-
-    openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
-        leaf_iter->attributeArray("parents"));
-
-    for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
-      if (keep_if(flags_handle, parents_handle, radius_handle, ind)) {
-        predicate(flags_handle, parents_handle, radius_handle, ind, leaf_iter);
-      }
-    }
-  }
-}
-
 template <class image_t> void Recut<image_t>::adjust_parent() {
 
   auto adjust_parent = [this](const auto &flags_handle, auto &parents_handle,
@@ -2995,7 +2969,7 @@ template <class image_t> void Recut<image_t>::adjust_parent() {
                       const auto &radius_handle,
                       const auto &ind) { return is_valid(flags_handle, ind); };
 
-  visit(all_valid, adjust_parent);
+  visit(this->topology_grid, all_valid, adjust_parent);
 }
 
 template <class image_t> void Recut<image_t>::print_to_swc() {
@@ -3014,8 +2988,8 @@ template <class image_t> void Recut<image_t>::print_to_swc() {
   this->out.open(this->args->swc_path());
   this->out << "#id type_id x y z radius parent_id\n";
 
-  visit(keep_root, to_swc);
-  visit(not_root, to_swc);
+  visit(this->topology_grid, keep_root, to_swc);
+  visit(this->topology_grid, not_root, to_swc);
 
   if (this->out.is_open())
     this->out.close();
@@ -3032,7 +3006,7 @@ template <class image_t> void Recut<image_t>::prune_branch() {
            ((parents[0] + parents[1] + parents[2]) < MIN_LENGTH);
   };
 
-  visit(filter_branch, prunes_visited);
+  visit(this->topology_grid, filter_branch, prunes_visited);
 }
 
 template <class image_t> void Recut<image_t>::prune_radii() {
@@ -3042,7 +3016,7 @@ template <class image_t> void Recut<image_t>::prune_radii() {
            (radius_handle.get(*ind) < MIN_RADII);
   };
 
-  visit(filter_radii, prunes_visited);
+  visit(this->topology_grid, filter_radii, prunes_visited);
 }
 
 template <class image_t>
@@ -3075,7 +3049,7 @@ void Recut<image_t>::fill_components_with_spheres(
   // this means that neurites can selectively turned back on
   // below, if they don't fall within a soma bounding box
   // roots from marker files stay as ground truth
-  visit(not_root, prunes_visited);
+  visit(this->topology_grid, not_root, prunes_visited);
 #endif
 
   auto output_topology = false;
