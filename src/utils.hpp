@@ -530,31 +530,44 @@ auto print_point_count = [](auto grid) {
   std::cout << "Point count: " << count << '\n';
 };
 
+auto get_transform = []() {
+  // grid_transform must use the same voxel size for all intervals
+  // and be identical
+  auto grid_transform =
+      openvdb::math::Transform::createLinearTransform(VOXEL_SIZE);
+  // The offset to cell-center points
+  const openvdb::math::Vec3d offset(VOXEL_SIZE / 2., VOXEL_SIZE / 2.,
+                                    VOXEL_SIZE / 2.);
+  grid_transform->postTranslate(offset);
+  return grid_transform;
+};
+
 auto copy_selected =
     [](EnlargedPointDataGrid::Ptr grid) -> openvdb::FloatGrid::Ptr {
   auto float_grid = openvdb::FloatGrid::create();
-  VID_t vcount = 0;
+  float_grid->setTransform(get_transform());
 
   for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
-    auto origin = leaf_iter->getNodeBoundingBox().min();
-    auto float_leaf =
-        new openvdb::tree::LeafNode<float, LEAF_LOG2DIM>(origin, 0.);
+    auto float_leaf = new openvdb::tree::LeafNode<float, LEAF_LOG2DIM>(
+        leaf_iter->origin(), 0.);
 
     // note: some attributes need mutability
     openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
         leaf_iter->attributeArray("flags"));
 
+    uint32_t leaf_count = 0;
     for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
       if (is_selected(flags_handle, ind)) {
         float_leaf->setValue(ind.getCoord(), 1.);
-        ++vcount;
+        ++leaf_count;
       }
     }
-    float_grid->tree().addLeaf(float_leaf);
+
+    if (leaf_count) {
+      float_grid->tree().addLeaf(float_leaf);
+    }
   }
 
-  float_grid->tree().prune();
-  cout << "total active: " << vcount << '\n';
   return float_grid;
 };
 
@@ -2076,18 +2089,6 @@ auto print_swc_line = [](GridCoord swc_coord, bool is_root, uint8_t radius,
   }
 };
 
-auto get_transform = []() {
-  // grid_transform must use the same voxel size for all intervals
-  // and be identical
-  auto grid_transform =
-      openvdb::math::Transform::createLinearTransform(VOXEL_SIZE);
-  // The offset to cell-center points
-  const openvdb::math::Vec3d offset(VOXEL_SIZE / 2., VOXEL_SIZE / 2.,
-                                    VOXEL_SIZE / 2.);
-  grid_transform->postTranslate(offset);
-  return grid_transform;
-};
-
 // throws if any leaf does not have monotonically increasing offsets or
 // within bounds of attribute arrays
 auto validate_grid = [](EnlargedPointDataGrid::Ptr grid) {
@@ -2660,158 +2661,14 @@ auto adjust_soma_radii =
   return grid;
 };
 
-// accept_tombstone is a way to see pruned vertices still in active_vertex
-vector<MyMarker *>
-convert_float_to_markers(openvdb::FloatGrid::Ptr component,
-                         EnlargedPointDataGrid::Ptr point_grid,
-
-                         bool accept_tombstone) {
-#ifdef FULL_PRINT
-  cout << "Convert" << '\n';
-#endif
-  auto timer = high_resolution_timer();
-  std::vector<MyMarker *> outtree;
-
-  // get a mapping to stable address pointers in outtree such that a markers
-  // parent is valid pointer when returning just outtree
-  std::map<GridCoord, MyMarker *> coord_to_marker_ptr;
-
-  // temporary for advantra prune method
-  std::map<GridCoord, VID_t> coord_to_idx;
-
-  // iterate all active vertices ahead of time so each marker
-  // can have a pointer to it's parent marker
-  // iterate by leaf markers since attributes are stored in chunks
-  // of leaf size
-  for (auto float_leaf = component->tree().beginLeaf(); float_leaf;
-       ++float_leaf) {
-
-    auto point_leaf = point_grid->tree().probeLeaf(float_leaf->origin());
-    assertm(point_leaf, "leaf must be on, since component is derived from the "
-                        "active topology of it");
-
-    openvdb::points::AttributeHandle<uint8_t> flags_handle(
-        point_leaf->constAttributeArray("flags"));
-
-    openvdb::points::AttributeHandle<float> radius_handle(
-        point_leaf->constAttributeArray("pscale"));
-
-    openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
-        point_leaf->constAttributeArray("parents"));
-
-    // Print all active ("on") voxels by means of an iterator.
-    for (auto iter = point_leaf->beginIndexOn(); iter; ++iter) {
-      // Extract the world-space position of the voxel
-      const auto coord = iter.getCoord();
-      if (!float_leaf->isValueOn(coord)) continue;
-
-      // std::cout << "\t " << coord<< '\n';
-      assertm(coord_to_marker_ptr.count(coord) == 0,
-              "Can't have two matching vids");
-      // get original i, j, k
-      auto marker = new MyMarker(coord[0], coord[1], coord[2]);
-      assertm(marker != nullptr, "is a nullptr");
-
-      if (is_root(flags_handle, iter)) {
-        // a marker with a type of 0, must be a root
-        marker->type = 0;
-      }
-      marker->radius = radius_handle.get(*iter);
-      // save this marker ptr to a map
-      coord_to_marker_ptr.emplace(coord, marker);
-      assertm(marker->radius, "can't have 0 radius");
-
-      coord_to_idx[coord] = outtree.size();
-      cout << "Adding " << coord << '\n';
-      outtree.push_back(marker);
-    }
-  }
-
-  // now that a pointer to all desired markers is known
-  // iterate and complete the marker definition
-  for (auto float_leaf = point_grid->tree().beginLeaf(); float_leaf;
-       ++float_leaf) {
-
-    auto point_leaf = point_grid->tree().probeLeaf(float_leaf->origin());
-    openvdb::points::AttributeHandle<uint8_t> flags_handle(
-        point_leaf->constAttributeArray("flags"));
-
-    openvdb::points::AttributeHandle<float> radius_handle(
-        point_leaf->constAttributeArray("pscale"));
-
-    openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
-        point_leaf->constAttributeArray("parents"));
-
-    // Print all active ("on") voxels by means of an iterator.
-    for (auto iter = point_leaf->beginIndexOn(); iter; ++iter) {
-      const auto coord = iter.getCoord();
-      if (!float_leaf->isValueOn(coord)) continue;
-
-      auto marker = coord_to_marker_ptr[coord]; // get the ptr
-      if (marker == nullptr) {
-        cout << "could not find " << coord << '\n';
-        auto idx = coord_to_idx.at(coord);
-        cout << idx << '\n';
-        throw std::runtime_error("marker not valid");
-      }
-
-      if (is_root(flags_handle, iter)) {
-        // a marker with a parent of 0, must be a root
-        marker->parent = 0;
-      } else {
-        auto parent_coord = parents_handle.get(*iter) + coord;
-
-        if (coord_to_marker_ptr.count(parent_coord) < 1) {
-          // cout << coord << '\n';
-          // cout << parents_handle.get(*iter) << '\n';
-          // cout << parent_coord << '\n';
-          // cout << point_grid->tree().isValueOn(parent_coord) << '\n';
-          // cout << component->tree().isValueOn(parent_coord) << '\n';
-          // cout << component->evalActiveVoxelBoundingBox() << '\n';
-          // cout << component->evalActiveVoxelDim() << '\n';
-          // cout << float_leaf->getNodeBoundingBox() << '\n';
-          // cout << point_leaf->getNodeBoundingBox() << '\n';
-
-          // set it as a root to proofread it easier
-          cout << "marked a fake soma\n";
-          marker->parent = 0;
-          marker->type = 0;
-          // throw std::runtime_error("did not find parent in marker map");
-        }
-
-        // find parent
-        auto parent = coord_to_marker_ptr[parent_coord]; // adjust
-        marker->parent = parent;
-
-        marker->nbr.push_back(coord_to_idx[parent_coord]);
-      }
-    }
-  }
-
-#ifdef LOG
-  cout << "Total marker size: " << outtree.size() << " nodes" << '\n';
-#endif
-
-#ifdef FULL_PRINT
-  cout << "Finished generating results within " << timer.elapsed() << " sec."
-       << '\n';
-#endif
-  return outtree;
-}
-
-auto all_invalid = [](const auto &flags_handle, const auto &parents_handle,
-                      const auto &radius_handle, const auto &ind) {
-  return !is_selected(flags_handle, ind);
-};
-
 template <typename FilterP, typename Pred>
 void visit_float(openvdb::FloatGrid::Ptr float_grid,
-                           EnlargedPointDataGrid::Ptr point_grid,
-                           FilterP keep_if, Pred predicate) {
-  for (auto leaf_iter = float_grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+                 EnlargedPointDataGrid::Ptr point_grid, FilterP keep_if,
+                 Pred predicate) {
+  for (auto float_leaf = float_grid->tree().beginLeaf(); float_leaf;
+       ++float_leaf) {
 
-    auto point_leaf =
-        point_grid->tree().probeLeaf(leaf_iter->origin());
+    auto point_leaf = point_grid->tree().probeLeaf(float_leaf->origin());
     assertm(point_leaf, "leaf must be on, since component is derived from the "
                         "active topology of it");
 
@@ -2822,12 +2679,33 @@ void visit_float(openvdb::FloatGrid::Ptr float_grid,
     openvdb::points::AttributeHandle<float> radius_handle(
         point_leaf->constAttributeArray("pscale"));
 
+    // Extract the position attribute from the leaf by name (P is position).
+    const openvdb::points::AttributeArray &arr =
+        point_leaf->constAttributeArray("P");
+    // Create a read-only AttributeHandle. Position always uses Vec3f.
+    openvdb::points::AttributeHandle<PositionT> position_handle(arr);
+
     openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
         point_leaf->attributeArray("parents"));
 
-    for (auto ind = point_leaf->beginIndexOn(); ind; ++ind) {
-      if (keep_if(flags_handle, parents_handle, radius_handle, ind)) {
-        predicate(flags_handle, parents_handle, radius_handle, ind, leaf_iter);
+    // cout << float_leaf->getNodeBoundingBox();
+    cout << point_leaf->getNodeBoundingBox() << '\n';
+    for (auto float_ind = float_leaf->beginValueOn(); float_ind; ++float_ind) {
+      const auto coord = float_ind.getCoord();
+      auto ind = point_leaf->beginIndexVoxel(coord);
+      if (keep_if(coord, float_leaf)) {
+        openvdb::Vec3f voxelPosition = position_handle.get(*ind);
+        // Extract the world-space position of the voxel.
+        const openvdb::Vec3d xyz = float_ind.getCoord().asVec3d();
+        // Compute the world-space position of the point.
+        openvdb::Vec3f worldPosition =
+            point_grid->transform().indexToWorld(voxelPosition + xyz);
+        // Verify the index and world-space position of the point
+        // std::cout << "    xyz: " << xyz << ' ';
+        // std::cout << "point position: " << voxelPosition << ' ';
+        // std::cout << "WorldPosition=" << worldPosition << '\n';
+        predicate(flags_handle, parents_handle, radius_handle, ind, coord,
+                  float_leaf, float_grid, point_grid);
       }
     }
   }
@@ -2835,8 +2713,7 @@ void visit_float(openvdb::FloatGrid::Ptr float_grid,
 
 template <typename FilterP, typename Pred>
 void visit(EnlargedPointDataGrid::Ptr grid, FilterP keep_if, Pred predicate) {
-  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter;
-       ++leaf_iter) {
+  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
 
     // note: some attributes need mutability
     openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
@@ -2856,3 +2733,135 @@ void visit(EnlargedPointDataGrid::Ptr grid, FilterP keep_if, Pred predicate) {
   }
 }
 
+vector<MyMarker *>
+convert_float_to_markers(openvdb::FloatGrid::Ptr component,
+                         EnlargedPointDataGrid::Ptr point_grid) {
+#ifdef FULL_PRINT
+  cout << "Convert" << '\n';
+#endif
+  cout << "component transform " << component->transform() << '\n';
+  cout << "point transform " << point_grid->transform() << '\n';
+
+  auto timer = high_resolution_timer();
+  std::vector<MyMarker *> outtree;
+
+  // get a mapping to stable address pointers in outtree such that a markers
+  // parent is valid pointer when returning just outtree
+  std::map<GridCoord, MyMarker *> coord_to_marker_ptr;
+
+  // temporary for advantra prune method
+  std::map<GridCoord, VID_t> coord_to_idx;
+
+  auto keep_if = [](const auto coord, const auto float_leaf) {
+    return float_leaf->isValueOn(coord);
+  };
+
+  auto establish_marker_set =
+      [&coord_to_marker_ptr, &coord_to_idx,
+       &outtree](const auto &flags_handle, auto &parents_handle,
+                 const auto &radius_handle, const auto &ind, const auto &coord,
+                 auto leaf, auto float_grid, auto point_grid) {
+        assertm(coord_to_marker_ptr.count(coord) == 0,
+                "Can't have two matching vids");
+        // get original i, j, k
+        auto marker = new MyMarker(coord[0], coord[1], coord[2]);
+        assertm(marker != nullptr, "is a nullptr");
+
+        if (is_root(flags_handle, ind)) {
+          // a marker with a type of 0, must be a root
+          marker->type = 0;
+        }
+        marker->radius = radius_handle.get(*ind);
+        // save this marker ptr to a map
+        coord_to_marker_ptr.emplace(coord, marker);
+        assertm(marker->radius, "can't have 0 radius");
+
+        coord_to_idx[coord] = outtree.size();
+        // cout << "    Adding " << coord << '\n';
+        outtree.push_back(marker);
+      };
+
+  // iterate all active vertices ahead of time so each marker
+  // can have a pointer to it's parent marker
+  // iterate by leaf markers since attributes are stored in chunks
+  // of leaf size
+  visit_float(component, point_grid, keep_if, establish_marker_set);
+
+  VID_t missing_parent = 0;
+  // now that a pointer to all desired markers is known
+  // iterate and complete the marker definition
+  auto assign_parent = [&missing_parent, &coord_to_marker_ptr, &coord_to_idx,
+                        &outtree](const auto &flags_handle,
+                                  auto &parents_handle,
+                                  const auto &radius_handle, const auto &ind,
+                                  const auto &coord, auto leaf, auto float_grid,
+                                  auto point_grid) {
+    auto marker = coord_to_marker_ptr[coord]; // get the ptr
+    if (marker == nullptr) {
+      cout << "could not find " << coord << '\n';
+      auto idx = coord_to_idx.at(coord);
+      cout << idx << '\n';
+      throw std::runtime_error("marker not valid");
+    }
+
+    if (is_root(flags_handle, ind)) {
+      // a marker with a parent of 0, must be a root
+      marker->parent = 0;
+    } else {
+      auto parent_coord = parents_handle.get(*ind) + coord;
+
+      if (coord_to_marker_ptr.count(parent_coord) < 1) {
+        cout << "marked a fake soma\n";
+        cout << ' ' << coord << '\n';
+        // cout << parents_handle.get(*ind) << '\n';
+        cout << ' ' << parent_coord << '\n';
+        cout << " p on? " << point_grid->tree().isValueOn(parent_coord) << '\n';
+        cout << " float on? " << float_grid->tree().isValueOn(parent_coord)
+             << '\n';
+        cout << ' '
+             << point_grid->tree()
+                    .probeConstLeaf(parent_coord)
+                    ->getNodeBoundingBox()
+             << '\n';
+        cout << " f " << float_grid->evalActiveVoxelBoundingBox() << '\n';
+        cout << " p " << point_grid->evalActiveVoxelBoundingBox() << '\n';
+        auto found =
+            float_grid->tree().probeConstLeaf(parent_coord) ? "has" : "null";
+        cout << ' ' << found << '\n';
+        //cout << " p selected? " << is_selected(ind, flags_handle) << '\n';
+
+        // set it as a root to proofread it easier
+        marker->parent = 0;
+        marker->type = 0;
+        ++missing_parent;
+        exit(1);
+        // throw std::runtime_error("did not find parent in marker map during
+        // assign");
+      }
+
+      // find parent
+      auto parent = coord_to_marker_ptr[parent_coord]; // adjust
+      marker->parent = parent;
+
+      marker->nbr.push_back(coord_to_idx[parent_coord]);
+    }
+  };
+
+  visit_float(component, point_grid, keep_if, assign_parent);
+
+#ifdef LOG
+  cout << "Total marker count: " << outtree.size() << " nodes" << '\n';
+  cout << "Missing parent count: " << missing_parent << " nodes" << '\n';
+#endif
+
+#ifdef FULL_PRINT
+  cout << "Finished generating results within " << timer.elapsed() << " sec."
+       << '\n';
+#endif
+  return outtree;
+}
+
+auto all_invalid = [](const auto &flags_handle, const auto &parents_handle,
+                      const auto &radius_handle, const auto &ind) {
+  return !is_selected(flags_handle, ind);
+};

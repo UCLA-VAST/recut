@@ -1148,9 +1148,9 @@ void integrate_point(std::string stage, Container &fifo, T &connected_fifo,
   bf.unset(0);
 
 #ifdef FULL_PRINT
-  std::cout << "\tintegrate_point(): " << adj_coord << '\n';
-  std::cout << "\t\tpotential update: " << potential_update << ' '
-            << adj_leaf_iter << '\n';
+  // std::cout << "\tintegrate_point(): " << adj_coord << '\n';
+  // std::cout << "\t\tpotential update: " << potential_update << ' '
+  //<< adj_leaf_iter << '\n';
 #endif
 
   if (stage == "connected") {
@@ -1876,7 +1876,7 @@ void Recut<image_t>::march_narrow_band(
 #ifdef FULL_PRINT
   auto timer = high_resolution_timer();
   auto loc = tree_to_str(interval_id, block_id);
-  cout << "\nMarching " << loc << ' ' << leaf_iter->origin() << '\n';
+  // cout << "\nMarching " << loc << ' ' << leaf_iter->origin() << '\n';
 #endif
 
   VID_t revisits = 0;
@@ -1898,7 +1898,7 @@ void Recut<image_t>::march_narrow_band(
   }
 
 #ifdef FULL_PRINT
-  cout << "Marched " << loc << " in " << timer.elapsed() << " s" << '\n';
+  // cout << "Marched " << loc << " in " << timer.elapsed() << " s" << '\n';
 #endif
 
 } // end march_narrow_band
@@ -3058,6 +3058,10 @@ void Recut<image_t>::fill_components_with_spheres(
   rng::for_each(components, [this, &prune, &counter, float_grid,
                              output_topology,
                              &root_pair](const auto component) {
+    // all grid transforms across are consistent across recut, so enforce the
+    // same interpretation for any new grid
+    component->setTransform(get_transform());
+
     // filter all roots within this component
     auto component_roots =
         root_pair | rng::views::remove_if([&component](auto coord_radius) {
@@ -3111,8 +3115,7 @@ void Recut<image_t>::fill_components_with_spheres(
     }
 
     auto timer = high_resolution_timer();
-    auto markers =
-        convert_float_to_markers(component, this->topology_grid, false);
+    auto markers = convert_float_to_markers(component, this->topology_grid);
     // auto markers = convert_to_markers(this->topology_grid, false);
 #ifdef LOG
     cout << "Convert to markers in " << timer.elapsed() << '\n';
