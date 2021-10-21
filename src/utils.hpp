@@ -2688,24 +2688,11 @@ void visit_float(openvdb::FloatGrid::Ptr float_grid,
     openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
         point_leaf->attributeArray("parents"));
 
-    // cout << float_leaf->getNodeBoundingBox();
-    cout << point_leaf->getNodeBoundingBox() << '\n';
     for (auto float_ind = float_leaf->beginValueOn(); float_ind; ++float_ind) {
       const auto coord = float_ind.getCoord();
       auto ind = point_leaf->beginIndexVoxel(coord);
       if (keep_if(coord, float_leaf)) {
-        openvdb::Vec3f voxelPosition = position_handle.get(*ind);
-        // Extract the world-space position of the voxel.
-        const openvdb::Vec3d xyz = float_ind.getCoord().asVec3d();
-        // Compute the world-space position of the point.
-        openvdb::Vec3f worldPosition =
-            point_grid->transform().indexToWorld(voxelPosition + xyz);
-        // Verify the index and world-space position of the point
-        // std::cout << "    xyz: " << xyz << ' ';
-        // std::cout << "point position: " << voxelPosition << ' ';
-        // std::cout << "WorldPosition=" << worldPosition << '\n';
-        predicate(flags_handle, parents_handle, radius_handle, ind, coord,
-                  float_leaf, float_grid, point_grid);
+        predicate(flags_handle, parents_handle, radius_handle, ind, coord);
       }
     }
   }
@@ -2739,8 +2726,6 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
 #ifdef FULL_PRINT
   cout << "Convert" << '\n';
 #endif
-  cout << "component transform " << component->transform() << '\n';
-  cout << "point transform " << point_grid->transform() << '\n';
 
   auto timer = high_resolution_timer();
   std::vector<MyMarker *> outtree;
@@ -2759,8 +2744,7 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
   auto establish_marker_set =
       [&coord_to_marker_ptr, &coord_to_idx,
        &outtree](const auto &flags_handle, auto &parents_handle,
-                 const auto &radius_handle, const auto &ind, const auto &coord,
-                 auto leaf, auto float_grid, auto point_grid) {
+                 const auto &radius_handle, const auto &ind, const auto &coord) {
         assertm(coord_to_marker_ptr.count(coord) == 0,
                 "Can't have two matching vids");
         // get original i, j, k
@@ -2777,7 +2761,6 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
         assertm(marker->radius, "can't have 0 radius");
 
         coord_to_idx[coord] = outtree.size();
-        // cout << "    Adding " << coord << '\n';
         outtree.push_back(marker);
       };
 
@@ -2787,15 +2770,13 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
   // of leaf size
   visit_float(component, point_grid, keep_if, establish_marker_set);
 
-  VID_t missing_parent = 0;
   // now that a pointer to all desired markers is known
   // iterate and complete the marker definition
-  auto assign_parent = [&missing_parent, &coord_to_marker_ptr, &coord_to_idx,
+  auto assign_parent = [&coord_to_marker_ptr, &coord_to_idx,
                         &outtree](const auto &flags_handle,
                                   auto &parents_handle,
                                   const auto &radius_handle, const auto &ind,
-                                  const auto &coord, auto leaf, auto float_grid,
-                                  auto point_grid) {
+                                  const auto &coord) {
     auto marker = coord_to_marker_ptr[coord]; // get the ptr
     if (marker == nullptr) {
       cout << "could not find " << coord << '\n';
@@ -2811,32 +2792,7 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
       auto parent_coord = parents_handle.get(*ind) + coord;
 
       if (coord_to_marker_ptr.count(parent_coord) < 1) {
-        cout << "marked a fake soma\n";
-        cout << ' ' << coord << '\n';
-        // cout << parents_handle.get(*ind) << '\n';
-        cout << ' ' << parent_coord << '\n';
-        cout << " p on? " << point_grid->tree().isValueOn(parent_coord) << '\n';
-        cout << " float on? " << float_grid->tree().isValueOn(parent_coord)
-             << '\n';
-        cout << ' '
-             << point_grid->tree()
-                    .probeConstLeaf(parent_coord)
-                    ->getNodeBoundingBox()
-             << '\n';
-        cout << " f " << float_grid->evalActiveVoxelBoundingBox() << '\n';
-        cout << " p " << point_grid->evalActiveVoxelBoundingBox() << '\n';
-        auto found =
-            float_grid->tree().probeConstLeaf(parent_coord) ? "has" : "null";
-        cout << ' ' << found << '\n';
-        //cout << " p selected? " << is_selected(ind, flags_handle) << '\n';
-
-        // set it as a root to proofread it easier
-        marker->parent = 0;
-        marker->type = 0;
-        ++missing_parent;
-        exit(1);
-        // throw std::runtime_error("did not find parent in marker map during
-        // assign");
+         throw std::runtime_error("did not find parent in marker map during assign");
       }
 
       // find parent
@@ -2851,7 +2807,6 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
 
 #ifdef LOG
   cout << "Total marker count: " << outtree.size() << " nodes" << '\n';
-  cout << "Missing parent count: " << missing_parent << " nodes" << '\n';
 #endif
 
 #ifdef FULL_PRINT
