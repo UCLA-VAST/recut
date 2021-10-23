@@ -1,12 +1,15 @@
 #pragma once
 
+#ifdef USE_MCP3D
 #include "image/mcp3d_image_maths.hpp"
+#endif
 #include "recut_parameters.hpp"
 #include "tile_thresholds.hpp"
 #include "utils.hpp"
 #include <algorithm>
 #include <bits/stdc++.h>
 #include <bitset>
+#include <cstddef>
 #include <cstdlib>
 #include <deque>
 #include <execution>
@@ -2434,7 +2437,9 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #endif
           // mcp3d tile must be explicitly cleared to prevent out of memory
           // issues
+#ifdef USE_MCP3D
           mcp3d_tile->ClearData(); // invalidates tile
+#endif
         } else {
           computation_time =
               computation_time + process_interval(interval_id, tile, stage,
@@ -2696,6 +2701,7 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     assertm(fs::exists(args->image_root_dir()),
             "Image root directory does not exist");
 
+#ifdef USE_MCP3D
     // determine the image size
     mcp3d::MImage global_image(args->image_root_dir(), {args->channel()});
     // read data from channel
@@ -2713,6 +2719,7 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     auto temp = global_image.xyz_dims(args->resolution_level());
     // reverse mcp3d's z y x order for offsets and lengths
     input_image_lengths = new_grid_coord(temp[2], temp[1], temp[0]);
+#endif
 
     // FIXME remove this, don't necessarily require
     if (args->type_ == "float") {

@@ -1881,11 +1881,6 @@ template <typename T> std::tuple<double, double, double> iter_stats(T v) {
   return {mean, sum, stdev};
 }
 
-template <typename I> std::ostream open_swc_outputs(I root_vids) {
-  std::ofstream out("out.swc");
-  return out;
-}
-
 auto get_img_vid = [](const VID_t i, const VID_t j, const VID_t k,
                       const VID_t image_length_x,
                       const VID_t image_length_y) -> VID_t {
@@ -2149,7 +2144,7 @@ auto combine_grids = [](std::string lhs, std::string rhs, std::string out) {
 };
 
 auto get_id_map = []() {
-  std::map<GridCoord, uint32> coord_to_swc_id;
+  std::map<GridCoord, uint32_t> coord_to_swc_id;
   // add a dummy value that will never be on to the map so that real indices
   // start at 1
   coord_to_swc_id[GridCoord(INT_MIN, INT_MIN, INT_MIN)] = 0;

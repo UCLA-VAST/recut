@@ -389,6 +389,7 @@ TEST(Histogram, CallAndPrint) {
     }
   }
 
+#ifdef USE_MCP3D
   {
     auto tcase = 0;
     auto grid_size = 2;
@@ -407,6 +408,7 @@ TEST(Histogram, CallAndPrint) {
           << "all values are 1 so only first first bin should exist";
     }
   }
+#endif
 }
 
 TEST(VDB, IntegrateUpdateGrid) {
