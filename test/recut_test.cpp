@@ -669,6 +669,76 @@ TEST(VDB, PriorityQueue) {
   }
 }
 
+TEST(VDB, PriorityQueueLarge) {
+  VID_t grid_size = 24;
+  auto grid_extents = GridCoord(grid_size);
+  // do no use tcase 4 since it is randomized and will not match
+  // for the second read test
+  auto tcase = 7;
+  double slt_pct = 100;
+  bool print_all = true;
+  // generate an image buffer on the fly
+  // then convert to vdb
+  auto args =
+      get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+               /*force_regenerate_image=*/false,
+               /*input_is_vdb=*/true,
+               /* type =*/"float"); // priority queue must have type float
+  auto recut = Recut<uint16_t>(args);
+  auto root_coords = recut.initialize();
+  cout << "root " << root_coords[0].first << '\n';
+
+  // TODO switch this to a more formal method
+  // set the topology_grid mainly from file for this test
+  // overwrite the attempt to convert float to pointgrid
+  auto point_args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+                             /*force_regenerate_image=*/false,
+                             /*input_is_vdb=*/true,
+                             /* type =*/"point");
+  auto base_grid = read_vdb_file(point_args.image_root_dir());
+  recut.topology_grid = openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
+  append_attributes(recut.topology_grid);
+
+  if (print_all) {
+    print_vdb_mask(recut.topology_grid->getConstAccessor(), grid_extents);
+    print_all_points(recut.topology_grid, recut.image_bbox);
+  }
+
+  auto stage = "value";
+  recut.activate_vids(recut.topology_grid, root_coords, stage, recut.map_fifo,
+                      recut.connected_map);
+  recut.update(stage, recut.map_fifo);
+
+  auto known_surface = new_grid_coord(1, 1, 1);
+  auto known_selected = new_grid_coord(2, 2, 2);
+  auto known_root = new_grid_coord(3, 3, 3);
+
+  // they all are in the same leaf
+  auto leaf_iter = recut.topology_grid->tree().probeLeaf(known_surface);
+
+  openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
+      leaf_iter->attributeArray("flags"));
+
+  {
+    auto ind = leaf_iter->beginIndexVoxel(known_surface);
+    ASSERT_TRUE(is_selected(flags_handle, ind));
+    ASSERT_TRUE(is_surface(flags_handle, ind));
+  }
+
+  {
+    auto ind = leaf_iter->beginIndexVoxel(known_selected);
+    ASSERT_TRUE(is_selected(flags_handle, ind));
+    ASSERT_FALSE(is_surface(flags_handle, ind));
+  }
+
+  {
+    auto ind = leaf_iter->beginIndexVoxel(known_root);
+    ASSERT_TRUE(is_selected(flags_handle, ind));
+    ASSERT_TRUE(is_root(flags_handle, ind));
+    ASSERT_FALSE(is_surface(flags_handle, ind));
+  }
+}
+
 TEST(Utils, AdjustSomaRadii) {
   VID_t grid_size = 8;
   auto grid_extents = GridCoord(grid_size);

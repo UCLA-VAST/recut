@@ -3076,11 +3076,6 @@ void Recut<image_t>::fill_components_with_spheres(
 
     // FIXME delete this once performance improves
     auto voxel_count = component->activeVoxelCount();
-    if (voxel_count > 110000) {
-      cout << "Skipping component with high voxel count: " << voxel_count
-           << '\n';
-      return; // skip
-    }
 
 #ifdef CLEAR_ROOTS
     auto component_root_bboxs =
