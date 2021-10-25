@@ -27,6 +27,8 @@
 #define EXP_DEV_LOW .05
 #define NUMERICAL_ERROR .00001
 
+// If input is not vdb, and you do not force regeneration of the image
+// then you must use the MCP3D library to read the image filenames
 #ifdef USE_MCP3D
 #define GEN_IMAGE false
 #else
@@ -277,8 +279,7 @@ TEST(VDB, InitializeGlobals) {
   auto tcase = 7;
   double slt_pct = 100;
   bool print_all = false;
-  // generate an image buffer on the fly
-  // then convert to vdb
+
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
                        /*force_regenerate_image=*/false,
                        /*input_is_vdb=*/true);
@@ -389,6 +390,7 @@ TEST(Histogram, CallAndPrint) {
     }
   }
 
+#ifdef USE_MCP3D
   {
     auto tcase = 0;
     auto grid_size = 2;
@@ -407,6 +409,8 @@ TEST(Histogram, CallAndPrint) {
           << "all values are 1 so only first first bin should exist";
     }
   }
+#endif
+
 }
 
 TEST(VDB, IntegrateUpdateGrid) {
@@ -608,8 +612,7 @@ TEST(VDB, PriorityQueue) {
   auto tcase = 7;
   double slt_pct = 100;
   bool print_all = true;
-  // generate an image buffer on the fly
-  // then convert to vdb
+
   auto args =
       get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
                /*force_regenerate_image=*/false,
@@ -622,7 +625,7 @@ TEST(VDB, PriorityQueue) {
   // set the topology_grid mainly from file for this test
   // overwrite the attempt to convert float to pointgrid
   auto point_args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-                             /*force_regenerate_image=*/false,
+                             /*force_regenerate_image=*/true,
                              /*input_is_vdb=*/true,
                              /* type =*/"point");
   auto base_grid = read_vdb_file(point_args.image_root_dir());
@@ -669,7 +672,7 @@ TEST(VDB, PriorityQueue) {
   }
 }
 
-TEST(VDB, PriorityQueueLarge) {
+TEST(VDB, DISABLED_PriorityQueueLarge) {
   VID_t grid_size = 24;
   auto grid_extents = GridCoord(grid_size);
   // do no use tcase 4 since it is randomized and will not match
@@ -681,7 +684,7 @@ TEST(VDB, PriorityQueueLarge) {
   // then convert to vdb
   auto args =
       get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-               /*force_regenerate_image=*/false,
+               /*force_regenerate_image=*/GEN_IMAGE,
                /*input_is_vdb=*/true,
                /* type =*/"float"); // priority queue must have type float
   auto recut = Recut<uint16_t>(args);
@@ -751,7 +754,7 @@ TEST(Utils, AdjustSomaRadii) {
   // then convert to vdb
   auto args =
       get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-               /*force_regenerate_image=*/false,
+               /*force_regenerate_image=*/GEN_IMAGE,
                /*input_is_vdb=*/true,
                /* type =*/"float"); // priority queue must have type float
   auto recut = Recut<uint16_t>(args);
@@ -761,7 +764,7 @@ TEST(Utils, AdjustSomaRadii) {
   // set the topology_grid mainly from file for this test
   // overwrite the attempt to convert float to pointgrid
   auto point_args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-                             /*force_regenerate_image=*/false,
+                             /*force_regenerate_image=*/GEN_IMAGE,
                              /*input_is_vdb=*/true,
                              /* type =*/"point");
   auto base_grid = read_vdb_file(point_args.image_root_dir());
@@ -951,6 +954,7 @@ TEST(VDB, Convert) {
   ASSERT_NEAR(write_error_rate, 0., NUMERICAL_ERROR);
   */
 
+#ifdef USE_MCP3D
   // test reading from a pre-generated image file of exact same as
   // recut.generated_image as long as tcase != 4
   // read from file and convert
@@ -985,6 +989,7 @@ TEST(VDB, Convert) {
 
     ASSERT_NEAR(read_from_file_error_rate, 0., NUMERICAL_ERROR);
   }
+#endif
 }
 
 /*
@@ -1399,7 +1404,7 @@ TEST(CompareTree, All) {
   auto interval_size = grid_size;
   VID_t block_size = 2;
 
-  auto args = get_args(grid_size, interval_size, block_size, 100, 1);
+  auto args = get_args(grid_size, interval_size, block_size, 100, 1, false, true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
 
@@ -2198,10 +2203,8 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
   // regenerating image is random and done at run time
   // if you were to set to true tcase 4 would have a mismatch
   // with the loaded image
-  bool force_regenerate_image = true;
-#ifdef USE_MCP3D
-  // force_regenerate_image = false;
-#endif
+  bool force_regenerate_image = GEN_IMAGE;
+
   bool prune = true;
   std::string stage;
   auto grid_extents = GridCoord(grid_size);

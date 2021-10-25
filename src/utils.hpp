@@ -14,6 +14,7 @@
 #include <math.h>
 #include <numeric>
 #include <openvdb/tools/Composite.h>
+#include <queue>
 #include <stdlib.h> // ultoa
 
 namespace fs = std::filesystem;
@@ -1881,11 +1882,6 @@ template <typename T> std::tuple<double, double, double> iter_stats(T v) {
   return {mean, sum, stdev};
 }
 
-template <typename I> std::ostream open_swc_outputs(I root_vids) {
-  std::ofstream out("out.swc");
-  return out;
-}
-
 auto get_img_vid = [](const VID_t i, const VID_t j, const VID_t k,
                       const VID_t image_length_x,
                       const VID_t image_length_y) -> VID_t {
@@ -2149,7 +2145,7 @@ auto combine_grids = [](std::string lhs, std::string rhs, std::string out) {
 };
 
 auto get_id_map = []() {
-  std::map<GridCoord, uint32> coord_to_swc_id;
+  std::map<GridCoord, uint32_t> coord_to_swc_id;
   // add a dummy value that will never be on to the map so that real indices
   // start at 1
   coord_to_swc_id[GridCoord(INT_MIN, INT_MIN, INT_MIN)] = 0;
@@ -2741,28 +2737,29 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
     return float_leaf->isValueOn(coord);
   };
 
-  auto establish_marker_set =
-      [&coord_to_marker_ptr, &coord_to_idx,
-       &outtree](const auto &flags_handle, auto &parents_handle,
-                 const auto &radius_handle, const auto &ind, const auto &coord) {
-        assertm(coord_to_marker_ptr.count(coord) == 0,
-                "Can't have two matching vids");
-        // get original i, j, k
-        auto marker = new MyMarker(coord[0], coord[1], coord[2]);
-        assertm(marker != nullptr, "is a nullptr");
+  auto establish_marker_set = [&coord_to_marker_ptr, &coord_to_idx,
+                               &outtree](const auto &flags_handle,
+                                         auto &parents_handle,
+                                         const auto &radius_handle,
+                                         const auto &ind, const auto &coord) {
+    assertm(coord_to_marker_ptr.count(coord) == 0,
+            "Can't have two matching vids");
+    // get original i, j, k
+    auto marker = new MyMarker(coord[0], coord[1], coord[2]);
+    assertm(marker != nullptr, "is a nullptr");
 
-        if (is_root(flags_handle, ind)) {
-          // a marker with a type of 0, must be a root
-          marker->type = 0;
-        }
-        marker->radius = radius_handle.get(*ind);
-        // save this marker ptr to a map
-        coord_to_marker_ptr.emplace(coord, marker);
-        assertm(marker->radius, "can't have 0 radius");
+    if (is_root(flags_handle, ind)) {
+      // a marker with a type of 0, must be a root
+      marker->type = 0;
+    }
+    marker->radius = radius_handle.get(*ind);
+    // save this marker ptr to a map
+    coord_to_marker_ptr.emplace(coord, marker);
+    assertm(marker->radius, "can't have 0 radius");
 
-        coord_to_idx[coord] = outtree.size();
-        outtree.push_back(marker);
-      };
+    coord_to_idx[coord] = outtree.size();
+    outtree.push_back(marker);
+  };
 
   // iterate all active vertices ahead of time so each marker
   // can have a pointer to it's parent marker
@@ -2772,11 +2769,10 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
 
   // now that a pointer to all desired markers is known
   // iterate and complete the marker definition
-  auto assign_parent = [&coord_to_marker_ptr, &coord_to_idx,
-                        &outtree](const auto &flags_handle,
-                                  auto &parents_handle,
-                                  const auto &radius_handle, const auto &ind,
-                                  const auto &coord) {
+  auto assign_parent = [&coord_to_marker_ptr, &coord_to_idx, &outtree](
+                           const auto &flags_handle, auto &parents_handle,
+                           const auto &radius_handle, const auto &ind,
+                           const auto &coord) {
     auto marker = coord_to_marker_ptr[coord]; // get the ptr
     if (marker == nullptr) {
       cout << "could not find " << coord << '\n';
@@ -2792,7 +2788,8 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
       auto parent_coord = parents_handle.get(*ind) + coord;
 
       if (coord_to_marker_ptr.count(parent_coord) < 1) {
-         throw std::runtime_error("did not find parent in marker map during assign");
+        throw std::runtime_error(
+            "did not find parent in marker map during assign");
       }
 
       // find parent
