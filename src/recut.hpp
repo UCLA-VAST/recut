@@ -18,6 +18,7 @@
 #include <iostream>
 #include <map>
 #include <openvdb/tools/Composite.h>
+#include <openvdb/tools/VolumeToSpheres.h> // for fillWithSpheres
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -3076,9 +3077,14 @@ void Recut<image_t>::fill_components_with_spheres(
         }) |
         rng::to_vector;
 
-    cout << "\troot count " << component_roots.size() << '\n';
+    //cout << "\troot count " << component_roots.size() << '\n';
     if (component_roots.size() < 1)
       return; // skip
+
+    if (component_roots.size() > 1) {
+      cout << "Skipping component with multiple roots\n";
+      return; // skip
+    }
 
     // FIXME delete this once performance improves
     auto voxel_count = component->activeVoxelCount();
@@ -3165,7 +3171,7 @@ void Recut<image_t>::fill_components_with_spheres(
       print_swc_line(coord,
                      /*is_root*/ marker->type == 0, marker->radius,
                      parent_offset, component->evalActiveVoxelBoundingBox(),
-                     file, coord_to_swc_id, true);
+                     file, coord_to_swc_id, false);
     });
 
     ++counter;
