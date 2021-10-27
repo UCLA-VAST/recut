@@ -11,6 +11,7 @@
 #include <tuple>
 #include <typeinfo>
 #include <vector>
+#include <openvdb/tools/Dense.h>
 
 // catch an assertion and auto drop into
 // intractive mode for gdb or rr
@@ -814,9 +815,6 @@ TEST(Utils, AdjustSomaRadii) {
   });
 }
 
-TEST(Utils, ConvertFloatToMarkers) {
-}
-
 TEST(VDB, Connected) {
   VID_t grid_size = 8;
   auto grid_extents = GridCoord(grid_size);
@@ -1183,7 +1181,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
   }
 }
 
-TEST(VDB, ConvertDenseToVDB) {
+TEST(VDB, ConvertDenseToVDBToDense) {
   auto grid_size = 8;
   auto grid_extents = GridCoord(grid_size, grid_size, grid_size);
   auto tol_sz = coord_prod_accum(grid_extents);
@@ -1241,6 +1239,19 @@ TEST(VDB, ConvertDenseToVDB) {
 
     // print_image_3D(inimg1d, extended_grid_extents);
   }
+
+  // convert back to dense
+  vto::Dense<uint16_t, vto::LayoutXYZ> check_dense(topology_grid->evalActiveVoxelBoundingBox());
+  vto::copyToDense(*topology_grid, check_dense);
+
+  if (print) {
+    // TODO print dense
+    // get the raw pointer 
+    auto img_ptr = check_dense.data();
+    print_image_3D(img_ptr, grid_extents);
+  }
+
+  // check all match
 }
 
 TEST(VDB, GetSetGridMeta) {
