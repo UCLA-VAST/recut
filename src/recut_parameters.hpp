@@ -159,7 +159,7 @@ class RecutCommandLineArgs {
     RecutCommandLineArgs()
       : recut_parameters_(RecutParameters{}), image_root_dir_(std::string()),
       swc_path_("out.swc"), channel_("ch0"), resolution_level_(0),
-      image_offsets(0, 0, 0), image_lengths(-1, -1, -1), type_("point") {}
+      image_offsets(0, 0, 0), image_lengths(-1, -1, -1), type_("point"), prune_radius_(10) {}
 
     static void PrintUsage();
     std::string MetaString();
@@ -191,6 +191,10 @@ class RecutCommandLineArgs {
       channel_ = channel;
     }
 
+    void set_prune_radius(uint16_t pr) {
+      prune_radius_ = pr;
+    }
+
     void set_resolution_level(int resolution_level) {
       resolution_level_ = resolution_level;
     }
@@ -213,6 +217,7 @@ class RecutCommandLineArgs {
     RecutParameters recut_parameters_;
     std::string image_root_dir_, swc_path_, channel_, type_; 
     int resolution_level_;
+    uint16_t prune_radius_;
 };
 
 RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]);

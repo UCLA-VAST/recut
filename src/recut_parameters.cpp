@@ -38,6 +38,7 @@ void RecutCommandLineArgs::PrintUsage() {
   cout << "--convert            [-cv] convert image file and exit default "
           "out.vdb\n";
   cout << "--type               VDB input grid type: 'point' or 'float'\n";
+  cout << "--prune-radius       larger values decrease the sampling density of nodes output to swc, defaults to 10 which is tuned for 30x objective lenses\n";
   cout << "--max                set max image voxel raw value allowed, "
           "computed automatically when --bg_thresh or --fg-percent are "
           "specified\n";
@@ -76,6 +77,7 @@ string RecutCommandLineArgs::MetaString() {
   stringstream meta_stream;
   meta_stream << "# image root dir = " << image_root_dir_ << '\n';
   meta_stream << "# channel = " << channel_ << '\n';
+  meta_stream << "prune radius = " << channel_ << '\n';
   meta_stream << "# resolution level = " << resolution_level_ << '\n';
   meta_stream << "# offsets (xyz) = " << image_offsets[0] << " "
               << image_offsets[1] << " " << image_offsets[2] << '\n';
@@ -152,6 +154,9 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--channel") == 0 ||
                  strcmp(argv[i], "-c") == 0) {
         args.set_channel(argv[i + 1]);
+        ++i;
+      } else if (strcmp(argv[i], "--prune-radius") == 0) {
+        args.set_prune_radius(atoi(argv[i + 1]));
         ++i;
       } else if (strcmp(argv[i], "--bg-thresh") == 0 ||
                  strcmp(argv[i], "-bt") == 0) {

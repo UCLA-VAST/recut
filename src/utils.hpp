@@ -2257,7 +2257,7 @@ void check_nbr(vector<MyMarker *> &nX) {
 };
 
 // sphere grouping Advantra prune strategy
-std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX) {
+std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius) {
 
   std::vector<MyMarker *> nY;
   auto no_neighbor_count = 0;
@@ -2286,7 +2286,7 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX) {
     auto node_radius = nYi->radius;
     if (nYi->type != 0) { // not soma
       // upsample by factor to account for anisotropic images
-      node_radius *= GROUP_RADIUS;
+      node_radius *= prune_radius;
     } else {
       // increase reported radius slightly to remove nodes on edge
       // and decrease proofreading efforts

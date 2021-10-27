@@ -3096,7 +3096,7 @@ void Recut<image_t>::partition_components(
 #endif
 
     timer.restart();
-    auto pruned_markers = advantra_prune(markers);
+    auto pruned_markers = advantra_prune(markers, this->args->prune_radius_);
 #ifdef LOG
     cout << "Prune markers to size " << pruned_markers.size() << " in "
          << timer.elapsed() << '\n';
