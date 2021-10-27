@@ -125,7 +125,7 @@ public:
   void prune_branch();
   void convert_topology();
 
-  void fill_components_with_spheres(
+  void partition_components(
       std::vector<std::pair<GridCoord, uint8_t>> root_pair, bool prune);
 
   void initialize_globals(const VID_t &grid_interval_size,
@@ -3027,7 +3027,7 @@ template <class image_t> void Recut<image_t>::prune_radii() {
 }
 
 template <class image_t>
-void Recut<image_t>::fill_components_with_spheres(
+void Recut<image_t>::partition_components(
     std::vector<std::pair<GridCoord, uint8_t>> root_pair, bool prune) {
 
   openvdb::GridPtrVec grids;
@@ -3050,14 +3050,6 @@ void Recut<image_t>::fill_components_with_spheres(
   vto::segmentActiveVoxels(*float_grid, components);
   cout << "Segment count: " << components.size() << " in " << timer.elapsed()
        << " s\n";
-
-#ifdef CLEAR_ROOTS
-  // prune all neurites topology grid by setting to tombstone
-  // this means that neurites can selectively turned back on
-  // below, if they don't fall within a soma bounding box
-  // roots from marker files stay as ground truth
-  visit(this->topology_grid, not_root, prunes_visited);
-#endif
 
   auto output_topology = false;
 
@@ -3088,38 +3080,6 @@ void Recut<image_t>::fill_components_with_spheres(
 
     // FIXME delete this once performance improves
     auto voxel_count = component->activeVoxelCount();
-
-#ifdef CLEAR_ROOTS
-    auto component_root_bboxs =
-        component_roots | rng::views::transform([](auto coord_radius) {
-          auto [coord, radius] = coord_radius;
-          auto radius_off = GridCoord(radius);
-          // cout << "\troot at " << coord << ' ' << radius<< ' '
-          //<< openvdb::CoordBBox(coord - radius_off, coord + radius_off) <<
-          //'\n';
-          return openvdb::CoordBBox(coord - radius_off, coord + radius_off);
-          // filtered_spheres.emplace_back(coord[0], coord[1], coord[2],
-          // radius);
-        }) |
-        rng::to_vector;
-#endif
-
-    if (false) {
-      // copy topology to point grid
-      // Use the topology to create a PointDataTree
-      openvdb::points::PointDataTree::Ptr pointTree(
-          new openvdb::points::PointDataTree(component->tree(), 0,
-                                             openvdb::TopologyCopy()));
-
-      // Create the points grid.
-      openvdb::points::PointDataGrid::Ptr points =
-          openvdb::points::PointDataGrid::create(pointTree);
-
-      append_attributes(points);
-
-      // use this for the topology stage exclusively
-      // this->topology_grid = points;
-    }
 
     auto timer = high_resolution_timer();
     auto markers = convert_float_to_markers(component, this->topology_grid);
@@ -3245,7 +3205,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   }
 
   if (params->sphere_pruning_) {
-    fill_components_with_spheres(root_pair, false);
+    partition_components(root_pair, false);
   } else {
 
     // starting from roots, prune stage will
