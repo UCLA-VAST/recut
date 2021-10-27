@@ -27,6 +27,8 @@
 #define EXP_DEV_LOW .05
 #define NUMERICAL_ERROR .00001
 
+// If input is not vdb, and you do not force regeneration of the image
+// then you must use the MCP3D library to read the image filenames
 #ifdef USE_MCP3D
 #define GEN_IMAGE false
 #else
@@ -277,8 +279,7 @@ TEST(VDB, InitializeGlobals) {
   auto tcase = 7;
   double slt_pct = 100;
   bool print_all = false;
-  // generate an image buffer on the fly
-  // then convert to vdb
+
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
                        /*force_regenerate_image=*/false,
                        /*input_is_vdb=*/true);
@@ -346,6 +347,70 @@ TEST(VDB, UpdateSemantics) {
     auto val_coord = iter.getCoord();
     cout << val_coord << " " << val << '\n';
   }
+}
+
+TEST(Histogram, Add) {
+  auto granularity = 8;
+  auto histogram = Histogram<uint16_t>(granularity);
+  histogram.bin_counts[0] = 1;
+  histogram.bin_counts[1] = 1;
+
+  auto rhistogram = Histogram<uint16_t>(granularity);
+  rhistogram.bin_counts[0] = 2;
+  rhistogram.bin_counts[1] = 2;
+
+  auto combined = histogram;
+  combined += rhistogram;
+  for (auto [key, value] : combined.bin_counts) {
+    ASSERT_EQ(value, histogram.bin_counts[key] + rhistogram.bin_counts[key]);
+  }
+}
+
+TEST(Histogram, CallAndPrint) {
+  auto n = 1 << 8;
+  auto granularity = 8;
+  auto print_all = true;
+
+  {
+    auto histogram = Histogram<uint16_t>(granularity);
+    for (int i = 0; i < n; ++i) {
+      histogram(i);
+    }
+
+    if (print_all) {
+      std::cout << histogram.size() << '\n';
+      std::cout << histogram;
+    }
+
+    ASSERT_EQ(histogram.size(), n / granularity)
+        << histogram.size() << ',' << n / granularity;
+    for (auto [lower_limit, bin_count] : histogram.bin_counts) {
+      ASSERT_EQ(granularity, bin_count)
+          << granularity * lower_limit << ',' << bin_count << '\n';
+    }
+  }
+
+#ifdef USE_MCP3D
+  {
+    auto tcase = 0;
+    auto grid_size = 2;
+    auto args = get_args(grid_size, grid_size, grid_size, 100, tcase);
+    mcp3d::MImage check(args.image_root_dir(), {"ch0"});
+    read_tiff(args.image_root_dir(), args.image_offsets, args.image_lengths,
+              check);
+    auto histogram = hist(check.Volume<uint16_t>(0), args.image_lengths,
+                          zeros(), granularity);
+    ASSERT_EQ(histogram.size(), 1)
+        << "all values are 1 so only first first bin should exist";
+    for (const auto &[lower_limit, bin_count] : histogram.bin_counts) {
+      ASSERT_EQ(lower_limit, 0)
+          << "all values are 1 so only first first bin should exist";
+      ASSERT_EQ(bin_count, grid_size * grid_size * grid_size)
+          << "all values are 1 so only first first bin should exist";
+    }
+  }
+#endif
+
 }
 
 TEST(VDB, IntegrateUpdateGrid) {
@@ -539,6 +604,219 @@ TEST(VDB, ActivateVids) {
   }
 }
 
+TEST(VDB, PriorityQueue) {
+  VID_t grid_size = 8;
+  auto grid_extents = GridCoord(grid_size);
+  // do no use tcase 4 since it is randomized and will not match
+  // for the second read test
+  auto tcase = 7;
+  double slt_pct = 100;
+  bool print_all = true;
+
+  auto args =
+      get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+               /*force_regenerate_image=*/false,
+               /*input_is_vdb=*/true,
+               /* type =*/"float"); // priority queue must have type float
+  auto recut = Recut<uint16_t>(args);
+  auto root_coords = recut.initialize();
+
+  // TODO switch this to a more formal method
+  // set the topology_grid mainly from file for this test
+  // overwrite the attempt to convert float to pointgrid
+  auto point_args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+                             /*force_regenerate_image=*/true,
+                             /*input_is_vdb=*/true,
+                             /* type =*/"point");
+  auto base_grid = read_vdb_file(point_args.image_root_dir());
+  recut.topology_grid = openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
+  append_attributes(recut.topology_grid);
+
+  auto stage = "value";
+  recut.activate_vids(recut.topology_grid, root_coords, stage, recut.map_fifo,
+                      recut.connected_map);
+  recut.update(stage, recut.map_fifo);
+
+  if (print_all) {
+    print_vdb_mask(recut.topology_grid->getConstAccessor(), grid_extents);
+    print_all_points(recut.topology_grid, recut.image_bbox);
+  }
+
+  auto known_surface = new_grid_coord(1, 1, 1);
+  auto known_selected = new_grid_coord(2, 2, 2);
+  auto known_root = new_grid_coord(3, 3, 3);
+
+  // they all are in the same leaf
+  auto leaf_iter = recut.topology_grid->tree().probeLeaf(known_surface);
+
+  openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
+      leaf_iter->attributeArray("flags"));
+
+  {
+    auto ind = leaf_iter->beginIndexVoxel(known_surface);
+    ASSERT_TRUE(is_selected(flags_handle, ind));
+    ASSERT_TRUE(is_surface(flags_handle, ind));
+  }
+
+  {
+    auto ind = leaf_iter->beginIndexVoxel(known_selected);
+    ASSERT_TRUE(is_selected(flags_handle, ind));
+    ASSERT_FALSE(is_surface(flags_handle, ind));
+  }
+
+  {
+    auto ind = leaf_iter->beginIndexVoxel(known_root);
+    ASSERT_TRUE(is_selected(flags_handle, ind));
+    ASSERT_TRUE(is_root(flags_handle, ind));
+    ASSERT_FALSE(is_surface(flags_handle, ind));
+  }
+}
+
+TEST(VDB, DISABLED_PriorityQueueLarge) {
+  VID_t grid_size = 24;
+  auto grid_extents = GridCoord(grid_size);
+  // do no use tcase 4 since it is randomized and will not match
+  // for the second read test
+  auto tcase = 7;
+  double slt_pct = 100;
+  bool print_all = true;
+  // generate an image buffer on the fly
+  // then convert to vdb
+  auto args =
+      get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+               /*force_regenerate_image=*/false,
+               /*input_is_vdb=*/true,
+               /* type =*/"point");
+  auto recut = Recut<uint16_t>(args);
+  auto root_coords = recut.initialize();
+  cout << "root " << root_coords[0].first << '\n';
+
+  // TODO switch this to a more formal method
+  // set the topology_grid mainly from file for this test
+  // overwrite the attempt to convert float to pointgrid
+  auto float_args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+                             /*force_regenerate_image=*/false,
+                             /*input_is_vdb=*/true,
+                             /*type=*/"float");
+  auto base_grid = read_vdb_file(float_args.image_root_dir());
+   // priority queue must have type float
+  recut.input_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
+
+  auto stage = "value";
+  recut.activate_vids(recut.topology_grid, root_coords, stage, recut.map_fifo,
+                      recut.connected_map);
+  recut.update(stage, recut.map_fifo);
+
+  if (print_all) {
+    print_vdb_mask(recut.topology_grid->getConstAccessor(), grid_extents);
+    print_all_points(recut.topology_grid, recut.image_bbox);
+  }
+
+  auto known_surface = new_grid_coord(5, 5, 11);
+  auto known_selected = new_grid_coord(12, 12, 12);
+  auto known_root = new_grid_coord(11, 11, 11);
+
+  // they all are in the same leaf
+  auto leaf_iter = recut.topology_grid->tree().probeLeaf(known_surface);
+
+  ASSERT_TRUE(leaf_iter);
+
+  openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
+      leaf_iter->attributeArray("flags"));
+
+  {
+    auto ind = leaf_iter->beginIndexVoxel(known_surface);
+    ASSERT_TRUE(ind);
+    ASSERT_TRUE(is_selected(flags_handle, ind));
+    ASSERT_TRUE(is_surface(flags_handle, ind));
+  }
+
+  {
+    auto ind = leaf_iter->beginIndexVoxel(known_selected);
+    ASSERT_TRUE(ind);
+    ASSERT_TRUE(is_selected(flags_handle, ind));
+    ASSERT_FALSE(is_surface(flags_handle, ind));
+  }
+
+  {
+    auto ind = leaf_iter->beginIndexVoxel(known_root);
+    ASSERT_TRUE(ind);
+    ASSERT_TRUE(is_selected(flags_handle, ind));
+    ASSERT_TRUE(is_root(flags_handle, ind));
+    ASSERT_FALSE(is_surface(flags_handle, ind));
+  }
+
+  // Check values
+}
+
+TEST(Utils, AdjustSomaRadii) {
+  VID_t grid_size = 8;
+  auto grid_extents = GridCoord(grid_size);
+  // do no use tcase 4 since it is randomized and will not match
+  // for the second read test
+  auto tcase = 7;
+  double slt_pct = 100;
+  bool print_all = true;
+  // generate an image buffer on the fly
+  // then convert to vdb
+  auto args =
+      get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+               /*force_regenerate_image=*/GEN_IMAGE,
+               /*input_is_vdb=*/true,
+               /* type =*/"float"); // priority queue must have type float
+  auto recut = Recut<uint16_t>(args);
+  auto root_coords = recut.initialize();
+
+  // TODO switch this to a more formal method
+  // set the topology_grid mainly from file for this test
+  // overwrite the attempt to convert float to pointgrid
+  auto point_args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+                             /*force_regenerate_image=*/GEN_IMAGE,
+                             /*input_is_vdb=*/true,
+                             /* type =*/"point");
+  auto base_grid = read_vdb_file(point_args.image_root_dir());
+  recut.topology_grid = openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
+  append_attributes(recut.topology_grid);
+  //cout << root_coords[0].first << ' ' << +(root_coords[0].second) << '\n';
+
+  // check all root radii are 0
+  rng::for_each(root_coords, [&recut](const auto &coord_radius) {
+    const auto [coord, radius] = coord_radius;
+    const auto leaf = recut.topology_grid->tree().probeLeaf(coord);
+    assertm(leaf, "corresponding leaf of passed root must be active");
+    auto ind = leaf->beginIndexVoxel(coord);
+    assertm(ind, "corresponding voxel of passed root must be active");
+
+    // modify the radius value
+    openvdb::points::AttributeWriteHandle<float> radius_handle(
+        leaf->attributeArray("pscale"));
+
+    auto previous_radius = radius_handle.get(*ind);
+    ASSERT_EQ(previous_radius, 0);
+  });
+
+  adjust_soma_radii(root_coords, recut.topology_grid);
+
+  // check all root radii have been changed
+  rng::for_each(root_coords, [&recut](const auto &coord_radius) {
+    const auto [coord, radius] = coord_radius;
+    const auto leaf = recut.topology_grid->tree().probeLeaf(coord);
+    assertm(leaf, "corresponding leaf of passed root must be active");
+    auto ind = leaf->beginIndexVoxel(coord);
+    assertm(ind, "corresponding voxel of passed root must be active");
+
+    // modify the radius value
+    openvdb::points::AttributeWriteHandle<float> radius_handle(
+        leaf->attributeArray("pscale"));
+
+    auto previous_radius = radius_handle.get(*ind);
+    ASSERT_NE(previous_radius, 0);
+  });
+}
+
+TEST(Utils, ConvertFloatToMarkers) {
+}
+
 TEST(VDB, Connected) {
   VID_t grid_size = 8;
   auto grid_extents = GridCoord(grid_size);
@@ -555,8 +833,8 @@ TEST(VDB, Connected) {
   auto recut = Recut<uint16_t>(args);
   auto root_coords = recut.initialize();
   auto stage = "connected";
-  recut.activate_vids(recut.topology_grid, root_coords, "connected",
-                      recut.map_fifo, recut.connected_map);
+  recut.activate_vids(recut.topology_grid, root_coords, stage, recut.map_fifo,
+                      recut.connected_map);
   recut.update(stage, recut.map_fifo);
 
   if (print_all) {
@@ -683,6 +961,7 @@ TEST(VDB, Convert) {
   ASSERT_NEAR(write_error_rate, 0., NUMERICAL_ERROR);
   */
 
+#ifdef USE_MCP3D
   // test reading from a pre-generated image file of exact same as
   // recut.generated_image as long as tcase != 4
   // read from file and convert
@@ -717,6 +996,7 @@ TEST(VDB, Convert) {
 
     ASSERT_NEAR(read_from_file_error_rate, 0., NUMERICAL_ERROR);
   }
+#endif
 }
 
 /*
@@ -783,6 +1063,9 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         if ((tcase == 4) && (slt_pct > 5))
           continue;
 
+        auto radius = grid_size / 4;
+        if ((tcase == 4) || (radius < 1)) radius = 1;
+
         std::string base(get_data_dir());
         std::string delim("/");
         std::string fn_marker(base);
@@ -795,7 +1078,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         fn_marker = fn_marker + std::to_string((int)slt_pct);
         // fn_marker = fn_marker + delim;
         // record the root
-        write_marker(x, y, z, fn_marker);
+        write_marker(x, y, z, radius, fn_marker);
 
         auto image_dir = base + "/test_images/";
         image_dir = image_dir + std::to_string(grid_size);
@@ -834,7 +1117,6 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
           ASSERT_NEAR(actual_slt_pct, slt_pct, 100 * EXP_DEV_LOW);
         }
 
-        // auto topology_grid = create_vdb_grid(grid_extents, 0);
         auto float_grid = openvdb::FloatGrid::create();
         convert_buffer_to_vdb_acc(inimg1d, grid_extents, zeros(), zeros(),
                                   float_grid->getAccessor(), 0);
@@ -898,6 +1180,66 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         delete[] inimg1d;
       }
     }
+  }
+}
+
+TEST(VDB, ConvertDenseToVDB) {
+  auto grid_size = 8;
+  auto grid_extents = GridCoord(grid_size, grid_size, grid_size);
+  auto tol_sz = coord_prod_accum(grid_extents);
+  auto root_vid = get_central_vid(grid_size);
+  auto root_coord = GridCoord(get_central_coord(grid_size));
+  auto upsample_z = 5;
+  auto print = true;
+  auto extended_grid_extents =
+      GridCoord(grid_size, grid_size, grid_size * upsample_z);
+
+  cout << root_coord;
+
+  auto idx = upsample_idx(root_coord[2], upsample_z);
+  auto root_coord_upsampled = GridCoord(root_coord[0], root_coord[1], idx);
+
+  cout << idx << '\n';
+
+  // ASSERT_EQ(idx, root_coord[2] * upsample_z + upsample_z / 2);
+  ASSERT_EQ(idx, root_coord[2] * upsample_z);
+
+  uint16_t *inimg1d = new uint16_t[tol_sz];
+  VID_t actual_selected = create_image(5, inimg1d, grid_size, 100, root_vid);
+
+  if (print) {
+    print_image_3D(inimg1d, grid_extents);
+  }
+
+  // auto topology_grid = create_vdb_grid(extended_grid_extents, 0);
+  auto float_grid = openvdb::FloatGrid::create();
+  convert_buffer_to_vdb_acc(inimg1d, extended_grid_extents, zeros(), zeros(),
+                            float_grid->getAccessor(), 0, upsample_z);
+
+  if (print) {
+    cout << "float grid\n";
+    print_vdb_mask(float_grid->getConstAccessor(), extended_grid_extents);
+  }
+
+  std::vector<PositionT> positions;
+  convert_buffer_to_vdb(inimg1d, extended_grid_extents, zeros(), zeros(),
+                        positions, 0, upsample_z);
+  auto topology_grid =
+      create_point_grid(positions, extended_grid_extents, get_transform());
+
+  std::cout << "created vdb grid\n";
+
+  topology_grid->tree().prune();
+
+  if (print) {
+    print_vdb_mask(topology_grid->getConstAccessor(), extended_grid_extents);
+
+    // print_all_points(
+    // topology_grid,
+    // openvdb::math::CoordBBox(
+    // zeros(), extended_grid_extents));
+
+    // print_image_3D(inimg1d, extended_grid_extents);
   }
 }
 
@@ -1069,7 +1411,7 @@ TEST(CompareTree, All) {
   auto interval_size = grid_size;
   VID_t block_size = 2;
 
-  auto args = get_args(grid_size, interval_size, block_size, 100, 1);
+  auto args = get_args(grid_size, interval_size, block_size, 100, 1, false, true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
 
@@ -1300,34 +1642,56 @@ TEST(CheckGlobals, DISABLED_AllFifo) {
 //}
 //}
 
-TEST(CopyToPointGrid, CopyToPointGrid) {
-  VID_t grid_size = 8;
-  auto grid_extents = GridCoord(grid_size);
-  auto bbox = openvdb::CoordBBox(zeros(), grid_extents);
-  auto tcase = 7;
-  double slt_pct = 100;
-  auto print_all = true;
-  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-                       /*force_regenerate_image=*/false,
-                       /*input_is_vdb=*/true,
-                       /*type=*/"float");
-  auto recut = Recut<uint16_t>(args);
-  // load an example float grid from pregenreated
-  auto root_coords = recut.initialize();
+// TEST(VDB, DISABLED_FloatToPoint) {
+// bool print_all = true;
+// auto grid_size = 8;
+// GridCoord lengths(grid_size);
+// auto args = get_args(grid_size, grid_size, grid_size, 100, 7,
+//[>force_regenerate_image=<]false,
+//[>input_is_vdb=<]true,
+//[>type<] "float");
+// auto recut = Recut<uint16_t>(args);
+// auto root_coords = recut.initialize();
 
-  if (print_all) {
-    cout << "print_float:\n";
-    print_vdb_mask(recut.input_grid->getAccessor(), grid_extents);
+// if (print_all) {
+// print_vdb_mask(recut.input_grid->getConstAccessor(), lengths);
+// print_vdb_mask(recut.topology_grid->getConstAccessor(), lengths);
+// print_all_points(recut.topology_grid, recut.image_bbox);
+//}
 
-    cout << "print_topology:\n";
-    print_vdb_mask(recut.topology_grid->getAccessor(), grid_extents);
+// auto leaf = recut.topology_grid->probeLeaf();
+//{
+// auto root_ind = leaf.beginIndexVoxel(root_coords[0].first);
+// ASSERT_FALSE(root_ind);
+//}
 
-    cout << "print all points:\n";
-    print_all_points(recut.topology_grid, bbox);
-  }
+//// Determine the number of points / voxel and points / leaf.
+// openvdb::Index LEAF_VOXELS =
+// EnlargedPointDataGrid::TreeType::LeafNodeType::SIZE;
+// openvdb::Index pointsPerLeaf = VOXEL_POINTS * LEAF_VOXELS;
 
-  // for each on in flaot grid, is there a corresponding point
-}
+//// add indices to topology grid
+//// Iterate over the leaf nodes in the point tree.
+// for (auto leafIter = recut.topology_grid->tree().beginLeaf(); leafIter;
+//++leafIter) {
+//// Initialize the voxel offsets
+// openvdb::Index offset(0);
+// for (openvdb::Index index = 0; index < LEAF_VOXELS; ++index) {
+// offset += VOXEL_POINTS;
+// leafIter->setOffsetOn(index, offset);
+//}
+//}
+
+//{
+// auto root_ind = leaf.beginIndexVoxel(root_coords[0].first);
+// ASSERT_TRUE(root_ind);
+//}
+
+//// show correct
+// print_all_points(recut.topology_grid, recut.image_bbox);
+
+//// recut.activa();
+//}
 
 TEST(Update, EachStageIteratively) {
   bool print_all = false;
@@ -1483,7 +1847,7 @@ TEST(Update, EachStageIteratively) {
                   if (check_xy) {
                     // build original production version
                     app2_xy_radii_grid[i] = get_radius_hanchuan_XY(
-                        ground_truth_image.get(), grid_size, i,
+                        ground_truth_image.get(), grid_extents, i,
                         tile_thresholds->bkg_thresh);
                   }
                   ++total_visited;
@@ -1663,7 +2027,8 @@ TEST(Update, EachStageIteratively) {
               {
                 // save the topologyto output_tree before starting
                 std::cout << iteration_trace.str();
-                recut.convert_to_markers(args.output_tree, false);
+                args.output_tree =
+                    convert_to_markers(recut.topology_grid, false);
                 auto stage = std::string{"prune"};
                 recut.activate_vids(recut.topology_grid, root_coords, stage,
                                     recut.map_fifo, recut.connected_map);
@@ -1690,8 +2055,8 @@ TEST(Update, EachStageIteratively) {
                 std::cout << iteration_trace.str();
                 recut.print_to_swc();
 
-                // recut.convert_to_markers(recut_output_tree_prune, true);
-                recut.convert_to_markers(recut_output_tree_prune, false);
+                recut_output_tree_prune =
+                    convert_to_markers(recut.topology_grid, false);
               }
 
               auto mask = std::make_unique<uint8_t[]>(tol_sz);
@@ -1840,13 +2205,13 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
   RecordProperty("slt_pct", slt_pct);
   bool check_against_selected = std::get<5>(GetParam());
   bool check_against_app2 = std::get<6>(GetParam());
+
+  bool check_coverage_results = false;
   // regenerating image is random and done at run time
   // if you were to set to true tcase 4 would have a mismatch
   // with the loaded image
-  bool force_regenerate_image = true;
-#ifdef USE_MCP3D
-  // force_regenerate_image = false;
-#endif
+  bool force_regenerate_image = GEN_IMAGE;
+
   bool prune = true;
   std::string stage;
   auto grid_extents = GridCoord(grid_size);
@@ -1866,21 +2231,36 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
   cout << "VDB input type " << args.type_ << '\n';
   // uint16_t is image_t here
   TileThresholds<uint16_t> *tile_thresholds;
-  bool print_all = true;
+  bool print_all = false;
 
   auto recut = Recut<uint16_t>(args);
   auto root_coords = recut.initialize();
+  cout << "recut.image_bbox " << recut.image_bbox << '\n';
   recut.activate_vids(recut.topology_grid, root_coords, "connected",
                       recut.map_fifo, recut.connected_map);
 
-  if (print_all) {
-    cout << "print_float:\n";
-    print_vdb_mask(recut.input_grid->getAccessor(), grid_extents);
-  }
+  auto dim = recut.image_bbox.dim().offsetBy(-1);
+  cout << dim << '\n';
+  cout << recut.image_lengths << '\n';
+  ASSERT_EQ(coord_prod_accum(dim), coord_prod_accum(recut.image_lengths));
 
   std::unique_ptr<uint16_t[]> mask;
   if (check_against_app2) {
-    mask = create_vdb_mask(recut.topology_grid, recut.image_bbox);
+    // mask = create_vdb_mask(recut.topology_grid, recut.image_bbox);
+    // test using the actual image buffer
+    if (const char *env_p = std::getenv("TEST_FLOAT_IMAGE")) {
+      std::cout << "Using $TEST_FLOAT_IMAGE environment variable: " << env_p
+                << '\n';
+      auto base_grid = read_vdb_file(env_p);
+      auto input_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
+      mask = copy_vdb_to_dense_buffer(input_grid, recut.image_bbox);
+    } else {
+      std::cout
+          << "Warning likely fatal: must run: export "
+             "TEST_FLOAT_IMAGE=\"abs/path/to/image\" to set the environment "
+             "variable\n\n";
+      exit(1);
+    }
     if (print_all) {
       print_image_3D(mask.get(), grid_extents);
     }
@@ -1955,9 +2335,8 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
 
   // save the output_tree early before it is pruned to compare
   // to app2
-  recut.convert_to_markers(
-      args.output_tree,
-      /*accept_band*/ false); // this fills args.output_tree
+  args.output_tree =
+      convert_to_markers(recut.topology_grid, /*accept_band*/ false);
 
   // PRUNE
   auto recut_output_tree_prune = std::vector<MyMarker *>();
@@ -1970,24 +2349,26 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
     assertm(args.output_tree.size() != 0, "Can not have 0 selected output");
     recut_output_tree_prune.reserve(args.output_tree.size() / 100);
 
-    std::cout << "Recut prune\n";
-    print_all_points(recut.topology_grid, recut.image_bbox, "label");
+    if (print_all) {
+      std::cout << "Recut prune\n";
+      print_all_points(recut.topology_grid, recut.image_bbox, "label");
 
-    std::cout << "Recut radii post prune\n";
-    print_all_points(recut.topology_grid, recut.image_bbox, "radius");
+      std::cout << "Recut radii post prune\n";
+      print_all_points(recut.topology_grid, recut.image_bbox, "radius");
 
-    std::cout << "Recut post prune valid\n";
-    print_all_points(recut.topology_grid, recut.image_bbox, "valid");
+      std::cout << "Recut post prune valid\n";
+      print_all_points(recut.topology_grid, recut.image_bbox, "valid");
 
-    // std::cout << "Recut parent post prune\n";
-    // print_all_points(recut.topology_grid, recut.image_bbox, "parent");
+      // std::cout << "Recut parent post prune\n";
+      // print_all_points(recut.topology_grid, recut.image_bbox, "parent");
+    }
 
     recut.adjust_parent();
 
     recut.print_to_swc();
 
-    recut.convert_to_markers(
-        recut_output_tree_prune,
+    recut_output_tree_prune = convert_to_markers(
+        recut.topology_grid,
         /*accept_band*/ false); // this fills args.output_tree
   }
 
@@ -2058,9 +2439,9 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
     std::vector<MyMarker> targets;
     auto timer = new high_resolution_timer();
     fastmarching_tree(root_markers, targets, mask.get(), app2_output_tree,
-                      grid_size, grid_size, grid_size, 1,
-                      tile_thresholds->bkg_thresh, tile_thresholds->max_int,
-                      tile_thresholds->min_int);
+                      recut.image_lengths[0], recut.image_lengths[1],
+                      recut.image_lengths[2], 1, tile_thresholds->bkg_thresh);
+    // tile_thresholds->max_int, tile_thresholds->min_int);
 
     auto interval_extents = grid_extents;
     if (print_all) {
@@ -2107,8 +2488,10 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
 
     if (prune) {
       // run the seq version from app2 to compare
-      happ(app2_output_tree, app2_output_tree_prune, mask.get(), grid_size,
-           grid_size, grid_size, tile_thresholds->bkg_thresh, 0.);
+      happ(app2_output_tree, app2_output_tree_prune, mask.get(),
+           recut.image_lengths[0], recut.image_lengths[1],
+           recut.image_lengths[2], tile_thresholds->bkg_thresh, 0.);
+      cout << "Finished app2 happ\n";
 
       if (print_all) {
         std::cout << "APP2 prune\n";
@@ -2118,59 +2501,64 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
         print_marker_3D(app2_output_tree_prune, interval_extents, "radius");
       }
 
-      auto prune_mask = std::make_unique<uint8_t[]>(tol_sz);
-      create_coverage_mask_accurate(recut_output_tree_prune, prune_mask.get(),
-                                    grid_extents);
-      auto results = check_coverage(prune_mask.get(), mask.get(), tol_sz,
-                                    tile_thresholds->bkg_thresh);
+      if (check_coverage_results) {
+        auto prune_mask = std::make_unique<uint8_t[]>(tol_sz);
+        create_coverage_mask_accurate(recut_output_tree_prune, prune_mask.get(),
+                                      grid_extents);
+        auto results = check_coverage(prune_mask.get(), mask.get(), tol_sz,
+                                      tile_thresholds->bkg_thresh);
 
-      auto app2_mask = std::make_unique<uint8_t[]>(tol_sz);
-      create_coverage_mask_accurate(app2_output_tree_prune, app2_mask.get(),
-                                    grid_extents);
-      auto app2_results = check_coverage(app2_mask.get(), mask.get(), tol_sz,
-                                         tile_thresholds->bkg_thresh);
+        auto app2_mask = std::make_unique<uint8_t[]>(tol_sz);
+        create_coverage_mask_accurate(app2_output_tree_prune, app2_mask.get(),
+                                      grid_extents);
+        auto app2_results = check_coverage(app2_mask.get(), mask.get(), tol_sz,
+                                           tile_thresholds->bkg_thresh);
 
-      if (print_all) {
-        std::cout << "Recut coverage mask\n";
-        print_image_3D(prune_mask.get(), interval_extents);
+        if (print_all) {
+          std::cout << "Recut coverage mask\n";
+          print_image_3D(prune_mask.get(), interval_extents);
 
-        std::cout << "APP2 coverage mask\n";
-        print_image_3D(app2_mask.get(), interval_extents);
-      }
+          std::cout << "APP2 coverage mask\n";
+          print_image_3D(app2_mask.get(), interval_extents);
+        }
 
-      // compare_tree will print to log matches, false positive and negative
-      // results = compare_tree(app2_output_tree_prune,
-      // recut_output_tree_prune, grid_size, grid_size, recut);
+        // compare_tree will print to log matches, false positive and negative
+        // results = compare_tree(app2_output_tree_prune,
+        // recut_output_tree_prune, grid_size, grid_size, recut);
 
-      stage = "prune";
-      RecordProperty("False positives " + stage,
-                     results->false_positives.size());
-      RecordProperty("False negatives " + stage,
-                     results->false_negatives.size());
-      RecordProperty("Match count " + stage, results->match_count);
-      RecordProperty("Match % " + stage,
-                     (100 * results->match_count) / args.output_tree.size());
-      RecordProperty("Duplicate count " + stage, results->duplicate_count);
-      RecordProperty("Total nodes " + stage, args.output_tree.size());
-      RecordProperty("Total pruned nodes " + stage,
-                     recut_output_tree_prune.size());
-      RecordProperty("Compression factor " + stage,
-                     args.output_tree.size() / recut_output_tree_prune.size());
+        stage = "prune";
+        RecordProperty("False positives " + stage,
+                       results->false_positives.size());
+        RecordProperty("False negatives " + stage,
+                       results->false_negatives.size());
+        RecordProperty("Match count " + stage, results->match_count);
+        RecordProperty("Match % " + stage,
+                       (100 * results->match_count) / args.output_tree.size());
+        RecordProperty("Duplicate count " + stage, results->duplicate_count);
+        RecordProperty("Total nodes " + stage, args.output_tree.size());
+        RecordProperty("Total pruned nodes " + stage,
+                       recut_output_tree_prune.size());
+        RecordProperty("Compression factor " + stage,
+                       args.output_tree.size() /
+                           recut_output_tree_prune.size());
 
-      stage = "app2 prune";
-      RecordProperty("False positives " + stage,
-                     app2_results->false_positives.size());
-      RecordProperty("False negatives " + stage,
-                     app2_results->false_negatives.size());
-      RecordProperty("Match count " + stage, app2_results->match_count);
-      RecordProperty("Match % " + stage, (100 * app2_results->match_count) /
-                                             app2_output_tree.size());
-      RecordProperty("Duplicate count " + stage, app2_results->duplicate_count);
-      RecordProperty("Total nodes " + stage, app2_output_tree.size());
-      RecordProperty("Total pruned nodes " + stage,
-                     app2_output_tree_prune.size());
-      RecordProperty("Compression factor " + stage,
-                     app2_output_tree.size() / app2_output_tree_prune.size());
+        stage = "app2 prune";
+        RecordProperty("False positives " + stage,
+                       app2_results->false_positives.size());
+        RecordProperty("False negatives " + stage,
+                       app2_results->false_negatives.size());
+        RecordProperty("Match count " + stage, app2_results->match_count);
+        RecordProperty("Match % " + stage, (100 * app2_results->match_count) /
+                                               app2_output_tree.size());
+        RecordProperty("Duplicate count " + stage,
+                       app2_results->duplicate_count);
+        RecordProperty("Total nodes " + stage, app2_output_tree.size());
+        RecordProperty("Total pruned nodes " + stage,
+                       app2_output_tree_prune.size());
+        RecordProperty("Compression factor " + stage,
+                       app2_output_tree.size() / app2_output_tree_prune.size());
+
+      } // check_coverage_results
 
       // it's a problem if two markers with same vid are in a results vector
       // ASSERT_EQ(results->duplicate_count, 0);
@@ -2189,6 +2577,11 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
       //<< "In comparison, app2 is " << app2_results->false_positives.size();
       // EXPECT_EQ(results->false_negatives.size(), 0)
       //<< "In comparison, app2 is " << app2_results->false_negatives.size();
+
+      // print all SWC files for visualization of outputs
+      marker_to_swc_file("app2-checks-if.swc", app2_output_tree_prune);
+      // recut
+      marker_to_swc_file("recut-checks-if.swc", recut_output_tree_prune);
     }
   }
 #endif
@@ -2198,11 +2591,13 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
 INSTANTIATE_TEST_CASE_P(
     RecutPipelineTests, RecutPipelineParameterTests,
     ::testing::Values(
-        // std::make_tuple(4, 4, 4, 0, 100., true, true), // 0
-        // std::make_tuple(4, 4, 4, 1, 100., true, true), // 1
-        // std::make_tuple(4, 4, 4, 2, 100., true, true), // 2
-        // std::make_tuple(4, 2, 2, 2, 100., true, true)  // 3
-        std::make_tuple(8, 8, 8, 6, .08, true, true) // 3
+        // check if using better parent characteristics for parent traversal
+        // improves the overall swc quality and proofreadability
+        std::make_tuple(2048, 2048, 2048, 6, 100., false, true) // 0
+        // std::make_tuple(4, 4, 4, 0, 100., true, false), // 0
+        // std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
+        // std::make_tuple(4, 4, 4, 2, 100., true, false), // 2
+        // std::make_tuple(4, 2, 2, 2, 100., true, false)  // 3
         //#ifdef USE_MCP3D
         //,
         //// check_against_app2 (final boolean below) currently uses

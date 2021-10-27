@@ -5,6 +5,7 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
+#define assertm(exp, msg) assert(((void)msg, exp))
 
 using std::cout;
 using std::ios;
@@ -45,12 +46,16 @@ struct Bitfield {
   Bitfield(uint8_t field) : field_(field) {}
 };
 
+typedef VID_t handle_t; // FIXME switch to from VID_t
+
 struct VertexAttr {
   OffsetCoord offsets;
   OffsetCoord parent;
   uint8_t radius = std::numeric_limits<uint8_t>::max();
   // most sig. bits (little-endian) refer to state : 1 bytes
   struct Bitfield edge_state;
+  float value;
+  handle_t handle;
 
   VertexAttr() : edge_state(0), radius(std::numeric_limits<uint8_t>::max()) {}
 
@@ -225,5 +230,187 @@ struct VertexAttr {
   // 4   | prune visit
   // 5   | tombstone
 };
+
+template <class T>
+class NeighborHeap // Basic Min heap
+{
+public:
+  NeighborHeap() {
+    // FIXME this is a disaster
+    elems.reserve(10000);
+  }
+
+  void print(std::string stage) const {
+    if (stage == "radius") {
+      for (auto &vert : elems) {
+        cout << +(vert->radius) << " ";
+      }
+    } else {
+      for (auto &vert : elems) {
+        cout << +(vert->value) << " ";
+      }
+    }
+    cout << '\n';
+  }
+
+  // equivalent to peek, read only
+  T *top() const {
+    if (empty()) {
+      throw;
+      return 0;
+    } else {
+      return elems[0];
+    }
+  }
+
+  void check_empty() const {
+    if (empty())
+      throw;
+  }
+
+  // remove top element
+  T *pop(VID_t ib, std::string cmp_field) {
+    check_empty();
+    T *min_elem = elems[0];
+
+    if (elems.size() == 1)
+      elems.clear();
+    else {
+      elems[0] = elems[elems.size() - 1];
+      elems[0]->handle = 0; // update handle value
+      elems.erase(elems.begin() + elems.size() - 1);
+      down_heap(0, ib, cmp_field);
+    }
+    // min_elem->handles.erase(ib);
+    // min_elem->handles[ib] = std::numeric_limits<handle_t>::max();
+    min_elem->handle = std::numeric_limits<handle_t>::max();
+
+    stats_update();
+    return min_elem;
+  }
+
+  // FIXME return type to handle_t later
+  void push(T *t, VID_t ib, std::string cmp_field) {
+    elems.push_back(t);
+    // mark handle such that all swaps are recorded in correct handle
+    t->handle = elems.size() - 1;
+    up_heap(elems.size() - 1, ib, cmp_field);
+
+    // check for a new max_size
+    if (elems.size() > this->max_size) {
+      this->max_size = elems.size();
+    }
+
+    this->op_count++;
+    this->cumulative_count += this->elems.size();
+    stats_update();
+  }
+
+  handle_t find(handle_t vid) const {
+    for (handle_t i = 0; i < elems.size(); i++) {
+      if (elems[i]->vid == vid) {
+        return i;
+      }
+    }
+    assertm(false, "Did not find vid in heap on call to vid"); // did not find
+    return std::numeric_limits<handle_t>::max();
+  }
+
+  bool empty() const { return elems.empty(); }
+
+  template <typename TNew>
+  void update(T *updated_node, VID_t ib, TNew new_field,
+              std::string cmp_field) {
+    handle_t id = updated_node->handle;
+    check_empty();
+    assertm(elems[id]->vid == updated_node->vid, "VID doesn't match");
+    assertm(elems[id]->handle == id, "handle doesn't match");
+    if (cmp_field == "value") {
+      auto old_value = elems[id]->value;
+      elems[id]->value = new_field;
+      // elems[id]->handle = id;
+      if (new_field < old_value)
+        up_heap(id, ib, cmp_field);
+      else if (new_field > old_value)
+        down_heap(id, ib, cmp_field);
+    } else if (cmp_field == "radius") {
+      auto old_radius = elems[id]->radius;
+      elems[id]->radius = new_field;
+      // elems[id]->handle = id;
+      if (new_field < old_radius)
+        up_heap(id, ib, cmp_field);
+      else if (new_field > old_radius)
+        down_heap(id, ib, cmp_field);
+    } else {
+      assertm(false, "`cmp_field` arg not recognized");
+    }
+  }
+  int size() { return elems.size(); }
+
+  uint64_t op_count = 0;
+  uint64_t max_size = 0;
+  uint64_t cumulative_count = 0;
+
+private:
+  vector<T *> elems;
+
+  // keep track of total sizes summed across all valid
+  void stats_update() {
+    this->op_count++;
+    this->cumulative_count += this->elems.size();
+  }
+
+  // used for indexing handle
+  bool swap_heap(int id1, int id2, VID_t ib, std::string cmp_field) {
+    if (id1 < 0 || id1 >= elems.size() || id2 < 0 || id2 >= elems.size())
+      return false;
+    if (id1 == id2)
+      return false;
+    int pid = id1 < id2 ? id1 : id2;
+    int cid = id1 > id2 ? id1 : id2;
+    assert(cid == 2 * (pid + 1) - 1 || cid == 2 * (pid + 1));
+
+    if (cmp_field == "radius") {
+      if (elems[pid]->radius <= elems[cid]->radius)
+        return false;
+    } else {
+      if (elems[pid]->value <= elems[cid]->value)
+        return false;
+    }
+    T *tmp = elems[pid];
+    elems[pid] = elems[cid];
+    elems[cid] = tmp;
+    elems[pid]->handle = pid;
+    elems[cid]->handle = cid;
+    return true;
+  }
+
+  void up_heap(int id, VID_t ib, std::string cmp_field) {
+    int pid = (id + 1) / 2 - 1;
+    if (swap_heap(id, pid, ib, cmp_field))
+      up_heap(pid, ib, cmp_field);
+  }
+
+  void down_heap(int id, VID_t ib, std::string cmp_field) {
+    int cid1 = 2 * (id + 1) - 1;
+    int cid2 = 2 * (id + 1);
+    if (cid1 >= elems.size())
+      return;
+    else if (cid1 == elems.size() - 1) {
+      swap_heap(id, cid1, ib, cmp_field);
+    } else if (cid1 < elems.size() - 1) {
+      int cid;
+      if (cmp_field == "radius") {
+        cid = elems[cid1]->radius < elems[cid2]->radius ? cid1 : cid2;
+      } else {
+        cid = elems[cid1]->value < elems[cid2]->value ? cid1 : cid2;
+      }
+      if (swap_heap(id, cid, ib, cmp_field))
+        down_heap(cid, ib, cmp_field);
+    }
+  }
+};
+
+using local_heap = NeighborHeap<VertexAttr>;
 
 #endif

@@ -1,11 +1,15 @@
 #pragma once
 
+#ifdef USE_MCP3D
+#include "image/mcp3d_image_maths.hpp"
+#endif
 #include "recut_parameters.hpp"
 #include "tile_thresholds.hpp"
 #include "utils.hpp"
 #include <algorithm>
 #include <bits/stdc++.h>
 #include <bitset>
+#include <cstddef>
 #include <cstdlib>
 #include <deque>
 #include <execution>
@@ -105,6 +109,7 @@ public:
   RecutCommandLineArgs *args;
   RecutParameters *params;
   std::map<GridCoord, std::deque<VertexAttr>> map_fifo;
+  std::map<GridCoord, local_heap> heap_map;
   std::map<GridCoord, std::deque<VertexAttr>> connected_map;
 
   // interval specific global data structures
@@ -117,13 +122,16 @@ public:
   void print_to_swc();
   void adjust_parent();
   void prune_radii();
+  void prune_branch();
+  void convert_topology();
+
+  void partition_components(
+      std::vector<std::pair<GridCoord, uint8_t>> root_pair, bool prune);
 
   void initialize_globals(const VID_t &grid_interval_size,
                           const VID_t &interval_block_size);
 
   bool filter_by_label(VertexAttr *v, bool accept_tombstone);
-  template <typename FilterP, typename Pred>
-  void visit(FilterP keep_if, Pred predicate);
 
   image_t get_img_val(const image_t *tile, GridCoord coord);
   inline VID_t rotate_index(VID_t img_coord, const VID_t current,
@@ -156,6 +164,17 @@ public:
   void check_ghost_update(VID_t interval_id, VID_t block_id,
                           GridCoord dst_coord, VertexAttr *dst,
                           std::string stage, T vdb_accessor);
+  template <typename IndT, typename FlagsT, typename ParentsT, typename ValueT,
+            typename PointIter, typename UpdateIter>
+  bool accumulate_value(const image_t *tile, VID_t interval_id, VID_t block_id,
+                        GridCoord dst_coord, IndT dst_ind,
+                        OffsetCoord offset_to_current, VID_t &revisits,
+                        const TileThresholds<image_t> *tile_thresholds,
+                        bool &found_adjacent_invalid, PointIter point_leaf,
+                        UpdateIter update_leaf, FlagsT flags_handle,
+                        ParentsT parents_handle, ValueT value_handle,
+                        GridCoord current_coord, IndT current_ind,
+                        float current_vox);
   template <typename T2, typename FlagsT, typename ParentsT, typename PointIter,
             typename UpdateIter>
   bool accumulate_connected(const image_t *tile, VID_t interval_id,
@@ -166,11 +185,6 @@ public:
                             UpdateIter update_leaf, FlagsT flags_handle,
                             ParentsT parents_handle,
                             std::deque<VertexAttr> &connected_fifo);
-  bool accumulate_value(const image_t *tile, VID_t interval_id,
-                        GridCoord dst_coord, VID_t block_id,
-                        struct VertexAttr *current, VID_t &revisits,
-                        const TileThresholds<image_t> *tile_thresholds,
-                        bool &found_background);
   bool is_covered_by_parent(VID_t interval_id, VID_t block_id,
                             VertexAttr *current);
   template <class Container, typename IndT, typename RadiusT, typename FlagsT,
@@ -199,6 +213,11 @@ public:
                          const TileThresholds<image_t> *tile_thresholds,
                          std::deque<VertexAttr> &connected_fifo,
                          std::deque<VertexAttr> &fifo, T2 leaf_iter);
+  template <class Container, typename T2>
+  void value_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
+                  std::string stage,
+                  const TileThresholds<image_t> *tile_thresholds,
+                  Container &fifo, VID_t revisits, T2 leaf_iter);
   template <class Container, typename T2>
   void connected_tile(const image_t *tile, VID_t interval_id, VID_t block_id,
                       std::string stage,
@@ -234,9 +253,6 @@ public:
   GridCoord get_input_image_lengths(bool force_regenerate_image,
                                     RecutCommandLineArgs *args);
   std::vector<std::pair<GridCoord, uint8_t>> initialize();
-  template <typename vertex_t>
-  void convert_to_markers(std::vector<vertex_t> &outtree,
-                          bool accept_tombstone = false);
   inline VID_t sub_block_to_block_id(VID_t iblock, VID_t jblock, VID_t kblock);
   template <class Container> void setup_radius(Container &fifo);
   void
@@ -356,7 +372,7 @@ OffsetCoord Recut<image_t>::v_to_off(VID_t interval_id, VID_t block_id,
                    this->block_lengths);
 }
 
-// adds all markers to root_coords
+// adds all markers to root_pair
 template <class image_t>
 std::vector<std::pair<GridCoord, uint8_t>>
 Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
@@ -393,27 +409,43 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
         const auto full_marker_name =
             params->marker_file_path() + marker_file.path().filename().string();
         auto markers = readMarker_file(full_marker_name);
-#ifdef SOMA_RADII
         assertm(markers.size() == 1, "only 1 marker file per soma");
+
         if (markers[0].radius == 0) {
           std::string mass; // mass is the last number of the file name
           while (std::getline(fn, mass, '_')) {
           }
+          assertm(!mass.empty(), "can not deduce radius size of input marker");
           markers[0].radius =
               static_cast<int>(std::cbrt(std::stoi(mass) / (4 * PI / 3)));
         }
+#ifdef FULL_PRINT
+        cout << "Read marker assigning radius: " << markers[0].radius << '\n';
 #endif
+
+        // delete this later
+        // cout << "Warning: temporarily adjusting x,y,z of marker\n";
+        // markers[0].x += this->image_offsets[0];
+        // markers[0].y += this->image_offsets[1];
+        // markers[0].z += this->image_offsets[2];
+
         inmarkers.insert(inmarkers.end(), markers.begin(), markers.end());
       });
 
   // transform to <coord, radius> of all somas/roots
-  auto roots = inmarkers | rng::views::transform([](auto marker) {
-                 return std::pair{
-                     ones() + GridCoord(marker.x / DOWNSAMPLE_MARKER,
-                                        marker.y / DOWNSAMPLE_MARKER, marker.z),
-                     static_cast<uint8_t>(marker.radius)};
-               }) |
-               rng::to_vector;
+  auto roots =
+      inmarkers | rng::views::transform([this](auto marker) {
+        return std::pair{
+            ones() + GridCoord(marker.x / params->downsample_factor_,
+                               marker.y / params->downsample_factor_,
+                               upsample_idx(params->upsample_z_, marker.z)),
+            static_cast<uint8_t>(marker.radius)};
+      }) |
+      rng::to_vector;
+
+#ifdef LOG
+  cout << "Roots in dir: " << roots.size() << '\n';
+#endif
 
   return roots | rng::views::remove_if([this, &local_bbox](auto coord_radius) {
            auto [coord, radius] = coord_radius;
@@ -430,6 +462,13 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
                        "mismatched or major inaccuracies in segmentation\n ";
 #endif
              }
+           } else {
+#ifdef LOG
+             cout << "Warning: root at " << coord << " in image bbox "
+                  << local_bbox
+                  << " is not within the images bounding box so it is "
+                     "ignored\n";
+#endif
            }
            return true; // remove it
          }) |
@@ -457,6 +496,7 @@ void Recut<image_t>::activate_vids(
     const std::vector<std::pair<GridCoord, uint8_t>> &roots,
     const std::string stage, std::map<GridCoord, std::deque<VertexAttr>> &fifo,
     std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo) {
+
   assertm(!(roots.empty()), "Must have at least one root");
 
   // Iterate over leaf nodes that contain topology (active)
@@ -466,8 +506,6 @@ void Recut<image_t>::activate_vids(
     // std::cout << "Leaf BBox: " << leaf_bbox << '\n';
 
     // FILTER for those in this leaf
-    // auto leaf_roots = remove_outside_bound(roots, leaf_bbox) |
-    // auto leaf_roots = roots | remove_outside_bound | rng::to_vector;
     auto leaf_roots = roots | rng::views::transform([](auto coord_radius) {
                         return coord_radius.first;
                       }) |
@@ -509,12 +547,17 @@ void Recut<image_t>::activate_vids(
 
     auto temp_coord = new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH);
 
-    if (stage == "connected") {
+    if (stage == "connected" || stage == "value") {
 
       rng::for_each(leaf_roots, [&](auto coord) {
         auto ind = leaf_iter->beginIndexVoxel(coord);
+        if (this->args->type_ == "float") {
+          assertm(this->input_grid->tree().isValueOn(coord),
+                  "All root coords must be filtered with respect to topology");
+        }
         assertm(ind,
                 "All root coords must be filtered with respect to topology");
+
         // place a root with proper vid and parent of itself
         // set flags as root
         set_selected(flags_handle, ind);
@@ -522,9 +565,17 @@ void Recut<image_t>::activate_vids(
         parents_handle.set(*ind, zeros_off());
 
         auto offsets = coord_mod(coord, temp_coord);
-        // cout << "added to " << leaf_iter->origin() << '\n';
-        connected_fifo[leaf_iter->origin()].emplace_back(
-            /*edge_state*/ flags_handle.get(*ind), offsets, zeros_off());
+        if (stage == "connected") {
+          connected_fifo[leaf_iter->origin()].emplace_back(
+              /*edge_state*/ flags_handle.get(*ind), offsets, zeros_off());
+        } else if (stage == "value") {
+          auto block_id = coord_img_to_block_id(leaf_iter->origin());
+          // ignore the input radius size, use the root flags set above
+          auto rootv =
+              new VertexAttr(flags_handle.get(*ind),
+                             /* offsets*/ coord_sub(coord, leaf_bbox.min()), 0);
+          heap_map[leaf_iter->origin()].push(rootv, block_id, stage);
+        }
       });
 
     } else if (stage == "prune") {
@@ -758,6 +809,108 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t block_id,
 }
 
 /**
+ * accumulate is the smallest scope function of fast marching, it can only
+ * operate on a VertexAttr (voxel) that are within the current interval_id and
+ * block_id, since it is potentially adding these vertices to the unique heap of
+ * interval_id and block_id. only one parent when selected. If one of these
+ * vertexes on the edge but still within interval_id and block_id domain is
+ * updated it is the responsibility of check_ghost_update to take note of the
+ * update such that this update is propagated to the relevant interval and block
+ * see vertex in question block_id : current block id current : minimum vertex
+ * attribute selected
+ */
+template <class image_t>
+template <typename IndT, typename FlagsT, typename ParentsT, typename ValueT,
+          typename PointIter, typename UpdateIter>
+bool Recut<image_t>::accumulate_value(
+    const image_t *tile, VID_t interval_id, VID_t block_id, GridCoord dst_coord,
+    IndT dst_ind, OffsetCoord offset_to_current, VID_t &revisits,
+    const TileThresholds<image_t> *tile_thresholds,
+    bool &found_adjacent_invalid, PointIter point_leaf, UpdateIter update_leaf,
+    FlagsT flags_handle, ParentsT parents_handle, ValueT value_handle,
+    GridCoord current_coord, IndT current_ind, float current_vox) {
+
+#ifdef FULL_PRINT
+  cout << "\tcheck dst: " << coord_to_str(dst_coord);
+  cout << " bkg_thresh " << +(tile_thresholds->bkg_thresh) << '\n';
+#endif
+
+  // skip backgrounds
+  // the image voxel of this dst vertex is the primary method to exclude this
+  // pixel/vertex for the remainder of all processing
+  auto found_background = false;
+  image_t dst_vox;
+  if (this->input_is_vdb) {
+    // input grid and point grid are synonymous in terms of active topology
+    // on active point was already found to be foreground
+    if (point_leaf->isValueOn(dst_coord)) {
+      dst_vox = this->input_grid->tree().getValue(dst_coord);
+    } else {
+      found_background = true;
+    }
+  } else {
+    dst_vox = get_img_val(tile, dst_coord);
+    if (dst_vox <= tile_thresholds->bkg_thresh) {
+      found_background = true;
+    }
+  }
+
+  if (found_background) {
+    found_adjacent_invalid = true;
+#ifdef FULL_PRINT
+    cout << "\t\tfailed tile_thresholds->bkg_thresh" << '\n';
+#endif
+    return false;
+  }
+
+  // current march values
+  auto current_value = value_handle.get(*current_ind);
+  auto dst_value = value_handle.get(*dst_ind);
+
+  // solve for update value
+  // dst_id linear idx relative to full image domain
+  float updated_val_attr = static_cast<float>(
+      current_value + (tile_thresholds->calc_weight(current_vox) +
+                       tile_thresholds->calc_weight(dst_vox)) *
+                          0.5);
+
+  // cout << "updated value " << updated_val_attr << '\n';
+
+  // check for updates according to criterion
+  // starting background values are 0
+  // traditionally background values should be INF or FLOAT_MAX
+  // but 0s are more compressible and simpler
+  // must check all are not root though since root has distance 0 by definition
+  if (((dst_value == 0) && !is_root(flags_handle, dst_ind)) ||
+      (dst_value > updated_val_attr)) {
+    // all dsts are guaranteed within this domain
+    // skip already selected vertices too
+    if (is_selected(flags_handle, dst_ind)) {
+      revisits += 1;
+      return false;
+    }
+
+    // set parents, mark selected in topology
+    set_selected(flags_handle, dst_ind);
+    set_if_active(update_leaf, dst_coord);
+    parents_handle.set(*dst_ind, offset_to_current);
+    auto offset = coord_mod(dst_coord, this->block_lengths);
+
+    // ensure traces a path back to root
+    // TODO optimize away copy construction of the vert
+    auto vert = new VertexAttr(Bitfield(flags_handle.get(*dst_ind)), offset,
+                               /*parent*/ offset_to_current, updated_val_attr);
+    heap_map[point_leaf->origin()].push(vert, block_id, "value");
+
+#ifdef FULL_PRINT
+    cout << "\tadded new dst to active set, vid: " << dst_coord << '\n';
+#endif
+    return true;
+  }
+  return false;
+}
+
+/**
  * accumulate is the core function of fast marching, it can only operate
  * on VertexAttr that are within the current interval_id and block_id, since
  * it is potentially adding these vertices to the unique heap of interval_id
@@ -981,10 +1134,11 @@ void Recut<image_t>::check_ghost_update(VID_t interval_id, VID_t block_id,
 }
 
 // adds to iterable but not to active vertices since its from outside domain
-template <typename Container, typename T, typename T2>
+template <typename Container, typename T>
 void integrate_point(std::string stage, Container &fifo, T &connected_fifo,
-                     T2 adj_coord, EnlargedPointDataGrid::Ptr grid,
-                     OffsetCoord adj_offsets, GridCoord potential_update) {
+                     local_heap heap, GridCoord adj_coord,
+                     EnlargedPointDataGrid::Ptr grid, OffsetCoord adj_offsets,
+                     GridCoord potential_update) {
   // FIXME this might be slow to lookup every time
   // auto leaf_iter = grid->tree().probeConstLeaf(potential_update);
   auto adj_leaf_iter = grid->tree().probeConstLeaf(adj_coord);
@@ -998,9 +1152,9 @@ void integrate_point(std::string stage, Container &fifo, T &connected_fifo,
   bf.unset(0);
 
 #ifdef FULL_PRINT
-  std::cout << "\tintegrate_point(): " << adj_coord << '\n';
-  std::cout << "\t\tpotential update: " << potential_update << ' '
-            << adj_leaf_iter << '\n';
+  // std::cout << "\tintegrate_point(): " << adj_coord << '\n';
+  // std::cout << "\t\tpotential update: " << potential_update << ' '
+  //<< adj_leaf_iter << '\n';
 #endif
 
   if (stage == "connected") {
@@ -1016,6 +1170,16 @@ void integrate_point(std::string stage, Container &fifo, T &connected_fifo,
     openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
         adj_leaf_iter->constAttributeArray("parents"));
     connected_fifo.emplace_back(bf, adj_offsets, parents_handle.get(*ind));
+
+  } else if (stage == "value") {
+    // TODO pass value of vertex for shortest path
+    openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
+        adj_leaf_iter->constAttributeArray("parents"));
+    auto point = new VertexAttr(
+        flags_handle.get(*ind),
+        /* offsets*/ coord_sub(adj_coord, adj_leaf_iter->origin()), 0);
+    // auto block_id = coord_img_to_block_id(adj_leaf_iter->origin());
+    heap.push(point, 0, stage);
 
   } else if (stage == "radius") {
     openvdb::points::AttributeHandle<float> radius_handle(
@@ -1034,12 +1198,11 @@ void integrate_adj_leafs(GridCoord start_coord,
                          openvdb::BoolGrid::Ptr update_grid,
                          std::deque<VertexAttr> &fifo,
                          std::deque<VertexAttr> &connected_fifo,
-                         std::string stage, EnlargedPointDataGrid::Ptr grid,
-                         int offset_value) {
+                         local_heap heap, std::string stage,
+                         EnlargedPointDataGrid::Ptr grid, int offset_value) {
   // force evaluation by saving to vector to get desired side effects
   // from integrate_point
-  auto _ =
-      // from one corner find 3 adj leafs via 1 vox offset
+  auto _ = // from one corner find 3 adj leafs via 1 vox offset
       stencil_offsets |
       rng::views::transform([&start_coord](auto stencil_offset) {
         return std::pair{/*rel. offset*/ stencil_offset,
@@ -1092,8 +1255,8 @@ void integrate_adj_leafs(GridCoord start_coord,
               // adj_coord
               auto potential_update = adj_coord;
               potential_update[dim] = start_coord[dim];
-              integrate_point(stage, fifo, connected_fifo, adj_coord, grid,
-                              adj_offsets, potential_update);
+              integrate_point(stage, fifo, connected_fifo, heap, adj_coord,
+                              grid, adj_offsets, potential_update);
             }
           }
         }
@@ -1127,14 +1290,14 @@ void Recut<image_t>::integrate_update_grid(
             // lower corner adjacents, have an offset at that dim of -1
             integrate_adj_leafs(bbox.min(), this->lower_stencil, update_grid,
                                 fifo[leaf_iter->origin()],
-                                connected_fifo[leaf_iter->origin()], stage,
-                                grid, -1);
+                                connected_fifo[leaf_iter->origin()],
+                                heap_map[leaf_iter->origin()], stage, grid, -1);
             // upper corner adjacents, have an offset at that dim equal to
             // leaf log2 dim
-            integrate_adj_leafs(bbox.max(), this->higher_stencil, update_grid,
-                                fifo[leaf_iter->origin()],
-                                connected_fifo[leaf_iter->origin()], stage,
-                                grid, LEAF_LENGTH);
+            integrate_adj_leafs(
+                bbox.max(), this->higher_stencil, update_grid,
+                fifo[leaf_iter->origin()], connected_fifo[leaf_iter->origin()],
+                heap_map[leaf_iter->origin()], stage, grid, LEAF_LENGTH);
           }
         };
 
@@ -1159,7 +1322,7 @@ void Recut<image_t>::integrate_update_grid(
         update_grid->tree());
     tbb::parallel_for(update_grid_leaf_manager.leafRange(), fill_range);
 #ifdef LOG_FULL
-    cout << "Fill to false in " << timer.elapsed() << " sec.\n";
+    cout << "Fill update_grid to false in " << timer.elapsed() << " sec.\n";
 #endif
   }
 }
@@ -1247,7 +1410,8 @@ bool Recut<image_t>::any_fifo_active(
 // parameters are intentionally pass by value (copied)
 OffsetCoord adjust_vertex_parent(EnlargedPointDataGrid::Ptr grid,
                                  OffsetCoord parent_offset,
-                                 const GridCoord &original_coord) {
+                                 const GridCoord &original_coord,
+                                 std::vector<GridCoord> valid_list = {}) {
   GridCoord parent_coord;
   GridCoord current_coord = original_coord;
   while (true) {
@@ -1262,7 +1426,24 @@ OffsetCoord adjust_vertex_parent(EnlargedPointDataGrid::Ptr grid,
     openvdb::points::AttributeHandle<uint8_t> flags_handle(
         parent_leaf->constAttributeArray("flags"));
 
-    if (is_valid(flags_handle, parent_ind)) {
+    auto valid_parent = false;
+
+    // filter by set of known active coords, only using the topology to
+    // find the next in the valid list
+    if (valid_list.empty()) {
+      if (is_valid(flags_handle, parent_ind)) {
+        valid_parent = true;
+      }
+    } else {
+      for (const auto &coord : valid_list) {
+        if (coord_all_eq(parent_coord, coord)) {
+          valid_parent = true;
+          break;
+        }
+      }
+    }
+
+    if (valid_parent) {
       break;
     } else {
       // prep for next iteration
@@ -1291,6 +1472,128 @@ void Recut<image_t>::dump_buffer(Container buffer) {
     }
   }
   std::cout << "\n\nFinished buffer dump\n";
+}
+
+template <class image_t>
+template <class Container, typename T2>
+void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
+                                VID_t block_id, std::string stage,
+                                const TileThresholds<image_t> *tile_thresholds,
+                                Container &fifo, VID_t revisits, T2 leaf_iter) {
+  if (heap_map[leaf_iter->origin()].empty())
+    return;
+
+  auto update_leaf = this->update_grid->tree().probeLeaf(leaf_iter->origin());
+  auto bbox = leaf_iter->getNodeBoundingBox();
+  assertm(update_leaf, "corresponding leaf does not exist");
+
+#ifdef FULL_PRINT
+  cout << "\nMarching " << bbox << '\n';
+#endif
+
+  // load flags
+  openvdb::points::AttributeWriteHandle<uint8_t> flags_handle =
+      leaf_iter->attributeArray("flags");
+  openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle =
+      leaf_iter->attributeArray("parents");
+  openvdb::points::AttributeWriteHandle<float> value_handle =
+      leaf_iter->attributeArray("value");
+
+  VertexAttr *msg_vertex;
+  VID_t visited = 0;
+  while (!(heap_map[leaf_iter->origin()].empty())) {
+
+#ifdef FULL_PRINT
+    visited += 1;
+#endif
+
+    // msg_vertex might become undefined during scatter
+    // or if popping from the fifo, take needed info
+    msg_vertex = heap_map[leaf_iter->origin()].pop(block_id, stage);
+
+    const bool in_domain = msg_vertex->selected();
+    auto surface = msg_vertex->surface();
+    auto msg_coord = coord_add(msg_vertex->offsets, leaf_iter->origin());
+    auto msg_off = coord_mod(msg_coord, this->block_lengths);
+    auto msg_ind = leaf_iter->beginIndexVoxel(msg_coord);
+    auto msg_vox = this->input_grid->tree().getValue(msg_coord);
+
+#ifdef FULL_PRINT
+    cout << "check current " << msg_coord << ' ' << in_domain << '\n';
+#endif
+
+    // invalid can either be out of range of the entire global image or it
+    // can be a background vertex which occurs due to pixel value below the
+    // threshold, previously selected vertices are considered valid
+    auto found_adjacent_invalid = false;
+    auto valids =
+        // star stencil offsets to img coords
+        this->stencil |
+        rng::views::transform([&msg_coord](auto stencil_offset) {
+          return coord_add(msg_coord, stencil_offset);
+        }) |
+        // within image?
+        rng::views::remove_if([this, &found_adjacent_invalid](auto coord_img) {
+          if (this->image_bbox.isInside(coord_img))
+            return false;
+          found_adjacent_invalid = true;
+          return true;
+        }) |
+        // within leaf?
+        rng::views::remove_if([&](auto coord_img) {
+          auto mismatch = !bbox.isInside(coord_img);
+          if (mismatch) {
+            if (this->input_is_vdb) {
+              if (!this->topology_grid->tree().isValueOn(coord_img)) {
+                found_adjacent_invalid = true;
+              }
+            } else {
+              auto dst_vox = get_img_val(tile, coord_img);
+              if (dst_vox <= tile_thresholds->bkg_thresh) {
+                found_adjacent_invalid = true;
+              }
+            }
+          }
+          return mismatch;
+        }) |
+        // visit valid voxels
+        rng::views::remove_if([&](auto coord_img) {
+          auto offset_to_current = coord_sub(msg_coord, coord_img);
+          auto ind = leaf_iter->beginIndexVoxel(coord_img);
+          // is background?  ...has side-effects
+          return !accumulate_value(tile, interval_id, block_id, coord_img, ind,
+                                   offset_to_current, revisits, tile_thresholds,
+                                   found_adjacent_invalid, leaf_iter,
+                                   update_leaf, flags_handle, parents_handle,
+                                   value_handle, coord_img, msg_ind, msg_vox);
+        }) |
+        rng::to_vector; // force full evaluation via vector
+
+    // ignore if already designated as surface
+    // also prevents adding to fifo twice
+    if (in_domain) {
+      if (surface ||
+          (found_adjacent_invalid && !(is_surface(flags_handle, msg_ind)))) {
+#ifdef FULL_PRINT
+        std::cout << "\tfound surface vertex in " << bbox.min() << " "
+                  << coord_to_str(msg_coord) << ' ' << msg_off << '\n';
+#endif
+
+        // save all surface vertices for the radius stage
+        // each fifo corresponds to a specific interval_id and block_id
+        // so there are no race conditions
+        // save all surface vertices for the radius stage
+        set_surface(flags_handle, msg_ind);
+        fifo.emplace_back(Bitfield(flags_handle.get(*msg_ind)), msg_off,
+                          parents_handle.get(*msg_ind));
+      }
+    }
+  }
+
+  assertm(heap_map[leaf_iter->origin()].empty(), "not empty");
+#ifdef FULL_PRINT
+  cout << "visited vertices: " << visited << '\n';
+#endif
 }
 
 template <class image_t>
@@ -1574,16 +1877,18 @@ void Recut<image_t>::march_narrow_band(
     const TileThresholds<image_t> *tile_thresholds,
     std::deque<VertexAttr> &connected_fifo, std::deque<VertexAttr> &fifo,
     T2 leaf_iter) {
-  //#ifdef LOG_FULL
-  // VID_t visited = 0;
-  // auto timer = new high_resolution_timer();
-  // cout << "\nMarching " << tree_to_str(interval_id, block_id) << ' '
-  //<< leaf_iter->origin() << '\n';
-  //#endif
+#ifdef FULL_PRINT
+  auto timer = high_resolution_timer();
+  auto loc = tree_to_str(interval_id, block_id);
+  // cout << "\nMarching " << loc << ' ' << leaf_iter->origin() << '\n';
+#endif
 
   VID_t revisits = 0;
 
-  if (stage == "connected") {
+  if (stage == "value") {
+    value_tile(tile, interval_id, block_id, stage, tile_thresholds, fifo,
+               revisits, leaf_iter);
+  } else if (stage == "connected") {
     connected_tile(tile, interval_id, block_id, stage, tile_thresholds,
                    connected_fifo, fifo, revisits, leaf_iter);
   } else if (stage == "radius") {
@@ -1596,10 +1901,9 @@ void Recut<image_t>::march_narrow_band(
     assertm(false, "Stage name not recognized");
   }
 
-  //#ifdef LOG_FULL
-  // cout << "Marched interval: " << interval_id << " block: " << block_id
-  //<< " visiting " << visited << " in " << timer->elapsed() << " s" << '\n';
-  //#endif
+#ifdef FULL_PRINT
+  // cout << "Marched " << loc << " in " << timer.elapsed() << " s" << '\n';
+#endif
 
 } // end march_narrow_band
 
@@ -1638,7 +1942,7 @@ int Recut<image_t>::get_bkg_threshold(const image_t *tile,
 
     // Count total # of pixels under current thresh
     bkg_count = 0;
-#if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
+#if defined USE_OMP_BLOCK
 #pragma omp parallel for reduction(+ : bkg_count)
 #endif
     for (VID_t i = 0; i < (VID_t)interval_vertex_size; i++) {
@@ -1663,6 +1967,9 @@ int Recut<image_t>::get_bkg_threshold(const image_t *tile,
     // or the last if it was closer
     if (test_pct >= desired_bkg_pct) {
 
+#ifdef LOG
+      cout << "Calculated bkg thresh in " << timer.elapsed() << '\n';
+#endif
       if (test_diff < below_diff_pct)
         return local_bkg_thresh;
       else
@@ -1673,9 +1980,6 @@ int Recut<image_t>::get_bkg_threshold(const image_t *tile,
     below = local_bkg_thresh;
     below_diff_pct = test_diff;
   }
-#ifdef LOG
-  cout << "Calculated bkg thresh in " << timer.elapsed() << '\n';
-#endif
   return std::numeric_limits<image_t>::max();
 }
 
@@ -1705,8 +2009,14 @@ std::atomic<double> Recut<image_t>::process_interval(
   };
 
   auto is_active = [&, this]() {
+    // connected or value stages are determined finished by the status of their
+    // fifo or heaps respectively
     if (stage == "connected") {
       return any_fifo_active(this->connected_map);
+    } else if (stage == "value") {
+      return std::any_of(
+          std::execution::par_unseq, heap_map.begin(), heap_map.end(),
+          [](const auto &kv_pair) { return !kv_pair.second.empty(); });
     }
     return any_fifo_active(this->map_fifo);
   };
@@ -1828,9 +2138,15 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
   // than 0 than it was changed by a user so it takes precedence over the
   // defaults
   if (params->foreground_percent() >= 0) {
-    tile_thresholds->bkg_thresh =
-        get_bkg_threshold(mcp3d_tile.Volume<image_t>(0), interval_vertex_size,
-                          params->foreground_percent());
+    // tile_thresholds->bkg_thresh =
+    // get_bkg_threshold(mcp3d_tile.Volume<image_t>(0), interval_vertex_size,
+    // params->foreground_percent());
+
+    // TopPercentile takes a fraction not a percentile
+    tile_thresholds->bkg_thresh = mcp3d::VolumeTopPercentile<image_t>(
+        static_cast<void *>(mcp3d_tile.Volume<image_t>(0)), interval_dims,
+        (params->foreground_percent()) / 100);
+
 #ifdef LOG
     cout << "Requested foreground percent: " << params->foreground_percent()
          << " yielded background threshold: " << tile_thresholds->bkg_thresh
@@ -1852,6 +2168,13 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
       // max and min members will be set
       tile_thresholds->get_max_min(mcp3d_tile.Volume<image_t>(0),
                                    interval_vertex_size);
+#ifdef LOG_FULL
+      cout << "max_int: " << +(tile_thresholds->max_int)
+           << " min_int: " << +(tile_thresholds->min_int) << '\n';
+      cout << "bkg_thresh value = " << +(tile_thresholds->bkg_thresh) << '\n';
+      cout << "interval dims x " << interval_dims[2] << " y "
+           << interval_dims[1] << " z " << interval_dims[0] << '\n';
+#endif
     }
   } else if (this->args->recut_parameters().get_min_intensity() < 0) {
     // if max intensity was set but not a min, just use the bkg_thresh value
@@ -1865,6 +2188,13 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
         // max and min members will be set
         tile_thresholds->get_max_min(mcp3d_tile.Volume<image_t>(0),
                                      interval_vertex_size);
+#ifdef LOG_FULL
+        cout << "max_int: " << +(tile_thresholds->max_int)
+             << " min_int: " << +(tile_thresholds->min_int) << '\n';
+        cout << "bkg_thresh value = " << +(tile_thresholds->bkg_thresh) << '\n';
+        cout << "interval dims x " << interval_dims[2] << " y "
+             << interval_dims[1] << " z " << interval_dims[0] << '\n';
+#endif
       }
     }
   } else { // both values were set
@@ -1880,14 +2210,6 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
     tile_thresholds->min_int =
         this->args->recut_parameters().get_min_intensity();
   }
-
-#ifdef LOG_FULL
-  cout << "max_int: " << +(tile_thresholds->max_int)
-       << " min_int: " << +(tile_thresholds->min_int) << '\n';
-  cout << "bkg_thresh value = " << +(tile_thresholds->bkg_thresh) << '\n';
-  cout << "interval dims x " << interval_dims[2] << " y " << interval_dims[1]
-       << " z " << interval_dims[0] << '\n';
-#endif
 
   return tile_thresholds;
 } // end load_tile()
@@ -1920,7 +2242,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #ifdef LOG
   cout << "Start updating stage " << stage << '\n';
 #endif
-  auto timer = new high_resolution_timer();
+  auto timer = high_resolution_timer();
 
   // note openvdb::initialize() must have been called before this point
   // otherwise seg faults will occur
@@ -1929,6 +2251,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   // multi-grids for convert stage
   // assertm(this->topology_grid, "topology grid not initialized");
   std::vector<EnlargedPointDataGrid::Ptr> grids(this->grid_interval_size);
+
+  auto histogram = Histogram<image_t>();
 
   // Main march for loop
   // continue iterating until all intervals are finished
@@ -2037,10 +2361,10 @@ Recut<image_t>::update(std::string stage, Container &fifo,
             if (!(this->params->force_regenerate_image)) {
               load_tile(interval_id, *mcp3d_tile);
               if (!local_tile_thresholds) {
-                auto thresh_start = timer->elapsed();
+                auto thresh_start = timer.elapsed();
                 local_tile_thresholds = get_tile_thresholds(*mcp3d_tile);
                 computation_time =
-                    computation_time + (timer->elapsed() - thresh_start);
+                    computation_time + (timer.elapsed() - thresh_start);
               }
               tile = mcp3d_tile->Volume<image_t>(0);
             }
@@ -2048,14 +2372,13 @@ Recut<image_t>::update(std::string stage, Container &fifo,
         }
 #else
         if (!(this->params->force_regenerate_image)) {
-          assertm(false,
+          assertm(this->input_is_vdb,
                   "If USE_MCP3D macro is not set, "
-                  "this->params->force_regenerate_image must be set to True");
+                  "input must either by VDB or this->params->force_regenerate_image must be set to True");
         }
 #endif
 
         if (stage == "convert") {
-#ifdef USE_VDB
           assertm(!this->input_is_vdb,
                   "input can't be vdb during convert stage");
 
@@ -2068,7 +2391,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                                          ? this->image_lengths
                                          : this->interval_lengths;
 
-          auto convert_start = timer->elapsed();
+          auto convert_start = timer.elapsed();
 
 #ifdef FULL_PRINT
           // print_image_3D(tile, buffer_extents);
@@ -2078,7 +2401,11 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                                       /*buffer_offsets=*/buffer_offsets,
                                       /*image_offsets=*/interval_offsets,
                                       this->input_grid->getAccessor(),
-                                      local_tile_thresholds->bkg_thresh);
+                                      local_tile_thresholds->bkg_thresh,
+                                      this->params->upsample_z_);
+            if (params->histogram_) {
+              histogram += hist(tile, buffer_extents, buffer_offsets);
+            }
           } else {
 
             std::vector<PositionT> positions;
@@ -2088,7 +2415,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
             convert_buffer_to_vdb(tile, buffer_extents,
                                   /*buffer_offsets=*/buffer_offsets,
                                   /*image_offsets=*/interval_offsets, positions,
-                                  local_tile_thresholds->bkg_thresh);
+                                  local_tile_thresholds->bkg_thresh,
+                                  this->params->upsample_z_);
 
             grids[interval_id] = create_point_grid(
                 positions, this->image_lengths, get_transform(),
@@ -2100,15 +2428,19 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #endif
           }
           computation_time =
-              computation_time + (timer->elapsed() - convert_start);
+              computation_time + (timer.elapsed() - convert_start);
 
           active_intervals[interval_id] = false;
 #ifdef LOG
-          cout << "Completed interval id: " << interval_id << '\n';
+          cout << "Completed traversal of interval " << interval_id << " of "
+               << grid_interval_size << " in "
+               << timer.elapsed() - convert_start << " s\n";
 #endif
-#endif
-          // mcp3d tile must be explicitly cleared
+#ifdef USE_MCP3D 
+          // mcp3d tile must be explicitly cleared to prevent out of memory
+          // issues
           mcp3d_tile->ClearData(); // invalidates tile
+#endif
         } else {
           computation_time =
               computation_time + process_interval(interval_id, tile, stage,
@@ -2121,7 +2453,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   }   // finished all intervals
 
   if (stage == "convert") {
-    auto finalize_start = timer->elapsed();
+    auto finalize_start = timer.elapsed();
 
     if (args->type_ == "point") {
 
@@ -2131,7 +2463,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
         // vb::tools::compActiveLeafVoxels(grids[i]->tree(), grids[i +
         // 1]->tree());
         if (leaves_intersect(grids[i + 1], grids[i])) {
-          cout << "\nWarning: leaves intersect\n";
+          cout << "\nWarning: leaves intersect, can cause undefined behavior\n";
         }
         // leaves grids[i] empty, copies all to grids[i+1]
         grids[i + 1]->tree().merge(grids[i]->tree(),
@@ -2145,9 +2477,20 @@ Recut<image_t>::update(std::string stage, Container &fifo,
     } else if (this->args->type_ == "float") {
       set_grid_meta(this->input_grid, this->image_lengths, 0);
       this->input_grid->tree().prune();
+
+      if (params->histogram_) {
+        auto write_to_file = [](auto out, std::string fn) {
+          std::ofstream file;
+          file.open(fn);
+          file << out;
+          file.close();
+        };
+
+        write_to_file(histogram, "hist.txt");
+      }
     }
 
-    auto finalize_time = timer->elapsed() - finalize_start;
+    auto finalize_time = timer.elapsed() - finalize_start;
     computation_time = computation_time + finalize_time;
 #ifdef LOG
     cout << "Grid finalize time: " << finalize_time << " s\n";
@@ -2162,7 +2505,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #endif
   }
 
-  auto total_update_time = timer->elapsed();
+  auto total_update_time = timer.elapsed();
   auto io_time = total_update_time - computation_time;
 #ifdef LOG
   cout << "Finished stage: " << stage << '\n';
@@ -2234,7 +2577,7 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
                                         const VID_t &interval_block_size) {
   this->active_intervals = vector(grid_interval_size, false);
 
-  auto timer = new high_resolution_timer();
+  auto timer = high_resolution_timer();
 
   if (!params->convert_only_) {
 
@@ -2257,7 +2600,9 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
          ++leaf_iter) {
       auto origin = leaf_iter->getNodeBoundingBox().min();
 
+      // per leaf fifo/pq resources
       inner[origin] = std::deque<VertexAttr>();
+      heap_map[origin] = local_heap();
 
       // every topology_grid leaf must have a corresponding leaf explicitly
       // created
@@ -2289,7 +2634,7 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
        << '\n';
 #endif
 #ifdef LOG_FULL
-  cout << "\tCreated fifos " << timer->elapsed() << 's' << '\n';
+  cout << "\tCreated fifos " << timer.elapsed() << 's' << '\n';
 #endif
 }
 
@@ -2319,9 +2664,8 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
                    "USE_VDB must be defined");
 #endif
 
-    std::string grid_name = "topology";
-    auto timer = new high_resolution_timer();
-    auto base_grid = read_vdb_file(args->image_root_dir(), grid_name);
+    auto timer = high_resolution_timer();
+    auto base_grid = read_vdb_file(args->image_root_dir());
 
 #ifdef LOG
     cout << "VDB input type " << this->args->type_ << '\n';
@@ -2345,19 +2689,20 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     append_attributes(this->topology_grid);
 
 #ifdef LOG
-    cout << "Read grid in: " << timer->elapsed() << " s\n";
+    cout << "Read grid in: " << timer.elapsed() << " s\n";
 #endif
 
   } else {
     // read from image use mcp3d library
 
 #ifndef USE_MCP3D
-    assertm(false, "Input must either be regenerated, vdb or from image, "
-                   "USE_MCP3D image reading library must be defined");
+    assertm(false, "Input must either be regenerated, use VDB or have the "
+                   "USE_MCP3D macro for the image reading library defined");
 #endif
     assertm(fs::exists(args->image_root_dir()),
             "Image root directory does not exist");
 
+#ifdef USE_MCP3D
     // determine the image size
     mcp3d::MImage global_image(args->image_root_dir(), {args->channel()});
     // read data from channel
@@ -2375,6 +2720,7 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     auto temp = global_image.xyz_dims(args->resolution_level());
     // reverse mcp3d's z y x order for offsets and lengths
     input_image_lengths = new_grid_coord(temp[2], temp[1], temp[0]);
+#endif
 
     // FIXME remove this, don't necessarily require
     if (args->type_ == "float") {
@@ -2613,138 +2959,8 @@ bool Recut<image_t>::filter_by_label(VertexAttr *v, bool accept_tombstone) {
   return true;
 };
 
-template <class image_t>
-template <typename FilterP, typename Pred>
-void Recut<image_t>::visit(FilterP keep_if, Pred predicate) {
-  for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
-       ++leaf_iter) {
-
-    // note: some attributes need mutability
-    openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
-        leaf_iter->attributeArray("flags"));
-
-    openvdb::points::AttributeHandle<float> radius_handle(
-        leaf_iter->constAttributeArray("pscale"));
-
-    openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
-        leaf_iter->attributeArray("parents"));
-
-    for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
-      if (keep_if(flags_handle, parents_handle, radius_handle, ind)) {
-        predicate(flags_handle, parents_handle, radius_handle, ind, leaf_iter);
-      }
-    }
-  }
-}
-
-// accept_tombstone is a way to see pruned vertices still in active_vertex
-template <class image_t>
-template <typename vertex_t>
-void Recut<image_t>::convert_to_markers(vector<vertex_t> &outtree,
-                                        bool accept_tombstone) {
-#ifdef FULL_PRINT
-  cout << "Generating results." << '\n';
-#endif
-  auto timer = high_resolution_timer();
-
-  // get a mapping to stable address pointers in outtree such that a markers
-  // parent is valid pointer when returning just outtree
-  std::map<GridCoord, MyMarker *> coord_to_marker_ptr;
-
-  // iterate all active vertices ahead of time so each marker
-  // can have a pointer to it's parent marker
-  for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
-       ++leaf_iter) {
-    // cout << leaf_iter->getNodeBoundingBox() << '\n';
-
-    openvdb::points::AttributeHandle<uint8_t> flags_handle(
-        leaf_iter->constAttributeArray("flags"));
-
-    openvdb::points::AttributeHandle<float> radius_handle(
-        leaf_iter->constAttributeArray("pscale"));
-
-    openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
-        leaf_iter->constAttributeArray("parents"));
-
-    // openvdb::points::AttributeHandle<OffsetCoord> position_handle(
-    // leaf_iter->constAttributeArray("P"));
-
-    for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
-      // get coord
-      auto coord = ind.getCoord();
-      // create all valid new marker objects
-      if (is_valid(flags_handle, ind, accept_tombstone)) {
-        // std::cout << "\t " << coord<< '\n';
-        assertm(coord_to_marker_ptr.count(coord) == 0,
-                "Can't have two matching vids");
-        // get original i, j, k
-        auto marker = new MyMarker(coord[0], coord[1], coord[2]);
-        if (is_root(flags_handle, ind)) {
-          // a marker with a type of 0, must be a root
-          marker->type = 0;
-        }
-        marker->radius = radius_handle.get(*ind);
-        // save this marker ptr to a map
-        coord_to_marker_ptr[coord] = marker;
-        // std::cout << "\t " << coord_to_str(coord) << " -> "
-        //<< (coord + parents_handle.get(*ind)) << " " << marker->radius
-        //<< '\n';
-        assertm(marker->radius, "can't have 0 radius");
-        outtree.push_back(marker);
-      }
-    }
-  }
-
-  // now that a pointer to all desired markers is known
-  // iterate and complete the marker definition
-  for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
-       ++leaf_iter) {
-
-    openvdb::points::AttributeHandle<uint8_t> flags_handle(
-        leaf_iter->constAttributeArray("flags"));
-
-    openvdb::points::AttributeHandle<float> radius_handle(
-        leaf_iter->constAttributeArray("pscale"));
-
-    openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
-        leaf_iter->constAttributeArray("parents"));
-
-    for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
-      // create all valid new marker objects
-      if (is_valid(flags_handle, ind, accept_tombstone)) {
-        // get coord
-        auto coord = ind.getCoord();
-        assertm(coord_to_marker_ptr.count(coord),
-                "did not find vertex in marker map");
-        auto marker = coord_to_marker_ptr[coord]; // get the ptr
-        if (is_root(flags_handle, ind)) {
-          // a marker with a parent of 0, must be a root
-          marker->parent = 0;
-        } else {
-          auto parent_coord = parents_handle.get(*ind) + coord;
-
-          // find parent
-          assertm(coord_to_marker_ptr.count(parent_coord),
-                  "did not find parent in marker map");
-
-          auto parent = coord_to_marker_ptr[parent_coord]; // adjust
-          marker->parent = parent;
-        }
-      }
-    }
-  }
-
-#ifdef LOG
-  cout << "Total marker size: " << outtree.size() << " nodes" << '\n';
-#endif
-
-#ifdef FULL_PRINT
-  cout << "Finished generating results within " << timer.elapsed() << " sec."
-       << '\n';
-#endif
-}
-
 template <class image_t> void Recut<image_t>::adjust_parent() {
+
   auto adjust_parent = [this](const auto &flags_handle, auto &parents_handle,
                               const auto &radius_handle, const auto &ind,
                               auto leaf) {
@@ -2761,163 +2977,138 @@ template <class image_t> void Recut<image_t>::adjust_parent() {
                       const auto &radius_handle,
                       const auto &ind) { return is_valid(flags_handle, ind); };
 
-  visit(all_valid, adjust_parent);
+  visit(this->topology_grid, all_valid, adjust_parent);
 }
 
 template <class image_t> void Recut<image_t>::print_to_swc() {
-  auto to_swc = [this](const auto &flags_handle, const auto &parents_handle,
-                       const auto &radius_handle, const auto &ind, auto leaf) {
+
+  auto coord_to_swc_id = get_id_map();
+
+  auto to_swc = [this, &coord_to_swc_id](
+                    const auto &flags_handle, const auto &parents_handle,
+                    const auto &radius_handle, const auto &ind, auto leaf) {
     auto coord = ind.getCoord();
     print_swc_line(coord, is_root(flags_handle, ind), radius_handle.get(*ind),
-                   parents_handle.get(*ind), this->image_lengths,
-                   this->image_bbox, this->out,
-                   /*adjust*/ true);
+                   parents_handle.get(*ind), this->image_bbox, this->out,
+                   /*map*/ coord_to_swc_id, /*adjust*/ true);
   };
 
   this->out.open(this->args->swc_path());
   this->out << "#id type_id x y z radius parent_id\n";
 
-  visit(keep_root, to_swc);
-  visit(not_root, to_swc);
+  visit(this->topology_grid, keep_root, to_swc);
+  visit(this->topology_grid, not_root, to_swc);
 
   if (this->out.is_open())
     this->out.close();
+#ifdef LOG
+  cout << "Wrote output to " << this->args->swc_path() << '\n';
+#endif
 }
 
-template <class image_t> void Recut<image_t>::prune_radii() {
-  auto filter_radii = [](const auto &flags_handle, const auto &parents_handle,
-                         const auto &radius_handle, const auto &ind) {
-    // return is_valid(flags_handle, ind) && (radius_handle.get(*ind) <
-    // MIN_RADII);
+template <class image_t> void Recut<image_t>::prune_branch() {
+  auto filter_branch = [](const auto &flags_handle, const auto &parents_handle,
+                          const auto &radius_handle, const auto &ind) {
     auto parents = parents_handle.get(*ind);
     return is_valid(flags_handle, ind) && !is_root(flags_handle, ind) &&
            ((parents[0] + parents[1] + parents[2]) < MIN_LENGTH);
   };
 
-  visit(filter_radii, prunes_visited);
+  visit(this->topology_grid, filter_branch, prunes_visited);
 }
 
-template <class image_t> void Recut<image_t>::operator()() {
-  std::string stage;
-  openvdb::GridPtrVec grids;
-  // create a list of root vids
-  auto root_coords = this->initialize();
-
-  if (params->convert_only_) {
-    activate_all_intervals();
-
-    // mutates input_grid
-    stage = "convert";
-    this->update(stage, map_fifo);
-#ifdef LOG
-    if (args->type_ == "float") {
-      print_grid_metadata(this->input_grid);
-      grids.push_back(this->input_grid);
-    } else if (args->type_ == "point") {
-      print_grid_metadata(this->topology_grid);
-      grids.push_back(this->topology_grid);
-    }
-#endif
-
-    write_vdb_file(grids, this->params->out_vdb_);
-
-    // no more work to do, exiting
-    return;
-  }
-
-  // starting from the roots connected stage saves all surface vertices into
-  // fifo
-  stage = "connected";
-  this->activate_vids(this->topology_grid, root_coords, stage, this->map_fifo,
-                      this->connected_map);
-  this->update(stage, map_fifo);
-
-  auto all_invalid = [](const auto &flags_handle, const auto &parents_handle,
-                        const auto &radius_handle, const auto &ind) {
-    return !is_selected(flags_handle, ind);
+template <class image_t> void Recut<image_t>::prune_radii() {
+  auto filter_radii = [](const auto &flags_handle, const auto &parents_handle,
+                         const auto &radius_handle, const auto &ind) {
+    return is_valid(flags_handle, ind) && !is_root(flags_handle, ind) &&
+           (radius_handle.get(*ind) < MIN_RADII);
   };
 
-  print_point_count(this->topology_grid);
+  visit(this->topology_grid, filter_radii, prunes_visited);
+}
 
+template <class image_t>
+void Recut<image_t>::partition_components(
+    std::vector<std::pair<GridCoord, uint8_t>> root_pair, bool prune) {
+
+  openvdb::GridPtrVec grids;
+#ifdef LOG
+  print_point_count(this->topology_grid);
+#endif
+
+  // this copies only vertices that have already had flags marked as selected
+  // selected means they are reachable from a known vertex during traversal
+  // in either a connected or value stage
   auto float_grid = copy_selected(this->topology_grid);
+
   cout << "Float active count: " << float_grid->activeVoxelCount() << '\n';
+  assertm(float_grid->activeVoxelCount(),
+          "active voxels in float grid must be > 0");
+
   // aggregate disjoint connected components
+  auto timer = high_resolution_timer();
   std::vector<openvdb::FloatGrid::Ptr> components;
   vto::segmentActiveVoxels(*float_grid, components);
+  cout << "Segment count: " << components.size() << " in " << timer.elapsed()
+       << " s\n";
 
-  // prune all neurites topology grid
-  // roots from marker files stay as ground truth
-  visit(not_root, prunes_visited);
   auto output_topology = false;
 
   auto counter = 0;
-  rng::for_each(components, [this, &counter, float_grid, output_topology,
-                             &root_coords](const auto component) {
+  rng::for_each(components, [this, &prune, &counter, float_grid,
+                             output_topology,
+                             &root_pair](const auto component) {
+    // all grid transforms across are consistent across recut, so enforce the
+    // same interpretation for any new grid
+    component->setTransform(get_transform());
+
+    // filter all roots within this component
     auto component_roots =
-        root_coords | rng::views::remove_if([&component](auto coord_radius) {
+        root_pair | rng::views::remove_if([&component](auto coord_radius) {
           auto [coord, radius] = coord_radius;
           return !component->tree().isValueOn(coord);
-        });
-
-    auto component_root_bboxs =
-        component_roots | rng::views::transform([](auto coord_radius) {
-          auto [coord, radius] = coord_radius;
-          auto radius_off = GridCoord(radius);
-          // cout << "\troot at " << coord << ' ' << radius<< ' '
-          //<< openvdb::CoordBBox(coord - radius_off, coord + radius_off) <<
-          //'\n';
-          return openvdb::CoordBBox(coord - radius_off, coord + radius_off);
-          // filtered_spheres.emplace_back(coord[0], coord[1], coord[2],
-          // radius);
         }) |
         rng::to_vector;
 
-    if (component_root_bboxs.size() < 1)
+    //cout << "\troot count " << component_roots.size() << '\n';
+    if (component_roots.size() < 1)
       return; // skip
 
-    const auto sphere_count = openvdb::math::Vec2i(1, 50000);
-    auto spheres = std::vector<openvdb::Vec4s>();
-    openvdb::v8_1::tools::fillWithSpheres(
-        *component, spheres, sphere_count, /*overlapping*/ false, MIN_RADII,
-        /*max_radii*/ std::numeric_limits<float>::max(),
-        /*isosurface_value*/ 1.,
-        /*instance_count*/ 1000);
-
-    // filtered_spheres are not covered by previously known somas
-    // and are accessible from original connected traversal
-    auto filtered_spheres =
-        spheres |
-        rng::views::remove_if(
-            [this, component, &component_root_bboxs](const auto sphere) {
-              auto coord = GridCoord(sphere[0], sphere[1], sphere[2]);
-              if (component->tree().isValueOn(coord) &&
-                  !covered_by_bboxs(coord, component_root_bboxs)) {
-                auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
-                if (leaf_iter) {
-
-                  openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
-                      leaf_iter->attributeArray("flags"));
-
-                  auto ind = leaf_iter->beginIndexVoxel(coord);
-                  if (ind) {
-                    unset_tombstone(flags_handle, ind);
-                    return false;
-                  }
-                }
-              }
-              return true;
-            }) |
-        rng::to_vector;
-
-    if (filtered_spheres.size() < SWC_MIN_LINE)
+    if (component_roots.size() > 1) {
+      cout << "Skipping component with multiple roots\n";
       return; // skip
+    }
+
+    // FIXME delete this once performance improves
+    auto voxel_count = component->activeVoxelCount();
+
+    auto timer = high_resolution_timer();
+    auto markers = convert_float_to_markers(component, this->topology_grid);
+    // auto markers = convert_to_markers(this->topology_grid, false);
+#ifdef LOG
+    cout << "Convert to markers in " << timer.elapsed() << '\n';
+#endif
+
 #ifdef LOG
     auto name = "component-" + std::to_string(counter) + ".swc";
     cout << name << " active count " << component->activeVoxelCount() << ' '
          << component->evalActiveVoxelBoundingBox() << '\n';
-    cout << "\n\troot count " << component_root_bboxs.size();
-    cout << "\tspheres count " << spheres.size() << '\n';
-    cout << "\tfiltered spheres count " << filtered_spheres.size() << '\n';
+    cout << "Marker count: " << markers.size() << '\n';
+#endif
+
+    timer.restart();
+    auto pruned_markers = advantra_prune(markers, this->args->prune_radius_);
+#ifdef LOG
+    cout << "Prune markers to size " << pruned_markers.size() << " in "
+         << timer.elapsed() << '\n';
+#endif
+
+    timer.restart();
+    // extract a new tree via bfs
+    auto tree = advantra_extract_trees(pruned_markers);
+#ifdef LOG
+    cout << "Extract trees to size: " << tree.size() << " in "
+         << timer.elapsed() << '\n';
 #endif
 
     // start swc and add header metadata
@@ -2927,69 +3118,23 @@ template <class image_t> void Recut<image_t>::operator()() {
          << component->evalActiveVoxelBoundingBox() << '\n';
     file << "# id type_id x y z radius parent_id\n";
 
-    // print all somas in this component
-    rng::for_each(component_roots, [this, &file](const auto &component_root) {
-      print_swc_line(component_root.first, /*root*/ true, component_root.second,
-                     zeros_off(), this->image_lengths, this->image_bbox, file,
-                     /*adjust*/ true);
+    // start a new blank map for coord to a unique swc id
+    auto coord_to_swc_id = get_id_map();
+    // iter those marker*
+    rng::for_each(tree, [this, &file, &coord_to_swc_id,
+                         &component](const auto marker) {
+      auto coord = GridCoord(marker->x, marker->y, marker->z);
+
+      auto parent_coord =
+          GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
+      auto parent_offset = coord_sub(parent_coord, coord);
+      // print_swc_line() expects an offset to a parent
+      print_swc_line(coord,
+                     /*is_root*/ marker->type == 0, marker->radius,
+                     parent_offset, component->evalActiveVoxelBoundingBox(),
+                     file, coord_to_swc_id, false);
     });
 
-    // adjust parents of all filtered_spheres in this component
-    // make all unpruned trace a back to a root
-    rng::for_each(filtered_spheres, [this, &file, component,
-                                     float_grid](const auto &sphere) {
-      auto coord = GridCoord(sphere[0], sphere[1], sphere[2]);
-      auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
-
-      assertm(component->tree().isValueOn(coord), "component value must be on");
-      assertm(float_grid->tree().isValueOn(coord), "float value must be on");
-      assertm(this->topology_grid->tree().isValueOn(coord),
-              "original value must be on");
-
-      openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
-          leaf_iter->attributeArray("parents"));
-
-      openvdb::points::AttributeWriteHandle<float> radius_handle(
-          leaf_iter->attributeArray("pscale"));
-
-      auto ind = leaf_iter->beginIndexVoxel(coord);
-      assertm(ind, "ind must be reachable");
-
-      auto parent = adjust_vertex_parent(this->topology_grid,
-                                         parents_handle.get(*ind), coord);
-      parents_handle.set(*ind, parent);
-      //#ifdef FULL_PRINT
-      // std::cout << coord << " -> " << coord + parent << '\n';
-      //#endif
-      // print all neurites in this component
-      print_swc_line(coord, /*root*/ false,
-                     /*radius*/ sphere[3], parent, this->image_lengths,
-                     this->image_bbox, file,
-                     /*adjust*/ true);
-
-      radius_handle.set(*ind, static_cast<float>(sphere[3]));
-    });
-
-    if (output_topology) {
-      // finalize soma attributes
-      rng::for_each(component_roots, [this](const auto &coord_radius) {
-        auto [coord, radius] = coord_radius;
-        auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
-        openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
-            leaf_iter->attributeArray("parents"));
-
-        openvdb::points::AttributeWriteHandle<float> radius_handle(
-            leaf_iter->attributeArray("pscale"));
-
-        auto ind = leaf_iter->beginIndexVoxel(coord);
-        assertm(ind, "ind must be reachable");
-        parents_handle.set(*ind, OffsetCoord(0));
-        radius_handle.set(*ind, static_cast<float>(radius));
-      });
-    }
-
-    if (file.is_open())
-      file.close();
     ++counter;
   }); // for each component
 
@@ -2997,66 +3142,92 @@ template <class image_t> void Recut<image_t>::operator()() {
     grids.push_back(this->topology_grid);
     write_vdb_file(grids, "final-point-grid.vdb");
   }
+}
 
-  return;
+template <class image_t> void Recut<image_t>::convert_topology() {
+  activate_all_intervals();
 
-  // FIXME only for this component
-  // adjust_parent();
+  // mutates input_grid
+  auto stage = "convert";
+  this->update(stage, map_fifo);
 
-  // FIXME only for this component
-  // print_to_swc();
+  openvdb::GridPtrVec grids;
+#ifdef LOG
+  if (args->type_ == "float") {
+    print_grid_metadata(this->input_grid);
+    grids.push_back(this->input_grid);
+  } else if (args->type_ == "point") {
+    print_grid_metadata(this->topology_grid);
+    grids.push_back(this->topology_grid);
+  }
+#endif
 
-  // auto spheres = std::vector<openvdb::Vec4s>();
-  // openvdb::v8_1::tools::fillWithSpheres(*(this->topology_grid), spheres,
-  // sphere_count, MIN_RADII,
-  // std::numeric_limits<float>::max(), .5);
+  write_vdb_file(grids, this->params->out_vdb_);
+}
 
-  //// FIXME root must still be on
-  //// FIXME sort spheres into leafs
+template <class image_t> void Recut<image_t>::operator()() {
+  if (!params->second_grid_.empty()) {
+    combine_grids(args->image_root_dir(), params->second_grid_,
+                  this->params->out_vdb_);
+    return;
+  }
 
-  // visit(not_root, prunes_visited);
+  // read the list of root vids
+  auto root_pair = this->initialize();
 
-  // cout << spheres.size() << '\n';
-  //// unprune the spheres
-  // rng::for_each(spheres, [this](auto sphere) {
-  // auto coord = GridCoord(sphere[0], sphere[1], sphere[2]);
-  // auto leaf = this->topology_grid->tree().probeLeaf(coord);
-  // auto ind = leaf->beginIndexVoxel(coord);
-  //// note: some attributes need mutability
-  // openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
-  // leaf->attributeArray("flags"));
+#ifdef LOG
+  cout << "Using " << root_pair.size() << " roots\n";
+#endif
 
-  // if (ind) {
-  // unset_tombstone(flags_handle, ind);
-  // cout << "Sphere on: " << coord << '\n';
-  //} else {
-  //// might be unreachable
-  // cout << "Sphere not on: " << coord << '\n';
-  //}
-  //});
+  // constrain topology to only those reachable from roots
+  auto stage = "connected";
+  {
+    // starting from the roots connected stage saves all surface vertices into
+    // fifo
+    this->activate_vids(this->topology_grid, root_pair, stage, this->map_fifo,
+                        this->connected_map);
+    // first stage of the pipeline
+    this->update(stage, map_fifo);
+  }
 
-  //// radius stage will consume fifo surface vertices
-  // stage = "radius";
-  // this->setup_radius(map_fifo);
-  // this->update(stage, map_fifo);
+  if (params->convert_only_) {
+    convert_topology();
+    // no more work to do, exiting
+    return;
+  }
 
-  //// starting from roots, prune stage will
-  //// create final list of vertices
-  // stage = "prune";
-  // this->activate_vids(this->topology_grid, root_coords, stage,
-  // this->map_fifo, this->connected_map);
-  // this->update(stage, map_fifo);
+  // radius stage will consume fifo surface vertices
+  {
+    stage = "radius";
+    this->setup_radius(map_fifo);
+    this->update(stage, map_fifo);
+    // redefine soma radii based off info read in original files
+    adjust_soma_radii(root_pair, this->topology_grid);
+  }
 
-  // make all unpruned trace a back to a root
-  // adjust_parent();
+  if (params->sphere_pruning_) {
+    partition_components(root_pair, false);
+  } else {
 
-  // prune_radii();
+    // starting from roots, prune stage will
+    // create final list of vertices
+    if (true) {
+      stage = "prune";
+      this->activate_vids(this->topology_grid, root_pair, stage, this->map_fifo,
+                          this->connected_map);
+      this->update(stage, map_fifo);
+      // make all unpruned trace a back to a root
+      // any time you remove a node you need to ensure tree validity
+      adjust_parent();
+    }
 
-  // auto timer = high_resolution_timer();
-  // adjust_parent();
-  //#ifdef LOG
-  // cout << "Adjust parent in " << timer.elapsed() << " sec.\n";
-  //#endif
+    prune_radii();
+    adjust_parent();
 
-  // print_to_swc();
+    // produces bad reach-back artifact
+    // prune_branch();
+    // adjust_parent();
+
+    print_to_swc();
+  }
 }

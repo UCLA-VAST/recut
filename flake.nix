@@ -6,7 +6,7 @@
     mcp3d.url = "git+ssh://git@github.com/ucla-brain/mcp3d?ref=master";
     openvdb.url = "git+ssh://git@github.com/UCLA-VAST/openvdb";
     # alternatively you could pin a certain commit like:
-    # mcp3d.url = "git+ssh://git@github.com/muyezhu/mcp3d?ref=kdm-dev&rev=<commit hash>";
+    # mcp3d.url = "git+ssh://git@github.com/ucla-brain/mcp3d?ref=kdm-dev&rev=<commit hash>";
     # or you could with your local filesystem branch with:
     # mcp3d.url = "/home/kdmarrett/mcp3d";
 

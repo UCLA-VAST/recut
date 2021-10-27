@@ -38,6 +38,7 @@ void RecutCommandLineArgs::PrintUsage() {
   cout << "--convert            [-cv] convert image file and exit default "
           "out.vdb\n";
   cout << "--type               VDB input grid type: 'point' or 'float'\n";
+  cout << "--prune-radius       larger values decrease the sampling density of nodes output to swc, defaults to 10 which is tuned for 30x objective lenses\n";
   cout << "--max                set max image voxel raw value allowed, "
           "computed automatically when --bg_thresh or --fg-percent are "
           "specified\n";
@@ -45,7 +46,7 @@ void RecutCommandLineArgs::PrintUsage() {
           "computed automatically when --bg_thresh or --fg-percent are "
           "specified\n";
   cout << "--channel            [-c] directory of channel image default ch0\n";
-  cout << "--outswc             [-os] output tracing result default is "
+  cout << "--outswc             [-o] output tracing result default is "
           "out.swc\n";
   cout << "--resolution-level   [-rl] resolution level to perform tracing at. "
           "default is 0, ie original resolution\n";
@@ -63,7 +64,12 @@ void RecutCommandLineArgs::PrintUsage() {
   cout << "--prune              [-pr] prune 0 false, 1 true; defaults to 1 "
           "(automatically prunes)\n";
   cout << "--parallel           [-pl] thread count ";
-           "defaults to max hardware threads\n";
+  "defaults to max hardware threads\n";
+  cout << "--sphere-pruning     use VDB library fill with spheres pruning "
+          "strategy\n";
+  cout << "--downsample-factor  for images scaled down in x and z dimension "
+          "scale the marker files by specified factor\n";
+  cout << "--upsample-z         during --convert only z-dimension will be upsampled (copied) by specified factor, default is 1 i.e. no upsampling\n";
   cout << "--help               [-h] print example usage\n";
 }
 
@@ -71,6 +77,7 @@ string RecutCommandLineArgs::MetaString() {
   stringstream meta_stream;
   meta_stream << "# image root dir = " << image_root_dir_ << '\n';
   meta_stream << "# channel = " << channel_ << '\n';
+  meta_stream << "prune radius = " << channel_ << '\n';
   meta_stream << "# resolution level = " << resolution_level_ << '\n';
   meta_stream << "# offsets (xyz) = " << image_offsets[0] << " "
               << image_offsets[1] << " " << image_offsets[2] << '\n';
@@ -132,7 +139,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         }
         args.set_image_lengths(lengths);
       } else if (strcmp(argv[i], "--outswc") == 0 ||
-                 strcmp(argv[i], "-os") == 0) {
+                 strcmp(argv[i], "-o") == 0) {
         args.set_swc_path(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--type") == 0) {
@@ -147,6 +154,9 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--channel") == 0 ||
                  strcmp(argv[i], "-c") == 0) {
         args.set_channel(argv[i + 1]);
+        ++i;
+      } else if (strcmp(argv[i], "--prune-radius") == 0) {
+        args.set_prune_radius(atoi(argv[i + 1]));
         ++i;
       } else if (strcmp(argv[i], "--bg-thresh") == 0 ||
                  strcmp(argv[i], "-bt") == 0) {
@@ -197,12 +207,25 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
 #if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
         omp_set_num_threads(current_threads);
 #endif
+      } else if (strcmp(argv[i], "--downsample-factor") == 0) {
+        args.recut_parameters().set_downsample_factor(atoi(argv[i + 1]));
+        ++i;
       } else if (strcmp(argv[i], "--gsdt") == 0 ||
                  strcmp(argv[i], "-gs") == 0) {
         args.recut_parameters().set_gsdt(true);
       } else if (strcmp(argv[i], "--allow-gap") == 0 ||
                  strcmp(argv[i], "--ag") == 0) {
         args.recut_parameters().set_allow_gap(true);
+      } else if (strcmp(argv[i], "--combine") == 0) {
+        args.recut_parameters().set_combine(argv[i + 1]);
+        ++i;
+      } else if (strcmp(argv[i], "--histogram") == 0) {
+        args.recut_parameters().set_histogram(true);
+      } else if (strcmp(argv[i], "--sphere-pruning") == 0) {
+        args.recut_parameters().set_sphere_pruning(true);
+      } else if (strcmp(argv[i], "--upsample-z") == 0) {
+        args.recut_parameters().set_upsample_z(atoi(argv[i + 1]));
+        ++i;
       } else {
         cout << "unknown option \"" << argv[i] << "\"  ...exiting\n\n";
         RecutCommandLineArgs::PrintUsage();

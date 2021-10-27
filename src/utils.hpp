@@ -5,7 +5,7 @@
 #include "range/v3/all.hpp"
 #include "recut_parameters.hpp"
 #include "vertex_attr.hpp"
-#include <algorithm> //min
+#include <algorithm> //min, clamp
 #include <atomic>
 #include <chrono>
 #include <cstdlib> //rand srand
@@ -13,6 +13,8 @@
 #include <filesystem>
 #include <math.h>
 #include <numeric>
+#include <openvdb/tools/Composite.h>
+#include <queue>
 #include <stdlib.h> // ultoa
 
 namespace fs = std::filesystem;
@@ -28,7 +30,6 @@ namespace rng = ranges;
 #endif
 
 #define PI 3.14159265
-#define assertm(exp, msg) assert(((void)msg, exp))
 // be able to change pp values into std::string
 #define XSTR(x) STR(x)
 #define STR(x) #x
@@ -313,6 +314,30 @@ auto print_marker_3D = [](auto markers, auto interval_lengths,
 };
 
 // only values strictly greater than bkg_thresh are valid
+auto copy_vdb_to_dense_buffer(openvdb::FloatGrid::Ptr grid,
+                              const openvdb::math::CoordBBox &bbox) {
+  // cout << "copy_vdb_to_dense_buffer of size: ";
+  // bbox's by default are inclusive of start and end indices
+  // which violates recut's model of indepedent bounding boxes
+  auto dim = bbox.dim().offsetBy(-1);
+  // cout << dim << '\n';
+  // cout << "buffer size " << coord_prod_accum(dim) << '\n';
+  auto buffer = std::make_unique<uint16_t[]>(coord_prod_accum(dim));
+  for (int z = bbox.min()[2]; z < bbox.max()[2]; z++) {
+    for (int y = bbox.min()[1]; y < bbox.max()[1]; y++) {
+      for (int x = bbox.min()[0]; x < bbox.max()[0]; x++) {
+        openvdb::Coord xyz(x, y, z);
+        auto val = grid->tree().getValue(xyz);
+        auto buffer_coord = xyz - bbox.min();
+        auto id = coord_to_id(buffer_coord, dim);
+        buffer[id] = val;
+      }
+    }
+  }
+  return buffer;
+}
+
+// only values strictly greater than bkg_thresh are valid
 auto create_vdb_mask(EnlargedPointDataGrid::Ptr grid,
                      const openvdb::math::CoordBBox &bbox) {
   cout << "create_vdb_mask(): \n";
@@ -324,11 +349,15 @@ auto create_vdb_mask(EnlargedPointDataGrid::Ptr grid,
       for (int x = bbox.min()[0]; x < bbox.max()[0]; x++) {
         openvdb::Coord xyz(x, y, z);
         auto leaf_iter = grid->tree().probeConstLeaf(xyz);
-        auto ind = leaf_iter->beginIndexVoxel(xyz);
         auto buffer_coord = xyz - bbox.min();
         auto id = coord_to_id(buffer_coord, inclusive_dim);
-        if (ind) {
-          mask[id] = 1;
+        if (leaf_iter) {
+          auto ind = leaf_iter->beginIndexVoxel(xyz);
+          if (ind) {
+            mask[id] = 1;
+          } else {
+            mask[id] = 0;
+          }
         } else {
           mask[id] = 0;
         }
@@ -505,31 +534,44 @@ auto print_point_count = [](auto grid) {
   std::cout << "Point count: " << count << '\n';
 };
 
+auto get_transform = []() {
+  // grid_transform must use the same voxel size for all intervals
+  // and be identical
+  auto grid_transform =
+      openvdb::math::Transform::createLinearTransform(VOXEL_SIZE);
+  // The offset to cell-center points
+  const openvdb::math::Vec3d offset(VOXEL_SIZE / 2., VOXEL_SIZE / 2.,
+                                    VOXEL_SIZE / 2.);
+  grid_transform->postTranslate(offset);
+  return grid_transform;
+};
+
 auto copy_selected =
     [](EnlargedPointDataGrid::Ptr grid) -> openvdb::FloatGrid::Ptr {
   auto float_grid = openvdb::FloatGrid::create();
-  VID_t vcount = 0;
+  float_grid->setTransform(get_transform());
 
   for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
-    auto origin = leaf_iter->getNodeBoundingBox().min();
-    auto float_leaf =
-        new openvdb::tree::LeafNode<float, LEAF_LOG2DIM>(origin, 0.);
+    auto float_leaf = new openvdb::tree::LeafNode<float, LEAF_LOG2DIM>(
+        leaf_iter->origin(), 0.);
 
     // note: some attributes need mutability
     openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
         leaf_iter->attributeArray("flags"));
 
+    uint32_t leaf_count = 0;
     for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
       if (is_selected(flags_handle, ind)) {
         float_leaf->setValue(ind.getCoord(), 1.);
-        ++vcount;
+        ++leaf_count;
       }
     }
-    float_grid->tree().addLeaf(float_leaf);
+
+    if (leaf_count) {
+      float_grid->tree().addLeaf(float_leaf);
+    }
   }
 
-  float_grid->tree().prune();
-  cout << "total active: " << vcount << '\n';
   return float_grid;
 };
 
@@ -995,10 +1037,18 @@ auto append_attributes = [](auto grid) {
   openvdb::NamePair parentAttribute =
       openvdb::points::TypedAttributeArray<OffsetCoord, Codec>::attributeType();
   openvdb::points::appendAttribute(grid->tree(), "parents", parentAttribute);
+
+  // append a value attribute for fastmarching
+  openvdb::NamePair valueAttribute =
+      openvdb::points::TypedAttributeArray<float, Codec>::attributeType();
+  openvdb::points::appendAttribute(grid->tree(), "value", valueAttribute);
+
+#ifdef LOG
   cout << "appended all attributes\n";
+#endif
 };
 
-auto read_vdb_file(std::string fn, std::string grid_name) {
+auto read_vdb_file(std::string fn, std::string grid_name = "topology") {
 #ifdef LOG
   cout << "Reading vdb file: " << fn << " grid: " << grid_name << " ...\n";
 #endif
@@ -1285,7 +1335,8 @@ RecutCommandLineArgs get_args(int grid_size, int interval_length,
                               int block_size, int slt_pct, int tcase,
                               bool force_regenerate_image = false,
                               bool input_is_vdb = false,
-                              std::string type = "point") {
+                              std::string type = "point",
+                              int downsample_factor = 1) {
 
   bool print = false;
 
@@ -1313,7 +1364,8 @@ RecutCommandLineArgs get_args(int grid_size, int interval_length,
     // first marker is at 58, 230, 111 : 7333434
     // args.set_image_offsets({57, 228, 110});
     // root at {1125, 12949, 344}
-    args.set_image_offsets({1123, 12947, 342});
+    args.set_image_offsets(
+        {1123 / downsample_factor, 12947 / downsample_factor, 342});
     args.set_image_lengths({grid_size, grid_size, grid_size});
 
     if (const char *env_p = std::getenv("TEST_IMAGE")) {
@@ -1378,7 +1430,8 @@ RecutCommandLineArgs get_args(int grid_size, int interval_length,
   return args;
 }
 
-void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
+void write_marker(VID_t x, VID_t y, VID_t z, unsigned int radius,
+                  std::string fn) {
   auto print = false;
 #ifdef LOG
   print = true;
@@ -1393,43 +1446,160 @@ void write_marker(VID_t x, VID_t y, VID_t z, std::string fn) {
     fn = fn + "/marker";
     std::ofstream mf;
     mf.open(fn);
-    mf << "# x,y,z\n";
-    mf << x << "," << y << "," << z;
+    mf << "# x,y,z,radius\n";
+    mf << x << ',' << y << ',' << z << ',' << radius;
     mf.close();
     if (print)
       cout << "      Wrote marker: " << fn << '\n';
   }
 }
 
+template <typename image_t> struct Histogram {
+  std::map<image_t, uint64_t> bin_counts;
+  image_t granularity;
+
+  // granularity : the range of pixel values for each bin
+  Histogram(image_t granularity = 8) : granularity(granularity) {}
+
+  void operator()(image_t val) {
+    auto i = val / granularity;
+    if (bin_counts.count(i)) {
+      bin_counts[i] = bin_counts[i] + 1;
+    } else {
+      bin_counts[i] = 1;
+    }
+  }
+
+  int size() const { return bin_counts.size(); }
+
+  // print to csv
+  template <typename T>
+  friend std::ostream &operator<<(std::ostream &os, const Histogram<T> &hist) {
+
+    uint64_t cumulative_count = 0;
+    rng::for_each(hist.bin_counts, [&cumulative_count](const auto kvalpair) {
+      cumulative_count += kvalpair.second;
+    });
+    if (cumulative_count == 0) {
+      throw std::domain_error("S-curve histogram has cumulative count of 0");
+    }
+
+    // metadata
+    os << "# granularity " << hist.granularity << '\n';
+    os << "# total " << cumulative_count << '\n';
+    os << "range,count,%,cumulative %\n";
+
+    // relies on map being forward ordered for the clean cumulative impl
+    double cumulative_pct = 0.;
+    for (const auto [key, value] : hist.bin_counts) {
+      auto pct_double = (100 * static_cast<double>(value)) / cumulative_count;
+      cumulative_pct += pct_double;
+      os << hist.granularity * key << ',' << value << ',' << pct_double << ','
+         << cumulative_pct << '\n';
+    }
+
+    return os;
+  }
+
+  uint64_t operator[](const image_t key) const {
+    return this->bin_counts.at(key);
+  }
+
+  // FIXME check template types match
+  Histogram<image_t> operator+(Histogram<image_t> const &rhistogram) {
+    if (rhistogram.granularity != this->granularity) {
+      throw std::runtime_error("Granularities mistmatch");
+    }
+
+    auto merged_histogram = Histogram<image_t>(this->granularity);
+
+    auto these_keys = this->bin_counts | rng::views::keys | rng::to_vector;
+    auto rhs_keys = rhistogram.bin_counts | rng::views::keys | rng::to_vector;
+
+    auto matches =
+        rng::views::set_intersection(these_keys, rhs_keys) | rng::to_vector;
+
+    // overwrite all shared keys with summed values
+    for (auto key : matches) {
+      if (rhistogram.bin_counts.count(key)) {
+        const auto rhist_value = rhistogram[key];
+        merged_histogram.bin_counts[key] =
+            this->bin_counts.at(key) + rhistogram.bin_counts.at(key);
+      }
+    }
+
+    auto add_difference = [&matches, &merged_histogram](
+                              const auto reference_histogram, const auto keys) {
+      for (const auto key : rng::views::set_difference(keys, matches)) {
+        merged_histogram.bin_counts[key] =
+            reference_histogram.bin_counts.at(key);
+      }
+    };
+
+    // add all potential unique keys from this
+    add_difference(*this, these_keys);
+    // add all potential unique keys from rhs
+    add_difference(rhistogram, rhs_keys);
+    return merged_histogram;
+  }
+
+  Histogram<image_t> &operator+=(Histogram<image_t> const &rhistogram) {
+    *this = *this + rhistogram;
+    return *this;
+  }
+};
+
+template <typename image_t>
+Histogram<image_t> hist(image_t *buffer, GridCoord buffer_lengths,
+                        GridCoord buffer_offsets, int granularity = 8) {
+  auto histogram = Histogram<image_t>(granularity);
+  for (auto z : rng::views::iota(0, buffer_lengths[2])) {
+    for (auto y : rng::views::iota(0, buffer_lengths[1])) {
+      for (auto x : rng::views::iota(0, buffer_lengths[0])) {
+        GridCoord xyz(x, y, z);
+        GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
+        auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
+        histogram(val);
+      }
+    }
+  }
+  return histogram;
+}
+
 // keep only voxels strictly greater than bkg_thresh
-auto convert_buffer_to_vdb_acc =
-    [](auto buffer, GridCoord buffer_lengths, GridCoord buffer_offsets,
-       GridCoord image_offsets, auto accessor, auto bkg_thresh = 0) {
-      // print_coord(buffer_lengths, "buffer_lengths");
-      // print_coord(buffer_offsets, "buffer_offsets");
-      // print_coord(image_offsets, "image_offsets");
-      for (auto z : rng::views::iota(0, buffer_lengths[2])) {
-        for (auto y : rng::views::iota(0, buffer_lengths[1])) {
-          for (auto x : rng::views::iota(0, buffer_lengths[0])) {
-            GridCoord xyz(x, y, z);
-            GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
-            GridCoord grid_xyz = coord_add(xyz, image_offsets);
-            auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
-            // voxels equal to bkg_thresh are always discarded
-            if (val > bkg_thresh) {
-              // accessor.setValueOn(xyz);
-              accessor.setValue(grid_xyz, val);
-            }
+auto convert_buffer_to_vdb_acc = [](auto buffer, GridCoord buffer_lengths,
+                                    GridCoord buffer_offsets,
+                                    GridCoord image_offsets, auto accessor,
+                                    auto bkg_thresh = 0, int upsample_z = 1) {
+  // half-range of uint8_t, recorded max values of 8k / 64 -> ~128
+  auto val_transform = [](auto val) { return std::clamp(val / 64, 0, 127); };
+
+  for (auto z : rng::views::iota(0, buffer_lengths[2])) {
+    for (auto y : rng::views::iota(0, buffer_lengths[1])) {
+      for (auto x : rng::views::iota(0, buffer_lengths[0])) {
+        GridCoord xyz(x, y, z);
+        GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
+        GridCoord grid_xyz = coord_add(xyz, image_offsets);
+        auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
+        // voxels equal to bkg_thresh are always discarded
+        if (val > bkg_thresh) {
+          for (auto upsample_z_idx : rng::views::iota(0, upsample_z)) {
+            auto upsample_grid_xyz =
+                GridCoord(grid_xyz[0], grid_xyz[1],
+                          (upsample_z * grid_xyz[2]) + upsample_z_idx);
+            accessor.setValue(upsample_grid_xyz, val_transform(val));
           }
         }
       }
-    };
+    }
+  }
+};
 
 // keep only voxels strictly greater than bkg_thresh
 auto convert_buffer_to_vdb = [](auto buffer, GridCoord buffer_lengths,
                                 GridCoord buffer_offsets,
                                 GridCoord image_offsets, auto &positions,
-                                auto bkg_thresh = 0) {
+                                auto bkg_thresh = 0, int upsample_z = 1) {
   print_coord(buffer_lengths, "buffer_lengths");
   print_coord(buffer_offsets, "buffer_offsets");
   print_coord(image_offsets, "image_offsets");
@@ -1442,7 +1612,11 @@ auto convert_buffer_to_vdb = [](auto buffer, GridCoord buffer_lengths,
         auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
         // voxels equal to bkg_thresh are always discarded
         if (val > bkg_thresh) {
-          positions.push_back(PositionT(grid_xyz[0], grid_xyz[1], grid_xyz[2]));
+          for (auto upsample_z_idx : rng::views::iota(0, upsample_z)) {
+            positions.push_back(
+                PositionT(grid_xyz[0], grid_xyz[1],
+                          (upsample_z * grid_xyz[2]) + upsample_z_idx));
+          }
         }
       }
     }
@@ -1711,11 +1885,6 @@ template <typename T> std::tuple<double, double, double> iter_stats(T v) {
   return {mean, sum, stdev};
 }
 
-template <typename I> std::ostream open_swc_outputs(I root_vids) {
-  std::ofstream out("out.swc");
-  return out;
-}
-
 auto get_img_vid = [](const VID_t i, const VID_t j, const VID_t k,
                       const VID_t image_length_x,
                       const VID_t image_length_y) -> VID_t {
@@ -1844,22 +2013,42 @@ auto covered_by_bboxs = [](const auto coord, const auto bboxs) {
 // for more info see:
 // http://www.neuronland.org/NLMorphologyConverter/MorphologyFormats/SWC/Spec.html
 // https://github.com/HumanBrainProject/swcPlus/blob/master/SWCplus_specification.html
-auto print_swc_line = [](const GridCoord &coord, bool is_root, uint8_t radius,
-                         const OffsetCoord parent_offset,
-                         const GridCoord &image_lengths,
-                         const CoordBBox &image_bbox, std::ofstream &out,
-                         bool bbox_adjust = false) {
+auto print_swc_line = [](GridCoord swc_coord, bool is_root, uint8_t radius,
+                         const OffsetCoord parent_offset_coord,
+                         const CoordBBox &bbox, std::ofstream &out,
+                         std::map<GridCoord, uint32_t> &coord_to_swc_id,
+                         bool bbox_adjust = true) {
   std::ostringstream line;
 
-  GridCoord swc_coord = coord;
-  GridCoord swc_lengths = image_lengths;
+  GridCoord swc_lengths = bbox.extents();
   if (bbox_adjust) {
-    swc_coord = swc_coord - image_bbox.min();
-    swc_lengths = image_bbox.dim().offsetBy(-1);
+    swc_coord = swc_coord - bbox.min();
+    // CoordBBox uses extents inclusively, but we want exclusive bbox
+    swc_lengths = bbox.extents().offsetBy(-1);
   }
 
+  auto find_or_assign = [&coord_to_swc_id](GridCoord swc_coord) -> uint32_t {
+    auto val = coord_to_swc_id.find(swc_coord);
+    if (val == coord_to_swc_id.end()) {
+      auto new_val = coord_to_swc_id.size();
+      coord_to_swc_id[swc_coord] = new_val;
+      assertm(new_val == (coord_to_swc_id.size() - 1),
+              "map must now be 1 size larger");
+      return new_val;
+    }
+    return coord_to_swc_id[swc_coord];
+  };
+
   // n
-  line << coord_to_id(swc_coord, swc_lengths) << ' ';
+  uint32_t id;
+  if (coord_to_swc_id.empty()) {
+    id = coord_to_id(swc_coord, swc_lengths);
+  } else {
+    id = find_or_assign(swc_coord);
+  }
+  assertm(id < std::numeric_limits<int32_t>::max(),
+          "id overflows int32_t limit");
+  line << id << ' ';
 
   // type_id
   if (is_root) {
@@ -1875,11 +2064,18 @@ auto print_swc_line = [](const GridCoord &coord, bool is_root, uint8_t radius,
   line << +(radius) << ' ';
 
   // parent
-  auto parent_coord = coord_add(swc_coord, parent_offset);
-  auto parent_vid = coord_to_id(parent_coord, swc_lengths);
   if (is_root) {
     line << "-1";
   } else {
+    auto parent_coord = coord_add(swc_coord, parent_offset_coord);
+    uint32_t parent_vid;
+    if (coord_to_swc_id.empty()) {
+      parent_vid = coord_to_id(parent_coord, swc_lengths);
+    } else {
+      parent_vid = find_or_assign(parent_coord);
+    }
+    assertm(parent_vid < std::numeric_limits<int32_t>::max(),
+            "id overflows int32_t limit");
     line << parent_vid;
   }
 
@@ -1890,18 +2086,6 @@ auto print_swc_line = [](const GridCoord &coord, bool is_root, uint8_t radius,
   } else {
     std::cout << line.str();
   }
-};
-
-auto get_transform = []() {
-  // grid_transform must use the same voxel size for all intervals
-  // and be identical
-  auto grid_transform =
-      openvdb::math::Transform::createLinearTransform(VOXEL_SIZE);
-  // The offset to cell-center points
-  const openvdb::math::Vec3d offset(VOXEL_SIZE / 2., VOXEL_SIZE / 2.,
-                                    VOXEL_SIZE / 2.);
-  grid_transform->postTranslate(offset);
-  return grid_transform;
 };
 
 // throws if any leaf does not have monotonically increasing offsets or
@@ -1934,4 +2118,705 @@ auto leaves_intersect = [](EnlargedPointDataGrid::Ptr grid,
   std::set_intersection(origins.begin(), origins.end(), other_origins.begin(),
                         other_origins.end(), std::back_inserter(out));
   return !out.empty();
+};
+
+auto read_vdb_float = [](std::string fn) {
+  auto base_grid = read_vdb_file(fn);
+  auto float_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
+#ifdef LOG
+  print_grid_metadata(float_grid);
+#endif
+  return float_grid;
+};
+
+auto combine_grids = [](std::string lhs, std::string rhs, std::string out) {
+  auto first_grid = read_vdb_float(lhs);
+  {
+    auto second_grid = read_vdb_float(rhs);
+
+    // arithmetic sums in-place to first_grid and empties second_grid
+    vb::tools::compSum(*first_grid, *second_grid);
+
+#ifdef LOG
+    print_grid_metadata(first_grid);
+#endif
+  }
+
+  openvdb::GridPtrVec grids;
+  grids.push_back(first_grid);
+  write_vdb_file(grids, out);
+};
+
+auto get_id_map = []() {
+  std::map<GridCoord, uint32_t> coord_to_swc_id;
+  // add a dummy value that will never be on to the map so that real indices
+  // start at 1
+  coord_to_swc_id[GridCoord(INT_MIN, INT_MIN, INT_MIN)] = 0;
+  return coord_to_swc_id;
+};
+
+auto upsample_idx = [](int original_idx, int upsample_factor) -> int {
+  /* scale the z, */
+  return upsample_factor * original_idx;
+  // return upsample_factor * original_idx +
+  /* then offset it into the center of the upsample*/
+  //(upsample_factor / 2);
+};
+
+/* typically called with the topology_grid as the point_grid, and a
+ * connected component as the float grid
+ */
+auto collect_all_points = [](EnlargedPointDataGrid::Ptr point_grid,
+                             openvdb::FloatGrid::Ptr float_grid) {
+  auto spheres = std::vector<openvdb::Vec4s>();
+  // define local fn to add a sphere for a coord that is valid in
+  // topology_grid Note this can be accelerated by going in leaf order
+  auto emplace_coord = [&point_grid, &spheres](auto coord) {
+    auto leaf_iter = point_grid->tree().probeLeaf(coord);
+    if (leaf_iter) {
+      // assertm(leaf_iter, "leaf must be on, since the float_grid is derived
+      // from the " "active topology of it");
+
+      openvdb::points::AttributeWriteHandle<float> radius_handle(
+          leaf_iter->attributeArray("pscale"));
+
+      auto ind = leaf_iter->beginIndexVoxel(coord);
+      // assertm(ind, "ind must be on, since the float_grid is derived from the
+      // "
+      //"active topology of it");
+
+      if (ind) {
+        auto radius = radius_handle.get(*ind);
+        spheres.emplace_back(coord[0], coord[1], coord[2], radius);
+      }
+    }
+  };
+
+  auto timer = high_resolution_timer();
+  // construct spheres from underlying topology of the float_grid
+  // get on coords of current the float_grid
+  for (openvdb::FloatGrid::ValueOnCIter iter = float_grid->cbeginValueOn();
+       iter.test(); ++iter) {
+
+    if (iter.isVoxelValue()) {
+      emplace_coord(iter.getCoord());
+    } else {
+
+      openvdb::CoordBBox bbox;
+      iter.getBoundingBox(bbox);
+
+      for (auto bbox_iter = bbox.begin(); bbox_iter; ++bbox_iter) {
+        // only adds if topology grid leaf and ind are also on
+        emplace_coord(*bbox_iter);
+      }
+    }
+  }
+#ifdef LOG
+  cout << "Collect float grid points in " << timer.elapsed() << '\n';
+#endif
+  return spheres;
+};
+
+// modifies the contents of the passed marker vector nX
+// ensuring that linkings are bidirectional
+// that there are no self-links or repeats in the
+// neighbor list
+void check_nbr(vector<MyMarker *> &nX) {
+
+  for (VID_t i = 0; i < nX.size(); ++i) {
+    // remove repeats
+    sort(nX[i]->nbr.begin(), nX[i]->nbr.end());
+    nX[i]->nbr.erase(unique(nX[i]->nbr.begin(), nX[i]->nbr.end()),
+                     nX[i]->nbr.end());
+
+    // remove self linkages
+    int pos =
+        find(nX[i]->nbr.begin(), nX[i]->nbr.end(), i) - nX[i]->nbr.begin();
+    if (pos >= 0 && pos < nX[i]->nbr.size())
+      nX[i]->nbr.erase(nX[i]->nbr.begin() + pos); // remove at pos
+  }
+
+  // ensure linkings are bidirectional, add if not
+  for (VID_t i = 0; i < nX.size(); ++i) {
+    for (VID_t j = 0; j < nX[i]->nbr.size(); ++j) {
+      if (i != j) {
+        bool fnd = false;
+        for (int k = 0; k < nX[nX[i]->nbr[j]]->nbr.size(); ++k) {
+          if (nX[nX[i]->nbr[j]]->nbr[k] == i) {
+            fnd = true;
+            break;
+          }
+        }
+
+        if (!fnd) {
+          // enforce link
+          nX[nX[i]->nbr[j]]->nbr.push_back(i);
+          // cout << "enforced bidirectional link: " << nX[i]->nbr[j] << " -- "
+          //<< i << '\n';
+        }
+      }
+    }
+  }
+};
+
+// sphere grouping Advantra prune strategy
+std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius) {
+
+  std::vector<MyMarker *> nY;
+  auto no_neighbor_count = 0;
+
+  // nX[0].corr = FLT_MAX; // so that the dummy node gets index 0 again, larges
+  // correlation
+  vector<long> indices(nX.size());
+  for (long i = 0; i < indices.size(); ++i)
+    indices[i] = i;
+  // TODO sort by float value if possible
+  // sort(indices.begin(), indices.end(), CompareIndicesByNodeCorrVal(&nX));
+
+  // translate a dense linear idx of X to the sparse linear idx of y
+  vector<long> X2Y(nX.size(), -1);
+  X2Y[0] = 0; // first one is with max. correlation
+
+  nY.push_back(nX[0]);
+
+  auto check_node = [&](const long ci) {
+    X2Y[ci] = nY.size();
+    // create a new marker in the sparse set starting from an existing one
+    // that has not been pruned yet
+    auto nYi = new MyMarker(*(nX[ci]));
+    float grp_size = 1;
+
+    auto node_radius = nYi->radius;
+    if (nYi->type != 0) { // not soma
+      // upsample by factor to account for anisotropic images
+      node_radius *= prune_radius;
+    } else {
+      // increase reported radius slightly to remove nodes on edge
+      // and decrease proofreading efforts
+      node_radius *= 1.2;
+    }
+    float r2 = node_radius * node_radius;
+
+    float d2;
+    // TODO optimize this for closest point
+    for (long j = 0; j < nX.size();
+         ++j) { // check the rest that was not grouped
+      if (j != ci && X2Y[j] == -1) {
+        d2 = pow(nX[j]->x - nX[ci]->x, 2);
+        if (d2 <= r2) {
+          d2 += pow(nX[j]->y - nX[ci]->y, 2);
+          if (d2 <= r2) {
+            d2 += pow(nX[j]->z - nX[ci]->z, 2);
+            if (d2 <= r2) {
+
+              // mark the idx, since nY is being accumulated to
+              X2Y[j] = nY.size();
+
+              // TODO modify marker to have a set of markers
+              for (int k = 0; k < nX[j]->nbr.size(); ++k) {
+                nYi->nbr.push_back(
+                    nX[j]
+                        ->nbr[k]); // append the neighbours of the group members
+              }
+
+              // update local average with x,y,z,sig elements from nX[j]
+              ++grp_size;
+              float a = (grp_size - 1) / grp_size;
+              float b = (1.0 / grp_size);
+              nYi->x = a * nYi->x + b * nX[j]->x;
+              nYi->y = a * nYi->y + b * nX[j]->y;
+              nYi->z = a * nYi->z + b * nX[j]->z;
+            }
+          }
+        }
+      }
+    }
+
+    if (nYi->nbr.size() == 0) {
+      ++no_neighbor_count;
+      if (nYi->parent == nullptr)
+        throw std::runtime_error("parent is also invalid");
+      // cout << "nXi coord " << nX[ci]->x << ',' << nX[ci]->y << ',' <<
+      // nX[ci]->z << '\n'; cout << "nYi coord " << nYi->x << ',' << nYi->y <<
+      // ',' << nYi->z << '\n'; cout << "  parent coord " << nYi->parent->x <<
+      // ',' << nYi->parent->y << ',' << nYi->parent->z << '\n';
+    }
+
+    // nYi.type = Node::AXON; // enforce type
+    nY.push_back(nYi);
+  };
+
+  //// add soma nodes as independent groups at the beginning
+  // for (long i = 0; i < nX.size(); ++i) {
+  //// all somas are automatically kept
+  // if (nX[i]->type == 0) {
+  // X2Y[i] = nY.size();
+  // auto nYi = new MyMarker(*nX[i]);
+  // nY.push_back(nYi);
+  //}
+  //}
+
+  // add soma nodes first
+  for (long i = 0; i < indices.size(); ++i) {
+    long ci = indices[i];
+
+    if (nX[ci]->type != 0)
+      continue; // skip unless it's a root/soma
+
+    check_node(ci);
+  }
+
+  // add remaining nodes
+  for (long i = 0; i < indices.size(); ++i) {
+    long ci = indices[i];
+
+    if (X2Y[ci] != -1)
+      continue; // skip if it was added to a group already
+
+    check_node(ci);
+  }
+
+  // once complete mapping is established, update the indices from
+  // the original linear index to the new sparse group index according
+  // to the X2Y idx map vector
+  for (int i = 1; i < nY.size(); ++i) {
+    for (int j = 0; j < nY[i]->nbr.size(); ++j) {
+      nY[i]->nbr[j] = X2Y[nY[i]->nbr[j]];
+    }
+  }
+
+  check_nbr(nY); // remove doubles and self-linkages after grouping
+
+  return nY;
+}
+
+template <typename T> class BfsQueue {
+public:
+  std::queue<T> kk;
+  BfsQueue() {}
+  void enqueue(T item) { this->kk.push(item); }
+  T dequeue() {
+    T output = kk.front();
+    kk.pop();
+    return output;
+  }
+  int size() { return kk.size(); }
+  bool hasItems() { return !kk.empty(); }
+};
+
+// advantra based re-extraction of tree based on bfs
+std::vector<MyMarker *>
+advantra_extract_trees(std::vector<MyMarker *> nlist,
+                       bool remove_isolated_tree_with_one_node = false) {
+
+  BfsQueue<int> q;
+  std::vector<MyMarker *> tree;
+
+  vector<int> dist(nlist.size());
+  vector<int> nmap(nlist.size());
+  vector<int> parent(nlist.size());
+
+  for (int i = 0; i < nlist.size(); ++i) {
+    dist[i] = INT_MAX;
+    nmap[i] = -1;   // indexing in output tree
+    parent[i] = -1; // parent index in current tree
+  }
+
+  dist[0] = -1;
+
+  // Node tree0(nlist[0]); // first element of the nodelist is dummy both in
+  // input and output tree.clear(); tree.push_back(tree0);
+  int treecnt = 0; // independent tree counter, will be obsolete
+
+  int seed;
+
+  auto get_undiscovered2 = [](std::vector<int> dist) -> int {
+    for (int i = 1; i < dist.size(); i++) {
+      if (dist[i] == INT_MAX) {
+        return i;
+      }
+    }
+    return -1;
+  };
+
+  while ((seed = get_undiscovered2(dist)) > 0) {
+
+    treecnt++;
+
+    dist[seed] = 0;
+    nmap[seed] = -1;
+    parent[seed] = -1;
+    q.enqueue(seed);
+
+    int nodesInTree = 0;
+
+    while (q.hasItems()) {
+
+      // dequeue(), take from FIFO structure,
+      // http://en.wikipedia.org/wiki/Queue_%28abstract_data_type%29
+      int curr = q.dequeue();
+
+      auto n = new MyMarker(*nlist[curr]);
+      n->nbr.clear();
+      if (n->type != 0)
+        n->type = treecnt + 2; // vaa3d viz
+
+      // choose the best single parent of the possible neighbors
+      if (parent[curr] > 0) {
+        n->nbr.push_back(nmap[parent[curr]]);
+        // get the ptr to the marker from the id of the parent of the current
+        n->parent = nlist[parent[curr]];
+      } else if (nlist[curr]->nbr.size() != 0) {
+        // get the ptr to the marker from the id of the min element of nbr
+        // the smaller the id of an element, the higher precedence it has
+        auto nbrs = nlist[curr]->nbr;
+        auto min_idx = 0;
+        auto min_element = nbrs[min_idx];
+        for (int i = 0; i < nbrs.size(); ++i) {
+          if (nbrs[i] < min_element) {
+            min_element = nbrs[i];
+          }
+        }
+        n->parent = nlist[min_element];
+      } else {
+        throw std::runtime_error("node can't have 0 nbrs");
+      }
+
+      nmap[curr] = tree.size();
+      tree.push_back(n);
+      ++nodesInTree;
+
+      // for each node adjacent to current
+      for (int j = 0; j < nlist[curr]->nbr.size(); j++) {
+
+        int adj = nlist[curr]->nbr[j];
+
+        if (dist[adj] == INT_MAX) {
+          dist[adj] = dist[curr] + 1;
+          parent[adj] = curr;
+          // enqueue(), add to FIFO structure,
+          // http://en.wikipedia.org/wiki/Queue_%28abstract_data_type%29
+          q.enqueue(adj);
+        }
+      }
+
+      // check if there were any neighbours
+      if (nodesInTree == 1 && !q.hasItems() &&
+          remove_isolated_tree_with_one_node) {
+        tree.pop_back(); // remove the one that was just added
+        nmap[curr] = -1; // cancel the last entry
+      }
+    }
+  }
+
+  cout << treecnt << " trees\n";
+  return tree;
+}
+
+// accept_tombstone is a way to see pruned vertices still in active_vertex
+std::vector<MyMarker *> convert_to_markers(EnlargedPointDataGrid::Ptr grid,
+                                           bool accept_tombstone) {
+
+  std::vector<MyMarker *> outtree;
+#ifdef FULL_PRINT
+  cout << "Generating results." << '\n';
+#endif
+  auto timer = high_resolution_timer();
+
+  // get a mapping to stable address pointers in outtree such that a markers
+  // parent is valid pointer when returning just outtree
+  std::map<GridCoord, MyMarker *> coord_to_marker_ptr;
+  std::map<GridCoord, VID_t> coord_to_idx;
+
+  // iterate all active vertices ahead of time so each marker
+  // can have a pointer to it's parent marker
+  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+    // cout << leaf_iter->getNodeBoundingBox() << '\n';
+
+    openvdb::points::AttributeHandle<uint8_t> flags_handle(
+        leaf_iter->constAttributeArray("flags"));
+
+    openvdb::points::AttributeHandle<float> radius_handle(
+        leaf_iter->constAttributeArray("pscale"));
+
+    openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
+        leaf_iter->constAttributeArray("parents"));
+
+    // openvdb::points::AttributeHandle<OffsetCoord> position_handle(
+    // leaf_iter->constAttributeArray("P"));
+
+    for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
+      // get coord
+      auto coord = ind.getCoord();
+      // create all valid new marker objects
+      if (is_valid(flags_handle, ind, accept_tombstone)) {
+        // std::cout << "\t " << coord<< '\n';
+        assertm(coord_to_marker_ptr.count(coord) == 0,
+                "Can't have two matching vids");
+        // get original i, j, k
+        auto marker = new MyMarker(coord[0], coord[1], coord[2]);
+        if (is_root(flags_handle, ind)) {
+          // a marker with a type of 0, must be a root
+          marker->type = 0;
+        }
+        marker->radius = radius_handle.get(*ind);
+        // save this marker ptr to a map
+        coord_to_marker_ptr[coord] = marker;
+        coord_to_idx[coord] = outtree.size();
+        // std::cout << "\t " << coord_to_str(coord) << " -> "
+        //<< (coord + parents_handle.get(*ind)) << " " << marker->radius
+        //<< '\n';
+        assertm(marker->radius, "can't have 0 radius");
+        outtree.push_back(marker);
+      }
+    }
+  }
+
+  // now that a pointer to all desired markers is known
+  // iterate and complete the marker definition
+  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+
+    openvdb::points::AttributeHandle<uint8_t> flags_handle(
+        leaf_iter->constAttributeArray("flags"));
+
+    openvdb::points::AttributeHandle<float> radius_handle(
+        leaf_iter->constAttributeArray("pscale"));
+
+    openvdb::points::AttributeHandle<OffsetCoord> parents_handle(
+        leaf_iter->constAttributeArray("parents"));
+
+    for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
+      // create all valid new marker objects
+      if (is_valid(flags_handle, ind, accept_tombstone)) {
+        // get coord
+        auto coord = ind.getCoord();
+        assertm(coord_to_marker_ptr.count(coord),
+                "did not find vertex in marker map");
+        auto marker = coord_to_marker_ptr[coord]; // get the ptr
+        if (is_root(flags_handle, ind)) {
+          // a marker with a parent of 0, must be a root
+          marker->parent = 0;
+        } else {
+          auto parent_coord = parents_handle.get(*ind) + coord;
+
+          // find parent
+          assertm(coord_to_marker_ptr.count(parent_coord),
+                  "did not find parent in marker map");
+
+          auto parent =
+              coord_to_marker_ptr[parent_coord]; // adjust marker->parent =
+                                                 // parent;
+          marker->parent = parent;
+          marker->nbr.push_back(coord_to_idx[parent_coord]);
+        }
+      }
+    }
+  }
+
+#ifdef LOG
+  cout << "Total marker size: " << outtree.size() << " nodes" << '\n';
+#endif
+
+#ifdef FULL_PRINT
+  cout << "Finished generating results within " << timer.elapsed() << " sec."
+       << '\n';
+#endif
+
+  return outtree;
+}
+
+// modify the radius value within the point grid to reflect a predetermined
+// radius mutates the value that was previously calculated usually somas have a
+// more accurate radius value determined before Recut processes so it is
+// appropriate to rewrite with these more accurate radii values before a prune
+// step
+auto adjust_soma_radii =
+    [](const std::vector<std::pair<GridCoord, uint8_t>> &roots,
+       EnlargedPointDataGrid::Ptr grid) -> EnlargedPointDataGrid::Ptr {
+  assertm(roots.size() > 0, "passed roots is empty");
+  rng::for_each(roots, [grid](const auto &coord_radius) {
+    const auto [coord, radius] = coord_radius;
+    const auto leaf = grid->tree().probeLeaf(coord);
+
+    // sanity checks
+    assertm(leaf, "corresponding leaf of passed root must be active");
+    auto ind = leaf->beginIndexVoxel(coord);
+    assertm(ind, "corresponding voxel of passed root must be active");
+    assertm(radius, "passed radii value of 0 is invalid");
+
+    // modify the radius value
+    openvdb::points::AttributeWriteHandle<float> radius_handle(
+        leaf->attributeArray("pscale"));
+
+    auto previous_radius = radius_handle.get(*ind);
+    radius_handle.set(*ind, radius);
+
+#ifdef FULL_PRINT
+    cout << "Adjusted " << coord << " radius " << previous_radius << " -> "
+         << radius_handle.get(*ind) << '\n';
+#endif
+  });
+
+  return grid;
+};
+
+template <typename FilterP, typename Pred>
+void visit_float(openvdb::FloatGrid::Ptr float_grid,
+                 EnlargedPointDataGrid::Ptr point_grid, FilterP keep_if,
+                 Pred predicate) {
+  for (auto float_leaf = float_grid->tree().beginLeaf(); float_leaf;
+       ++float_leaf) {
+
+    auto point_leaf = point_grid->tree().probeLeaf(float_leaf->origin());
+    assertm(point_leaf, "leaf must be on, since component is derived from the "
+                        "active topology of it");
+
+    // note: some attributes need mutability
+    openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
+        point_leaf->attributeArray("flags"));
+
+    openvdb::points::AttributeHandle<float> radius_handle(
+        point_leaf->constAttributeArray("pscale"));
+
+    // Extract the position attribute from the leaf by name (P is position).
+    const openvdb::points::AttributeArray &arr =
+        point_leaf->constAttributeArray("P");
+    // Create a read-only AttributeHandle. Position always uses Vec3f.
+    openvdb::points::AttributeHandle<PositionT> position_handle(arr);
+
+    openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
+        point_leaf->attributeArray("parents"));
+
+    for (auto float_ind = float_leaf->beginValueOn(); float_ind; ++float_ind) {
+      const auto coord = float_ind.getCoord();
+      auto ind = point_leaf->beginIndexVoxel(coord);
+      if (keep_if(coord, float_leaf)) {
+        predicate(flags_handle, parents_handle, radius_handle, ind, coord);
+      }
+    }
+  }
+}
+
+template <typename FilterP, typename Pred>
+void visit(EnlargedPointDataGrid::Ptr grid, FilterP keep_if, Pred predicate) {
+  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+
+    // note: some attributes need mutability
+    openvdb::points::AttributeWriteHandle<uint8_t> flags_handle(
+        leaf_iter->attributeArray("flags"));
+
+    openvdb::points::AttributeHandle<float> radius_handle(
+        leaf_iter->constAttributeArray("pscale"));
+
+    openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
+        leaf_iter->attributeArray("parents"));
+
+    for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
+      if (keep_if(flags_handle, parents_handle, radius_handle, ind)) {
+        predicate(flags_handle, parents_handle, radius_handle, ind, leaf_iter);
+      }
+    }
+  }
+}
+
+vector<MyMarker *>
+convert_float_to_markers(openvdb::FloatGrid::Ptr component,
+                         EnlargedPointDataGrid::Ptr point_grid) {
+#ifdef FULL_PRINT
+  cout << "Convert" << '\n';
+#endif
+
+  auto timer = high_resolution_timer();
+  std::vector<MyMarker *> outtree;
+
+  // get a mapping to stable address pointers in outtree such that a markers
+  // parent is valid pointer when returning just outtree
+  std::map<GridCoord, MyMarker *> coord_to_marker_ptr;
+
+  // temporary for advantra prune method
+  std::map<GridCoord, VID_t> coord_to_idx;
+
+  auto keep_if = [](const auto coord, const auto float_leaf) {
+    return float_leaf->isValueOn(coord);
+  };
+
+  auto establish_marker_set = [&coord_to_marker_ptr, &coord_to_idx,
+                               &outtree](const auto &flags_handle,
+                                         auto &parents_handle,
+                                         const auto &radius_handle,
+                                         const auto &ind, const auto &coord) {
+    assertm(coord_to_marker_ptr.count(coord) == 0,
+            "Can't have two matching vids");
+    // get original i, j, k
+    auto marker = new MyMarker(coord[0], coord[1], coord[2]);
+    assertm(marker != nullptr, "is a nullptr");
+
+    if (is_root(flags_handle, ind)) {
+      // a marker with a type of 0, must be a root
+      marker->type = 0;
+    }
+    marker->radius = radius_handle.get(*ind);
+    // save this marker ptr to a map
+    coord_to_marker_ptr.emplace(coord, marker);
+    assertm(marker->radius, "can't have 0 radius");
+
+    coord_to_idx[coord] = outtree.size();
+    outtree.push_back(marker);
+  };
+
+  // iterate all active vertices ahead of time so each marker
+  // can have a pointer to it's parent marker
+  // iterate by leaf markers since attributes are stored in chunks
+  // of leaf size
+  visit_float(component, point_grid, keep_if, establish_marker_set);
+
+  // now that a pointer to all desired markers is known
+  // iterate and complete the marker definition
+  auto assign_parent = [&coord_to_marker_ptr, &coord_to_idx, &outtree](
+                           const auto &flags_handle, auto &parents_handle,
+                           const auto &radius_handle, const auto &ind,
+                           const auto &coord) {
+    auto marker = coord_to_marker_ptr[coord]; // get the ptr
+    if (marker == nullptr) {
+      cout << "could not find " << coord << '\n';
+      auto idx = coord_to_idx.at(coord);
+      cout << idx << '\n';
+      throw std::runtime_error("marker not valid");
+    }
+
+    if (is_root(flags_handle, ind)) {
+      // a marker with a parent of 0, must be a root
+      marker->parent = 0;
+    } else {
+      auto parent_coord = parents_handle.get(*ind) + coord;
+
+      if (coord_to_marker_ptr.count(parent_coord) < 1) {
+        throw std::runtime_error(
+            "did not find parent in marker map during assign");
+      }
+
+      // find parent
+      auto parent = coord_to_marker_ptr[parent_coord]; // adjust
+      marker->parent = parent;
+
+      marker->nbr.push_back(coord_to_idx[parent_coord]);
+    }
+  };
+
+  visit_float(component, point_grid, keep_if, assign_parent);
+
+#ifdef LOG
+  cout << "Total marker count: " << outtree.size() << " nodes" << '\n';
+#endif
+
+#ifdef FULL_PRINT
+  cout << "Finished generating results within " << timer.elapsed() << " sec."
+       << '\n';
+#endif
+  return outtree;
+}
+
+auto all_invalid = [](const auto &flags_handle, const auto &parents_handle,
+                      const auto &radius_handle, const auto &ind) {
+  return !is_selected(flags_handle, ind);
 };

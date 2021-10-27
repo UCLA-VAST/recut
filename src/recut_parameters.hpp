@@ -17,9 +17,11 @@ class RecutParameters {
   public:
     RecutParameters() {
       gsdt_ = false;
+      sphere_pruning_ = false;
       coverage_prune_ = true;
       prune_ = 1;
       allow_gap_ = false;
+      histogram_ = false;
       background_thresh_ = -1;
       foreground_percent_ = -0.01;
       length_thresh_ = 5.0;
@@ -27,6 +29,7 @@ class RecutParameters {
       sr_ratio_ = 1.0 / 3;
       cube_256_ = false;
       restart_factor_ = 0.0;
+      downsample_factor_ = 1;
       restart_ = false;
       radius_from_2d_ = true;
       swc_resample_ = true;
@@ -46,6 +49,7 @@ class RecutParameters {
       selected = 0;
       root_vid = std::numeric_limits<uint64_t>::max();
       interval_length = 0;
+      upsample_z_ = 1; // i.e. no upsampling
     }
     std::string MetaString();
     // getters
@@ -78,11 +82,13 @@ class RecutParameters {
     void set_restart(bool restart) { restart_ = restart; }
     void set_parallel_num(int num) { parallel_num_ = num; }
     void set_gsdt(bool is_gsdt) { gsdt_ = is_gsdt; }
+    void set_histogram(bool histogram) { histogram_ = histogram; }
     void set_coverage_prune(bool coverage_prune) {
       coverage_prune_ = coverage_prune;
     }
     void set_prune(int prune) { prune_ = prune; }
     void set_allow_gap(bool allow_gap) { allow_gap_ = allow_gap; }
+    void set_combine(std::string second_grid) { second_grid_ = second_grid; }
     void set_background_thresh(int background_thresh) {
       background_thresh_ = std::max(background_thresh, 0);
     }
@@ -126,18 +132,25 @@ class RecutParameters {
     void set_min_intensity(double min_intensity) {
       min_intensity_ = min_intensity;
     }
+    void set_sphere_pruning(bool flag) {
+      sphere_pruning_ = flag;
+    }
+    void set_downsample_factor(int factor) {
+      downsample_factor_ = factor;
+    }
+    void set_upsample_z(int upsample_z) {
+      upsample_z_ = upsample_z;
+    }
 
-    // no getters or setters
-    bool force_regenerate_image, convert_only_;
-    int tcase, slt_pct;
+
+    // no getters
     uint64_t selected, root_vid;
-    bool gsdt_, coverage_prune_, allow_gap_, cube_256_, radius_from_2d_,
-         swc_resample_, high_intensity_, brightfield_, restart_;
+    bool force_regenerate_image, convert_only_, histogram_, gsdt_, coverage_prune_, allow_gap_, cube_256_, radius_from_2d_, swc_resample_, high_intensity_, brightfield_, restart_, sphere_pruning_;
     int user_thread_count_, background_thresh_, cnn_type_, parallel_num_,
-        prune_, interval_length;
+        prune_, interval_length, tcase, slt_pct, downsample_factor_, upsample_z_;
     double foreground_percent_, sr_ratio_, length_thresh_, restart_factor_,
            max_intensity_, min_intensity_;
-    std::string marker_file_path_, out_vdb_;
+    std::string marker_file_path_, out_vdb_, second_grid_;
 };
 
 class RecutCommandLineArgs {
@@ -146,7 +159,7 @@ class RecutCommandLineArgs {
     RecutCommandLineArgs()
       : recut_parameters_(RecutParameters{}), image_root_dir_(std::string()),
       swc_path_("out.swc"), channel_("ch0"), resolution_level_(0),
-      image_offsets(0, 0, 0), image_lengths(-1, -1, -1), type_("point") {}
+      image_offsets(0, 0, 0), image_lengths(-1, -1, -1), type_("point"), prune_radius_(10) {}
 
     static void PrintUsage();
     std::string MetaString();
@@ -178,6 +191,10 @@ class RecutCommandLineArgs {
       channel_ = channel;
     }
 
+    void set_prune_radius(uint16_t pr) {
+      prune_radius_ = pr;
+    }
+
     void set_resolution_level(int resolution_level) {
       resolution_level_ = resolution_level;
     }
@@ -200,6 +217,7 @@ class RecutCommandLineArgs {
     RecutParameters recut_parameters_;
     std::string image_root_dir_, swc_path_, channel_, type_; 
     int resolution_level_;
+    uint16_t prune_radius_;
 };
 
 RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]);
