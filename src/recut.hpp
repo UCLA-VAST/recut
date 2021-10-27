@@ -18,7 +18,6 @@
 #include <iostream>
 #include <map>
 #include <openvdb/tools/Composite.h>
-#include <openvdb/tools/VolumeToSpheres.h> // for fillWithSpheres
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -3169,63 +3168,6 @@ void Recut<image_t>::fill_components_with_spheres(
                      file, coord_to_swc_id, true);
     });
 
-#ifdef OUTPUT_SPHERES
-    // print all somas in this component
-    rng::for_each(component_roots, [this, &file, &coord_to_swc_id,
-                                    &component](const auto &component_root) {
-      auto [coord, radius] = coord_radius;
-      auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
-      assertm(leaf_iter, "leaf_iter must be reachable");
-      openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
-          leaf_iter->attributeArray("parents"));
-
-      auto ind = leaf_iter->beginIndexVoxel(coord);
-      assertm(ind, "ind must be reachable");
-      auto parent_offset = parents_handle.get(*ind);
-      auto parent_offset = coord_sub(parent_coord, component_root.first);
-      print_swc_line(component_root.first, true, component_root.second,
-                     zeros_off(), component->evalActiveVoxelBoundingBox(), file,
-                     coord_to_swc_id, true);
-    });
-
-    // build the set of all valid swc coord lines:
-    // somas
-    std::vector<GridCoord> component_root_coords =
-        component_roots |
-        rng::views::transform([](const auto &cpair) { return cpair.first; }) |
-        rng::to_vector;
-    // neurite points
-    std::vector<GridCoord> filtered_coords =
-        filtered_spheres | rng::views::transform([](const auto &sphere) {
-          return GridCoord(sphere[0], sphere[1], sphere[2]);
-        }) |
-        rng::to_vector;
-    // somas + neurite points
-    std::vector<GridCoord> valid_swc_lines =
-        rng::views::concat(component_root_coords, filtered_coords) |
-        rng::to_vector;
-
-    if (output_topology) {
-      // finalize soma attributes
-      rng::for_each(component_roots, [this](const auto &coord_radius) {
-        auto [coord, radius] = coord_radius;
-        auto leaf_iter = this->topology_grid->tree().probeLeaf(coord);
-        openvdb::points::AttributeWriteHandle<OffsetCoord> parents_handle(
-            leaf_iter->attributeArray("parents"));
-
-        openvdb::points::AttributeWriteHandle<float> radius_handle(
-            leaf_iter->attributeArray("pscale"));
-
-        auto ind = leaf_iter->beginIndexVoxel(coord);
-        assertm(ind, "ind must be reachable");
-        parents_handle.set(*ind, OffsetCoord(0));
-        radius_handle.set(*ind, static_cast<float>(radius));
-      });
-    }
-
-    if (file.is_open())
-      file.close();
-#endif
     ++counter;
   }); // for each component
 
