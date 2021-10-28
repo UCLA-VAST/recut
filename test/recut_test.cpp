@@ -6,12 +6,12 @@
 #include <fcntl.h>
 #include <fstream>
 #include <iostream>
+#include <openvdb/tools/Dense.h>
 #include <string>
 #include <tbb/parallel_for.h>
 #include <tuple>
 #include <typeinfo>
 #include <vector>
-#include <openvdb/tools/Dense.h>
 
 // catch an assertion and auto drop into
 // intractive mode for gdb or rr
@@ -411,7 +411,6 @@ TEST(Histogram, CallAndPrint) {
     }
   }
 #endif
-
 }
 
 TEST(VDB, IntegrateUpdateGrid) {
@@ -683,11 +682,10 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
   bool print_all = true;
   // generate an image buffer on the fly
   // then convert to vdb
-  auto args =
-      get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-               /*force_regenerate_image=*/false,
-               /*input_is_vdb=*/true,
-               /* type =*/"point");
+  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+                       /*force_regenerate_image=*/false,
+                       /*input_is_vdb=*/true,
+                       /* type =*/"point");
   auto recut = Recut<uint16_t>(args);
   auto root_coords = recut.initialize();
   cout << "root " << root_coords[0].first << '\n';
@@ -700,7 +698,7 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
                              /*input_is_vdb=*/true,
                              /*type=*/"float");
   auto base_grid = read_vdb_file(float_args.image_root_dir());
-   // priority queue must have type float
+  // priority queue must have type float
   recut.input_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
 
   auto stage = "value";
@@ -778,7 +776,7 @@ TEST(Utils, AdjustSomaRadii) {
   auto base_grid = read_vdb_file(point_args.image_root_dir());
   recut.topology_grid = openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
   append_attributes(recut.topology_grid);
-  //cout << root_coords[0].first << ' ' << +(root_coords[0].second) << '\n';
+  // cout << root_coords[0].first << ' ' << +(root_coords[0].second) << '\n';
 
   // check all root radii are 0
   rng::for_each(root_coords, [&recut](const auto &coord_radius) {
@@ -1062,7 +1060,8 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
           continue;
 
         auto radius = grid_size / 4;
-        if ((tcase == 4) || (radius < 1)) radius = 1;
+        if ((tcase == 4) || (radius < 1))
+          radius = 1;
 
         std::string base(get_data_dir());
         std::string delim("/");
@@ -1181,7 +1180,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
   }
 }
 
-TEST(VDB, ConvertDenseToVDBToDense) {
+TEST(VDB, ConvertDenseToVDB) {
   auto grid_size = 8;
   auto grid_extents = GridCoord(grid_size, grid_size, grid_size);
   auto tol_sz = coord_prod_accum(grid_extents);
@@ -1230,6 +1229,7 @@ TEST(VDB, ConvertDenseToVDBToDense) {
   topology_grid->tree().prune();
 
   if (print) {
+    cout << "topo grid\n";
     print_vdb_mask(topology_grid->getConstAccessor(), extended_grid_extents);
 
     // print_all_points(
@@ -1239,19 +1239,49 @@ TEST(VDB, ConvertDenseToVDBToDense) {
 
     // print_image_3D(inimg1d, extended_grid_extents);
   }
+}
 
-  // convert back to dense
-  vto::Dense<uint16_t, vto::LayoutXYZ> check_dense(topology_grid->evalActiveVoxelBoundingBox());
-  vto::copyToDense(*topology_grid, check_dense);
+TEST(VDB, ConvertVDBToDense) {
+  auto grid_size = 24; // multi leaf but symmetric
+  auto tcase = 5;
+  auto grid_extents = GridCoord(grid_size, grid_size, grid_size);
+  auto tol_sz = coord_prod_accum(grid_extents);
+  auto root_vid = get_central_vid(grid_size);
+  auto root_coord = GridCoord(get_central_coord(grid_size));
+  auto print = true;
+
+  uint16_t *inimg1d = new uint16_t[tol_sz];
+  VID_t actual_selected =
+      create_image(tcase, inimg1d, grid_size, 100, root_vid);
+
+  // auto topology_grid = create_vdb_grid(extended_grid_extents, 0);
+  auto float_grid = openvdb::FloatGrid::create();
+  convert_buffer_to_vdb_acc(inimg1d, grid_extents, zeros(), zeros(),
+                            float_grid->getAccessor(), 0);
 
   if (print) {
+    cout << "float grid\n";
+    print_vdb_mask(float_grid->getConstAccessor(), grid_extents);
+  }
+
+  // convert back to dense
+  vto::Dense<uint16_t, vto::LayoutXYZ> check_dense(
+      float_grid->evalActiveVoxelBoundingBox(), 0.);
+  vto::copyToDense(*float_grid, check_dense, true);
+
+  if (print) {
+    cout << "f bb " << float_grid->evalActiveVoxelBoundingBox() << '\n';
+    // cout << "d bb activeVoxelCount" << check_dense.valueCount() << '\n';
+    check_dense.print();
     // TODO print dense
-    // get the raw pointer 
+    // get the raw pointer
     auto img_ptr = check_dense.data();
+    cout << "Dense 3D\n";
     print_image_3D(img_ptr, grid_extents);
   }
 
   // check all match
+  //ASSERT_EQ(check_dense.valueCount(), float_grid->activeVoxelCount());
 }
 
 TEST(VDB, GetSetGridMeta) {
@@ -1422,7 +1452,8 @@ TEST(CompareTree, All) {
   auto interval_size = grid_size;
   VID_t block_size = 2;
 
-  auto args = get_args(grid_size, interval_size, block_size, 100, 1, false, true);
+  auto args =
+      get_args(grid_size, interval_size, block_size, 100, 1, false, true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
 
@@ -2233,8 +2264,8 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
   // generate image so that you can read it below
   // first make sure it can pass
   auto input_is_vdb = true;
-  auto args = get_args(grid_size, interval_size, block_size, slt_pct,
-      tcase, force_regenerate_image, input_is_vdb);
+  auto args = get_args(grid_size, interval_size, block_size, slt_pct, tcase,
+                       force_regenerate_image, input_is_vdb);
   args.set_type("float");
   cout << "args.image_root_dir() " << args.image_root_dir() << '\n';
   cout << "image lengths " << grid_extents << '\n';
