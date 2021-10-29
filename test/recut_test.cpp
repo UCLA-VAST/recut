@@ -1250,7 +1250,7 @@ TEST(VDB, ConvertVDBToDense) {
   auto root_coord = GridCoord(get_central_coord(grid_size));
   auto print = true;
 
-  uint16_t *inimg1d = new uint16_t[tol_sz];
+  auto inimg1d = new uint16_t[tol_sz];
   VID_t actual_selected =
       create_image(tcase, inimg1d, grid_size, 100, root_vid);
 
@@ -1264,24 +1264,41 @@ TEST(VDB, ConvertVDBToDense) {
     print_vdb_mask(float_grid->getConstAccessor(), grid_extents);
   }
 
+  // convert back to dense array
+  auto bbox = CoordBBox(zeros(), grid_extents.offsetBy(-1));
+  VID_t volume = coord_prod_accum(grid_extents);
+
+  uint16_t img_ptr[volume] = {0}; // set all to elements 0
+                                  // std::fill_n(img_ptr, volume, 0);
+
   // convert back to dense
-  vto::Dense<uint16_t, vto::LayoutXYZ> check_dense(
-      float_grid->evalActiveVoxelBoundingBox(), 0.);
-  vto::copyToDense(*float_grid, check_dense, true);
+  vto::Dense<uint16_t, vto::LayoutXYZ> check_dense(bbox, 0.);
+  vto::copyToDense(*float_grid, check_dense);
+
+  ASSERT_EQ(check_dense.valueCount(), volume);
+
+  //cout << check_dense.bbox() << '\n';
+
+  //for (auto iter = float_grid->cbeginValueOn(); iter; ++iter) {
+  //auto coord = iter.getCoord();
+  //auto coord_adjust = coord - bbox.min();
+  //auto id = coord_to_id(coord_adjust, bbox.dim());
+  //std::cout << "Grid " << coord << " = " << *iter << '\n';
+  //img_ptr[id] = static_cast<uint16_t>(*iter);
+  //}
 
   if (print) {
-    cout << "f bb " << float_grid->evalActiveVoxelBoundingBox() << '\n';
-    // cout << "d bb activeVoxelCount" << check_dense.valueCount() << '\n';
-    check_dense.print();
-    // TODO print dense
-    // get the raw pointer
-    auto img_ptr = check_dense.data();
     cout << "Dense 3D\n";
-    print_image_3D(img_ptr, grid_extents);
+    print_image_3D(check_dense.data(), grid_extents);
   }
 
   // check all match
-  //ASSERT_EQ(check_dense.valueCount(), float_grid->activeVoxelCount());
+  // ASSERT_EQ(check_dense.valueCount(), float_grid->activeVoxelCount());
+  for (auto i = 0; i < volume; ++i) {
+    auto original_id =
+        coord_to_id(id_to_coord(i, bbox.dim()) + bbox.dim(), grid_extents);
+    ASSERT_EQ(img_ptr[i], inimg1d[original_id]);
+  }
 }
 
 TEST(VDB, GetSetGridMeta) {

@@ -384,10 +384,10 @@ void print_vdb_mask(T vdb_accessor, const GridCoord &lengths,
         openvdb::Coord xyz(x, y, z);
         auto val = vdb_accessor.isValueOn(xyz);
         if (val) {
-          //if ((bkg_thresh > -1) && (val <= bkg_thresh)) {
-            //cout << "- ";
+          // if ((bkg_thresh > -1) && (val <= bkg_thresh)) {
+          // cout << "- ";
           //} else {
-            cout << val << " ";
+          cout << val << " ";
           //}
         } else {
           cout << "- ";
@@ -698,23 +698,24 @@ auto print_all_points = [](const EnlargedPointDataGrid::Ptr grid,
 };
 
 template <typename T>
-void print_image_3D(const T *inimg1d, const GridCoord interval_lengths,
+void print_image_3D(const T *inimg1d, const GridCoord lengths,
                     const T bkg_thresh = 0) {
+  auto total_count = coord_prod_accum(lengths);
   cout << "Print image 3D:\n";
-  for (int zi = 0; zi < interval_lengths[2]; zi++) {
+  for (int zi = 0; zi < lengths[2]; zi++) {
     cout << "y | Z=" << zi << '\n';
-    for (int xi = 0; xi < 2 * interval_lengths[0] + 4; xi++) {
+    for (int xi = 0; xi < 2 * lengths[0] + 4; xi++) {
       cout << "-";
     }
     cout << '\n';
-    for (int yi = 0; yi < interval_lengths[1]; yi++) {
+    for (int yi = 0; yi < lengths[1]; yi++) {
       cout << yi << " | ";
-      for (int xi = 0; xi < interval_lengths[0]; xi++) {
-        VID_t index = ((VID_t)xi) + yi * interval_lengths[0] +
-                      zi * interval_lengths[0] * interval_lengths[1];
+      for (int xi = 0; xi < lengths[0]; xi++) {
+        auto index = coord_to_id(GridCoord(xi, yi, zi), lengths);
+        assertm(index < total_count, "requested index is out of bounds");
         auto val = inimg1d[index];
         if (val > bkg_thresh) {
-          cout << +(val) << " ";
+          cout << val << " ";
         } else {
           cout << "- ";
         }
@@ -1572,7 +1573,8 @@ auto convert_buffer_to_vdb_acc = [](auto buffer, GridCoord buffer_lengths,
                                     GridCoord image_offsets, auto accessor,
                                     auto bkg_thresh = 0, int upsample_z = 1) {
   // half-range of uint8_t, recorded max values of 8k / 64 -> ~128
-  auto val_transform = [](auto val) { return std::clamp(val / 64, 0, 127); };
+  //auto val_transform = [](auto val) { return std::clamp(val / 64, 0, 127); };
+  auto val_transform = [](auto val) { return val; };
 
   for (auto z : rng::views::iota(0, buffer_lengths[2])) {
     for (auto y : rng::views::iota(0, buffer_lengths[1])) {
@@ -1587,6 +1589,7 @@ auto convert_buffer_to_vdb_acc = [](auto buffer, GridCoord buffer_lengths,
             auto upsample_grid_xyz =
                 GridCoord(grid_xyz[0], grid_xyz[1],
                           (upsample_z * grid_xyz[2]) + upsample_z_idx);
+            cout << val_transform(val) << '\n';
             accessor.setValue(upsample_grid_xyz, val_transform(val));
           }
         }
@@ -2260,7 +2263,8 @@ void check_nbr(vector<MyMarker *> &nX) {
 };
 
 // sphere grouping Advantra prune strategy
-std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius) {
+std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX,
+                                       uint16_t prune_radius) {
 
   std::vector<MyMarker *> nY;
   auto no_neighbor_count = 0;
