@@ -3090,7 +3090,10 @@ void Recut<image_t>::partition_components(
 #endif
 
 #ifdef LOG
-    auto name = "component-" + std::to_string(counter) + ".swc";
+    auto dir = "./component-" + std::to_string(counter);
+    fs::remove_all(dir); // make sure it's an overwrite
+    fs::create_directories(dir);
+    auto name = dir + "/component-" + std::to_string(counter) + ".swc";
     cout << name << " active count " << component->activeVoxelCount() << ' '
          << component->evalActiveVoxelBoundingBox() << '\n';
     cout << "Marker count: " << markers.size() << '\n';
@@ -3134,6 +3137,12 @@ void Recut<image_t>::partition_components(
                      parent_offset, component->evalActiveVoxelBoundingBox(),
                      file, coord_to_swc_id, false);
     });
+
+    //if (args->output_windows) {
+    if (true) {
+      auto dense = convert_vdb_to_dense(float_grid);
+      write_tiff(dense.data(), dir, float_grid->evalActiveVoxelBoundingBox().dim());
+    }
 
     ++counter;
   }); // for each component

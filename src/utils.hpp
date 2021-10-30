@@ -14,6 +14,7 @@
 #include <math.h>
 #include <numeric>
 #include <openvdb/tools/Composite.h>
+#include <openvdb/tools/Dense.h> // copyToDense
 #include <queue>
 #include <stdlib.h> // ultoa
 
@@ -1573,7 +1574,7 @@ auto convert_buffer_to_vdb_acc = [](auto buffer, GridCoord buffer_lengths,
                                     GridCoord image_offsets, auto accessor,
                                     auto bkg_thresh = 0, int upsample_z = 1) {
   // half-range of uint8_t, recorded max values of 8k / 64 -> ~128
-  //auto val_transform = [](auto val) { return std::clamp(val / 64, 0, 127); };
+  // auto val_transform = [](auto val) { return std::clamp(val / 64, 0, 127); };
   auto val_transform = [](auto val) { return val; };
 
   for (auto z : rng::views::iota(0, buffer_lengths[2])) {
@@ -1659,7 +1660,7 @@ auto convert_buffer_to_vdb = [](auto buffer, GridCoord buffer_lengths,
 //} ;
 
 #ifdef USE_MCP3D
-void write_tiff(uint16_t *inimg1d, std::string base, int grid_size,
+void write_tiff(uint16_t *inimg1d, std::string base, const GridCoord dims,
                 bool rerun = false) {
   auto print = false;
 #ifdef LOG
@@ -1667,36 +1668,25 @@ void write_tiff(uint16_t *inimg1d, std::string base, int grid_size,
 #endif
 
   base = base + "/ch0";
-  std::vector<VID_t> plane_extents{static_cast<VID_t>(grid_size),
-                                   static_cast<VID_t>(grid_size), 1};
   if (!fs::exists(base) || rerun) {
     fs::remove_all(base); // make sure it's an overwrite
     if (print)
       cout << "      Delete old: " << base << '\n';
     fs::create_directories(base);
-    // print_image(inimg1d, grid_size * grid_size * grid_size);
-    for (int zi = 0; zi < grid_size; zi++) {
+    for (int zi = 0; zi < dims[2]; ++zi) {
       std::string fn = base;
       fn = fn + "/img_";
-      // fn = fn + mcp3d::PadNumStr(zi, 9999); // pad to 4 digits
+
       fn = fn + std::to_string(zi); // pad to 4 digits
       std::string suff = ".tif";
       fn = fn + suff;
-      VID_t start = zi * grid_size * grid_size;
-      // cout << "fn: " << fn << " start: " << start << '\n';
-      // print_image(&(inimg1d[start]), grid_size * grid_size);
-      // cout << fn << '\n';
-      // print_image_3D(&(inimg1d[start]), plane_extents);
+      VID_t start = zi * dims[0] * dims[1];
 
       { // cv write
         int cv_type = mcp3d::VoxelTypeToCVType(mcp3d::VoxelType::M16U, 1);
-        cv::Mat m(grid_size, grid_size, cv_type, &(inimg1d[start]));
+        cv::Mat m(dims[0], dims[1], cv_type, &(inimg1d[start]));
         cv::imwrite(fn, m);
       }
-
-      // uint8_t* ptr = Plane(z, c, t);
-      // std::vector<int> dims = {grid_size, grid_size, grid_size};
-      // mcp3d::image::MImage mimg(dims); // defaults to uint16 format
     }
     if (print)
       cout << "      Wrote test images in: " << base << '\n';
@@ -2823,4 +2813,12 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
 auto all_invalid = [](const auto &flags_handle, const auto &parents_handle,
                       const auto &radius_handle, const auto &ind) {
   return !is_selected(flags_handle, ind);
+};
+
+auto convert_vdb_to_dense = [](openvdb::FloatGrid::Ptr float_grid) {
+  // inclusive of both ends of bounding box
+  vto::Dense<uint16_t, vto::LayoutXYZ> dense(
+      float_grid->evalActiveVoxelBoundingBox(), /*fill*/ 0.);
+  vto::copyToDense(*float_grid, dense);
+  return dense;
 };
