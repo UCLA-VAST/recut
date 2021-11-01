@@ -924,6 +924,8 @@ auto set_grid_meta = [](auto grid, auto lengths, auto bkg_thresh) {
 
 auto copy_to_point_grid = [](openvdb::FloatGrid::Ptr other, auto lengths,
                              float bkg_thresh = 0.) {
+  throw std::runtime_error("incomplete implementation");
+
   // Use the topology to create a PointDataTree
   vp::PointDataTree::Ptr pointTree(
       new vp::PointDataTree(other->tree(), 0, openvdb::TopologyCopy()));
@@ -958,6 +960,9 @@ auto copy_to_point_grid = [](openvdb::FloatGrid::Ptr other, auto lengths,
   }
 
   auto grid = EnlargedPointDataGrid::create(pointTree);
+
+  cout << "initial point count\n";
+  print_point_count(grid);
 
   grid->tree().prune();
 
@@ -1590,7 +1595,6 @@ auto convert_buffer_to_vdb_acc = [](auto buffer, GridCoord buffer_lengths,
             auto upsample_grid_xyz =
                 GridCoord(grid_xyz[0], grid_xyz[1],
                           (upsample_z * grid_xyz[2]) + upsample_z_idx);
-            cout << val_transform(val) << '\n';
             accessor.setValue(upsample_grid_xyz, val_transform(val));
           }
         }
@@ -1604,9 +1608,9 @@ auto convert_buffer_to_vdb = [](auto buffer, GridCoord buffer_lengths,
                                 GridCoord buffer_offsets,
                                 GridCoord image_offsets, auto &positions,
                                 auto bkg_thresh = 0, int upsample_z = 1) {
-  print_coord(buffer_lengths, "buffer_lengths");
-  print_coord(buffer_offsets, "buffer_offsets");
-  print_coord(image_offsets, "image_offsets");
+  // print_coord(buffer_lengths, "buffer_lengths");
+  // print_coord(buffer_offsets, "buffer_offsets");
+  // print_coord(image_offsets, "image_offsets");
   for (auto z : rng::views::iota(0, buffer_lengths[2])) {
     for (auto y : rng::views::iota(0, buffer_lengths[1])) {
       for (auto x : rng::views::iota(0, buffer_lengths[0])) {
@@ -2712,6 +2716,26 @@ void visit(EnlargedPointDataGrid::Ptr grid, FilterP keep_if, Pred predicate) {
     }
   }
 }
+
+vector<PositionT>
+convert_float_to_positions(openvdb::FloatGrid::Ptr float_grid) {
+  std::vector<PositionT> positions;
+
+  for (auto iter = float_grid->cbeginValueOn(); iter; ++iter) {
+    auto coord = iter.getCoord();
+    positions.emplace_back(coord[0], coord[1], coord[2]);
+  }
+  return positions;
+};
+
+EnlargedPointDataGrid::Ptr
+convert_float_to_point(openvdb::FloatGrid::Ptr float_grid) {
+  auto [lengths, bkg_thresh] = get_metadata(float_grid);
+  auto positions = convert_float_to_positions(float_grid);
+  auto point_grid =
+      create_point_grid(positions, lengths, get_transform(), bkg_thresh);
+  return point_grid;
+};
 
 vector<MyMarker *>
 convert_float_to_markers(openvdb::FloatGrid::Ptr component,

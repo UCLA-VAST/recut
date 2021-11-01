@@ -125,8 +125,9 @@ public:
   void prune_branch();
   void convert_topology();
 
-  void partition_components(
-      std::vector<std::pair<GridCoord, uint8_t>> root_pair, bool prune);
+  void
+  partition_components(std::vector<std::pair<GridCoord, uint8_t>> root_pair,
+                       bool prune);
 
   void initialize_globals(const VID_t &grid_interval_size,
                           const VID_t &interval_block_size);
@@ -380,8 +381,10 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
 
   auto local_bbox =
       openvdb::math::CoordBBox(grid_offsets, grid_offsets + grid_extents);
+
 #ifdef LOG
   cout << "Processing region: " << local_bbox << '\n';
+  print_point_count(this->topology_grid);
 #endif
 
   // input handler
@@ -443,36 +446,40 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
       }) |
       rng::to_vector;
 
+  auto filtered_roots =
+      roots | rng::views::remove_if([this, &local_bbox](auto coord_radius) {
+        auto [coord, radius] = coord_radius;
+        if (local_bbox.isInside(coord)) {
+          if (this->topology_grid->tree().isValueOn(coord)) {
+            return false;
+          } else {
+#ifdef FULL_PRINT
+            cout << "Warning: root at " << coord << " in image bbox "
+                 << local_bbox
+                 << " is not selected in the segmentation so it is "
+                    "ignored. "
+                    "May indicate the image and marker directories are  "
+                    "mismatched or major inaccuracies in segmentation\n ";
+#endif
+          }
+        } else {
+#ifdef FULL_PRINT
+          cout << "Warning: root at " << coord << " in image bbox "
+               << local_bbox
+               << " is not within the images bounding box so it is "
+                  "ignored\n";
+#endif
+        }
+        return true; // remove it
+      }) |
+      rng::to_vector;
+
 #ifdef LOG
-  cout << "Roots in dir: " << roots.size() << '\n';
+  cout << "Using " << filtered_roots.size() << " of " << roots.size()
+       << " roots found in directory\n";
 #endif
 
-  return roots | rng::views::remove_if([this, &local_bbox](auto coord_radius) {
-           auto [coord, radius] = coord_radius;
-           if (local_bbox.isInside(coord)) {
-             if (this->topology_grid->tree().isValueOn(coord)) {
-               return false;
-             } else {
-#ifdef LOG
-               cout << "Warning: root at " << coord << " in image bbox "
-                    << local_bbox
-                    << " is not selected in the segmentation so it is "
-                       "ignored. "
-                       "May indicate the image and marker directories are  "
-                       "mismatched or major inaccuracies in segmentation\n ";
-#endif
-             }
-           } else {
-#ifdef LOG
-             cout << "Warning: root at " << coord << " in image bbox "
-                  << local_bbox
-                  << " is not within the images bounding box so it is "
-                     "ignored\n";
-#endif
-           }
-           return true; // remove it
-         }) |
-         rng::to_vector;
+  return filtered_roots;
 }
 
 // activates
@@ -723,7 +730,8 @@ void Recut<image_t>::accumulate_prune(
         // previously pruned vertex can transmits transitive
         // coverage info
         radius_handle.set(*ind, update_radius);
-        assertm(radius_handle.get(*ind) == update_radius, "radii doesn't match");
+        assertm(radius_handle.get(*ind) == update_radius,
+                "radii doesn't match");
         dst_was_updated = true;
       }
 
@@ -2374,7 +2382,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
         if (!(this->params->force_regenerate_image)) {
           assertm(this->input_is_vdb,
                   "If USE_MCP3D macro is not set, "
-                  "input must either by VDB or this->params->force_regenerate_image must be set to True");
+                  "input must either by VDB or "
+                  "this->params->force_regenerate_image must be set to True");
         }
 #endif
 
@@ -2436,7 +2445,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                << grid_interval_size << " in "
                << timer.elapsed() - convert_start << " s\n";
 #endif
-#ifdef USE_MCP3D 
+#ifdef USE_MCP3D
           // mcp3d tile must be explicitly cleared to prevent out of memory
           // issues
           mcp3d_tile->ClearData(); // invalidates tile
@@ -2674,9 +2683,16 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     if (this->args->type_ == "float") {
       this->input_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
       // copy topology (bit-mask actives) to the topology grid
-      this->topology_grid =
-          copy_to_point_grid(this->input_grid, input_image_lengths,
-                             this->params->background_thresh());
+      // this->topology_grid =
+      // copy_to_point_grid(this->input_grid, input_image_lengths,
+      // this->params->background_thresh());
+      this->topology_grid = convert_float_to_point(this->input_grid);
+      cout << "float count " << this->input_grid->activeVoxelCount()
+           << " point count "
+           << openvdb::points::pointCount(this->topology_grid->tree()) << '\n';
+      assertm(this->input_grid->activeVoxelCount() ==
+              openvdb::points::pointCount(this->topology_grid->tree()),
+              "did no match");
       auto [lengths, bkg_thresh] = get_metadata(input_grid);
       input_image_lengths = lengths;
     } else if (this->args->type_ == "point") {
@@ -3070,7 +3086,7 @@ void Recut<image_t>::partition_components(
         }) |
         rng::to_vector;
 
-    //cout << "\troot count " << component_roots.size() << '\n';
+    // cout << "\troot count " << component_roots.size() << '\n';
     if (component_roots.size() < 1)
       return; // skip
 
@@ -3138,10 +3154,11 @@ void Recut<image_t>::partition_components(
                      file, coord_to_swc_id, false);
     });
 
-    //if (args->output_windows) {
+    // if (args->output_windows) {
     if (true) {
       auto dense = convert_vdb_to_dense(float_grid);
-      write_tiff(dense.data(), dir, float_grid->evalActiveVoxelBoundingBox().dim());
+      write_tiff(dense.data(), dir,
+                 float_grid->evalActiveVoxelBoundingBox().dim());
     }
 
     ++counter;
@@ -3184,9 +3201,11 @@ template <class image_t> void Recut<image_t>::operator()() {
   // read the list of root vids
   auto root_pair = this->initialize();
 
-#ifdef LOG
-  cout << "Using " << root_pair.size() << " roots\n";
-#endif
+  if (params->convert_only_) {
+    convert_topology();
+    // no more work to do, exiting
+    return;
+  }
 
   // constrain topology to only those reachable from roots
   auto stage = "connected";
@@ -3197,12 +3216,6 @@ template <class image_t> void Recut<image_t>::operator()() {
                         this->connected_map);
     // first stage of the pipeline
     this->update(stage, map_fifo);
-  }
-
-  if (params->convert_only_) {
-    convert_topology();
-    // no more work to do, exiting
-    return;
   }
 
   // radius stage will consume fifo surface vertices

@@ -1307,6 +1307,24 @@ TEST(VDB, ConvertVDBToDense) {
 #endif
 }
 
+TEST(VDB, ConvertFloatToPointGrid) {
+  // read grid from float
+  VID_t grid_size = 8;
+  auto grid_extents = GridCoord(grid_size);
+
+  auto args =
+      get_args(grid_size, grid_size, grid_size, 100, 7, false, true, "float");
+  auto recut = Recut<uint16_t>(args);
+  recut.initialize();
+  auto float_grid = recut.input_grid;
+
+  auto point_grid = convert_float_to_point(float_grid);
+
+  // convert to point_grid
+  cout << "float count " << float_grid->activeVoxelCount() << " point count " << openvdb::points::pointCount(point_grid->tree()) << '\n';
+  ASSERT_EQ(float_grid->activeVoxelCount(), openvdb::points::pointCount(point_grid->tree()));
+}
+
 TEST(VDB, GetSetGridMeta) {
   float bkg_thresh = 0.;
   GridCoord grid_extents(1);
