@@ -2687,12 +2687,12 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
       // copy_to_point_grid(this->input_grid, input_image_lengths,
       // this->params->background_thresh());
       this->topology_grid = convert_float_to_point(this->input_grid);
-      //cout << "float count " << this->input_grid->activeVoxelCount()
-           //<< " point count "
-           //<< openvdb::points::pointCount(this->topology_grid->tree()) << '\n';
-      //assertm(this->input_grid->activeVoxelCount() ==
-              //openvdb::points::pointCount(this->topology_grid->tree()),
-              //"did no match");
+      // cout << "float count " << this->input_grid->activeVoxelCount()
+      //<< " point count "
+      //<< openvdb::points::pointCount(this->topology_grid->tree()) << '\n';
+      // assertm(this->input_grid->activeVoxelCount() ==
+      // openvdb::points::pointCount(this->topology_grid->tree()),
+      //"did no match");
       auto [lengths, bkg_thresh] = get_metadata(input_grid);
       input_image_lengths = lengths;
     } else if (this->args->type_ == "point") {
@@ -3156,9 +3156,28 @@ void Recut<image_t>::partition_components(
 
     // if (args->output_windows) {
     if (true) {
-      auto dense = convert_vdb_to_dense(float_grid);
-      write_tiff(dense.data(), dir,
-                 float_grid->evalActiveVoxelBoundingBox().dim());
+      timer.restart();
+      assertm(this->input_grid, "Must have input grid set");
+      //inputs grids holds the true values
+      //component just holds the topology of the neuron cluster in question
+      copy_values(this->input_grid, component);
+#ifdef LOG
+      cout << "Copied component values in " << timer.elapsed() << " s\n";
+#endif
+
+      timer.restart();
+      write_vdb_to_tiff_planes(component, dir);
+#ifdef LOG
+      cout << "Wrote window of component to tiff in " << timer.elapsed() << " s\n";
+#endif
+
+      timer.restart();
+      openvdb::GridPtrVec component_grids;
+      component_grids.push_back(component);
+      write_vdb_file(component_grids, dir + "/img-component-" + std::to_string(counter) + ".vdb");
+#ifdef LOG
+      cout << "Wrote window of component to vdb in " << timer.elapsed() << " s\n";
+#endif
     }
 
     ++counter;

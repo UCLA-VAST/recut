@@ -212,11 +212,9 @@ void check_image_error(uint16_t *inimg1d, uint16_t *baseline, uint16_t *check,
                        int grid_size, VID_t selected, double &error_rate) {
   auto tol_sz = grid_size * grid_size * grid_size;
   VID_t total_valid = 0;
-  // cout << "check image " << endl;
   VID_t error_sum = 0;
   for (VID_t i = 0; i < tol_sz; i++) {
     if (inimg1d[i]) {
-      // cout << i << " " << +inimg1d[i] << endl;
       error_sum += absdiff(baseline[i], check[i]);
       ++total_valid;
     }
@@ -225,10 +223,8 @@ void check_image_error(uint16_t *inimg1d, uint16_t *baseline, uint16_t *check,
   error_rate = 100 * error_sum / static_cast<double>(tol_sz);
 }
 
-void check_image_equality(uint16_t *inimg1d, uint16_t *check, int grid_size) {
-  // cout << "check image " << endl;
-  for (VID_t i = 0; i < (grid_size * grid_size * grid_size); i++) {
-    // cout << i << " " << +inimg1d[i] << endl;
+void check_image_equality(uint16_t *inimg1d, uint16_t *check, VID_t volume) {
+  for (VID_t i = 0; i < volume; i++) {
     ASSERT_LE(inimg1d[i], 1);
     ASSERT_EQ(inimg1d[i], check[i]);
   }
@@ -369,7 +365,7 @@ TEST(Histogram, Add) {
 TEST(Histogram, CallAndPrint) {
   auto n = 1 << 8;
   auto granularity = 8;
-  auto print_all = true;
+  auto print_all = false;
 
   {
     auto histogram = Histogram<uint16_t>(granularity);
@@ -420,7 +416,7 @@ TEST(VDB, IntegrateUpdateGrid) {
   // for the second read test
   auto tcase = 7;
   double slt_pct = 100;
-  bool print_all = true;
+  bool print_all = false;
   // generate an image buffer on the fly
   // then convert to vdb
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
@@ -610,7 +606,7 @@ TEST(VDB, PriorityQueue) {
   // for the second read test
   auto tcase = 7;
   double slt_pct = 100;
-  bool print_all = true;
+  bool print_all = false;
 
   auto args =
       get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
@@ -678,7 +674,7 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
   // for the second read test
   auto tcase = 7;
   double slt_pct = 100;
-  bool print_all = true;
+  bool print_all = false;
   // generate an image buffer on the fly
   // then convert to vdb
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
@@ -754,7 +750,7 @@ TEST(Utils, AdjustSomaRadii) {
   // for the second read test
   auto tcase = 7;
   double slt_pct = 100;
-  bool print_all = true;
+  bool print_all = false;
   // generate an image buffer on the fly
   // then convert to vdb
   auto args =
@@ -876,7 +872,7 @@ TEST(VDB, Connected) {
 // double slt_pct = 100;
 // bool print_all = false;
 //#ifdef LOG_FULL
-//// print_all = true;
+//// print_all = false;
 //#endif
 //// auto str_path = get_data_dir();
 //// auto fn = str_path + "/test_convert_only.vdb";
@@ -912,11 +908,7 @@ TEST(VDB, Convert) {
   auto tcase = 7;
   double slt_pct = 100;
   bool print_all = false;
-  //#ifdef LOG_FULL
-  print_all = true;
-  //#endif
   auto str_path = get_data_dir();
-  // auto fn = str_path + "/test_convert_only.vdb";
 
   // generate an image buffer on the fly
   // then convert to vdb
@@ -1186,7 +1178,7 @@ TEST(VDB, ConvertDenseToVDB) {
   auto root_vid = get_central_vid(grid_size);
   auto root_coord = GridCoord(get_central_coord(grid_size));
   auto upsample_z = 5;
-  auto print = true;
+  auto print = false;
   auto extended_grid_extents =
       GridCoord(grid_size, grid_size, grid_size * upsample_z);
 
@@ -1247,7 +1239,7 @@ TEST(VDB, ConvertVDBToDense) {
   auto tol_sz = coord_prod_accum(grid_extents);
   auto root_vid = get_central_vid(grid_size);
   auto root_coord = GridCoord(get_central_coord(grid_size));
-  auto print = true;
+  auto print = false;
 
   auto inimg1d = new uint16_t[tol_sz];
   VID_t actual_selected =
@@ -1284,26 +1276,45 @@ TEST(VDB, ConvertVDBToDense) {
   ASSERT_EQ(active_count, float_grid->activeVoxelCount());
 
 #ifdef USE_MCP3D
-  std::string fn(".");
-  // Warning: do not use directory names postpended with slash
-  fn = fn + "/data/test_images/convert-vdb-to-dense";
-  write_tiff(check_dense.data(), fn, bbox.dim());
+  {
+    // Warning: do not use directory names postpended with slash
+    auto fn = "./data/test_images/convert-vdb-to-dense";
+    write_tiff(check_dense.data(), fn, bbox.dim());
 
-  // check reading value back in
-  mcp3d::MImage from_file(fn, {"ch0"});
-  read_tiff(fn, zeros(), bbox.dim(), from_file);
+    // check reading value back in
+    mcp3d::MImage from_file(fn, {"ch0"});
+    read_tiff(fn, zeros(), bbox.dim(), from_file);
 
-  if (print) {
-    cout << bbox.dim() << '\n';
-    cout << "Read image:\n";
-    print_image_3D(from_file.Volume<uint16_t>(0), bbox.dim());
+    if (print) {
+      cout << "Dense written then read image:\n";
+      print_image_3D(from_file.Volume<uint16_t>(0), bbox.dim());
+    }
+
+    // read_tiff produces wrong results, but this behavior isn't used
+    // in the pipeline so ignore the mismatch for now
+    ASSERT_NO_FATAL_FAILURE(check_image_equality(
+        check_dense.data(), from_file.Volume<uint16_t>(0), volume));
   }
 
-  // read_tiff produces wrong results, but this behavior isn't used
-  // in the pipeline so ignore the mismatch for now
-  // ASSERT_NO_FATAL_FAILURE(
-  // check_image_equality(check_dense.data(), from_file.Volume<uint16_t>(0),
-  // grid_size));
+  { // planes
+    auto fn = "./data/test_images/convert-vdb-to-dense-planes";
+    write_vdb_to_tiff_planes(float_grid, fn);
+
+    // check reading value back in
+    mcp3d::MImage from_file(fn, {"ch0"});
+    read_tiff(fn, zeros(), bbox.dim(), from_file);
+
+    if (print) {
+      cout << "Z-plane written then read image:\n";
+      print_image_3D(from_file.Volume<uint16_t>(0), bbox.dim());
+    }
+
+    // read_tiff produces wrong results, but this behavior isn't used
+    // in the pipeline so ignore the mismatch for now
+    ASSERT_NO_FATAL_FAILURE(check_image_equality(
+        check_dense.data(), from_file.Volume<uint16_t>(0), volume));
+  }
+
 #endif
 }
 
@@ -1321,8 +1332,10 @@ TEST(VDB, ConvertFloatToPointGrid) {
   auto point_grid = convert_float_to_point(float_grid);
 
   // convert to point_grid
-  cout << "float count " << float_grid->activeVoxelCount() << " point count " << openvdb::points::pointCount(point_grid->tree()) << '\n';
-  ASSERT_EQ(float_grid->activeVoxelCount(), openvdb::points::pointCount(point_grid->tree()));
+  cout << "float count " << float_grid->activeVoxelCount() << " point count "
+       << openvdb::points::pointCount(point_grid->tree()) << '\n';
+  ASSERT_EQ(float_grid->activeVoxelCount(),
+            openvdb::points::pointCount(point_grid->tree()));
 }
 
 TEST(VDB, GetSetGridMeta) {
@@ -1352,8 +1365,8 @@ TEST(Install, ImageReadWrite) {
   auto tcase = 7;
   double slt_pct = 100;
   auto lengths = new_grid_coord(grid_size, grid_size, grid_size);
-  auto tol_sz = coord_prod_accum(lengths);
-  auto print_all = true;
+  auto volume = coord_prod_accum(lengths);
+  auto print_all = false;
 
   std::string fn(get_data_dir());
   // Warning: do not use directory names postpended with slash
@@ -1361,8 +1374,8 @@ TEST(Install, ImageReadWrite) {
   auto image_lengths = GridCoord(grid_size);
   auto image_offsets = GridCoord(0);
 
-  VID_t selected = tol_sz; // for tcase 4
-  uint16_t *inimg1d = new uint16_t[tol_sz];
+  VID_t selected = volume; // for tcase 4
+  uint16_t *inimg1d = new uint16_t[volume];
   create_image(tcase, inimg1d, grid_size, selected, get_central_vid(grid_size));
   cout << "Created image:\n";
   print_image_3D(inimg1d, grid_extents);
@@ -1376,7 +1389,7 @@ TEST(Install, ImageReadWrite) {
   print_image_3D(check.Volume<uint16_t>(0), grid_extents);
 
   ASSERT_NO_FATAL_FAILURE(
-      check_image_equality(inimg1d, check.Volume<uint16_t>(0), grid_size));
+      check_image_equality(inimg1d, check.Volume<uint16_t>(0), volume));
   cout << "first read passed\n";
 
   // run recut over the image, force it to run in read image
@@ -1390,7 +1403,7 @@ TEST(Install, ImageReadWrite) {
   ASSERT_NE(check3.n_channels(), 0);
   read_tiff(fn, image_offsets, image_lengths, check3);
   ASSERT_NO_FATAL_FAILURE(
-      check_image_equality(inimg1d, check3.Volume<uint16_t>(0), grid_size));
+      check_image_equality(inimg1d, check3.Volume<uint16_t>(0), volume));
 
   delete[] inimg1d;
 }
@@ -1726,7 +1739,7 @@ TEST(CheckGlobals, DISABLED_AllFifo) {
 //}
 
 // TEST(VDB, DISABLED_FloatToPoint) {
-// bool print_all = true;
+// bool print_all = false;
 // auto grid_size = 8;
 // GridCoord lengths(grid_size);
 // auto args = get_args(grid_size, grid_size, grid_size, 100, 7,

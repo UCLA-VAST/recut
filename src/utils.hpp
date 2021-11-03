@@ -1677,19 +1677,15 @@ void write_tiff(uint16_t *inimg1d, std::string base, const GridCoord dims,
     if (print)
       cout << "      Delete old: " << base << '\n';
     fs::create_directories(base);
-    for (int zi = 0; zi < dims[2]; ++zi) {
-      std::string fn = base;
-      fn = fn + "/img_";
-
-      fn = fn + std::to_string(zi); // pad to 4 digits
-      std::string suff = ".tif";
-      fn = fn + suff;
-      VID_t start = zi * dims[0] * dims[1];
+    for (int z = 0; z < dims[2]; ++z) {
+      std::ostringstream fn;
+      fn << base << "/img_" << std::setfill('0') << std::setw(6) << z << ".tif";
+      VID_t start = z * dims[0] * dims[1];
 
       { // cv write
         int cv_type = mcp3d::VoxelTypeToCVType(mcp3d::VoxelType::M16U, 1);
         cv::Mat m(dims[0], dims[1], cv_type, &(inimg1d[start]));
-        cv::imwrite(fn, m);
+        cv::imwrite(fn.str(), m);
       }
     }
     if (print)
@@ -1699,7 +1695,6 @@ void write_tiff(uint16_t *inimg1d, std::string base, const GridCoord dims,
 
 auto read_tiff = [](std::string fn, auto image_offsets, auto image_lengths,
                     mcp3d::MImage &image) {
-  cout << "Read: " << fn << '\n';
   // read data from channel 0
   image.ReadImageInfo({0}, true);
   try {
@@ -2845,4 +2840,58 @@ auto convert_vdb_to_dense = [](openvdb::FloatGrid::Ptr float_grid) {
       float_grid->evalActiveVoxelBoundingBox(), /*fill*/ 0.);
   vto::copyToDense(*float_grid, dense);
   return dense;
+};
+
+// join conversion and writing by z plane for performance, note that for large
+// components, create a full dense buffer will fault with bad_alloc due to size
+// z-plane by z-plane like below prevents this
+auto write_vdb_to_tiff_planes = [](openvdb::FloatGrid::Ptr float_grid,
+                                   std::string base) {
+  auto bbox = float_grid->evalActiveVoxelBoundingBox(); // inclusive both ends
+
+  base = base + "/ch0";
+  fs::remove_all(base); // make sure it's an overwrite
+  fs::create_directories(base);
+
+  auto zrng =
+      rng::closed_iota_view(bbox.min()[2], bbox.max()[2]); // inclusive range
+
+  auto zcount = 0;
+  // output each plane to separate file
+  rng::for_each(zrng, [&float_grid, &base, &bbox, &zcount](auto z) {
+
+    auto min = GridCoord(bbox.min()[0], bbox.min()[1], z);
+    auto max = GridCoord(bbox.max()[0], bbox.max()[1], z); // inclusive
+    auto plane_bbox = CoordBBox(min, max);
+
+    // inclusive of both ends of bounding box
+    vto::Dense<uint16_t, vto::LayoutXYZ> dense(plane_bbox, /*fill*/ 0.);
+    vto::copyToDense(*float_grid, dense);
+
+    // overflows at 1 million z planes
+    std::ostringstream fn;
+    fn << base << "/img_" << std::setfill('0') << std::setw(6) << z << ".tif";
+
+    { // cv write
+      int cv_type = mcp3d::VoxelTypeToCVType(mcp3d::VoxelType::M16U, 1);
+      cv::Mat m(plane_bbox.dim()[0], plane_bbox.dim()[1], cv_type,
+                dense.data());
+      cv::imwrite(fn.str(), m);
+    }
+
+    ++zcount;
+  });
+};
+
+// for all active values of the output grid copy the value at that coordinate from the
+// inputs grid
+// this could be replaced by openvdb's provided CSG/copying functions
+auto copy_values = [](openvdb::FloatGrid::Ptr input_grid, openvdb::FloatGrid::Ptr output_grid) {
+  auto accessor = input_grid->getConstAccessor();
+  auto output_accessor = output_grid->getAccessor();
+  for (openvdb::FloatGrid::ValueOnCIter iter = output_grid->cbeginValueOn();
+       iter.test(); ++iter) {
+    auto val = accessor.getValue(iter.getCoord());
+    output_accessor.setValue(iter.getCoord(), val);
+  }
 };
