@@ -2687,12 +2687,12 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
       // copy_to_point_grid(this->input_grid, input_image_lengths,
       // this->params->background_thresh());
       this->topology_grid = convert_float_to_point(this->input_grid);
-      cout << "float count " << this->input_grid->activeVoxelCount()
-           << " point count "
-           << openvdb::points::pointCount(this->topology_grid->tree()) << '\n';
-      assertm(this->input_grid->activeVoxelCount() ==
-              openvdb::points::pointCount(this->topology_grid->tree()),
-              "did no match");
+      //cout << "float count " << this->input_grid->activeVoxelCount()
+           //<< " point count "
+           //<< openvdb::points::pointCount(this->topology_grid->tree()) << '\n';
+      //assertm(this->input_grid->activeVoxelCount() ==
+              //openvdb::points::pointCount(this->topology_grid->tree()),
+              //"did no match");
       auto [lengths, bkg_thresh] = get_metadata(input_grid);
       input_image_lengths = lengths;
     } else if (this->args->type_ == "point") {
