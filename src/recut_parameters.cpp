@@ -65,8 +65,7 @@ void RecutCommandLineArgs::PrintUsage() {
           "(automatically prunes)\n";
   cout << "--parallel           [-pl] thread count ";
   "defaults to max hardware threads\n";
-  cout << "--sphere-pruning     use VDB library fill with spheres pruning "
-          "strategy\n";
+  cout << "--output-windows     specify float vdb file for which to create windows surrounding each neuron cluster/component\n"; 
   cout << "--downsample-factor  for images scaled down in x and z dimension "
           "scale the marker files by specified factor\n";
   cout << "--upsample-z         during --convert only z-dimension will be upsampled (copied) by specified factor, default is 1 i.e. no upsampling\n";
@@ -221,8 +220,9 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         ++i;
       } else if (strcmp(argv[i], "--histogram") == 0) {
         args.recut_parameters().set_histogram(true);
-      } else if (strcmp(argv[i], "--sphere-pruning") == 0) {
-        args.recut_parameters().set_sphere_pruning(true);
+      } else if (strcmp(argv[i], "--output-windows") == 0) {
+        args.recut_parameters().set_output_windows(argv[i+1]);
+        ++i;
       } else if (strcmp(argv[i], "--upsample-z") == 0) {
         args.recut_parameters().set_upsample_z(atoi(argv[i + 1]));
         ++i;

@@ -17,7 +17,7 @@ class RecutParameters {
   public:
     RecutParameters() {
       gsdt_ = false;
-      sphere_pruning_ = false;
+      output_windows_ = std::string();
       coverage_prune_ = true;
       prune_ = 1;
       allow_gap_ = false;
@@ -132,8 +132,8 @@ class RecutParameters {
     void set_min_intensity(double min_intensity) {
       min_intensity_ = min_intensity;
     }
-    void set_sphere_pruning(bool flag) {
-      sphere_pruning_ = flag;
+    void set_output_windows(std::string fn) {
+      output_windows_ = fn;
     }
     void set_downsample_factor(int factor) {
       downsample_factor_ = factor;
@@ -145,12 +145,12 @@ class RecutParameters {
 
     // no getters
     uint64_t selected, root_vid;
-    bool force_regenerate_image, convert_only_, histogram_, gsdt_, coverage_prune_, allow_gap_, cube_256_, radius_from_2d_, swc_resample_, high_intensity_, brightfield_, restart_, sphere_pruning_;
+    bool force_regenerate_image, convert_only_, histogram_, gsdt_, coverage_prune_, allow_gap_, cube_256_, radius_from_2d_, swc_resample_, high_intensity_, brightfield_, restart_;
     int user_thread_count_, background_thresh_, cnn_type_, parallel_num_,
         prune_, interval_length, tcase, slt_pct, downsample_factor_, upsample_z_;
     double foreground_percent_, sr_ratio_, length_thresh_, restart_factor_,
            max_intensity_, min_intensity_;
-    std::string marker_file_path_, out_vdb_, second_grid_;
+    std::string marker_file_path_, out_vdb_, second_grid_, output_windows_;
 };
 
 class RecutCommandLineArgs {

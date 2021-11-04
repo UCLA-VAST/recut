@@ -2700,7 +2700,12 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
           openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
       auto [lengths, bkg_thresh] = get_metadata(topology_grid);
       input_image_lengths = lengths;
-      // ignore input grid
+
+      // you need to set an input grid if you are outputing windows
+      if (! params->output_windows_.empty()) {
+        auto raw_grid = read_vdb_file(params->output_windows_);
+        this->input_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(raw_grid);
+      }
     }
     append_attributes(this->topology_grid);
 
@@ -3154,12 +3159,11 @@ void Recut<image_t>::partition_components(
                      file, coord_to_swc_id, false);
     });
 
-    // if (args->output_windows) {
-    if (true) {
+     if (! params->output_windows_.empty()) {
       timer.restart();
-      assertm(this->input_grid, "Must have input grid set");
-      //inputs grids holds the true values
-      //component just holds the topology of the neuron cluster in question
+      assertm(this->input_grid, "Must have input grid set to run output_windows_");
+      // inputs grids holds the pixel intensity values
+      // component just holds the topology of the neuron cluster in question
       copy_values(this->input_grid, component);
 #ifdef LOG
       cout << "Copied component values in " << timer.elapsed() << " s\n";
@@ -3168,15 +3172,18 @@ void Recut<image_t>::partition_components(
       timer.restart();
       write_vdb_to_tiff_planes(component, dir);
 #ifdef LOG
-      cout << "Wrote window of component to tiff in " << timer.elapsed() << " s\n";
+      cout << "Wrote window of component to tiff in " << timer.elapsed()
+           << " s\n";
 #endif
 
       timer.restart();
       openvdb::GridPtrVec component_grids;
       component_grids.push_back(component);
-      write_vdb_file(component_grids, dir + "/img-component-" + std::to_string(counter) + ".vdb");
+      write_vdb_file(component_grids, dir + "/img-component-" +
+                                          std::to_string(counter) + ".vdb");
 #ifdef LOG
-      cout << "Wrote window of component to vdb in " << timer.elapsed() << " s\n";
+      cout << "Wrote window of component to vdb in " << timer.elapsed()
+           << " s\n";
 #endif
     }
 
@@ -3246,29 +3253,29 @@ template <class image_t> void Recut<image_t>::operator()() {
     adjust_soma_radii(root_pair, this->topology_grid);
   }
 
-  if (params->sphere_pruning_) {
-    partition_components(root_pair, false);
-  } else {
+  partition_components(root_pair, false);
 
-    // starting from roots, prune stage will
-    // create final list of vertices
-    if (true) {
-      stage = "prune";
-      this->activate_vids(this->topology_grid, root_pair, stage, this->map_fifo,
-                          this->connected_map);
-      this->update(stage, map_fifo);
-      // make all unpruned trace a back to a root
-      // any time you remove a node you need to ensure tree validity
-      adjust_parent();
-    }
+  // old prune strategy
+  //{
+  //// starting from roots, prune stage will
+  //// create final list of vertices
+  // if (true) {
+  // stage = "prune";
+  // this->activate_vids(this->topology_grid, root_pair, stage, this->map_fifo,
+  // this->connected_map);
+  // this->update(stage, map_fifo);
+  //// make all unpruned trace a back to a root
+  //// any time you remove a node you need to ensure tree validity
+  // adjust_parent();
+  //}
 
-    prune_radii();
-    adjust_parent();
+  // prune_radii();
+  // adjust_parent();
 
-    // produces bad reach-back artifact
-    // prune_branch();
-    // adjust_parent();
+  //// produces bad reach-back artifact
+  //// prune_branch();
+  //// adjust_parent();
 
-    print_to_swc();
-  }
+  // print_to_swc();
+  //}
 }
