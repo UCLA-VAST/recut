@@ -1239,7 +1239,7 @@ TEST(VDB, ConvertVDBToDense) {
   auto tol_sz = coord_prod_accum(grid_extents);
   auto root_vid = get_central_vid(grid_size);
   auto root_coord = GridCoord(get_central_coord(grid_size));
-  auto print = false;
+  auto print = true;
 
   auto inimg1d = new uint16_t[tol_sz];
   VID_t actual_selected =
@@ -1276,26 +1276,6 @@ TEST(VDB, ConvertVDBToDense) {
   ASSERT_EQ(active_count, float_grid->activeVoxelCount());
 
 #ifdef USE_MCP3D
-  {
-    // Warning: do not use directory names postpended with slash
-    auto fn = "./data/test_images/convert-vdb-to-dense";
-    write_tiff(check_dense.data(), fn, bbox.dim());
-
-    // check reading value back in
-    mcp3d::MImage from_file(fn, {"ch0"});
-    read_tiff(fn, zeros(), bbox.dim(), from_file);
-
-    if (print) {
-      cout << "Dense written then read image:\n";
-      print_image_3D(from_file.Volume<uint16_t>(0), bbox.dim());
-    }
-
-    // read_tiff produces wrong results, but this behavior isn't used
-    // in the pipeline so ignore the mismatch for now
-    ASSERT_NO_FATAL_FAILURE(check_image_equality(
-        check_dense.data(), from_file.Volume<uint16_t>(0), volume));
-  }
-
   { // planes
     auto fn = "./data/test_images/convert-vdb-to-dense-planes";
     write_vdb_to_tiff_planes(float_grid, fn);
@@ -1309,12 +1289,9 @@ TEST(VDB, ConvertVDBToDense) {
       print_image_3D(from_file.Volume<uint16_t>(0), bbox.dim());
     }
 
-    // read_tiff produces wrong results, but this behavior isn't used
-    // in the pipeline so ignore the mismatch for now
     ASSERT_NO_FATAL_FAILURE(check_image_equality(
         check_dense.data(), from_file.Volume<uint16_t>(0), volume));
   }
-
 #endif
 }
 
