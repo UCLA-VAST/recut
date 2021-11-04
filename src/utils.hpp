@@ -2870,7 +2870,7 @@ auto write_vdb_to_tiff_planes = [](openvdb::FloatGrid::Ptr float_grid,
 
     // overflows at 1 million z planes
     std::ostringstream fn;
-    fn << base << "/img_" << std::setfill('0') << std::setw(6) << z << ".tif";
+    fn << base << "/img_" << std::setfill('0') << std::setw(6) << zcount << ".tif";
 
     { // cv write
       int cv_type = mcp3d::VoxelTypeToCVType(mcp3d::VoxelType::M16U, 1);
