@@ -2859,7 +2859,6 @@ auto write_vdb_to_tiff_planes = [](openvdb::FloatGrid::Ptr float_grid,
   auto zcount = 0;
   // output each plane to separate file
   rng::for_each(zrng, [&float_grid, &base, &bbox, &zcount](auto z) {
-
     auto min = GridCoord(bbox.min()[0], bbox.min()[1], z);
     auto max = GridCoord(bbox.max()[0], bbox.max()[1], z); // inclusive
     auto plane_bbox = CoordBBox(min, max);
@@ -2870,7 +2869,11 @@ auto write_vdb_to_tiff_planes = [](openvdb::FloatGrid::Ptr float_grid,
 
     // overflows at 1 million z planes
     std::ostringstream fn;
-    fn << base << "/img_" << std::setfill('0') << std::setw(6) << zcount << ".tif";
+    fn << base << "/img_" << std::setfill('0') << std::setw(6) << zcount
+       << ".tif";
+
+    //cout << '\n' << fn.str() << '\n';
+    //print_image_3D(dense.data(), plane_bbox.dim());
 
     { // cv write
       int cv_type = mcp3d::VoxelTypeToCVType(mcp3d::VoxelType::M16U, 1);
@@ -2883,10 +2886,11 @@ auto write_vdb_to_tiff_planes = [](openvdb::FloatGrid::Ptr float_grid,
   });
 };
 
-// for all active values of the output grid copy the value at that coordinate from the
-// inputs grid
-// this could be replaced by openvdb's provided CSG/copying functions
-auto copy_values = [](openvdb::FloatGrid::Ptr input_grid, openvdb::FloatGrid::Ptr output_grid) {
+// for all active values of the output grid copy the value at that coordinate
+// from the inputs grid this could be replaced by openvdb's provided CSG/copying
+// functions
+auto copy_values = [](openvdb::FloatGrid::Ptr input_grid,
+                      openvdb::FloatGrid::Ptr output_grid) {
   auto accessor = input_grid->getConstAccessor();
   auto output_accessor = output_grid->getAccessor();
   for (openvdb::FloatGrid::ValueOnCIter iter = output_grid->cbeginValueOn();
@@ -2894,4 +2898,34 @@ auto copy_values = [](openvdb::FloatGrid::Ptr input_grid, openvdb::FloatGrid::Pt
     auto val = accessor.getValue(iter.getCoord());
     output_accessor.setValue(iter.getCoord(), val);
   }
+};
+
+// valued_grid : holds the pixel intensity values
+// topology_grid : holds the topology of the neuron cluster in question
+// values copied in topology and written z-plane by z-plane to individual tiff
+// files tiff component also saved
+auto write_output_windows = [](openvdb::FloatGrid::Ptr valued_grid,
+                               openvdb::FloatGrid::Ptr topology_grid,
+                               std::string dir, int counter = 0) {
+  auto timer = high_resolution_timer();
+  assertm(valued_grid, "Must have input grid set to run output_windows_");
+  copy_values(valued_grid, topology_grid);
+#ifdef LOG
+  cout << "Copied component values in " << timer.elapsed() << " s\n";
+#endif
+
+  timer.restart();
+  write_vdb_to_tiff_planes(topology_grid, dir);
+#ifdef LOG
+  cout << "Wrote window of component to tiff in " << timer.elapsed() << " s\n";
+#endif
+
+  timer.restart();
+  openvdb::GridPtrVec component_grids;
+  component_grids.push_back(topology_grid);
+  write_vdb_file(component_grids,
+                 dir + "/img-component-" + std::to_string(counter) + ".vdb");
+#ifdef LOG
+  cout << "Wrote window of component to vdb in " << timer.elapsed() << " s\n";
+#endif
 };

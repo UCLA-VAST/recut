@@ -2702,7 +2702,7 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
       input_image_lengths = lengths;
 
       // you need to set an input grid if you are outputing windows
-      if (! params->output_windows_.empty()) {
+      if (!params->output_windows_.empty()) {
         auto raw_grid = read_vdb_file(params->output_windows_);
         this->input_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(raw_grid);
       }
@@ -3159,32 +3159,8 @@ void Recut<image_t>::partition_components(
                      file, coord_to_swc_id, false);
     });
 
-     if (! params->output_windows_.empty()) {
-      timer.restart();
-      assertm(this->input_grid, "Must have input grid set to run output_windows_");
-      // inputs grids holds the pixel intensity values
-      // component just holds the topology of the neuron cluster in question
-      copy_values(this->input_grid, component);
-#ifdef LOG
-      cout << "Copied component values in " << timer.elapsed() << " s\n";
-#endif
-
-      timer.restart();
-      write_vdb_to_tiff_planes(component, dir);
-#ifdef LOG
-      cout << "Wrote window of component to tiff in " << timer.elapsed()
-           << " s\n";
-#endif
-
-      timer.restart();
-      openvdb::GridPtrVec component_grids;
-      component_grids.push_back(component);
-      write_vdb_file(component_grids, dir + "/img-component-" +
-                                          std::to_string(counter) + ".vdb");
-#ifdef LOG
-      cout << "Wrote window of component to vdb in " << timer.elapsed()
-           << " s\n";
-#endif
+    if (!params->output_windows_.empty()) {
+      write_output_windows(this->input_grid, component, dir, counter);
     }
 
     ++counter;
