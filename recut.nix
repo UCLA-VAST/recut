@@ -1,4 +1,4 @@
-{ nixpkgs, mcp3d, openvdb, ... }:
+{ nixpkgs, mcp3d, openvdb, tiff, ... }:
 let
   pkgs = import nixpkgs {
     system = "x86_64-linux";
@@ -19,7 +19,7 @@ in
 
   enableParallelBuilding = true;
 
-  cmakeFlags = ["-DUSE_VDB=ON -DLOG=ON -DLOG_FULL=OFF -DFULL_PRINT=OFF -DUSE_OMP_BLOCK=ON -DUSE_OMP_INTERVAL=ON -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MODULE_PATH=${openvdb.defaultPackage.x86_64-linux}/lib/cmake/OpenVDB"];
+  cmakeFlags = ["-DUSE_VDB=ON -DLOG=ON -DLOG_FULL=OFF -DFULL_PRINT=OFF -DUSE_OMP_BLOCK=ON -DUSE_OMP_INTERVAL=ON -DUSE_MCP3D=ON -DTEST_ALL_BENCHMARKS=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MODULE_PATH=${openvdb.defaultPackage.x86_64-linux}/lib/cmake/OpenVDB -DTINYTIFF_PATH=${tiff.defaultPackage.x86_64-linux}/lib/cmake/TinyTIFFShared"];
 
   nativeBuildInputs = [ cmake gcc11 ];
 
@@ -32,6 +32,7 @@ in
     # optional dependencies
     mcp3d.defaultPackage.x86_64-linux
     openvdb.defaultPackage.x86_64-linux
+    tiff.defaultPackage.x86_64-linux
     gbenchmark
 
     # For debug purposes only:
@@ -56,8 +57,8 @@ in
     # propagated binaries from openvdb
     cp ${openvdb.defaultPackage.x86_64-linux}/bin/vdb_view $out/bin
     cp ${openvdb.defaultPackage.x86_64-linux}/bin/vdb_print $out/bin
-    cp ${openvdb.defaultPackage.x86_64-linux}/bin/vdb_render $out/bin
-    cp ${openvdb.defaultPackage.x86_64-linux}/bin/vdb_lod $out/bin
+    # cp ${openvdb.defaultPackage.x86_64-linux}/bin/vdb_render $out/bin
+    # cp ${openvdb.defaultPackage.x86_64-linux}/bin/vdb_lod $out/bin
     # cp ${openvdb.defaultPackage.x86_64-linux}/bin/vdb_test $out/bin
   '';
 

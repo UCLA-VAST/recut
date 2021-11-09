@@ -27,7 +27,7 @@ using FPCodec = openvdb::points::FixedPointCodec</*1-byte=*/true,
                                                  openvdb::points::UnitRange>;
 using openvdb::math::CoordBBox;
 
-namespace vb = openvdb::v8_1;
+namespace vb = openvdb::OPENVDB_VERSION_NAME;
 namespace vt = openvdb::tree;
 namespace vto = openvdb::tools;
 namespace vp = vb::points;
