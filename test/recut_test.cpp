@@ -1,6 +1,5 @@
 #include "app2_helpers.hpp"
 #include "recut.hpp"
-#include "tinytiffwriter.h"
 #include "gtest/gtest.h"
 #include <cstdlib> //rand
 #include <ctime>   // for srand
@@ -1351,15 +1350,7 @@ TEST(TinyTIFF, ReadWrite) {
   VID_t actual_selected =
       create_image(tcase, inimg1d, grid_size, 100, root_vid);
 
-  TinyTIFFWriterFile *tif =
-      TinyTIFFWriter_open("tinytiff.tif", bits_per_sample, TinyTIFFWriter_UInt,
-                          samples, /*width*/ grid_extents[0], /* height*/ grid_extents[1], TinyTIFFWriter_Greyscale);
-  if (tif) {
-    for (uint16_t frame = 0; frame < grid_extents[2]; ++frame) {
-      TinyTIFFWriter_writeImage(tif, inimg1d);
-    }
-    TinyTIFFWriter_close(tif);
-  }
+  write_tiff(inimg1d, "./tinytiff", grid_extents);
 }
 
 #ifdef USE_MCP3D

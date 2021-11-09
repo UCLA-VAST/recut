@@ -4,6 +4,7 @@
 #include "markers.h"
 #include "range/v3/all.hpp"
 #include "recut_parameters.hpp"
+#include "tinytiffwriter.h"
 #include "vertex_attr.hpp"
 #include <algorithm> //min, clamp
 #include <atomic>
@@ -1663,7 +1664,21 @@ auto convert_buffer_to_vdb = [](auto buffer, GridCoord buffer_lengths,
 //}
 //} ;
 
-#ifdef USE_MCP3D
+      //#ifdef USE_TINYTIFF
+auto write_single_z_plane = [](uint16_t *inimg1d, std::ostringstream &fn,
+                               const GridCoord dims) {
+  auto bits_per_sample = 16;
+  auto samples = 1; // grayscale=1 ; RGB=3
+
+  TinyTIFFWriterFile *tif = TinyTIFFWriter_open(
+      &fn.str()[0], bits_per_sample, TinyTIFFWriter_UInt, samples,
+      /*width*/ dims[0], /* height*/ dims[1], TinyTIFFWriter_Greyscale);
+  assertm(tif, "tif file did not open properly");
+  TinyTIFFWriter_writeImage(tif, inimg1d);
+  TinyTIFFWriter_close(tif);
+};
+//#endif
+
 void write_tiff(uint16_t *inimg1d, std::string base, const GridCoord dims,
                 bool rerun = false) {
   auto print = false;
@@ -1682,17 +1697,24 @@ void write_tiff(uint16_t *inimg1d, std::string base, const GridCoord dims,
       fn << base << "/img_" << std::setfill('0') << std::setw(6) << z << ".tif";
       VID_t start = z * dims[0] * dims[1];
 
+#ifdef USE_MCP3D
       { // cv write
         int cv_type = mcp3d::VoxelTypeToCVType(mcp3d::VoxelType::M16U, 1);
         cv::Mat m(dims[0], dims[1], cv_type, &(inimg1d[start]));
         cv::imwrite(fn.str(), m);
       }
+#endif
+
+      //#ifdef USE_TINYTIFF
+      write_single_z_plane(&(inimg1d[start]), fn, dims);
+      //#endif
     }
     if (print)
       cout << "      Wrote test images in: " << base << '\n';
   }
 }
 
+#ifdef USE_MCP3D
 auto read_tiff = [](std::string fn, auto image_offsets, auto image_lengths,
                     mcp3d::MImage &image) {
   // read data from channel 0
@@ -2842,7 +2864,6 @@ auto convert_vdb_to_dense = [](openvdb::FloatGrid::Ptr float_grid) {
   return dense;
 };
 
-#ifdef USE_MCP3D
 // join conversion and writing by z plane for performance, note that for large
 // components, create a full dense buffer will fault with bad_alloc due to size
 // z-plane by z-plane like below prevents this
@@ -2873,20 +2894,25 @@ auto write_vdb_to_tiff_planes = [](openvdb::FloatGrid::Ptr float_grid,
     fn << base << "/img_" << std::setfill('0') << std::setw(6) << zcount
        << ".tif";
 
-    //cout << '\n' << fn.str() << '\n';
-    //print_image_3D(dense.data(), plane_bbox.dim());
+    // cout << '\n' << fn.str() << '\n';
+    // print_image_3D(dense.data(), plane_bbox.dim());
 
+#ifdef USE_MCP3D
     { // cv write
       int cv_type = mcp3d::VoxelTypeToCVType(mcp3d::VoxelType::M16U, 1);
       cv::Mat m(plane_bbox.dim()[0], plane_bbox.dim()[1], cv_type,
                 dense.data());
       cv::imwrite(fn.str(), m);
     }
+#endif
+
+    //#ifdef USE_TINYTIFF
+    write_single_z_plane(dense.data(), fn, plane_bbox.dim());
+    //#endif
 
     ++zcount;
   });
 };
-#endif
 
 // for all active values of the output grid copy the value at that coordinate
 // from the inputs grid this could be replaced by openvdb's provided CSG/copying
@@ -2902,7 +2928,6 @@ auto copy_values = [](openvdb::FloatGrid::Ptr input_grid,
   }
 };
 
-#ifdef USE_MCP3D
 // valued_grid : holds the pixel intensity values
 // topology_grid : holds the topology of the neuron cluster in question
 // values copied in topology and written z-plane by z-plane to individual tiff
@@ -2932,4 +2957,3 @@ auto write_output_windows = [](openvdb::FloatGrid::Ptr valued_grid,
   cout << "Wrote window of component to vdb in " << timer.elapsed() << " s\n";
 #endif
 };
-#endif
