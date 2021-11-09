@@ -2842,6 +2842,7 @@ auto convert_vdb_to_dense = [](openvdb::FloatGrid::Ptr float_grid) {
   return dense;
 };
 
+#ifdef USE_MCP3D
 // join conversion and writing by z plane for performance, note that for large
 // components, create a full dense buffer will fault with bad_alloc due to size
 // z-plane by z-plane like below prevents this
@@ -2885,6 +2886,7 @@ auto write_vdb_to_tiff_planes = [](openvdb::FloatGrid::Ptr float_grid,
     ++zcount;
   });
 };
+#endif
 
 // for all active values of the output grid copy the value at that coordinate
 // from the inputs grid this could be replaced by openvdb's provided CSG/copying
@@ -2900,6 +2902,7 @@ auto copy_values = [](openvdb::FloatGrid::Ptr input_grid,
   }
 };
 
+#ifdef USE_MCP3D
 // valued_grid : holds the pixel intensity values
 // topology_grid : holds the topology of the neuron cluster in question
 // values copied in topology and written z-plane by z-plane to individual tiff
@@ -2929,3 +2932,4 @@ auto write_output_windows = [](openvdb::FloatGrid::Ptr valued_grid,
   cout << "Wrote window of component to vdb in " << timer.elapsed() << " s\n";
 #endif
 };
+#endif
