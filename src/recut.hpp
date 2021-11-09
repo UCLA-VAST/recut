@@ -3160,7 +3160,9 @@ void Recut<image_t>::partition_components(
     });
 
     if (!params->output_windows_.empty()) {
+#ifdef USE_MCP3D
       write_output_windows(this->input_grid, component, dir, counter);
+#endif
     }
 
     ++counter;

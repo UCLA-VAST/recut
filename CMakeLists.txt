@@ -232,6 +232,13 @@ find_package(OpenMP REQUIRED)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
+if (TINYTIFF_PATH)
+  message(STATUS "TINYTIFF_PATH ${TINYTIFF_PATH}")
+  set(TinyTIFFShared_DIR TINYTIFF_PATH)
+  set(TinyTIFF_DIR TINYTIFF_PATH)
+  find_package(TinyTIFF REQUIRED)
+endif()
+
 foreach(I ${ALL_TARGETS})
   message(STATUS "${I}")
 
@@ -292,6 +299,10 @@ foreach(I ${ALL_TARGETS})
   endif()
 
   target_link_libraries(${I} PRIVATE Threads::Threads)
+
+  if (TINYTIFF_PATH)
+    target_link_libraries(${I} PRIVATE TinyTIFF)
+  endif()
 
   if (USE_MCP3D)
     message(STATUS "USE_MCP3D ON")

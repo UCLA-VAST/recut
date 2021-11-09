@@ -1,5 +1,6 @@
 #include "app2_helpers.hpp"
 #include "recut.hpp"
+#include "tinytiffwriter.h"
 #include "gtest/gtest.h"
 #include <cstdlib> //rand
 #include <ctime>   // for srand
@@ -1332,6 +1333,32 @@ TEST(VDB, GetSetGridMeta) {
     ASSERT_EQ(lengths[0], grid_extents[0]);
     ASSERT_EQ(lengths[1], grid_extents[1]);
     ASSERT_EQ(lengths[2], grid_extents[2]);
+  }
+}
+
+TEST(TinyTIFF, ReadWrite) {
+  auto grid_size = 24; // multi leaf but symmetric
+  auto tcase = 5;
+  auto grid_extents = GridCoord(grid_size, grid_size, grid_size);
+  auto tol_sz = coord_prod_accum(grid_extents);
+  auto root_vid = get_central_vid(grid_size);
+  auto root_coord = GridCoord(get_central_coord(grid_size));
+  auto print = true;
+
+  auto inimg1d = new uint16_t[tol_sz];
+  auto bits_per_sample = 16;
+  auto samples = 1; // grayscale=1 ; RGB=3
+  VID_t actual_selected =
+      create_image(tcase, inimg1d, grid_size, 100, root_vid);
+
+  TinyTIFFWriterFile *tif =
+      TinyTIFFWriter_open("tinytiff.tif", bits_per_sample, TinyTIFFWriter_UInt,
+                          samples, /*width*/ grid_extents[0], /* height*/ grid_extents[1], TinyTIFFWriter_Greyscale);
+  if (tif) {
+    for (uint16_t frame = 0; frame < grid_extents[2]; ++frame) {
+      TinyTIFFWriter_writeImage(tif, inimg1d);
+    }
+    TinyTIFFWriter_close(tif);
   }
 }
 

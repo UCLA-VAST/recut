@@ -7,11 +7,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1626313183,
-        "narHash": "sha256-DVpA7+bTFGGcVnyVKqVo5pgha5OM1kxyN8A39Bi9LKY=",
+        "lastModified": 1636478829,
+        "narHash": "sha256-iV0xtgT+/P1lT1cVY2ICxS6kQwMOExilr/Dk93TV8OE=",
         "ref": "master",
-        "rev": "18346d2d45793c05ab0e144e00aaa33759132de9",
-        "revCount": 466,
+        "rev": "48681d66ad2bf2fd766599e02e146de9f21c480d",
+        "revCount": 468,
         "type": "git",
         "url": "ssh://git@github.com/ucla-brain/mcp3d"
       },
@@ -23,11 +23,27 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1626209285,
-        "narHash": "sha256-x5lDbW9rYr8PImbQSKfwfBId1M2+rrRkK4/WReDEC1Q=",
+        "lastModified": 1636409124,
+        "narHash": "sha256-mX687Iy8SVhhdo16Sdqt0irrEgBjL54viPmOZBZJubQ=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "dac74fead8737d6bf0823f22da26c7344f69bc0a",
+        "rev": "d14ae62671fd4eaec57427da1e50f91d6a5f9605",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixpkgs-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1635934775,
+        "narHash": "sha256-DUkBfZjgeefgqyvFxnkZiOOWXgHP5Y1oKp/Zm+LT05Y=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "4789953e5c1ef6d10e3ff437e5b7ab8eed526942",
         "type": "github"
       },
       "original": {
@@ -44,11 +60,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1621273539,
-        "narHash": "sha256-ZvmAr86FQo6XnW9fsCdldJH2QjlSnjeneM5ICn2FLys=",
+        "lastModified": 1636478435,
+        "narHash": "sha256-4QsWKa74LH6bjFrXBl5e8GDYQ/dCCNelG3h78Jje5D8=",
         "ref": "master",
-        "rev": "380595ddb513ca7464a7ed1a403454a5c2b52c23",
-        "revCount": 2871,
+        "rev": "36ccaa2a4be28eb99e851481eeccbf8d7c4385ee",
+        "revCount": 3274,
         "type": "git",
         "url": "ssh://git@github.com/UCLA-VAST/openvdb"
       },
@@ -78,7 +94,27 @@
         "mcp3d": "mcp3d",
         "nixpkgs": "nixpkgs",
         "openvdb": "openvdb",
-        "pinned": "pinned"
+        "pinned": "pinned",
+        "tiff": "tiff"
+      }
+    },
+    "tiff": {
+      "inputs": {
+        "nixpkgs": "nixpkgs_2"
+      },
+      "locked": {
+        "lastModified": 1636303111,
+        "narHash": "sha256-ZR5GS4EdS/Fs6HIuGxnDtyVEqulym9YW/XtfZ/ueARw=",
+        "ref": "nix",
+        "rev": "13b37df4d04d7fb280d9863a1e70a6a84b1a121c",
+        "revCount": 84,
+        "type": "git",
+        "url": "ssh://git@github.com/kdmarrett/TinyTIFF"
+      },
+      "original": {
+        "ref": "nix",
+        "type": "git",
+        "url": "ssh://git@github.com/kdmarrett/TinyTIFF"
       }
     }
   },

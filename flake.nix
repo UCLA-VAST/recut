@@ -22,6 +22,7 @@
       nixpkgs = inputs.nixpkgs;
       mcp3d = inputs.mcp3d;
       openvdb = inputs.openvdb;
+      tiff = inputs.tiff;
     };
   };
 }
