@@ -18,12 +18,6 @@
 // stop after first test failure
 #define GTEST_FAIL_FAST 1
 
-#ifdef USE_MCP3D
-#include <common/mcp3d_utility.hpp>    // PadNumStr
-#include <image/mcp3d_voxel_types.hpp> // convert to CV type
-#include <opencv2/opencv.hpp>          // imwrite
-#endif
-
 #define EXP_DEV_LOW .05
 #define NUMERICAL_ERROR .00001
 

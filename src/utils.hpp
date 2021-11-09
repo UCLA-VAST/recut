@@ -24,11 +24,7 @@ namespace rng = ranges;
 
 #ifdef USE_MCP3D
 #include <common/mcp3d_common.hpp>
-#include <common/mcp3d_utility.hpp> // PadNumStr
 #include <image/mcp3d_image.hpp>
-#include <image/mcp3d_voxel_types.hpp> // convert to CV type
-#include <image/mcp3d_voxel_types.hpp>
-#include <opencv2/opencv.hpp> // imwrite
 #endif
 
 #define PI 3.14159265
@@ -1697,14 +1693,6 @@ void write_tiff(uint16_t *inimg1d, std::string base, const GridCoord dims,
       fn << base << "/img_" << std::setfill('0') << std::setw(6) << z << ".tif";
       VID_t start = z * dims[0] * dims[1];
 
-#ifdef USE_MCP3D
-      { // cv write
-        int cv_type = mcp3d::VoxelTypeToCVType(mcp3d::VoxelType::M16U, 1);
-        cv::Mat m(dims[0], dims[1], cv_type, &(inimg1d[start]));
-        cv::imwrite(fn.str(), m);
-      }
-#endif
-
       //#ifdef USE_TINYTIFF
       write_single_z_plane(&(inimg1d[start]), fn, dims);
       //#endif
@@ -2896,15 +2884,6 @@ auto write_vdb_to_tiff_planes = [](openvdb::FloatGrid::Ptr float_grid,
 
     // cout << '\n' << fn.str() << '\n';
     // print_image_3D(dense.data(), plane_bbox.dim());
-
-#ifdef USE_MCP3D
-    { // cv write
-      int cv_type = mcp3d::VoxelTypeToCVType(mcp3d::VoxelType::M16U, 1);
-      cv::Mat m(plane_bbox.dim()[0], plane_bbox.dim()[1], cv_type,
-                dense.data());
-      cv::imwrite(fn.str(), m);
-    }
-#endif
 
     //#ifdef USE_TINYTIFF
     write_single_z_plane(dense.data(), fn, plane_bbox.dim());
