@@ -4,7 +4,6 @@
 #include "markers.h"
 #include "range/v3/all.hpp"
 #include "recut_parameters.hpp"
-#include "tinytiffwriter.h"
 #include "vertex_attr.hpp"
 #include <algorithm> //min, clamp
 #include <atomic>
@@ -19,13 +18,17 @@
 #include <queue>
 #include <stdlib.h> // ultoa
 
-namespace fs = std::filesystem;
-namespace rng = ranges;
+#ifdef USE_TINYTIFF
+#include "tinytiffwriter.h"
+#endif
 
 #ifdef USE_MCP3D
 #include <common/mcp3d_common.hpp>
 #include <image/mcp3d_image.hpp>
 #endif
+
+namespace fs = std::filesystem;
+namespace rng = ranges;
 
 #define PI 3.14159265
 // be able to change pp values into std::string
@@ -1660,20 +1663,22 @@ auto convert_buffer_to_vdb = [](auto buffer, GridCoord buffer_lengths,
 //}
 //} ;
 
-      //#ifdef USE_TINYTIFF
 auto write_single_z_plane = [](uint16_t *inimg1d, std::ostringstream &fn,
                                const GridCoord dims) {
   auto bits_per_sample = 16;
   auto samples = 1; // grayscale=1 ; RGB=3
 
+#ifdef USE_TINYTIFF
   TinyTIFFWriterFile *tif = TinyTIFFWriter_open(
       &fn.str()[0], bits_per_sample, TinyTIFFWriter_UInt, samples,
       /*width*/ dims[0], /* height*/ dims[1], TinyTIFFWriter_Greyscale);
   assertm(tif, "tif file did not open properly");
   TinyTIFFWriter_writeImage(tif, inimg1d);
   TinyTIFFWriter_close(tif);
+#else
+  throw std::runtime_error("must compile in CMAKE with TINYTIFF_PATH set");
+#endif
 };
-//#endif
 
 void write_tiff(uint16_t *inimg1d, std::string base, const GridCoord dims,
                 bool rerun = false) {
@@ -1693,9 +1698,7 @@ void write_tiff(uint16_t *inimg1d, std::string base, const GridCoord dims,
       fn << base << "/img_" << std::setfill('0') << std::setw(6) << z << ".tif";
       VID_t start = z * dims[0] * dims[1];
 
-      //#ifdef USE_TINYTIFF
       write_single_z_plane(&(inimg1d[start]), fn, dims);
-      //#endif
     }
     if (print)
       cout << "      Wrote test images in: " << base << '\n';
@@ -2885,9 +2888,7 @@ auto write_vdb_to_tiff_planes = [](openvdb::FloatGrid::Ptr float_grid,
     // cout << '\n' << fn.str() << '\n';
     // print_image_3D(dense.data(), plane_bbox.dim());
 
-    //#ifdef USE_TINYTIFF
     write_single_z_plane(dense.data(), fn, plane_bbox.dim());
-    //#endif
 
     ++zcount;
   });

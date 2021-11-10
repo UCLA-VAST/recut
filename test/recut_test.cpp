@@ -952,27 +952,27 @@ TEST(VDB, Convert) {
                  /*force_regenerate_image=*/false,
                  /*input_is_vdb=*/false);
 
-    auto recut_from_vdb_file = Recut<uint16_t>(args);
-    recut_from_vdb_file.params->convert_only_ = true;
+    auto recut_from_tiff_file = Recut<uint16_t>(args);
+    recut_from_tiff_file.params->convert_only_ = true;
 
     // handle read from vdb
-    recut_from_vdb_file.initialize();
-    recut_from_vdb_file.activate_all_intervals();
+    recut_from_tiff_file.initialize();
+    recut_from_tiff_file.activate_all_intervals();
     // mutates topology_grid
     auto stage = "convert";
-    recut_from_vdb_file.update(stage, recut_from_vdb_file.map_fifo);
+    recut_from_tiff_file.update(stage, recut_from_tiff_file.map_fifo);
 
     if (print_all)
-      print_vdb_mask(recut_from_vdb_file.topology_grid->getConstAccessor(),
+      print_vdb_mask(recut_from_tiff_file.topology_grid->getConstAccessor(),
                      grid_extents);
 
     // assert equals original grid above
     double read_from_file_error_rate;
     EXPECT_NO_FATAL_FAILURE(
-        check_recut_error(recut_from_vdb_file,
+        check_recut_error(recut_from_tiff_file,
                           /*ground_truth*/ recut.generated_image, grid_size,
                           stage, read_from_file_error_rate,
-                          recut_from_vdb_file.map_fifo, recut.params->selected,
+                          recut_from_tiff_file.map_fifo, recut.params->selected,
                           /*strict_match=*/true));
 
     ASSERT_NEAR(read_from_file_error_rate, 0., NUMERICAL_ERROR);
@@ -1126,11 +1126,10 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         auto topology_grid =
             create_point_grid(positions, grid_extents, get_transform());
 
-        std::cout << "created vdb grid\n";
-
         topology_grid->tree().prune();
 
         if (print) {
+          std::cout << "created vdb grid\n";
           print_vdb_mask(topology_grid->getConstAccessor(), grid_extents);
 
           // print_all_points(
@@ -1139,9 +1138,10 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
           // zeros(), grid_extents));
 
           // print_image_3D(inimg1d, grid_extents);
+          cout << "Write tiff\n";
         }
 
-#ifdef USE_MCP3D
+#ifdef USE_TINYTIFF
         write_tiff(inimg1d, image_dir, grid_extents);
 #endif
 
@@ -1163,6 +1163,72 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
       }
     }
   }
+}
+
+TEST(Install, DISABLED_ConvertVDBToDense) {
+  auto grid_size = 4; 
+  auto tcase = 5;// symmetric
+  auto grid_extents = GridCoord(grid_size, grid_size, grid_size);
+  auto tol_sz = coord_prod_accum(grid_extents);
+  auto root_vid = get_central_vid(grid_size);
+  auto root_coord = GridCoord(get_central_coord(grid_size));
+  auto print = true;
+
+  auto inimg1d = new uint16_t[tol_sz];
+  VID_t actual_selected =
+      create_image(tcase, inimg1d, grid_size, 100, root_vid);
+
+  // auto topology_grid = create_vdb_grid(extended_grid_extents, 0);
+  auto float_grid = openvdb::FloatGrid::create();
+  convert_buffer_to_vdb_acc(inimg1d, grid_extents, zeros(), zeros(),
+                            float_grid->getAccessor(), 0);
+
+  if (print) {
+    cout << "float grid\n";
+    print_vdb_mask(float_grid->getConstAccessor(), grid_extents);
+  }
+
+  // convert back to dense array
+  auto check_dense = convert_vdb_to_dense(float_grid);
+
+  auto bbox = float_grid->evalActiveVoxelBoundingBox(); // inclusive both ends
+  VID_t volume = coord_prod_accum(bbox.dim());
+  ASSERT_EQ(check_dense.valueCount(), volume);
+
+  if (print) {
+    cout << "Dense 3D\n";
+    print_image_3D(check_dense.data(), bbox.dim());
+  }
+
+  // check all match
+  auto active_count = 0;
+  for (int i = 0; i < volume; ++i) {
+    if (check_dense.getValue(i))
+      ++active_count;
+  }
+  ASSERT_EQ(active_count, float_grid->activeVoxelCount());
+
+#ifdef USE_TINYTIFF
+  { // planes
+    auto fn = "./data/test_images/convert-vdb-to-dense-planes";
+    write_vdb_to_tiff_planes(float_grid, fn);
+
+#ifdef USE_MCP3D
+    // check reading value back in
+    mcp3d::MImage from_file(fn, {"ch0"});
+    read_tiff(fn, zeros(), bbox.dim(), from_file);
+
+    if (print) {
+      cout << "Z-plane written then read image:\n";
+      print_image_3D(from_file.Volume<uint16_t>(0), bbox.dim());
+    }
+
+    ASSERT_NO_FATAL_FAILURE(check_image_equality(
+        check_dense.data(), from_file.Volume<uint16_t>(0), volume));
+#endif
+  }
+#endif
+
 }
 
 TEST(VDB, ConvertDenseToVDB) {
@@ -1226,69 +1292,6 @@ TEST(VDB, ConvertDenseToVDB) {
   }
 }
 
-TEST(VDB, ConvertVDBToDense) {
-  auto grid_size = 24; // multi leaf but symmetric
-  auto tcase = 5;
-  auto grid_extents = GridCoord(grid_size, grid_size, grid_size);
-  auto tol_sz = coord_prod_accum(grid_extents);
-  auto root_vid = get_central_vid(grid_size);
-  auto root_coord = GridCoord(get_central_coord(grid_size));
-  auto print = true;
-
-  auto inimg1d = new uint16_t[tol_sz];
-  VID_t actual_selected =
-      create_image(tcase, inimg1d, grid_size, 100, root_vid);
-
-  // auto topology_grid = create_vdb_grid(extended_grid_extents, 0);
-  auto float_grid = openvdb::FloatGrid::create();
-  convert_buffer_to_vdb_acc(inimg1d, grid_extents, zeros(), zeros(),
-                            float_grid->getAccessor(), 0);
-
-  if (print) {
-    cout << "float grid\n";
-    print_vdb_mask(float_grid->getConstAccessor(), grid_extents);
-  }
-
-  // convert back to dense array
-  auto check_dense = convert_vdb_to_dense(float_grid);
-
-  auto bbox = float_grid->evalActiveVoxelBoundingBox(); // inclusive both ends
-  VID_t volume = coord_prod_accum(bbox.dim());
-  ASSERT_EQ(check_dense.valueCount(), volume);
-
-  if (print) {
-    cout << "Dense 3D\n";
-    print_image_3D(check_dense.data(), bbox.dim());
-  }
-
-  // check all match
-  auto active_count = 0;
-  for (int i = 0; i < volume; ++i) {
-    if (check_dense.getValue(i))
-      ++active_count;
-  }
-  ASSERT_EQ(active_count, float_grid->activeVoxelCount());
-
-#ifdef USE_MCP3D
-  { // planes
-    auto fn = "./data/test_images/convert-vdb-to-dense-planes";
-    write_vdb_to_tiff_planes(float_grid, fn);
-
-    // check reading value back in
-    mcp3d::MImage from_file(fn, {"ch0"});
-    read_tiff(fn, zeros(), bbox.dim(), from_file);
-
-    if (print) {
-      cout << "Z-plane written then read image:\n";
-      print_image_3D(from_file.Volume<uint16_t>(0), bbox.dim());
-    }
-
-    ASSERT_NO_FATAL_FAILURE(check_image_equality(
-        check_dense.data(), from_file.Volume<uint16_t>(0), volume));
-  }
-#endif
-}
-
 TEST(VDB, ConvertFloatToPointGrid) {
   // read grid from float
   VID_t grid_size = 8;
@@ -1329,26 +1332,8 @@ TEST(VDB, GetSetGridMeta) {
   }
 }
 
-TEST(TinyTIFF, ReadWrite) {
-  auto grid_size = 24; // multi leaf but symmetric
-  auto tcase = 5;
-  auto grid_extents = GridCoord(grid_size, grid_size, grid_size);
-  auto tol_sz = coord_prod_accum(grid_extents);
-  auto root_vid = get_central_vid(grid_size);
-  auto root_coord = GridCoord(get_central_coord(grid_size));
-  auto print = true;
-
-  auto inimg1d = new uint16_t[tol_sz];
-  auto bits_per_sample = 16;
-  auto samples = 1; // grayscale=1 ; RGB=3
-  VID_t actual_selected =
-      create_image(tcase, inimg1d, grid_size, 100, root_vid);
-
-  write_tiff(inimg1d, "./tinytiff", grid_extents);
-}
-
 #ifdef USE_MCP3D
-TEST(Install, ImageReadWrite) {
+TEST(Install, DISABLED_ImageReadWrite) {
   auto grid_size = 2;
   auto grid_extents = GridCoord(grid_size);
   auto tcase = 7;
@@ -2138,7 +2123,9 @@ TEST(Update, EachStageIteratively) {
                 }
 
                 std::cout << iteration_trace.str();
-                recut.print_to_swc();
+                // this outputs to out.swc but we do not want side effects from
+                // running the test binary
+                // recut.print_to_swc(); 
 
                 recut_output_tree_prune =
                     convert_to_markers(recut.topology_grid, false);

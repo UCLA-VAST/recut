@@ -30,7 +30,7 @@ in
     gtest
 
     # optional dependencies
-    # mcp3d.defaultPackage.x86_64-linux
+    mcp3d.defaultPackage.x86_64-linux
     openvdb.defaultPackage.x86_64-linux
     tiff.defaultPackage.x86_64-linux
     gbenchmark
