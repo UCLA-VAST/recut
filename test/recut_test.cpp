@@ -23,7 +23,7 @@
 
 // If input is not vdb, and you do not force regeneration of the image
 // then you must use the MCP3D library to read the image filenames
-#ifdef USE_MCP3D
+#ifdef USE_TINYTIFF
 #define GEN_IMAGE false
 #else
 #define GEN_IMAGE true
@@ -2285,7 +2285,7 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
   // shared params
   // generate image so that you can read it below
   // first make sure it can pass
-  auto input_is_vdb = true;
+  auto input_is_vdb = true; // must be true if USE_TINYTIFF is false/undefined
   auto args = get_args(grid_size, interval_size, block_size, slt_pct, tcase,
                        force_regenerate_image, input_is_vdb);
   args.set_type("float");
@@ -2474,7 +2474,6 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
     ASSERT_EQ(args.output_tree.size(), recut.params->selected);
   }
 
-#ifdef USE_MCP3D
   // this runs the original app2 fastmarching algorithm
   // when using the real data, you don't know what the actual
   // selected number should be unless you compare it to another
@@ -2648,7 +2647,6 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
       marker_to_swc_file("recut-checks-if.swc", recut_output_tree_prune);
     }
   }
-#endif
 } // ChecksIfFinalVerticesCorrect
 
 // ... check_against_selected, check_against_app2

@@ -2651,7 +2651,7 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
 template <class image_t>
 GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
                                                   RecutCommandLineArgs *args) {
-  GridCoord input_image_lengths(3);
+  GridCoord input_image_lengths = zeros();
   this->update_grid = openvdb::BoolGrid::create();
   if (this->params->force_regenerate_image) {
     // for generated image runs trust the args->image_lengths
@@ -2714,33 +2714,12 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
 #endif
 
   } else {
-    // read from image use mcp3d library
-
-#ifndef USE_MCP3D
+#ifndef USE_TINYTIFF
     assertm(false, "Input must either be regenerated, use VDB or have the "
-                   "USE_MCP3D macro for the image reading library defined");
-#endif
-    assertm(fs::exists(args->image_root_dir()),
-            "Image root directory does not exist");
-
-#ifdef USE_MCP3D
-    // determine the image size
-    mcp3d::MImage global_image(args->image_root_dir(), {args->channel()});
-    // read data from channel
-    global_image.ReadImageInfo(args->resolution_level(), true);
-    if (global_image.image_info().empty()) {
-      MCP3D_MESSAGE("no supported image formats found in " +
-                    args->image_root_dir() + ", do nothing.")
-      throw;
-    }
-
-    // save to __image_info__.json in corresponding dir
-    // global_image.SaveImageInfo();
-
-    // reflects the total global image domain
-    auto temp = global_image.xyz_dims(args->resolution_level());
-    // reverse mcp3d's z y x order for offsets and lengths
-    input_image_lengths = new_grid_coord(temp[2], temp[1], temp[0]);
+                   "USE_TINYTIFF macro for image reading");
+#else
+    const auto tif_filenames = get_dir_files(args->image_root_dir(), ".tif");
+    input_image_lengths = get_tif_dims(tif_filenames);
 #endif
 
     // FIXME remove this, don't necessarily require
