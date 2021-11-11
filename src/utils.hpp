@@ -19,6 +19,7 @@
 #include <stdlib.h> // ultoa
 
 #ifdef USE_TINYTIFF
+#include "tinytiffreader.h"
 #include "tinytiffwriter.h"
 #endif
 
@@ -1721,6 +1722,96 @@ auto read_tiff = [](std::string fn, auto image_offsets, auto image_lengths,
     assertm(false, "error in image io. neuron tracing not performed");
   }
 };
+#endif
+
+#ifdef USE_TINYTIFF
+
+auto read_tiff_planes = [](const std::vector<std::string> &fns,
+                           const CoordBBox &bbox) {
+  vto::Dense<uint16_t, vto::LayoutXYZ> dense(bbox);
+
+  for (auto z = 0; z < fns.size(); ++z) {
+    const auto fn = fns[z];
+    TinyTIFFReaderFile *tiffr = NULL;
+    tiffr = TinyTIFFReader_open(&fn[0]);
+    if (!tiffr) {
+      throw std::runtime_error(
+          "ERROR reading (not existent, not accessible or no TIFF file)");
+    }
+
+    const uint16_t bitspersample = TinyTIFFReader_getBitsPerSample(tiffr, 0);
+    if (bitspersample != 16) {
+      throw std::runtime_error("ERROR expected tiff file of uint16\n");
+    }
+
+    const uint32_t width = TinyTIFFReader_getWidth(tiffr);
+    const uint32_t height = TinyTIFFReader_getHeight(tiffr);
+    if (width != bbox.dim()[0] || height != bbox.dim()[1]) {
+      std::ostringstream os;
+      os << "mismatch among tif file contents in width or height\nexpected: "
+         << bbox.dim() << "\ngot " << width << " by " << height << '\n';
+      throw std::runtime_error(os.str());
+    }
+    auto start = z * bbox.dim()[0] * bbox.dim()[1];
+
+    // IN ROW-MAJOR xyz order
+    TinyTIFFReader_getSampleData(tiffr, &dense.data()[start], 0);
+
+    TinyTIFFReader_close(tiffr);
+  }
+
+  return dense;
+};
+
+auto get_dir_files = [](const std::string &dir, const std::string &ext) {
+  std::ostringstream os;
+  os << "Passed : " << dir;
+  if (!(fs::exists(dir) && fs::is_directory(dir))) {
+    os << " get_dir_files() must be passed a path to an existing directory";
+    throw std::runtime_error(os.str());
+  }
+
+  auto tif_filenames = std::vector<std::string>();
+  rng::for_each(fs::directory_iterator(dir), [&tif_filenames, &dir,
+                                              &ext](auto const &entry) {
+    if (fs::is_regular_file(entry) && entry.path().extension() == ext) {
+      const auto full_name = dir + "/" + entry.path().filename().string();
+      tif_filenames.emplace_back(full_name);
+    }
+  });
+
+  if (tif_filenames.empty()) {
+    os << " directory must contain at least one file with extension " << ext;
+    throw std::runtime_error(os.str());
+  }
+
+  std::sort(tif_filenames.begin(), tif_filenames.end());
+
+  return tif_filenames;
+};
+
+auto get_tif_dims = [](const std::vector<std::string>& tif_filenames) {
+  TinyTIFFReaderFile *tiffr = NULL;
+  tiffr = TinyTIFFReader_open(
+      &tif_filenames[0][0]); // take the first file, conver to char*
+  if (!tiffr) {
+    throw std::runtime_error(
+        "ERROR reading (not existent, not accessible or no TIFF file)\n");
+  }
+  const uint32_t width = TinyTIFFReader_getWidth(tiffr);
+  const uint32_t height = TinyTIFFReader_getHeight(tiffr);
+  return GridCoord(width, height, tif_filenames.size());
+};
+
+auto read_tiff_dir = [](const std::string &dir) {
+  const auto tif_filenames = get_dir_files(dir, ".tif");
+  const auto dims = get_tif_dims(tif_filenames);
+  // bbox is inclusive
+  const auto bbox = CoordBBox(zeros(), dims.offsetBy(-1));
+  assertm(dims == bbox.dim(), "dims and bbox dims must match");
+  return read_tiff_planes(tif_filenames, bbox);
+};
+
 #endif
 
 // stamp the compile time config

@@ -380,15 +380,14 @@ TEST(Histogram, CallAndPrint) {
     }
   }
 
-#ifdef USE_MCP3D
+#ifdef USE_TINYTIFF
   {
     auto tcase = 0;
     auto grid_size = 2;
     auto args = get_args(grid_size, grid_size, grid_size, 100, tcase);
-    mcp3d::MImage check(args.image_root_dir(), {"ch0"});
-    read_tiff(args.image_root_dir(), args.image_offsets, args.image_lengths,
-              check);
-    auto histogram = hist(check.Volume<uint16_t>(0), args.image_lengths,
+    std::string dir = args.image_root_dir() + "/ch0";
+    auto check = read_tiff_dir(dir);
+    auto histogram = hist(check.data(), args.image_lengths,
                           zeros(), granularity);
     ASSERT_EQ(histogram.size(), 1)
         << "all values are 1 so only first first bin should exist";
@@ -1166,8 +1165,8 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
 }
 
 TEST(Install, DISABLED_ConvertVDBToDense) {
-  auto grid_size = 4; 
-  auto tcase = 5;// symmetric
+  auto grid_size = 4;
+  auto tcase = 5; // symmetric
   auto grid_extents = GridCoord(grid_size, grid_size, grid_size);
   auto tol_sz = coord_prod_accum(grid_extents);
   auto root_vid = get_central_vid(grid_size);
@@ -1210,25 +1209,22 @@ TEST(Install, DISABLED_ConvertVDBToDense) {
 
 #ifdef USE_TINYTIFF
   { // planes
-    auto fn = "./data/test_images/convert-vdb-to-dense-planes";
+    std::string fn = "./data/test_images/convert-vdb-to-dense-planes";
     write_vdb_to_tiff_planes(float_grid, fn);
 
-#ifdef USE_MCP3D
     // check reading value back in
-    mcp3d::MImage from_file(fn, {"ch0"});
-    read_tiff(fn, zeros(), bbox.dim(), from_file);
+    fn = fn  + "/ch0";
+    auto from_file = read_tiff_dir(fn);
 
     if (print) {
       cout << "Z-plane written then read image:\n";
-      print_image_3D(from_file.Volume<uint16_t>(0), bbox.dim());
+      print_image_3D(from_file.data(), bbox.dim());
     }
 
     ASSERT_NO_FATAL_FAILURE(check_image_equality(
-        check_dense.data(), from_file.Volume<uint16_t>(0), volume));
-#endif
+        check_dense.data(), from_file.data(), volume));
   }
 #endif
-
 }
 
 TEST(VDB, ConvertDenseToVDB) {
@@ -1332,7 +1328,7 @@ TEST(VDB, GetSetGridMeta) {
   }
 }
 
-#ifdef USE_MCP3D
+#ifdef USE_TINYTIFF
 TEST(Install, DISABLED_ImageReadWrite) {
   auto grid_size = 2;
   auto grid_extents = GridCoord(grid_size);
@@ -1347,42 +1343,40 @@ TEST(Install, DISABLED_ImageReadWrite) {
   fn = fn + "/test_images/ReadWriteTest";
   auto image_lengths = GridCoord(grid_size);
   auto image_offsets = GridCoord(0);
+  auto bbox = CoordBBox(image_offsets, image_lengths);
 
   VID_t selected = volume; // for tcase 4
   uint16_t *inimg1d = new uint16_t[volume];
   create_image(tcase, inimg1d, grid_size, selected, get_central_vid(grid_size));
+  if (print_all) {
   cout << "Created image:\n";
   print_image_3D(inimg1d, grid_extents);
+  }
 
   write_tiff(inimg1d, fn, grid_extents);
-  mcp3d::MImage check(fn, {"ch0"});
-  ASSERT_NE(check.n_channels(), 0);
-  read_tiff(fn, image_offsets, image_lengths, check);
 
-  cout << "Read image:\n";
-  print_image_3D(check.Volume<uint16_t>(0), grid_extents);
+  auto fn_ch0 = fn + "/ch0";
+  auto check = read_tiff_dir(fn_ch0);
 
-  ASSERT_NO_FATAL_FAILURE(
-      check_image_equality(inimg1d, check.Volume<uint16_t>(0), volume));
-  cout << "first read passed\n";
+  if (print_all) {
+    cout << "Read image:\n";
+    print_image_3D(check.data(), grid_extents);
+  }
 
-  // run recut over the image, force it to run in read image
-  // non-generated mode since MCP3D is guaranteed here
-  // auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-  // false); auto recut = Recut<uint16_t>(args); recut();
+  ASSERT_NO_FATAL_FAILURE(check_image_equality(inimg1d, check.data(), volume));
 
   // check again
-  cout << "second read\n";
-  mcp3d::MImage check3(fn, {"ch0"});
-  ASSERT_NE(check3.n_channels(), 0);
-  read_tiff(fn, image_offsets, image_lengths, check3);
-  ASSERT_NO_FATAL_FAILURE(
-      check_image_equality(inimg1d, check3.Volume<uint16_t>(0), volume));
+  if (print_all) {
+    cout << "first read passed\n";
+    cout << "second read\n";
+  }
+
+  auto check2 = read_tiff_dir(fn_ch0);
+  ASSERT_NO_FATAL_FAILURE(check_image_equality(inimg1d, check2.data(), volume));
 
   delete[] inimg1d;
 }
-
-#endif // USE_MCP3D
+#endif // USE_TINYTIFF
 
 TEST(VertexAttr, Defaults) {
   auto v1 = new VertexAttr();
@@ -1411,17 +1405,15 @@ TEST(TileThresholds, AllTcases) {
     auto tile_thresholds = new TileThresholds<uint16_t>();
     uint16_t bkg_thresh;
 
-#ifdef USE_MCP3D
-    mcp3d::MImage image(args.image_root_dir());
+#ifdef USE_TINYTIFF
     if (tcase == 6) {
-      read_tiff(args.image_root_dir(), args.image_offsets, args.image_lengths,
-                image);
+      auto image = read_tiff_dir(args.image_root_dir() +"/ch0");
       if (print_image) {
-        print_image_3D(image.Volume<uint16_t>(0), grid_extents);
+        print_image_3D(image.data(), grid_extents);
       }
-      bkg_thresh = recut.get_bkg_threshold(image.Volume<uint16_t>(0),
+      bkg_thresh = recut.get_bkg_threshold(image.data(),
                                            grid_vertex_size, slt_pct / 100.);
-      tile_thresholds->get_max_min(image.Volume<uint16_t>(0), grid_vertex_size);
+      tile_thresholds->get_max_min(image.data(), grid_vertex_size);
 
       if (print_image) {
         cout << "tcase " << tcase << " bkg_thresh " << bkg_thresh << "\nmax "
@@ -2125,7 +2117,7 @@ TEST(Update, EachStageIteratively) {
                 std::cout << iteration_trace.str();
                 // this outputs to out.swc but we do not want side effects from
                 // running the test binary
-                // recut.print_to_swc(); 
+                // recut.print_to_swc();
 
                 recut_output_tree_prune =
                     convert_to_markers(recut.topology_grid, false);
