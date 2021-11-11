@@ -1,8 +1,5 @@
 #pragma once
 
-#ifdef USE_MCP3D
-#include "image/mcp3d_image_maths.hpp"
-#endif
 #include "recut_parameters.hpp"
 #include "tile_thresholds.hpp"
 #include "utils.hpp"
@@ -236,9 +233,11 @@ public:
                   const TileThresholds<image_t> *tile_thresholds,
                   Container &fifo, VID_t revisits, T2 leaf_iter);
   void create_march_thread(VID_t interval_id, VID_t block_id);
-#ifdef USE_MCP3D
-  void load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile);
-  TileThresholds<image_t> *get_tile_thresholds(mcp3d::MImage &mcp3d_tile);
+#ifdef USE_TINYTIFF
+  vto::Dense<uint16_t, vto::LayoutXYZ> load_tile(const VID_t interval_id,
+                                                 const std::string &dir);
+  TileThresholds<image_t> *
+  get_tile_thresholds(vto::Dense<uint16_t, vto::LayoutXYZ> &tile);
 #endif
   template <typename T2>
   std::atomic<double>
@@ -2065,7 +2064,7 @@ std::atomic<double> Recut<image_t>::process_interval(
   return timer.elapsed();
 }
 
-#ifdef USE_MCP3D
+#ifdef USE_TINYTIFF
 
 /*
  * The interval size and shape define the requested "view" of the image
@@ -2075,70 +2074,56 @@ std::atomic<double> Recut<image_t>::process_interval(
  * one mapping between each voxel of the image view and the
  * vertex of the interval. Note the interval is an array of
  * initialized unvisited structs so they start off at arbitrary
- * location but are defined as they are visited. When mmap
- * is defined all intervals follow copy on write semantics
- * at the granularity of a system page from the same array of structs
- * file INTERVAL_BASE
+ * location but are defined as they are visited.
  */
 template <class image_t>
-void Recut<image_t>::load_tile(VID_t interval_id, mcp3d::MImage &mcp3d_tile) {
+vto::Dense<uint16_t, vto::LayoutXYZ>
+Recut<image_t>::load_tile(const VID_t interval_id, const std::string &dir) {
 #ifdef LOG
   auto timer = high_resolution_timer();
 #endif
 
   auto tile_extents = this->interval_lengths;
-
-  // read image data
-  // FIXME check that this has no state that can
-  // be corrupted in a shared setting
-  // otherwise just create copies of it if necessary
-  assertm(!(this->params->force_regenerate_image),
-          "If USE_MCP3D macro is set, this->params->force_regenerate_image "
-          "must be set to False");
-  // read data from channel
-  mcp3d_tile.ReadImageInfo(args->resolution_level(), true);
-  // read data
-  try {
-    auto interval_offsets = id_interval_to_img_offsets(interval_id);
-#ifdef LOG_FULL
-    cout << "From image, on ii " << interval_id << " requesting:\n";
-    print_coord(interval_offsets, "interval_offsets");
-    print_coord(tile_extents, "tile_extents");
+  auto tile_offsets = id_interval_to_img_offsets(interval_id);
+  auto interval_max = (tile_offsets + tile_extents).offsetBy(-1);
+  const auto bbox = CoordBBox(tile_offsets, interval_max);
+#ifdef LOG
+  cout << "From image, on ii " << interval_id << " requesting:\n";
+  print_coord(tile_offsets, "tile_offsets");
+  print_coord(tile_extents, "tile_extents");
+  cout << bbox << '\n';
 #endif
 
-    // mcp3d operates in z y x order
-    // but still returns row-major (c-order) buffers
-    mcp3d::MImageBlock block(
-        {interval_offsets[2], interval_offsets[1], interval_offsets[0]},
-        {tile_extents[2], tile_extents[1], tile_extents[0]});
-    mcp3d_tile.SelectView(block, args->resolution_level());
-    mcp3d_tile.ReadData(true, "quiet");
-  } catch (...) {
-    MCP3D_MESSAGE("error in mcp3d_tile io. neuron tracing not performed")
-    throw;
-  }
-  //#ifdef FULL_PRINT
-  // print_image_3D(mcp3d_tile.Volume<image_t>(0), {tile_extents[0],
-  // tile_extents[1], tile_extents[2]});
-  //#endif
+  const auto tif_filenames = get_dir_files(dir, ".tif"); // sorted
+  auto interval_filenames = tif_filenames | rng::views::drop(tile_offsets[2]) |
+                            rng::views::take(tile_extents[2]) | rng::to_vector;
+  // bbox is inclusive, therefore substract 1
+  // const auto dims = get_tif_dims(interval_filenames);
+  // assertm(dims == bbox.dim(), "dims and bbox dims must match");
 
+  // try {
+  // returns row-major (c-order) buffers
+  auto dense = read_tiff_planes(interval_filenames, bbox);
 #ifdef LOG
   cout << "Load image in " << timer.elapsed() << " sec." << '\n';
 #endif
+  ////} catch (...) {
+  //// throw std::runtime_error(
+  ////"error in mcp3d_tile io. neuron tracing not performed");
+  ////}
+  return dense;
 }
 
 // Calculate new tile thresholds or use input thresholds according
 // to params and args this function has no sideffects outside
 // of the returned tile_thresholds struct
 template <class image_t>
-TileThresholds<image_t> *
-Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
+TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
+    vto::Dense<uint16_t, vto::LayoutXYZ> &tile) {
   auto tile_thresholds = new TileThresholds<image_t>();
 
-  std::vector<int> interval_dims =
-      mcp3d_tile.loaded_view().xyz_dims(args->resolution_level());
-  VID_t interval_vertex_size = static_cast<VID_t>(interval_dims[0]) *
-                               interval_dims[1] * interval_dims[2];
+  auto interval_dims = tile.bbox().dim();
+  auto interval_vertex_size = coord_prod_accum(interval_dims);
 
   // assign thresholding value
   // foreground parameter takes priority
@@ -2146,14 +2131,8 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
   // than 0 than it was changed by a user so it takes precedence over the
   // defaults
   if (params->foreground_percent() >= 0) {
-    // tile_thresholds->bkg_thresh =
-    // get_bkg_threshold(mcp3d_tile.Volume<image_t>(0), interval_vertex_size,
-    // params->foreground_percent());
-
-    // TopPercentile takes a fraction not a percentile
-    tile_thresholds->bkg_thresh = mcp3d::VolumeTopPercentile<image_t>(
-        static_cast<void *>(mcp3d_tile.Volume<image_t>(0)), interval_dims,
-        (params->foreground_percent()) / 100);
+    tile_thresholds->bkg_thresh = get_bkg_threshold(
+        tile.data(), interval_vertex_size, params->foreground_percent());
 
 #ifdef LOG
     cout << "Requested foreground percent: " << params->foreground_percent()
@@ -2174,14 +2153,12 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
       tile_thresholds->min_int = std::numeric_limits<image_t>::min();
     } else {
       // max and min members will be set
-      tile_thresholds->get_max_min(mcp3d_tile.Volume<image_t>(0),
-                                   interval_vertex_size);
+      tile_thresholds->get_max_min(tile.data(), interval_vertex_size);
 #ifdef LOG_FULL
       cout << "max_int: " << +(tile_thresholds->max_int)
            << " min_int: " << +(tile_thresholds->min_int) << '\n';
       cout << "bkg_thresh value = " << +(tile_thresholds->bkg_thresh) << '\n';
-      cout << "interval dims x " << interval_dims[2] << " y "
-           << interval_dims[1] << " z " << interval_dims[0] << '\n';
+      cout << "interval dims " << interval_dims << '\n';
 #endif
     }
   } else if (this->args->recut_parameters().get_min_intensity() < 0) {
@@ -2194,14 +2171,12 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
         tile_thresholds->min_int = std::numeric_limits<image_t>::min();
       } else {
         // max and min members will be set
-        tile_thresholds->get_max_min(mcp3d_tile.Volume<image_t>(0),
-                                     interval_vertex_size);
+        tile_thresholds->get_max_min(tile.data(), interval_vertex_size);
 #ifdef LOG_FULL
         cout << "max_int: " << +(tile_thresholds->max_int)
              << " min_int: " << +(tile_thresholds->min_int) << '\n';
         cout << "bkg_thresh value = " << +(tile_thresholds->bkg_thresh) << '\n';
-        cout << "interval dims x " << interval_dims[2] << " y "
-             << interval_dims[1] << " z " << interval_dims[0] << '\n';
+        cout << "interval dims " << interval_dims << '\n';
 #endif
       }
     }
@@ -2222,7 +2197,7 @@ Recut<image_t>::get_tile_thresholds(mcp3d::MImage &mcp3d_tile) {
   return tile_thresholds;
 } // end load_tile()
 
-#endif // only defined in USE_MCP3D is
+#endif // USE_TINYTIFF
 
 // returns the execution time for updating the entire
 // stage excluding I/O
@@ -2355,39 +2330,25 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           }
         }
 
-#ifdef USE_MCP3D
-        // mcp3d_tile must be kept in scope during the processing
-        // of this interval otherwise dangling reference then seg fault
-        // on image access so prevent destruction before calling
-        // process_interval
-        mcp3d::MImage *mcp3d_tile;
-        if (!input_is_vdb) {
-          mcp3d_tile =
-              new mcp3d::MImage(args->image_root_dir(), {args->channel()});
-          // tile is only needed for the value stage
-          if (stage == "connected" || stage == "convert") {
-            if (!(this->params->force_regenerate_image)) {
-              load_tile(interval_id, *mcp3d_tile);
-              if (!local_tile_thresholds) {
-                auto thresh_start = timer.elapsed();
-                local_tile_thresholds = get_tile_thresholds(*mcp3d_tile);
-                computation_time =
-                    computation_time + (timer.elapsed() - thresh_start);
-              }
-              tile = mcp3d_tile->Volume<image_t>(0);
-            }
+        if (stage == "convert") {
+#ifdef USE_TINYTIFF
+          auto dense_tile = load_tile(interval_id, args->image_root_dir());
+          if (!local_tile_thresholds) {
+            auto thresh_start = timer.elapsed();
+            local_tile_thresholds = get_tile_thresholds(dense_tile);
+            computation_time =
+                computation_time + (timer.elapsed() - thresh_start);
           }
-        }
+          tile = dense_tile.data();
 #else
-        if (!(this->params->force_regenerate_image)) {
-          assertm(this->input_is_vdb,
-                  "If USE_MCP3D macro is not set, "
-                  "input must either by VDB or "
-                  "this->params->force_regenerate_image must be set to True");
-        }
+          if (!(this->params->force_regenerate_image)) {
+            assertm(this->input_is_vdb,
+                    "If USE_TINYTIFF macro is not set, "
+                    "input must either by VDB or "
+                    "this->params->force_regenerate_image must be set to True");
+          }
 #endif
 
-        if (stage == "convert") {
           assertm(!this->input_is_vdb,
                   "input can't be vdb during convert stage");
 
@@ -2441,14 +2402,9 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
           active_intervals[interval_id] = false;
 #ifdef LOG
-          cout << "Completed traversal of interval " << interval_id << " of "
-               << grid_interval_size << " in "
+          cout << "Completed traversal of interval " << interval_id + 1
+               << " of " << grid_interval_size << " in "
                << timer.elapsed() - convert_start << " s\n";
-#endif
-#ifdef USE_MCP3D
-          // mcp3d tile must be explicitly cleared to prevent out of memory
-          // issues
-          mcp3d_tile->ClearData(); // invalidates tile
 #endif
         } else {
           computation_time =
@@ -2472,7 +2428,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
         // vb::tools::compActiveLeafVoxels(grids[i]->tree(), grids[i +
         // 1]->tree());
         if (leaves_intersect(grids[i + 1], grids[i])) {
-          cout << "\nWarning: leaves intersect, can cause undefined behavior\n";
+          throw std::runtime_error(
+              "Leaves intersect, can cause undefined behavior\n");
         }
         // leaves grids[i] empty, copies all to grids[i+1]
         grids[i + 1]->tree().merge(grids[i]->tree(),
@@ -2804,17 +2761,15 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
   // continuous id's are the same for current or dst intervals
   // round up (pad)
   if (this->params->convert_only_) {
+    // images are saved in separate z-planes, so conversion should respect
+    // that for best performance constrict so less data is allocated
+    // especially in z dimension
+    this->interval_lengths[0] = this->image_lengths[0];
+    this->interval_lengths[1] = this->image_lengths[1];
     // explicitly set by get_args
     if (params->interval_length) {
-      this->interval_lengths[0] = params->interval_length;
-      this->interval_lengths[1] = params->interval_length;
       this->interval_lengths[2] = params->interval_length;
     } else {
-      // images are saved in separate z-planes, so conversion should respect
-      // that for best performance constrict so less data is allocated
-      // especially in z dimension
-      this->interval_lengths[0] = this->image_lengths[0];
-      this->interval_lengths[1] = this->image_lengths[1];
       this->interval_lengths[2] = LEAF_LENGTH;
       // auto recommended_max_mem = GetAvailMem() / 16;
       // guess how many z-depth tiles will fit before a bad_alloc is likely

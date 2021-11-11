@@ -1414,7 +1414,7 @@ RecutCommandLineArgs get_args(int grid_size, int interval_length,
         args.set_image_root_dir(image_root_dir + "/float.vdb");
       }
     } else {
-      args.set_image_root_dir(image_root_dir);
+      args.set_image_root_dir(image_root_dir + "/ch0");
     }
   }
 
@@ -1609,9 +1609,9 @@ auto convert_buffer_to_vdb = [](auto buffer, GridCoord buffer_lengths,
                                 GridCoord buffer_offsets,
                                 GridCoord image_offsets, auto &positions,
                                 auto bkg_thresh = 0, int upsample_z = 1) {
-  // print_coord(buffer_lengths, "buffer_lengths");
-  // print_coord(buffer_offsets, "buffer_offsets");
-  // print_coord(image_offsets, "image_offsets");
+   //print_coord(buffer_lengths, "buffer_lengths");
+   //print_coord(buffer_offsets, "buffer_offsets");
+   //print_coord(image_offsets, "image_offsets");
   for (auto z : rng::views::iota(0, buffer_lengths[2])) {
     for (auto y : rng::views::iota(0, buffer_lengths[1])) {
       for (auto x : rng::views::iota(0, buffer_lengths[0])) {
@@ -1728,7 +1728,7 @@ auto read_tiff = [](std::string fn, auto image_offsets, auto image_lengths,
 
 auto read_tiff_planes = [](const std::vector<std::string> &fns,
                            const CoordBBox &bbox) {
-  vto::Dense<uint16_t, vto::LayoutXYZ> dense(bbox);
+  vto::Dense<uint16_t, vto::LayoutXYZ> dense(bbox, /*fill*/0.);
 
   for (auto z = 0; z < fns.size(); ++z) {
     const auto fn = fns[z];

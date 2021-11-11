@@ -385,8 +385,7 @@ TEST(Histogram, CallAndPrint) {
     auto tcase = 0;
     auto grid_size = 2;
     auto args = get_args(grid_size, grid_size, grid_size, 100, tcase);
-    std::string dir = args.image_root_dir() + "/ch0";
-    auto check = read_tiff_dir(dir);
+    auto check = read_tiff_dir(args.image_root_dir());
     auto histogram = hist(check.data(), args.image_lengths,
                           zeros(), granularity);
     ASSERT_EQ(histogram.size(), 1)
@@ -941,7 +940,6 @@ TEST(VDB, Convert) {
   ASSERT_NEAR(write_error_rate, 0., NUMERICAL_ERROR);
   */
 
-#ifdef USE_MCP3D
   // test reading from a pre-generated image file of exact same as
   // recut.generated_image as long as tcase != 4
   // read from file and convert
@@ -976,7 +974,6 @@ TEST(VDB, Convert) {
 
     ASSERT_NEAR(read_from_file_error_rate, 0., NUMERICAL_ERROR);
   }
-#endif
 }
 
 /*

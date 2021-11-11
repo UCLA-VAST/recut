@@ -19,7 +19,7 @@ in
 
   enableParallelBuilding = true;
 
-  cmakeFlags = ["-DUSE_VDB=ON -DLOG=ON -DLOG_FULL=OFF -DFULL_PRINT=OFF -DUSE_OMP_BLOCK=ON -DUSE_OMP_INTERVAL=ON -DUSE_MCP3D=OFF -DTEST_ALL_BENCHMARKS=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MODULE_PATH=${openvdb.defaultPackage.x86_64-linux}/lib/cmake/OpenVDB -DTINYTIFF_PATH=${tiff.defaultPackage.x86_64-linux}/lib/cmake/TinyTIFFShared"];
+  cmakeFlags = ["-DUSE_VDB=ON -DLOG=ON -DLOG_FULL=OFF -DFULL_PRINT=OFF -DUSE_OMP_BLOCK=ON -DUSE_OMP_INTERVAL=ON -DTEST_ALL_BENCHMARKS=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MODULE_PATH=${openvdb.defaultPackage.x86_64-linux}/lib/cmake/OpenVDB -DTINYTIFF_PATH=${tiff.defaultPackage.x86_64-linux}/lib/cmake/TinyTIFFShared"];
 
   nativeBuildInputs = [ cmake gcc11 ];
 
@@ -30,9 +30,9 @@ in
     gtest
 
     # optional dependencies
-    mcp3d.defaultPackage.x86_64-linux
     openvdb.defaultPackage.x86_64-linux
     tiff.defaultPackage.x86_64-linux
+    #mcp3d.defaultPackage.x86_64-linux
     gbenchmark
 
     # For debug purposes only:
