@@ -161,7 +161,7 @@ option( USE_MCP3D "Use and link external library MCP3D into recut for image read
 
 set(MARKERS ${PROJECT_SOURCE_DIR}/src/markers.cpp)
 set(PARAMS ${PROJECT_SOURCE_DIR}/src/recut_parameters.cpp)
-set(APP2 ${PROJECT_SOURCE_DIR}/test/app2_helpers.hpp)
+set(APP2 ${PROJECT_SOURCE_DIR}/src/app2_helpers.hpp)
 
 # These define the executable and command line processing
 # if a recut command line tool is needed
@@ -192,10 +192,10 @@ set(HEADER
 #set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
 
 if (RECUT_ENABLE_EXECUTABLE)
-  add_executable(recut ${SRC} ${HEADER} ${PARAMS})
+  add_executable(recut ${SRC} ${HEADER} ${PARAMS} ${APP2})
 endif()
 if (RECUT_ENABLE_TESTING)
-  add_executable(recut_test test/recut_test.cpp ${HEADER} ${MARKERS} ${PARAMS} ${APP2})
+  add_executable(recut_test src/recut_test.cpp ${HEADER} ${MARKERS} ${PARAMS} ${APP2})
 endif()
 if (RECUT_ENABLE_BENCHMARKING)
   add_executable(recut_bench bench/recut_bench.cpp ${HEADER} ${MARKERS} ${PARAMS} ${APP2})

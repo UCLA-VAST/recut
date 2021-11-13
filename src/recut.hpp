@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app2_helpers.hpp"
 #include "recut_parameters.hpp"
 #include "tile_thresholds.hpp"
 #include "utils.hpp"
@@ -3019,7 +3020,8 @@ void Recut<image_t>::partition_components(
 
     // filter all roots within this component
     auto component_roots =
-        root_pair | rng::views::remove_if([&component](auto coord_radius) {
+        root_pair |
+        rng::views::remove_if([&component](const auto &coord_radius) {
           auto [coord, radius] = coord_radius;
           return !component->tree().isValueOn(coord);
         }) |
@@ -3094,7 +3096,59 @@ void Recut<image_t>::partition_components(
     });
 
     if (!params->output_windows_.empty()) {
-      write_output_windows(this->input_grid, component, dir, counter);
+      auto component_with_values =
+          write_output_windows(this->input_grid, component, dir, counter);
+      if (true) { // check against app2
+        auto window = convert_vdb_to_dense(component_with_values);
+
+        // get a per window bkg_thresh, max, min
+        auto tile_thresholds = get_tile_thresholds(window);
+
+        auto component_markers =
+            component_roots | rng::views::transform([](auto &coord_radius) {
+              auto [coord, radius] = coord_radius;
+              return new MyMarker(static_cast<double>(coord.x()),
+                                  static_cast<double>(coord.y()),
+                                  static_cast<double>(coord.z()), radius);
+            }) |
+            rng::to_vector;
+
+        rng::for_each(component_markers, [&dir](const auto marker) {
+          // write marker file
+          std::ofstream marker_file;
+          auto mass = ((4 * PI) / 3.) * pow(marker->radius, 3);
+          marker_file.open(dir + "/marker_" + std::to_string(marker->x) + "_" +
+                           std::to_string(marker->y) + "_" + std::to_string(marker->z) +
+                           "_" + std::to_string(int(mass)));
+
+          marker_file << "# x,y,z\n";
+          marker_file << marker->x << ',' << marker->y << ',' << marker->z << '\n';
+        });
+
+        // start time
+        auto timer = high_resolution_timer();
+
+        // reconstruct
+        std::vector<MyMarker *> app2_output_tree;
+        std::vector<MyMarker> targets;
+        fastmarching_tree(component_markers, targets, window.data(),
+                          app2_output_tree, window.bbox().dim()[0],
+                          window.bbox().dim()[1], window.bbox().dim()[2],
+                          /* cnn_type*/ 1, tile_thresholds->bkg_thresh,
+                          tile_thresholds->max_int, tile_thresholds->min_int);
+
+        // prune run the seq prune from app2 to compare
+        std::vector<MyMarker *> app2_output_tree_prune;
+        happ(app2_output_tree, app2_output_tree_prune, window.data(),
+             window.bbox().dim()[0], window.bbox().dim()[1],
+             window.bbox().dim()[2], tile_thresholds->bkg_thresh);
+
+        // print
+        auto app2_fn = dir + "/app2.swc";
+        marker_to_swc_file(app2_fn, app2_output_tree_prune);
+
+        cout << "Run APP2 in " << timer.elapsed() << '\n';
+      }
     }
 
     ++counter;

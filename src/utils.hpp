@@ -3027,4 +3027,5 @@ auto write_output_windows = [](openvdb::FloatGrid::Ptr valued_grid,
 #ifdef LOG
   cout << "Wrote window of component to vdb in " << timer.elapsed() << " s\n";
 #endif
+  return topology_grid;
 };

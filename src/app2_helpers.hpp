@@ -1,5 +1,6 @@
 // These functions are from the APP2 codebase (Hanchuan Peng, Vaa3D, Allen
 // Institute) to serve as baseline sequential comparisons where appropriate
+#pragma once
 
 #include "utils.hpp"
 #include <cassert>
@@ -1553,7 +1554,7 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
   return true;
 }
 
-bool marker_to_swc_file(string swc_file, vector<MyMarker*> & outmarkers)
+bool marker_to_swc_file(std::string swc_file, std::vector<MyMarker*> & outmarkers)
 {
     cout<<"marker num = "<<outmarkers.size()<<", save swc file to "<<swc_file<<endl;
     map<MyMarker*, int> ind;
