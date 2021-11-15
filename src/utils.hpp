@@ -3013,11 +3013,11 @@ auto write_output_windows = [](openvdb::FloatGrid::Ptr valued_grid,
   cout << "Copied component values in " << timer.elapsed() << " s\n";
 #endif
 
-  timer.restart();
-  write_vdb_to_tiff_planes(topology_grid, dir);
-#ifdef LOG
-  cout << "Wrote window of component to tiff in " << timer.elapsed() << " s\n";
-#endif
+  //timer.restart();
+  //write_vdb_to_tiff_planes(topology_grid, dir);
+//#ifdef LOG
+  //cout << "Wrote window of component to tiff in " << timer.elapsed() << " s\n";
+//#endif
 
   timer.restart();
   openvdb::GridPtrVec component_grids;
@@ -3029,3 +3029,10 @@ auto write_output_windows = [](openvdb::FloatGrid::Ptr valued_grid,
 #endif
   return topology_grid;
 };
+
+    auto adjust_marker = [](MyMarker* marker, GridCoord offsets) {
+          marker->x += offsets[0];
+          marker->y += offsets[1];
+          marker->z += offsets[2];
+    };
+
