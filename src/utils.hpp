@@ -3013,11 +3013,11 @@ auto write_output_windows = [](openvdb::FloatGrid::Ptr valued_grid,
   cout << "Copied component values in " << timer.elapsed() << " s\n";
 #endif
 
-  //timer.restart();
-  //write_vdb_to_tiff_planes(topology_grid, dir);
-//#ifdef LOG
-  //cout << "Wrote window of component to tiff in " << timer.elapsed() << " s\n";
-//#endif
+  timer.restart();
+  write_vdb_to_tiff_planes(topology_grid, dir);
+#ifdef LOG
+  cout << "Wrote window of component to tiff in " << timer.elapsed() << " s\n";
+#endif
 
   timer.restart();
   openvdb::GridPtrVec component_grids;

@@ -3027,12 +3027,11 @@ void Recut<image_t>::partition_components(
         }) |
         rng::to_vector;
 
-    // cout << "\troot count " << component_roots.size() << '\n';
     if (component_roots.size() < 1)
       return; // skip
 
-    if (component_roots.size() < 2) {
-      cout << "Skipping component with 1 root\n";
+    if (component_roots.size() > 1) {
+      cout << "Skipping component with more than 1 root\n";
       return; // skip
     }
 
@@ -3092,7 +3091,8 @@ void Recut<image_t>::partition_components(
       print_swc_line(coord,
                      /*is_root*/ marker->type == 0, marker->radius,
                      parent_offset, component->evalActiveVoxelBoundingBox(),
-                     file, coord_to_swc_id, false);
+                     file, coord_to_swc_id,
+                     /*bbox_adjust*/ !params->output_windows_.empty());
     });
 
     if (!params->output_windows_.empty()) {
@@ -3123,7 +3123,7 @@ void Recut<image_t>::partition_components(
                            std::to_string(static_cast<int>(marker->z)) + "_" +
                            std::to_string(int(mass)));
 
-          marker_file << "# x,y,z\n";
+          marker_file << "# x,y,z in original image\n";
           marker_file << marker->x << ',' << marker->y << ',' << marker->z
                       << '\n';
         });
@@ -3134,7 +3134,8 @@ void Recut<image_t>::partition_components(
         // adjust component_markers to match window, just for
         // fastmarching_tree()
         rng::for_each(component_markers, [&window](const auto marker) {
-          // subtracts the offset so that app2 is with respect to window
+          // subtracts the offset so that app2 is with respect to this window
+          // for fastmarching_tree() and happ()
           adjust_marker(marker, -window.bbox().min());
         });
 
@@ -3154,10 +3155,12 @@ void Recut<image_t>::partition_components(
              window.bbox().dim()[2], tile_thresholds->bkg_thresh);
 
         // adjust app2_output_tree_prune to match global image, for swc output
-        rng::for_each(app2_output_tree_prune, [&window](const auto marker) {
-          // adds the offset so the swc is with respect to whole image
-          adjust_marker(marker, window.bbox().min());
-        });
+        if (false) {
+          rng::for_each(app2_output_tree_prune, [&window](const auto marker) {
+            // adds the offset so the swc is with respect to whole image
+            adjust_marker(marker, window.bbox().min());
+          });
+        }
 
         // print
         auto app2_fn = dir + "/app2.swc";
