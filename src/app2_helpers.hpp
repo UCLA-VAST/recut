@@ -363,11 +363,10 @@ bool fastmarching_tree(std::vector<MyMarker *> roots, vector<MyMarker> &target,
     state[root_ind] = ALIVE;
     phi[root_ind] = 0.0;
 
-    long index = root_ind;
-    HeapElemX *elem = new HeapElemX(index, phi[index]);
-    elem->prev_ind = index;
+    HeapElemX *elem = new HeapElemX(root_ind, phi[root_ind]);
+    elem->prev_ind = root_ind;
     heap.insert(elem);
-    elems[index] = elem;
+    elems[root_ind] = elem;
   }
 
   // loop
@@ -430,17 +429,17 @@ bool fastmarching_tree(std::vector<MyMarker *> roots, vector<MyMarker> &target,
                   ? 1.0
                   : ((offset == 2) ? 1.414214
                                    : ((offset == 3) ? 1.732051 : 0.0));
-          //cout << w << ' ' << h << ' ' << d << '\n';
+          // cout << w << ' ' << h << ' ' << d << '\n';
           long index = d * sz01 + h * sz0 + w;
-          //cout << index << '\n';
+          // cout << index << '\n';
           // discard background pixels
           if (inimg1d[index] <= bkg_thresh) {
             continue;
           }
 
           if (state[index] != ALIVE) {
-            //assertm(min_ind < tol_sz, "min_ind can not exceed total size");
-            //assertm(index < tol_sz, "index can not exceed total size");
+            // assertm(min_ind < tol_sz, "min_ind can not exceed total size");
+            // assertm(index < tol_sz, "index can not exceed total size");
             double new_dist =
                 phi[min_ind] + (GI(index) + GI(min_ind)) * factor * 0.5;
             long prev_ind = min_ind;
@@ -503,11 +502,13 @@ bool fastmarching_tree(std::vector<MyMarker *> roots, vector<MyMarker> &target,
       long ind2 = parent[ind];
       MyMarker *marker1 = tmp_map[ind];
       MyMarker *marker2 = tmp_map[ind2];
-      if (marker1 == marker2)
+      if (marker1 == marker2) {
         marker1->parent = 0;
-      else
+        marker1->type = 0;
+      } else {
         marker1->parent = marker2;
-      // tmp_map[ind]->parent = tmp_map[ind2];
+        // tmp_map[ind]->parent = tmp_map[ind2];
+      }
     }
   }
   // over
@@ -602,7 +603,7 @@ uint16_t get_radius_accurate(const T *inimg1d, int grid_size, VID_t current_vid,
  */
 template <typename T>
 uint16_t get_radius_hanchuan_XY(const T *inimg1d, GridCoord image_lengths,
-    VID_t vid, T thresh) {
+                                VID_t vid, T thresh) {
   auto coord = id_to_coord(vid, image_lengths);
 
   long sz01 = image_lengths[0] * image_lengths[1];
@@ -831,9 +832,10 @@ bool topo_segs2swc(vector<HierarchySegment *> &topo_segs,
                        : (level - min_level) / max_level * 254.0 + 20.5;
     vector<MyMarker *> tmp_markers;
     topo_segs[i]->get_markers(tmp_markers);
-    for (int j = 0; j < tmp_markers.size(); j++) {
-      tmp_markers[j]->type = color_id;
-    }
+    // do not modify type, since it overwrites root/non-root information
+    // for (int j = 0; j < tmp_markers.size(); j++) {
+    // tmp_markers[j]->type = color_id;
+    //}
     outmarkers.insert(outmarkers.end(), tmp_markers.begin(), tmp_markers.end());
   }
   return true;
@@ -868,6 +870,69 @@ bool hierarchy_prune(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc,
   return true;
 }
 
+template <class T> // should be a struct included members of (x,y,z), like
+                   // Coord3D
+                   bool smooth_curve_and_radius(std::vector<T *> &mCoord,
+                                                int winsize) {
+  // std::cout<<" smooth_curve ";
+  if (winsize < 2)
+    return true;
+
+  std::vector<T *> mC = mCoord; // a copy
+  long int N = mCoord.size();
+  int halfwin = winsize / 2;
+
+  for (int i = 1; i < N - 1; i++) // don't move start & end point
+  {
+    std::vector<T *> winC;
+    std::vector<double> winW;
+    winC.clear();
+    winW.clear();
+
+    winC.push_back(mC[i]);
+    winW.push_back(1. + halfwin);
+    for (int j = 1; j <= halfwin; j++) {
+      int k1 = i + j;
+      if (k1 < 0)
+        k1 = 0;
+      if (k1 > N - 1)
+        k1 = N - 1;
+      int k2 = i - j;
+      if (k2 < 0)
+        k2 = 0;
+      if (k2 > N - 1)
+        k2 = N - 1;
+      winC.push_back(mC[k1]);
+      winC.push_back(mC[k2]);
+      winW.push_back(1. + halfwin - j);
+      winW.push_back(1. + halfwin - j);
+    }
+    // std::cout<<"winC.size = "<<winC.size()<<"\n";
+
+    double s, x, y, z, r;
+    s = x = y = z = 0;
+    for (int ii = 0; ii < winC.size(); ii++) {
+      x += winW[ii] * winC[ii]->x;
+      y += winW[ii] * winC[ii]->y;
+      z += winW[ii] * winC[ii]->z;
+      r += winW[ii] * winC[ii]->radius;
+      s += winW[ii];
+    }
+    if (s) {
+      x /= s;
+      y /= s;
+      z /= s;
+      r /= s;
+    }
+
+    mCoord[i]->x = x;      // output
+    mCoord[i]->y = y;      // output
+    mCoord[i]->z = z;      // output
+    mCoord[i]->radius = r; // output
+  }
+  return true;
+}
+
 // hierarchy coverage pruning
 template <class T>
 bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
@@ -875,6 +940,7 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
           double length_thresh = 2.0, double SR_ratio = 1.0 / 9.0,
           bool is_leaf_prune = true, bool is_smooth = true) {
   double T_max = (1ll << sizeof(T));
+  cout << "Input SR_ratio: " << SR_ratio << '\n';
 
   const int64_t sz01 = sz0 * sz1;
   const int64_t tol_sz = sz01 * sz2;
@@ -883,7 +949,7 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
   getLeaf_markers(inswc, child_num);
 
   vector<HierarchySegment *> topo_segs;
-  cout << "Construct hierarchical segments" << endl;
+  // cout << "Construct hierarchical segments" << endl;
   swc2topo_segs(inswc, topo_segs, INTENSITY_DISTANCE_METHOD, inimg1d, sz0, sz1,
                 sz2);
   vector<HierarchySegment *> filter_segs;
@@ -891,9 +957,9 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
     if (topo_segs[i]->length >= length_thresh)
       filter_segs.push_back(topo_segs[i]);
   }
-  cout << "pruned by length_thresh (segment number) : " << topo_segs.size()
-       << " - " << topo_segs.size() - filter_segs.size() << " = "
-       << filter_segs.size() << endl;
+  // cout << "pruned by length_thresh (segment number) : " << topo_segs.size()
+  //<< " - " << topo_segs.size() - filter_segs.size() << " = "
+  //<< filter_segs.size() << endl;
   multimap<double, HierarchySegment *> seg_dist_map;
   for (int64_t i = 0; i < filter_segs.size(); i++) {
     double dst = filter_segs[i]->length;
@@ -905,7 +971,7 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
     int dark_num_pruned = 1;
     int iteration = 1;
     vector<bool> is_pruneable(filter_segs.size(), 0);
-    cout << "===== Perform dark node pruning =====" << endl;
+    // cout << "===== Perform dark node pruning =====" << endl;
     while (dark_num_pruned > 0) {
       dark_num_pruned = 0;
       for (int64_t i = 0; i < filter_segs.size(); i++) {
@@ -923,8 +989,9 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
         } else
           is_pruneable[i] = false;
       }
-      cout << "\t iteration [" << iteration++ << "] " << dark_num_pruned
-           << " dark node pruned" << endl;
+      iteration++;
+      // cout << "\t iteration [" << iteration++ << "] " << dark_num_pruned
+      //<< " dark node pruned" << endl;
     }
   }
 
@@ -972,14 +1039,14 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
       if (delete_index_set.find(i) == delete_index_set.end())
         tmp_segs.push_back(seg);
     }
-    cout << "\t" << delete_index_set.size() << " dark segments are deleted"
-         << endl;
+    // cout << "\t" << delete_index_set.size() << " dark segments are deleted"
+    //<< endl;
     filter_segs = tmp_segs;
   }
 
   // calculate radius for every node
   {
-    cout << "Calculating radius for every node" << endl;
+    // cout << "Calculating radius for every node" << endl;
     auto in_sz = new_grid_coord(sz0, sz1, sz2);
     for (int64_t i = 0; i < filter_segs.size(); i++) {
       HierarchySegment *seg = filter_segs[i];
@@ -1004,7 +1071,7 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
   if (1) // hierarchy coverage order pruning
 #endif
   {
-    cout << "Perform hierarchical pruning" << endl;
+    // cout << "Perform hierarchical pruning" << endl;
     T *tmpimg1d = new T[tol_sz];
     memcpy(tmpimg1d, inimg1d, tol_sz * sizeof(T));
     int64_t tmp_sz[4] = {sz0, sz1, sz2, 1};
@@ -1139,11 +1206,12 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
       }
       it++;
     }
-    cout << "prune by coverage (segment number) : " << seg_dist_map.size()
-         << " - " << filter_segs.size() << " = "
-         << seg_dist_map.size() - filter_segs.size() << endl;
-    cout << "R/S ratio = " << tol_sum_rdc / tol_sum_sig << " (" << tol_sum_rdc
-         << "/" << tol_sum_sig << ")" << endl;
+    // cout << "prune by coverage (segment number) : " << seg_dist_map.size()
+    //<< " - " << filter_segs.size() << " = "
+    //<< seg_dist_map.size() - filter_segs.size() << endl;
+    // cout << "R/S ratio = " << tol_sum_rdc / tol_sum_sig << " (" <<
+    // tol_sum_rdc
+    //<< "/" << tol_sum_sig << ")" << endl;
     if (1) // evaluation
     {
       double tree_sig = 0.0;
@@ -1153,8 +1221,8 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
       for (int ind = 0; ind < tol_sz; ind++)
         if (tmpimg1d[ind] == 0)
           covered_sig += inimg1d[ind];
-      cout << "S/T ratio = " << covered_sig / tree_sig << " (" << covered_sig
-           << "/" << tree_sig << ")" << endl;
+      // cout << "S/T ratio = " << covered_sig / tree_sig << " (" << covered_sig
+      //<< "/" << tree_sig << ")" << endl;
     }
     // saveImage("test.tif", tmpimg1d, tmp_sz, V3D_UINT8);
     if (tmpimg1d) {
@@ -1213,7 +1281,7 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
   if (0)
 #endif
   {
-    cout << "Perform leaf node pruning" << endl;
+    // cout << "Perform leaf node pruning" << endl;
 
     map<MyMarker *, int> tmp_child_num;
     if (1) // get child_num of each node
@@ -1305,8 +1373,9 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
         } else
           is_pruneable[i] = false;
       }
-      cout << "\t iteration [" << iteration++ << "] " << leaf_num_pruned
-           << " leaf node pruned" << endl;
+      iteration++;
+      // cout << "\t iteration [" << iteration++ << "] " << leaf_num_pruned
+      //<< " leaf node pruned" << endl;
     }
     // filter out segments with single marker
     vector<HierarchySegment *> tmp_segs;
@@ -1317,8 +1386,8 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
       if (leaf_marker && root_marker)
         tmp_segs.push_back(seg);
     }
-    cout << "\t" << filter_segs.size() - tmp_segs.size()
-         << " hierarchical segments are pruned in leaf node pruning" << endl;
+    // cout << "\t" << filter_segs.size() - tmp_segs.size()
+    //<< " hierarchical segments are pruned in leaf node pruning" << endl;
     filter_segs.clear();
     filter_segs = tmp_segs;
   }
@@ -1329,8 +1398,8 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
   if (0) // joint leaf node pruning
 #endif
   {
-    cout << "Perform joint leaf node pruning" << endl;
-    cout << "\tcompute mask area" << endl;
+    // cout << "Perform joint leaf node pruning" << endl;
+    // cout << "\tcompute mask area" << endl;
     unsigned short *mask = new unsigned short[tol_sz];
     memset(mask, 0, sizeof(unsigned short) * tol_sz);
     for (int64_t s = 0; s < filter_segs.size(); s++) {
@@ -1371,7 +1440,7 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
         p = p->parent;
       }
     }
-    cout << "\tget post_segs" << endl;
+    // cout << "\tget post_segs" << endl;
     vector<HierarchySegment *> post_segs;
     if (0) // get post order of filter_segs
     {
@@ -1407,7 +1476,7 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
     }
     if (1) // start prune leaf nodes
     {
-      cout << "\tleaf node pruning" << endl;
+      // cout << "\tleaf node pruning" << endl;
       int64_t leaf_num_pruned = 1;
       int iteration = 1;
       vector<bool> is_pruneable(post_segs.size(), 0);
@@ -1500,8 +1569,9 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
           } else
             is_pruneable[i] = 0;
         }
-        cout << "\t iteration [" << iteration++ << "] " << leaf_num_pruned
-             << " leaf node pruned" << endl;
+        iteration++;
+        // cout << "\t iteration [" << iteration++ << "] " << leaf_num_pruned
+        //<< " leaf node pruned" << endl;
       }
       // filter out segments with single marker
       vector<HierarchySegment *> tmp_segs;
@@ -1512,9 +1582,9 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
         if (leaf_marker && root_marker)
           tmp_segs.push_back(seg); // filter out empty segments
       }
-      cout << "\t" << filter_segs.size() - tmp_segs.size()
-           << " hierarchical segments are pruned in joint leaf node pruning"
-           << endl;
+      // cout << "\t" << filter_segs.size() - tmp_segs.size()
+      //<< " hierarchical segments are pruned in joint leaf node pruning"
+      //<< endl;
       filter_segs.clear();
       filter_segs = tmp_segs;
     }
@@ -1525,27 +1595,25 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
     }
   }
 
-  // if(is_smooth) // smooth curve
-  //{
-  // cout<<"Smooth the final curve"<<endl;
-  // for(int64_t i = 0; i < filter_segs.size(); i++)
-  //{
-  // HierarchySegment * seg = filter_segs[i];
-  // MyMarker * leaf_marker = seg->leaf_marker;
-  // MyMarker * root_marker = seg->root_marker;
-  // vector<MyMarker*> seg_markers;
-  // MyMarker * p = leaf_marker;
-  // while(p != root_marker)
-  //{
-  // seg_markers.push_back(p);
-  // p = p->parent;
-  //}
-  // seg_markers.push_back(root_marker);
-  // smooth_curve_and_radius(seg_markers, 5);
-  //}
-  //}
+  if (is_smooth) // smooth curve
+  {
+    cout << "Smooth the final curve" << endl;
+    for (int64_t i = 0; i < filter_segs.size(); i++) {
+      HierarchySegment *seg = filter_segs[i];
+      MyMarker *leaf_marker = seg->leaf_marker;
+      MyMarker *root_marker = seg->root_marker;
+      vector<MyMarker *> seg_markers;
+      MyMarker *p = leaf_marker;
+      while (p != root_marker) {
+        seg_markers.push_back(p);
+        p = p->parent;
+      }
+      seg_markers.push_back(root_marker);
+      smooth_curve_and_radius(seg_markers, 5);
+    }
+  }
   outswc.clear();
-  cout << filter_segs.size() << " segments left" << endl;
+  // cout << filter_segs.size() << " segments left" << endl;
   topo_segs2swc(filter_segs, outswc, 0); // no resampling
 
   // release hierarchical segments
@@ -1554,28 +1622,32 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
   return true;
 }
 
-bool marker_to_swc_file(std::string swc_file, std::vector<MyMarker*> & outmarkers)
-{
-    cout<<"marker num = "<<outmarkers.size()<<", save swc file to "<<swc_file<<endl;
-    map<MyMarker*, int> ind;
-    ofstream ofs(swc_file.c_str());
+bool marker_to_swc_file(std::string swc_file,
+                        std::vector<MyMarker *> &outmarkers) {
+  cout << "marker num = " << outmarkers.size() << ", save swc file to "
+       << swc_file << endl;
+  map<MyMarker *, int> ind;
+  ofstream ofs(swc_file.c_str());
 
-    if(ofs.fail())
-    {
-        cout<<"open swc file error"<<endl;
-        return false;
-    }
-    ofs<<"##n,type,x,y,z,radius,parent"<<endl;
-    for(int i = 0; i < outmarkers.size(); i++) ind[outmarkers[i]] = i+1;
+  if (ofs.fail()) {
+    cout << "open swc file error" << endl;
+    return false;
+  }
+  ofs << "##n,type,x,y,z,radius,parent" << endl;
+  for (int i = 0; i < outmarkers.size(); i++)
+    ind[outmarkers[i]] = i + 1;
 
-    for(int i = 0; i < outmarkers.size(); i++)
-    {
-        MyMarker * marker = outmarkers[i];
-        int parent_id;
-        if(marker->parent == 0) parent_id = -1;
-        else parent_id = ind[marker->parent];
-        ofs<<i+1<<" "<<marker->type<<" "<<marker->x<<" "<<marker->y<<" "<<marker->z<<" "<<marker->radius<<" "<<parent_id<<endl;
-    }
-    ofs.close();
-    return true;
+  for (int i = 0; i < outmarkers.size(); i++) {
+    MyMarker *marker = outmarkers[i];
+    int parent_id;
+    if (marker->parent == 0)
+      parent_id = -1;
+    else
+      parent_id = ind[marker->parent];
+    ofs << i + 1 << " " << marker->type << " " << marker->x << " " << marker->y
+        << " " << marker->z << " " << marker->radius << " " << parent_id
+        << endl;
+  }
+  ofs.close();
+  return true;
 }

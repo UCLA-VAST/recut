@@ -1609,9 +1609,9 @@ auto convert_buffer_to_vdb = [](auto buffer, GridCoord buffer_lengths,
                                 GridCoord buffer_offsets,
                                 GridCoord image_offsets, auto &positions,
                                 auto bkg_thresh = 0, int upsample_z = 1) {
-   //print_coord(buffer_lengths, "buffer_lengths");
-   //print_coord(buffer_offsets, "buffer_offsets");
-   //print_coord(image_offsets, "image_offsets");
+  // print_coord(buffer_lengths, "buffer_lengths");
+  // print_coord(buffer_offsets, "buffer_offsets");
+  // print_coord(image_offsets, "image_offsets");
   for (auto z : rng::views::iota(0, buffer_lengths[2])) {
     for (auto y : rng::views::iota(0, buffer_lengths[1])) {
       for (auto x : rng::views::iota(0, buffer_lengths[0])) {
@@ -1728,7 +1728,7 @@ auto read_tiff = [](std::string fn, auto image_offsets, auto image_lengths,
 
 auto read_tiff_planes = [](const std::vector<std::string> &fns,
                            const CoordBBox &bbox) {
-  vto::Dense<uint16_t, vto::LayoutXYZ> dense(bbox, /*fill*/0.);
+  vto::Dense<uint16_t, vto::LayoutXYZ> dense(bbox, /*fill*/ 0.);
 
   for (auto z = 0; z < fns.size(); ++z) {
     const auto fn = fns[z];
@@ -1790,7 +1790,7 @@ auto get_dir_files = [](const std::string &dir, const std::string &ext) {
   return tif_filenames;
 };
 
-auto get_tif_dims = [](const std::vector<std::string>& tif_filenames) {
+auto get_tif_dims = [](const std::vector<std::string> &tif_filenames) {
   TinyTIFFReaderFile *tiffr = NULL;
   tiffr = TinyTIFFReader_open(
       &tif_filenames[0][0]); // take the first file, conver to char*
@@ -2409,7 +2409,7 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX,
               // mark the idx, since nY is being accumulated to
               X2Y[j] = nY.size();
 
-              // TODO modify marker to have a set of markers
+              // modifies marker to have a set of marker nbs
               for (int k = 0; k < nX[j]->nbr.size(); ++k) {
                 nYi->nbr.push_back(
                     nX[j]
@@ -2418,11 +2418,20 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX,
 
               // update local average with x,y,z,sig elements from nX[j]
               ++grp_size;
-              float a = (grp_size - 1) / grp_size;
-              float b = (1.0 / grp_size);
-              nYi->x = a * nYi->x + b * nX[j]->x;
-              nYi->y = a * nYi->y + b * nX[j]->y;
-              nYi->z = a * nYi->z + b * nX[j]->z;
+
+              // non roots can be averaged
+              if (nYi->type != 0) {
+                // adjust the radii to be a max
+                if (nX[j]->radius > nYi->radius) {
+                  nYi->radius = nX[j]->radius;
+                }
+                // adjust the coordinate to be an average
+                float a = (grp_size - 1) / grp_size;
+                float b = (1.0 / grp_size);
+                nYi->x = a * nYi->x + b * nX[j]->x;
+                nYi->y = a * nYi->y + b * nX[j]->y;
+                nYi->z = a * nYi->z + b * nX[j]->z;
+              }
             }
           }
         }
@@ -3030,9 +3039,8 @@ auto write_output_windows = [](openvdb::FloatGrid::Ptr valued_grid,
   return topology_grid;
 };
 
-    auto adjust_marker = [](MyMarker* marker, GridCoord offsets) {
-          marker->x += offsets[0];
-          marker->y += offsets[1];
-          marker->z += offsets[2];
-    };
-
+auto adjust_marker = [](MyMarker *marker, GridCoord offsets) {
+  marker->x += offsets[0];
+  marker->y += offsets[1];
+  marker->z += offsets[2];
+};

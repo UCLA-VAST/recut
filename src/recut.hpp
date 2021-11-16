@@ -3081,8 +3081,14 @@ void Recut<image_t>::partition_components(
     auto coord_to_swc_id = get_id_map();
     // iter those marker*
     rng::for_each(tree, [this, &file, &coord_to_swc_id,
-                         &component](const auto marker) {
+                         &component](const auto &marker) {
       auto coord = GridCoord(marker->x, marker->y, marker->z);
+      if (marker->type == 0) {
+        cout << "root marker " << std::to_string(marker->x) << ' '
+             << std::to_string(marker->y) << ' ' << std::to_string(marker->z)
+             << '\n';
+        cout << coord << '\n';
+      }
 
       auto parent_coord =
           GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
@@ -3098,8 +3104,14 @@ void Recut<image_t>::partition_components(
     if (!params->output_windows_.empty()) {
       auto component_with_values =
           write_output_windows(this->input_grid, component, dir, counter);
+      assertm(component_with_values->evalActiveVoxelBoundingBox() ==
+                  component->evalActiveVoxelBoundingBox(),
+              "transfered component have mismatched sizes");
       if (true) { // check against app2
         auto window = convert_vdb_to_dense(component_with_values);
+        assertm(component_with_values->evalActiveVoxelBoundingBox() ==
+                    window.bbox(),
+                "converted component have mismatched sizes");
 
         // get a per window bkg_thresh, max, min
         auto tile_thresholds = get_tile_thresholds(window);
@@ -3107,9 +3119,12 @@ void Recut<image_t>::partition_components(
         auto component_markers =
             component_roots | rng::views::transform([](auto &coord_radius) {
               auto [coord, radius] = coord_radius;
-              return new MyMarker(static_cast<double>(coord.x()),
-                                  static_cast<double>(coord.y()),
-                                  static_cast<double>(coord.z()), radius);
+              auto marker =
+                  new MyMarker(static_cast<double>(coord.x()),
+                               static_cast<double>(coord.y()),
+                               static_cast<double>(coord.z()), radius);
+              marker->type = 0; // mark as a root
+              return marker;
             }) |
             rng::to_vector;
 
@@ -3133,7 +3148,7 @@ void Recut<image_t>::partition_components(
 
         // adjust component_markers to match window, just for
         // fastmarching_tree()
-        rng::for_each(component_markers, [&window](const auto marker) {
+        rng::for_each(component_markers, [&window](auto &marker) {
           // subtracts the offset so that app2 is with respect to this window
           // for fastmarching_tree() and happ()
           adjust_marker(marker, -window.bbox().min());
@@ -3153,6 +3168,7 @@ void Recut<image_t>::partition_components(
         happ(app2_output_tree, app2_output_tree_prune, window.data(),
              window.bbox().dim()[0], window.bbox().dim()[1],
              window.bbox().dim()[2], tile_thresholds->bkg_thresh);
+//             /*length thresh*/ 2.0, /*sr_ratio*/ .5);
 
         // adjust app2_output_tree_prune to match global image, for swc output
         if (false) {
