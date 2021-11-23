@@ -386,8 +386,8 @@ TEST(Histogram, CallAndPrint) {
     auto grid_size = 2;
     auto args = get_args(grid_size, grid_size, grid_size, 100, tcase);
     auto check = read_tiff_dir(args.image_root_dir());
-    auto histogram = hist(check.data(), args.image_lengths,
-                          zeros(), granularity);
+    auto histogram =
+        hist(check.data(), args.image_lengths, zeros(), granularity);
     ASSERT_EQ(histogram.size(), 1)
         << "all values are 1 so only first first bin should exist";
     for (const auto &[lower_limit, bin_count] : histogram.bin_counts) {
@@ -800,6 +800,53 @@ TEST(Utils, AdjustSomaRadii) {
   });
 }
 
+TEST(Utils, RemoveShortLeafs) {
+  auto soma = new MyMarker(0, 0, 0);
+  soma->parent = 0;
+
+  // leaf_branch
+  auto a = new MyMarker(1, 0, 0);
+  a->parent = soma;
+  a->type = 5;
+
+  // leaf branch
+  auto b = new MyMarker(0, 1, 0);
+  b->parent = soma;
+  b->type = 5;
+
+  // leaf branch
+  auto c = new MyMarker(0, 0, 1);
+  c->parent = soma;
+  c->type = 5;
+
+  // 3rd branch
+  auto d = new MyMarker(0, 1, 1); // will survive
+  d->parent = soma;
+  auto e = new MyMarker(0, 2, 2); // will survive
+  e->parent = d;
+  auto f = new MyMarker(0, 3, 3); // will survive
+  f->parent = e;
+  auto g = new MyMarker(0, 4, 3); // will be pruned
+  g->parent = d;
+  g->type = 5;
+
+  auto tree = std::vector<MyMarker *>();
+  tree.push_back(soma);
+  tree.push_back(a);
+  tree.push_back(b);
+  tree.push_back(c);
+  tree.push_back(d);
+  tree.push_back(e);
+  tree.push_back(f);
+  tree.push_back(g);
+  ASSERT_EQ(tree.size(), 8);
+
+  auto filtered = remove_short_leafs(tree);
+  ASSERT_EQ(filtered.size(), 4);
+
+  rng::for_each(filtered, [](auto marker) { ASSERT_NE(marker->type, 5); });
+}
+
 TEST(VDB, Connected) {
   VID_t grid_size = 8;
   auto grid_extents = GridCoord(grid_size);
@@ -1210,7 +1257,7 @@ TEST(Install, DISABLED_ConvertVDBToDense) {
     write_vdb_to_tiff_planes(float_grid, fn);
 
     // check reading value back in
-    fn = fn  + "/ch0";
+    fn = fn + "/ch0";
     auto from_file = read_tiff_dir(fn);
 
     if (print) {
@@ -1218,8 +1265,8 @@ TEST(Install, DISABLED_ConvertVDBToDense) {
       print_image_3D(from_file.data(), bbox.dim());
     }
 
-    ASSERT_NO_FATAL_FAILURE(check_image_equality(
-        check_dense.data(), from_file.data(), volume));
+    ASSERT_NO_FATAL_FAILURE(
+        check_image_equality(check_dense.data(), from_file.data(), volume));
   }
 #endif
 }
@@ -1346,8 +1393,8 @@ TEST(Install, DISABLED_ImageReadWrite) {
   uint16_t *inimg1d = new uint16_t[volume];
   create_image(tcase, inimg1d, grid_size, selected, get_central_vid(grid_size));
   if (print_all) {
-  cout << "Created image:\n";
-  print_image_3D(inimg1d, grid_extents);
+    cout << "Created image:\n";
+    print_image_3D(inimg1d, grid_extents);
   }
 
   write_tiff(inimg1d, fn, grid_extents);
@@ -1404,12 +1451,12 @@ TEST(TileThresholds, AllTcases) {
 
 #ifdef USE_TINYTIFF
     if (tcase == 6) {
-      auto image = read_tiff_dir(args.image_root_dir() +"/ch0");
+      auto image = read_tiff_dir(args.image_root_dir() + "/ch0");
       if (print_image) {
         print_image_3D(image.data(), grid_extents);
       }
-      bkg_thresh = recut.get_bkg_threshold(image.data(),
-                                           grid_vertex_size, slt_pct / 100.);
+      bkg_thresh = recut.get_bkg_threshold(image.data(), grid_vertex_size,
+                                           slt_pct / 100.);
       tile_thresholds->get_max_min(image.data(), grid_vertex_size);
 
       if (print_image) {

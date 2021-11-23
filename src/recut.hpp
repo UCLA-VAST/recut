@@ -3011,6 +3011,7 @@ void Recut<image_t>::partition_components(
   auto output_topology = false;
 
   auto counter = 0;
+  components = components | rng::views::drop(324) | rng::to_vector;
   rng::for_each(components, [this, &prune, &counter, float_grid,
                              output_topology,
                              &root_pair](const auto component) {
@@ -3070,6 +3071,8 @@ void Recut<image_t>::partition_components(
          << timer.elapsed() << '\n';
 #endif
 
+    auto filtered_tree = remove_short_leafs(tree);
+
     // start swc and add header metadata
     std::ofstream file;
     file.open(name);
@@ -3080,15 +3083,9 @@ void Recut<image_t>::partition_components(
     // start a new blank map for coord to a unique swc id
     auto coord_to_swc_id = get_id_map();
     // iter those marker*
-    rng::for_each(tree, [this, &file, &coord_to_swc_id,
-                         &component](const auto &marker) {
+    rng::for_each(filtered_tree, [this, &file, &coord_to_swc_id,
+                         &component](const auto marker) {
       auto coord = GridCoord(marker->x, marker->y, marker->z);
-      if (marker->type == 0) {
-        cout << "root marker " << std::to_string(marker->x) << ' '
-             << std::to_string(marker->y) << ' ' << std::to_string(marker->z)
-             << '\n';
-        cout << coord << '\n';
-      }
 
       auto parent_coord =
           GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
@@ -3167,8 +3164,8 @@ void Recut<image_t>::partition_components(
         std::vector<MyMarker *> app2_output_tree_prune;
         happ(app2_output_tree, app2_output_tree_prune, window.data(),
              window.bbox().dim()[0], window.bbox().dim()[1],
-             window.bbox().dim()[2], tile_thresholds->bkg_thresh);
-//             /*length thresh*/ 2.0, /*sr_ratio*/ .5);
+             window.bbox().dim()[2], tile_thresholds->bkg_thresh,
+        /*length thresh*/ 3.0, /*sr_ratio*/ 1./3);
 
         // adjust app2_output_tree_prune to match global image, for swc output
         if (false) {

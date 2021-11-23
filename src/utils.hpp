@@ -2390,7 +2390,7 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX,
     } else {
       // increase reported radius slightly to remove nodes on edge
       // and decrease proofreading efforts
-      node_radius *= 1.2;
+      node_radius *= 1.4;
     }
     float r2 = node_radius * node_radius;
 
@@ -3044,3 +3044,58 @@ auto adjust_marker = [](MyMarker *marker, GridCoord offsets) {
   marker->y += offsets[1];
   marker->z += offsets[2];
 };
+
+// returns a new set of valid markers
+std::vector<MyMarker*> remove_short_leafs(std::vector<MyMarker *> &tree) {
+  // build a map to save coords with 1 or 2 children
+  // coords not in this map are therefore leafs
+  auto child_count = std::map<GridCoord, uint8_t>();
+  rng::for_each(tree, [&child_count](auto marker) {
+    if (marker->parent) {
+      assertm(marker->parent, "Parent missing");
+      const auto parent_coord =
+          GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
+      const auto val_count = child_count.find(parent_coord);
+      cout << parent_coord << " <- "
+           << GridCoord(marker->x, marker->y, marker->z) << '\n';
+      if (val_count == child_count.end()) // not found
+        child_count.insert_or_assign(parent_coord, 1);
+      else
+        child_count.insert_or_assign(parent_coord, val_count->second + 1);
+    } // ignore those without parents
+  });
+
+  for (auto m : child_count) {
+    cout << m.first << ' ' << +(m.second) << '\n';
+  }
+
+  // filter leafs with a parent that is a bifurcation
+  auto filtered_tree =
+      tree | rng::views::remove_if([&child_count](auto const marker) {
+        if (marker->parent) {
+          const auto val_count =
+              child_count.find(GridCoord(marker->x, marker->y, marker->z));
+          const auto is_leaf = val_count == child_count.end();
+
+          const auto parent_coord = GridCoord(
+              marker->parent->x, marker->parent->y, marker->parent->z);
+          const auto parent_val_count = child_count.find(parent_coord);
+          const auto parent_is_bifurcation =
+              parent_val_count != child_count.end()
+                  ? (parent_val_count->second > 1)
+                  : false;
+
+          return is_leaf && parent_is_bifurcation;
+        }
+        return false; // keep somas whose parent might be undefined
+      }) |
+      rng::to_vector;
+
+  const auto pruned_count = tree.size() - filtered_tree.size();
+  cout << "Pruned: " << pruned_count << '\n';
+
+  if (pruned_count)
+    return remove_short_leafs(filtered_tree);
+  else
+    return filtered_tree;
+}
