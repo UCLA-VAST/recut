@@ -2564,11 +2564,11 @@ advantra_extract_trees(std::vector<MyMarker *> nlist,
 
       auto n = new MyMarker(*nlist[curr]);
       n->nbr.clear();
-      if (n->type != 0)
-        n->type = treecnt + 2; // vaa3d viz
+      if (n->type == 0) {
+        n->parent = n;
 
-      // choose the best single parent of the possible neighbors
-      if (parent[curr] > 0) {
+      // otherwise choose the best single parent of the possible neighbors
+      } else if (parent[curr] > 0) {
         n->nbr.push_back(nmap[parent[curr]]);
         // get the ptr to the marker from the id of the parent of the current
         n->parent = nlist[parent[curr]];
@@ -2615,7 +2615,7 @@ advantra_extract_trees(std::vector<MyMarker *> nlist,
     }
   }
 
-  cout << treecnt << " trees\n";
+  //cout << treecnt << " trees\n";
   return tree;
 }
 
@@ -2932,7 +2932,7 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
   visit_float(component, point_grid, keep_if, assign_parent);
 
 #ifdef LOG
-  cout << "Total marker count: " << outtree.size() << " nodes" << '\n';
+  //cout << "Total marker count: " << outtree.size() << " nodes" << '\n';
 #endif
 
 #ifdef FULL_PRINT
@@ -3046,7 +3046,7 @@ auto adjust_marker = [](MyMarker *marker, GridCoord offsets) {
 };
 
 // returns a new set of valid markers
-std::vector<MyMarker*> remove_short_leafs(std::vector<MyMarker *> &tree) {
+std::vector<MyMarker *> remove_short_leafs(std::vector<MyMarker *> &tree) {
   // build a map to save coords with 1 or 2 children
   // coords not in this map are therefore leafs
   auto child_count = std::map<GridCoord, uint8_t>();
@@ -3056,8 +3056,8 @@ std::vector<MyMarker*> remove_short_leafs(std::vector<MyMarker *> &tree) {
       const auto parent_coord =
           GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
       const auto val_count = child_count.find(parent_coord);
-      cout << parent_coord << " <- "
-           << GridCoord(marker->x, marker->y, marker->z) << '\n';
+      //cout << parent_coord << " <- "
+           //<< GridCoord(marker->x, marker->y, marker->z) << '\n';
       if (val_count == child_count.end()) // not found
         child_count.insert_or_assign(parent_coord, 1);
       else
@@ -3065,9 +3065,9 @@ std::vector<MyMarker*> remove_short_leafs(std::vector<MyMarker *> &tree) {
     } // ignore those without parents
   });
 
-  for (auto m : child_count) {
-    cout << m.first << ' ' << +(m.second) << '\n';
-  }
+  //for (auto m : child_count) {
+    //cout << m.first << ' ' << +(m.second) << '\n';
+  //}
 
   // filter leafs with a parent that is a bifurcation
   auto filtered_tree =
@@ -3092,7 +3092,7 @@ std::vector<MyMarker*> remove_short_leafs(std::vector<MyMarker *> &tree) {
       rng::to_vector;
 
   const auto pruned_count = tree.size() - filtered_tree.size();
-  cout << "Pruned: " << pruned_count << '\n';
+  //cout << "Pruned: " << pruned_count << '\n';
 
   if (pruned_count)
     return remove_short_leafs(filtered_tree);

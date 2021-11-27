@@ -3011,7 +3011,7 @@ void Recut<image_t>::partition_components(
   auto output_topology = false;
 
   auto counter = 0;
-  components = components | rng::views::drop(324) | rng::to_vector;
+
   rng::for_each(components, [this, &prune, &counter, float_grid,
                              output_topology,
                              &root_pair](const auto component) {
@@ -3043,7 +3043,7 @@ void Recut<image_t>::partition_components(
     auto markers = convert_float_to_markers(component, this->topology_grid);
     // auto markers = convert_to_markers(this->topology_grid, false);
 #ifdef LOG
-    cout << "Convert to markers in " << timer.elapsed() << '\n';
+    //cout << "Convert to markers in " << timer.elapsed() << '\n';
 #endif
 
 #ifdef LOG
@@ -3051,9 +3051,9 @@ void Recut<image_t>::partition_components(
     fs::remove_all(dir); // make sure it's an overwrite
     fs::create_directories(dir);
     auto name = dir + "/component-" + std::to_string(counter) + ".swc";
-    cout << name << " active count " << component->activeVoxelCount() << ' '
-         << component->evalActiveVoxelBoundingBox() << '\n';
-    cout << "Marker count: " << markers.size() << '\n';
+    //cout << name << " active count " << component->activeVoxelCount() << ' '
+         //<< component->evalActiveVoxelBoundingBox() << '\n';
+    //cout << "Marker count: " << markers.size() << '\n';
 #endif
 
     timer.restart();
@@ -3065,7 +3065,7 @@ void Recut<image_t>::partition_components(
 
     timer.restart();
     // extract a new tree via bfs
-    auto tree = advantra_extract_trees(pruned_markers);
+    auto tree = advantra_extract_trees(pruned_markers, true);
 #ifdef LOG
     cout << "Extract trees to size: " << tree.size() << " in "
          << timer.elapsed() << '\n';
@@ -3176,7 +3176,7 @@ void Recut<image_t>::partition_components(
         }
 
         // print
-        auto app2_fn = dir + "/app2.swc";
+        auto app2_fn = dir + "/app2-component-" + std::to_string(counter) +".swc";
         marker_to_swc_file(app2_fn, app2_output_tree_prune);
 
         cout << "Run APP2 in " << timer.elapsed() << '\n';
