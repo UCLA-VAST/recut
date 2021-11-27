@@ -3059,16 +3059,16 @@ void Recut<image_t>::partition_components(
     timer.restart();
     auto pruned_markers = advantra_prune(markers, this->args->prune_radius_);
 #ifdef LOG
-    cout << "Prune markers to size " << pruned_markers.size() << " in "
-         << timer.elapsed() << '\n';
+    //cout << "Prune markers to size " << pruned_markers.size() << " in "
+         //<< timer.elapsed() << '\n';
 #endif
 
     timer.restart();
     // extract a new tree via bfs
     auto tree = advantra_extract_trees(pruned_markers, true);
 #ifdef LOG
-    cout << "Extract trees to size: " << tree.size() << " in "
-         << timer.elapsed() << '\n';
+    //cout << "Extract trees to size: " << tree.size() << " in "
+         //<< timer.elapsed() << '\n';
 #endif
 
     auto filtered_tree = remove_short_leafs(tree);
