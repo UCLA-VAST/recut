@@ -1743,9 +1743,20 @@ auto read_tiff_planes = [](const std::vector<std::string> &fns,
     if (bitspersample != 16) {
       throw std::runtime_error("ERROR expected tiff file of uint16\n");
     }
-
     const uint32_t width = TinyTIFFReader_getWidth(tiffr);
     const uint32_t height = TinyTIFFReader_getHeight(tiffr);
+
+#ifdef TINYTIFF_DEBUG
+    const uint16_t samples = TinyTIFFReader_getSamplesPerPixel(tiffr);
+    std::cout << "    each pixel has " << samples << " samples with "
+              << bitspersample << " bits each\n";
+    cout << "format: " << TinyTIFFReader_getSampleFormat(tiffr) << '\n';
+    std::cout << "    ImageDescription:\n"
+              << TinyTIFFReader_getImageDescription(tiffr) << "\n";
+    uint32_t frames = TinyTIFFReader_countFrames(tiffr);
+    std::cout << "    frames: " << frames << "\n";
+#endif
+
     if (width != bbox.dim()[0] || height != bbox.dim()[1]) {
       std::ostringstream os;
       os << "mismatch among tif file contents in width or height\nexpected: "
@@ -1756,7 +1767,9 @@ auto read_tiff_planes = [](const std::vector<std::string> &fns,
 
     // IN ROW-MAJOR xyz order
     TinyTIFFReader_getSampleData(tiffr, &dense.data()[start], 0);
-
+    if (TinyTIFFReader_wasError(tiffr)) {
+      throw std::runtime_error(TinyTIFFReader_getLastError(tiffr));
+    }
     TinyTIFFReader_close(tiffr);
   }
 
@@ -2567,7 +2580,7 @@ advantra_extract_trees(std::vector<MyMarker *> nlist,
       if (n->type == 0) {
         n->parent = n;
 
-      // otherwise choose the best single parent of the possible neighbors
+        // otherwise choose the best single parent of the possible neighbors
       } else if (parent[curr] > 0) {
         n->nbr.push_back(nmap[parent[curr]]);
         // get the ptr to the marker from the id of the parent of the current
@@ -2615,7 +2628,7 @@ advantra_extract_trees(std::vector<MyMarker *> nlist,
     }
   }
 
-  //cout << treecnt << " trees\n";
+  // cout << treecnt << " trees\n";
   return tree;
 }
 
@@ -2932,7 +2945,7 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
   visit_float(component, point_grid, keep_if, assign_parent);
 
 #ifdef LOG
-  //cout << "Total marker count: " << outtree.size() << " nodes" << '\n';
+  // cout << "Total marker count: " << outtree.size() << " nodes" << '\n';
 #endif
 
 #ifdef FULL_PRINT
@@ -3056,8 +3069,8 @@ std::vector<MyMarker *> remove_short_leafs(std::vector<MyMarker *> &tree) {
       const auto parent_coord =
           GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
       const auto val_count = child_count.find(parent_coord);
-      //cout << parent_coord << " <- "
-           //<< GridCoord(marker->x, marker->y, marker->z) << '\n';
+      // cout << parent_coord << " <- "
+      //<< GridCoord(marker->x, marker->y, marker->z) << '\n';
       if (val_count == child_count.end()) // not found
         child_count.insert_or_assign(parent_coord, 1);
       else
@@ -3065,8 +3078,8 @@ std::vector<MyMarker *> remove_short_leafs(std::vector<MyMarker *> &tree) {
     } // ignore those without parents
   });
 
-  //for (auto m : child_count) {
-    //cout << m.first << ' ' << +(m.second) << '\n';
+  // for (auto m : child_count) {
+  // cout << m.first << ' ' << +(m.second) << '\n';
   //}
 
   // filter leafs with a parent that is a bifurcation
@@ -3092,7 +3105,7 @@ std::vector<MyMarker *> remove_short_leafs(std::vector<MyMarker *> &tree) {
       rng::to_vector;
 
   const auto pruned_count = tree.size() - filtered_tree.size();
-  //cout << "Pruned: " << pruned_count << '\n';
+  // cout << "Pruned: " << pruned_count << '\n';
 
   if (pruned_count)
     return remove_short_leafs(filtered_tree);

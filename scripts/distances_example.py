@@ -11,6 +11,7 @@ print("Recut len: " + str(len(pop2.neurons)))
 
 phs1 = [tmd.methods.get_ph_neuron(n, neurite_type='all') for n in pop1.neurons]
 phs2 = [tmd.methods.get_ph_neuron(n, neurite_type='all') for n in pop2.neurons]
+phs2 = phs2[:len(phs1)]
 
 # Normalize the limits
 xlims, ylims = tmd.analysis.get_limits(phs1 + phs2)
