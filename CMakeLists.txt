@@ -232,6 +232,7 @@ find_package(OpenMP REQUIRED)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
+find_package(TIFF REQUIRED)
 if (TINYTIFF_PATH)
   set(TinyTIFFShared_DIR TINYTIFF_PATH)
   set(TinyTIFF_DIR TINYTIFF_PATH)
@@ -302,6 +303,7 @@ foreach(I ${ALL_TARGETS})
 
   target_link_libraries(${I} PRIVATE Threads::Threads)
 
+  target_link_libraries(${I} PRIVATE ${TIFF_LIBRARIES})
   if (TINYTIFF_PATH)
     target_link_libraries(${I} PRIVATE TinyTIFF)
   endif()

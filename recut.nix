@@ -28,6 +28,7 @@ in
     python38Packages.pandas
     range-v3
     gtest
+    libtiff
 
     # optional dependencies
     openvdb.defaultPackage.x86_64-linux

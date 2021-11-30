@@ -17,6 +17,7 @@
 #include <openvdb/tools/Dense.h> // copyToDense
 #include <queue>
 #include <stdlib.h> // ultoa
+#include <tiffio.h>
 
 #ifdef USE_TINYTIFF
 #include "tinytiffreader.h"
@@ -1724,9 +1725,62 @@ auto read_tiff = [](std::string fn, auto image_offsets, auto image_lengths,
 };
 #endif
 
-#ifdef USE_TINYTIFF
 
 auto read_tiff_planes = [](const std::vector<std::string> &fns,
+                           const CoordBBox &bbox) {
+  vto::Dense<uint16_t, vto::LayoutXYZ> dense(bbox, /*fill*/ 0.);
+
+  for (auto z = 0; z < fns.size(); ++z) {
+    const auto fn = fns[z];
+    TIFF *tiff = TIFFOpen(&fn[0],"r");
+    auto tiled = TIFFIsTiled(tiff) ? "is tiled" : "not";
+    cout << tiled << '\n';
+    if (!tiff) {
+      throw std::runtime_error(
+          "ERROR reading (not existent, not accessible or no TIFF file)");
+    }
+
+    short bits_per_sample, samples_per_pixel, planar_config;
+    TIFFGetField(tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
+    TIFFGetField(tiff, TIFFTAG_SAMPLESPERPIXEL, &samples_per_pixel);
+    TIFFGetField(tiff, TIFFTAG_PLANARCONFIG, &planar_config);
+
+    uint32_t image_width, image_height;
+    TIFFGetField(tiff, TIFFTAG_IMAGEWIDTH, &image_width);
+    TIFFGetField(tiff, TIFFTAG_IMAGELENGTH, &image_height);
+    if (image_width != bbox.dim()[0] || image_height != bbox.dim()[1]) {
+      std::ostringstream os;
+      os << "mismatch among tif file contents in width or height\nexpected: "
+         << bbox.dim() << "\ngot " << image_width << " by " << image_height << '\n';
+      throw std::runtime_error(os.str());
+    }
+
+    size_t bytes_per_pixel = (size_t)bits_per_sample / 8 * samples_per_pixel;
+    size_t n_image_bytes = (size_t)bytes_per_pixel * image_height * image_width;
+
+    uint16_t* data_ptr = dense.data();
+    tsize_t data_ptr_offset = z * bbox.dim()[0] * bbox.dim()[1];
+    tstrip_t n_strips = TIFFNumberOfStrips(tiff);
+    tsize_t n_strip_bytes = TIFFStripSize(tiff);
+    for (tstrip_t i = 0; (tstrip_t)i < n_strips; ++i)
+    {
+        TIFFReadEncodedStrip(tiff, i, data_ptr + data_ptr_offset, n_strip_bytes);
+        data_ptr_offset += n_strip_bytes;
+    }
+
+    if (samples_per_pixel > 1)
+      throw std::runtime_error("samples per pixel > 1");
+        //mcp3d::ColorToGray(data, 1, image_height, image_width,
+                           //bits_per_sample / 8, samples_per_pixel, data);
+
+  }
+
+  return dense;
+};
+
+#ifdef USE_TINYTIFF
+
+auto read_tiff_planes_dep = [](const std::vector<std::string> &fns,
                            const CoordBBox &bbox) {
   vto::Dense<uint16_t, vto::LayoutXYZ> dense(bbox, /*fill*/ 0.);
 
