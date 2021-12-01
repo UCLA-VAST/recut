@@ -1725,6 +1725,72 @@ auto read_tiff = [](std::string fn, auto image_offsets, auto image_lengths,
 };
 #endif
 
+void mcp3d::TransferScanlineToSubimg(::TIFF *tif, tdata_t subimg_buf,
+                                     int64_t subimg_height,
+                                     int64_t subimg_width,
+                                     int64_t subimg_src_origin_x,
+                                     int64_t subimg_src_origin_y)
+{
+    MCP3D_ASSERT(subimg_buf)
+    mcp3d::TiffDirectoryInfo tiff_info(tif);
+    if (tiff_info.is_tiled)
+        MCP3D_DOMAIN_ERROR("wrong function call: tiff image is tiled")
+    if (subimg_width == 0)
+        subimg_width = subimg_height;
+    uint32_t img_height = tiff_info.image_height,
+             img_width = tiff_info.image_width,
+             rows_in_strip = tiff_info.rows_in_strip;
+    short bits_per_sample = tiff_info.bits_per_sample,
+          samples_per_pixel = tiff_info.samples_per_pixel;
+    ValidateTiffSubImageRequest(tiff_info,
+                                subimg_height, subimg_width,
+                                subimg_src_origin_x, subimg_src_origin_y);
+    // tsize_t is return type of TIFFScanlineSize on cluster, instead
+    // of tmsize_t
+    tsize_t strip_size = TIFFStripSize(const_cast<TIFF*>(tif));
+    tdata_t strip_buf = _TIFFmalloc(strip_size);
+    if (!strip_buf) MCP3D_BAD_ALLOC("can not allocate memory for tiff strip")
+    // scanline does not support random access and require sequentially read
+    // through unneeded data. use strips instead
+    int64_t subimg_yend = subimg_src_origin_y + subimg_height,
+            subimg_xend = subimg_src_origin_x + subimg_width;
+    int64_t subimg_sample_offset = 0, strip_sample_offset;
+    int64_t copy_y_width = min(subimg_yend, (int64_t)img_height) - subimg_src_origin_y;
+    int64_t copy_x_width = min(subimg_xend, (int64_t)img_width) - subimg_src_origin_x;
+
+    // if subimg is partially out of image area, background padding is already
+    // done in MImageIO, just make sure to read within bounds
+    for (int64_t i = subimg_src_origin_y;
+         i < subimg_src_origin_y + copy_y_width; ++i)
+    {
+        // offset of the strip within src img
+        int64_t strip_offset = i / rows_in_strip;
+        // offset of current line offset within strip
+        int64_t scanline_offset = i % rows_in_strip;
+        // read new strip when previous strip exhausted, or when first entering
+        // the loop
+        if (scanline_offset == 0 || i == subimg_src_origin_y)
+            TIFFReadEncodedStrip(const_cast<TIFF*>(tif),
+                                 (uint32_t)strip_offset, strip_buf, strip_size);
+
+        strip_sample_offset = samples_per_pixel * (img_width * scanline_offset + subimg_src_origin_x);
+        size_t n_bytes = (size_t)samples_per_pixel * copy_x_width * (bits_per_sample / 8);
+
+        if (bits_per_sample == 8)
+            memcpy(((uint8_t*)subimg_buf) + subimg_sample_offset,
+                   ((uint8_t*)strip_buf) + strip_sample_offset, n_bytes);
+        else if (bits_per_sample == 16)
+            memcpy(((uint16_t*)subimg_buf) + subimg_sample_offset,
+                   ((uint16_t*)strip_buf) + strip_sample_offset, n_bytes);
+        else
+            memcpy(((int32_t*)subimg_buf) + subimg_sample_offset,
+                   ((int32_t*)strip_buf) + strip_sample_offset, n_bytes);
+
+        subimg_sample_offset += samples_per_pixel * subimg_width;
+    }
+    _TIFFfree(strip_buf);
+}
+
 auto read_tiff_planes = [](const std::vector<std::string> &fns,
                            const CoordBBox &bbox) {
   vto::Dense<uint16_t, vto::LayoutXYZ> dense(bbox, /*fill*/ 0.);
@@ -1772,8 +1838,10 @@ auto read_tiff_planes = [](const std::vector<std::string> &fns,
     tsize_t data_ptr_offset = z * bbox.dim()[0] * bbox.dim()[1];
     tstrip_t n_strips = TIFFNumberOfStrips(tiff);
     tsize_t n_strip_bytes = TIFFStripSize(tiff);
-    for (tstrip_t i = 0; (tstrip_t)i < n_strips; ++i) {
-      TIFFReadEncodedStrip(tiff, i, data_ptr + data_ptr_offset, n_strip_bytes);
+    for (tstrip_t strip_idx = 0; (tstrip_t)strip_idx < n_strips; ++strip_idx) {
+      // decode and place 1 strip into data_ptr
+      TIFFReadEncodedStrip(tiff, strip_idx, /* out buffer */data_ptr + data_ptr_offset, n_strip_bytes);
+      // advance offset
       data_ptr_offset += n_strip_bytes;
     }
   }
