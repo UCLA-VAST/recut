@@ -2386,9 +2386,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
             convert_buffer_to_vdb(tile, buffer_extents,
                                   /*buffer_offsets=*/buffer_offsets,
                                   /*image_offsets=*/interval_offsets, positions,
-                                  0,
+                                  local_tile_thresholds->bkg_thresh,
                                   this->params->upsample_z_);
-            cout << '\n' << positions.size() << '\n';
 
             grids[interval_id] = create_point_grid(
                 positions, this->image_lengths, get_transform(),
