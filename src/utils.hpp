@@ -3174,3 +3174,79 @@ std::vector<MyMarker *> remove_short_leafs(std::vector<MyMarker *> &tree) {
   else
     return filtered_tree;
 }
+
+template <typename VType>
+long quick_sort_partition(void* data, long low, long high)
+{
+    static_assert(std::is_arithmetic<VType>(), "must have arithmetic element types");
+    auto vtype_data = (VType*)data;
+    VType pivot = vtype_data[low + (high - low) / 2];
+    while (true)
+    {
+        while (vtype_data[low] < pivot)
+            ++low;
+        while (vtype_data[high] > pivot)
+            --high;
+        if (low >= high)
+            return high;
+        std::swap<VType>(vtype_data[low], vtype_data[high]);
+        ++low;
+        --high;
+    }
+}
+
+template <typename VType>
+void quick_sort(void *data, long low, long high)
+{
+    std::stack<long> index_stack;
+    index_stack.push(high);
+    index_stack.push(low);
+    long low_index, high_index, pivot_index;
+    while (!index_stack.empty())
+    {
+        low_index = index_stack.top();
+        index_stack.pop();
+        high_index = index_stack.top();
+        index_stack.pop();
+        if (low_index < high_index)
+        {
+            pivot_index = ::quick_sort_partition<VType>(data, low_index, high_index);
+            index_stack.push(pivot_index);
+            index_stack.push(low_index);
+            index_stack.push(high_index);
+            index_stack.push(pivot_index + 1);
+        }
+    }
+}
+
+template <typename VType>
+void quick_sort(void *data, long n_elements)
+{
+    if (n_elements <= 1)
+        return;
+    ::quick_sort<VType>(data, 0, n_elements - 1);
+}
+
+template <typename VType>
+VType bkg_threshold(VType *data, const VID_t &n, double q)
+{
+    static_assert(std::is_arithmetic<VType>::value, "VType must be arithmetic type");
+    assert(data);
+    assertm(q >= 0 && q <= 1, "desired background pct must be between 0 and 1");
+    std::unique_ptr<VType []> data_copy(new (std::nothrow) VType[n]);
+    assert(data_copy);
+    memcpy(data_copy.get(), data, sizeof(VType) * n);
+    quick_sort<VType>(data_copy.get(), n);
+    double index = (1 - q) * n;
+    if (index < 0)
+        return data_copy[0];
+    if (index > n - 1)
+        return data_copy[n - 1];
+    auto low_index = (long)std::floor(index), high_index = (long)std::ceil(index);
+    // nearest interpolation
+    if (index - low_index <= high_index - index)
+        return data_copy[low_index];
+    else
+        return data_copy[high_index];
+}
+

@@ -2132,8 +2132,10 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
   // than 0 than it was changed by a user so it takes precedence over the
   // defaults
   if (params->foreground_percent() >= 0) {
-    tile_thresholds->bkg_thresh = get_bkg_threshold(
-        tile.data(), interval_vertex_size, params->foreground_percent());
+    // TopPercentile takes a fraction 0 -> 1, not a percentile
+    tile_thresholds->bkg_thresh = bkg_threshold<image_t>(
+        tile.data(), interval_vertex_size,
+        (params->foreground_percent()) / 100);
 
 #ifdef LOG
     cout << "Requested foreground percent: " << params->foreground_percent()
