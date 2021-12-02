@@ -86,6 +86,8 @@ public:
   EnlargedPointDataGrid::Ptr topology_grid;
   openvdb::FloatGrid::Ptr input_grid;
   openvdb::BoolGrid::Ptr update_grid;
+  openvdb::MaskGrid::Ptr mask_grid;
+  ImgGrid::Ptr img_grid;
 #endif
 
   std::vector<OffsetCoord> const lower_stencil{new_offset_coord(0, 0, -1),
@@ -2132,6 +2134,7 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
   // than 0 than it was changed by a user so it takes precedence over the
   // defaults
   if (params->foreground_percent() >= 0) {
+    auto timer = high_resolution_timer();
     // TopPercentile takes a fraction 0 -> 1, not a percentile
     tile_thresholds->bkg_thresh = bkg_threshold<image_t>(
         tile.data(), interval_vertex_size,
@@ -2140,7 +2143,7 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
 #ifdef LOG
     cout << "Requested foreground percent: " << params->foreground_percent()
          << " yielded background threshold: " << tile_thresholds->bkg_thresh
-         << '\n';
+         << " in " << timer.elapsed() << " s\n";
 #endif
   } else { // if bkg set explicitly and foreground wasn't
     if (params->background_thresh() >= 0) {
@@ -2369,17 +2372,38 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #ifdef FULL_PRINT
           // print_image_3D(tile, buffer_extents);
 #endif
-          if (this->args->type_ == "float") {
+
+          if (this->args->type_ == "uint8") {
             convert_buffer_to_vdb_acc(tile, buffer_extents,
                                       /*buffer_offsets=*/buffer_offsets,
                                       /*image_offsets=*/interval_offsets,
-                                      this->input_grid->getAccessor(),
+                                      this->img_grid->getAccessor(), this->args->type_,
                                       local_tile_thresholds->bkg_thresh,
                                       this->params->upsample_z_);
             if (params->histogram_) {
               histogram += hist(tile, buffer_extents, buffer_offsets);
             }
-          } else {
+          } else if (this->args->type_ == "float") {
+            convert_buffer_to_vdb_acc(tile, buffer_extents,
+                                      /*buffer_offsets=*/buffer_offsets,
+                                      /*image_offsets=*/interval_offsets,
+                                      this->input_grid->getAccessor(), this->args->type_,
+                                      local_tile_thresholds->bkg_thresh,
+                                      this->params->upsample_z_);
+            if (params->histogram_) {
+              histogram += hist(tile, buffer_extents, buffer_offsets);
+            }
+          } else if (this->args->type_ == "mask") {
+            convert_buffer_to_vdb_acc(tile, buffer_extents,
+                                      /*buffer_offsets=*/buffer_offsets,
+                                      /*image_offsets=*/interval_offsets,
+                                      this->mask_grid->getAccessor(), this->args->type_,
+                                      local_tile_thresholds->bkg_thresh,
+                                      this->params->upsample_z_);
+            if (params->histogram_) {
+              histogram += hist(tile, buffer_extents, buffer_offsets);
+            }
+          } else { // point
 
             std::vector<PositionT> positions;
             // use the last bkg_thresh calculated for metadata,
@@ -2445,7 +2469,6 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
     } else if (this->args->type_ == "float") {
       set_grid_meta(this->input_grid, this->image_lengths, 0);
-      this->input_grid->tree().prune();
 
       if (params->histogram_) {
         auto write_to_file = [](auto out, std::string fn) {
@@ -2623,7 +2646,7 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     this->topology_grid =
         create_vdb_grid(input_image_lengths, this->params->background_thresh());
     append_attributes(this->topology_grid);
-  } else if (this->input_is_vdb) {
+  } else if (this->input_is_vdb) { // running based of a vdb input
 
     assertm(!params->convert_only_,
             "Convert only option is not valid from vdb to vdb");
@@ -2661,10 +2684,10 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
       auto [lengths, bkg_thresh] = get_metadata(topology_grid);
       input_image_lengths = lengths;
 
-      // you need to set an input grid if you are outputing windows
+      // you need to use grid if you are outputing windows
       if (!params->output_windows_.empty()) {
         auto raw_grid = read_vdb_file(params->output_windows_);
-        this->input_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(raw_grid);
+        this->img_grid = openvdb::gridPtrCast<ImgGrid>(raw_grid);
       }
     }
     append_attributes(this->topology_grid);
@@ -2673,7 +2696,7 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     cout << "Read grid in: " << timer.elapsed() << " s\n";
 #endif
 
-  } else {
+  } else { //converting to a new grid
 #ifndef USE_TINYTIFF
     assertm(false, "Input must either be regenerated, use VDB or have the "
                    "USE_TINYTIFF macro for image reading");
@@ -2682,12 +2705,15 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     input_image_lengths = get_tif_dims(tif_filenames);
 #endif
 
-    // FIXME remove this, don't necessarily require
     if (args->type_ == "float") {
       this->input_grid = openvdb::FloatGrid::create();
     } else if (args->type_ == "point") {
       this->topology_grid = create_vdb_grid(input_image_lengths);
       append_attributes(this->topology_grid);
+    } else if (args->type_ == "uint8") {
+      this->img_grid = ImgGrid::create();
+    } else if (args->type_ == "mask") {
+      this->mask_grid = openvdb::MaskGrid::create();
     }
   }
   return input_image_lengths;
@@ -3102,7 +3128,7 @@ void Recut<image_t>::partition_components(
 
     if (!params->output_windows_.empty()) {
       auto component_with_values =
-          write_output_windows(this->input_grid, component, dir, counter);
+          write_output_windows(this->img_grid, component, dir, counter);
       assertm(component_with_values->evalActiveVoxelBoundingBox() ==
                   component->evalActiveVoxelBoundingBox(),
               "transfered component have mismatched sizes");
@@ -3202,15 +3228,20 @@ template <class image_t> void Recut<image_t>::convert_topology() {
   this->update(stage, map_fifo);
 
   openvdb::GridPtrVec grids;
-#ifdef LOG
+
   if (args->type_ == "float") {
     print_grid_metadata(this->input_grid);
     grids.push_back(this->input_grid);
+  } else if (args->type_ == "uint8") {
+    print_grid_metadata(this->img_grid);
+    grids.push_back(this->img_grid);
+  } else if (args->type_ == "mask_grid") {
+    print_grid_metadata(this->mask_grid);
+    grids.push_back(this->mask_grid);
   } else if (args->type_ == "point") {
     print_grid_metadata(this->topology_grid);
     grids.push_back(this->topology_grid);
   }
-#endif
 
   write_vdb_file(grids, this->params->out_vdb_);
 }

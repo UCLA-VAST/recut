@@ -38,11 +38,6 @@ namespace vp = vb::points;
 #define INTER1_LOG2DIM 4
 #define INTER2_LOG2DIM 5
 #define INDEX_TYPE vb::PointDataIndex32
-//#define INDEX_TYPE vb::PointDataIndex64
-// if 3,4,5 re registering throws
-// else you must register the new grid dims
-//#define CUSTOM_GRID
-
 // Length of a bound box edge in one dimension in image index space / world
 // space units
 constexpr int LEAF_LENGTH = VOXEL_SIZE * (1 << LEAF_LOG2DIM);
@@ -50,6 +45,15 @@ constexpr int INTER1_LENGTH = LEAF_LENGTH * (1 << INTER1_LOG2DIM);
 // equivalent:
 // EnlargedPointDataGrid::TreeType::LeafNodeType::DIM == LEAF_LENGTH
 
+// WARNING: all custom grid must be registered before use both for
+// this application and any downstream application
+// for example a custom type will crash vdb_view or houdini unless you added it
+// to the software as a native primitive and re-compiled
+// also, most OpenVDB methods are grid type specific, so you would have to
+// modify methods to suit your needs. The specific default layout configuration
+// has been extensively tested and small changes are unlikely to help also you
+// are generally better off creating multiple grids of different type than a
+// grid for a specific data type
 using PointLeaf = typename vp::PointDataLeafNode<INDEX_TYPE, LEAF_LOG2DIM>;
 using PointInternalNode1 = typename vt::InternalNode<PointLeaf, INTER1_LOG2DIM>;
 using PointTree = typename vt::Tree<
@@ -59,6 +63,9 @@ using EnlargedPointDataGrid = typename openvdb::Grid<PointTree>;
 // using EnlargedPointDataGrid = vp::PointDataGrid;
 using UpdateGrid = openvdb::BoolGrid;
 using UpdateLeaf = UpdateGrid::TreeType::LeafNodeType;
+using UInt8Tree = vt::Tree4<uint32_t, 5, 4, 3>::Type;
+// custom and needs registering
+using ImgGrid = openvdb::Grid<UInt8Tree>;
 
 // using EnlargedPointIndexGrid = typename openvdb::Grid<
 // openvdb::tree::Tree<openvdb::tree::RootNode<openvdb::tree::InternalNode<

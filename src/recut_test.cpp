@@ -1144,7 +1144,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
 
         auto float_grid = openvdb::FloatGrid::create();
         convert_buffer_to_vdb_acc(inimg1d, grid_extents, zeros(), zeros(),
-                                  float_grid->getAccessor(), 0);
+                                  float_grid->getAccessor(), "float", 0);
         set_grid_meta(float_grid, grid_extents, bkg_thresh);
         if (print) {
           // print_grid_metadata(float_grid); // already in create_point_grid
@@ -1224,7 +1224,7 @@ TEST(Install, DISABLED_ConvertVDBToDense) {
   // auto topology_grid = create_vdb_grid(extended_grid_extents, 0);
   auto float_grid = openvdb::FloatGrid::create();
   convert_buffer_to_vdb_acc(inimg1d, grid_extents, zeros(), zeros(),
-                            float_grid->getAccessor(), 0);
+                            float_grid->getAccessor(), "float", 0);
 
   if (print) {
     cout << "float grid\n";
@@ -1302,7 +1302,7 @@ TEST(VDB, ConvertDenseToVDB) {
   // auto topology_grid = create_vdb_grid(extended_grid_extents, 0);
   auto float_grid = openvdb::FloatGrid::create();
   convert_buffer_to_vdb_acc(inimg1d, extended_grid_extents, zeros(), zeros(),
-                            float_grid->getAccessor(), 0, upsample_z);
+                            float_grid->getAccessor(), "float", 0, upsample_z);
 
   if (print) {
     cout << "float grid\n";
@@ -2837,9 +2837,7 @@ int main(int argc, char **argv) {
   // warning: needs to be called once per executable before any related
   // function is called otherwise confusing seg faults ensue
   openvdb::initialize();
-#ifdef CUSTOM_GRID
-  EnlargedPointDataGrid::registerGrid();
-#endif
+  ImgGrid::registerGrid();
 
   return RUN_ALL_TESTS();
 }

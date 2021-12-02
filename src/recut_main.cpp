@@ -5,9 +5,7 @@ int main(int argc, char *argv[]) {
 #ifdef USE_VDB
   openvdb::initialize();
   // throws if run more than once
-#ifdef CUSTOM_GRID
-  EnlargedPointDataGrid::registerGrid();
-#endif
+  ImgGrid::registerGrid();
 #endif
 
   auto args = ParseRecutArgsOrExit(argc, argv);

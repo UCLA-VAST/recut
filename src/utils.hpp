@@ -1560,7 +1560,7 @@ template <typename image_t> struct Histogram {
 
 template <typename image_t>
 Histogram<image_t> hist(image_t *buffer, GridCoord buffer_lengths,
-                        GridCoord buffer_offsets, int granularity = 8) {
+                        GridCoord buffer_offsets, int granularity = 2) {
   auto histogram = Histogram<image_t>(granularity);
   for (auto z : rng::views::iota(0, buffer_lengths[2])) {
     for (auto y : rng::views::iota(0, buffer_lengths[1])) {
@@ -1576,34 +1576,39 @@ Histogram<image_t> hist(image_t *buffer, GridCoord buffer_lengths,
 }
 
 // keep only voxels strictly greater than bkg_thresh
-auto convert_buffer_to_vdb_acc = [](auto buffer, GridCoord buffer_lengths,
-                                    GridCoord buffer_offsets,
-                                    GridCoord image_offsets, auto accessor,
-                                    auto bkg_thresh = 0, int upsample_z = 1) {
-  // half-range of uint8_t, recorded max values of 8k / 64 -> ~128
-  // auto val_transform = [](auto val) { return std::clamp(val / 64, 0, 127); };
-  auto val_transform = [](auto val) { return val; };
-
-  for (auto z : rng::views::iota(0, buffer_lengths[2])) {
-    for (auto y : rng::views::iota(0, buffer_lengths[1])) {
-      for (auto x : rng::views::iota(0, buffer_lengths[0])) {
-        GridCoord xyz(x, y, z);
-        GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
-        GridCoord grid_xyz = coord_add(xyz, image_offsets);
-        auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
-        // voxels equal to bkg_thresh are always discarded
-        if (val > bkg_thresh) {
-          for (auto upsample_z_idx : rng::views::iota(0, upsample_z)) {
-            auto upsample_grid_xyz =
-                GridCoord(grid_xyz[0], grid_xyz[1],
-                          (upsample_z * grid_xyz[2]) + upsample_z_idx);
-            accessor.setValue(upsample_grid_xyz, val_transform(val));
+auto convert_buffer_to_vdb_acc =
+    [](auto buffer, GridCoord buffer_lengths, GridCoord buffer_offsets,
+       GridCoord image_offsets, auto accessor, std::string grid_type,
+       auto bkg_thresh = 0, int upsample_z = 1) {
+      for (auto z : rng::views::iota(0, buffer_lengths[2])) {
+        for (auto y : rng::views::iota(0, buffer_lengths[1])) {
+          for (auto x : rng::views::iota(0, buffer_lengths[0])) {
+            GridCoord xyz(x, y, z);
+            GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
+            GridCoord grid_xyz = coord_add(xyz, image_offsets);
+            auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
+            // voxels equal to bkg_thresh are always discarded
+            if (val > bkg_thresh) {
+              for (auto upsample_z_idx : rng::views::iota(0, upsample_z)) {
+                auto upsample_grid_xyz =
+                    GridCoord(grid_xyz[0], grid_xyz[1],
+                              (upsample_z * grid_xyz[2]) + upsample_z_idx);
+                if (grid_type == "mask") {
+                  accessor.setValueOn(upsample_grid_xyz);
+                } else if (grid_type == "uint8") {
+                  accessor.setValue(upsample_grid_xyz,
+                                    std::clamp(static_cast<uint8_t>(val),
+                                               static_cast<uint8_t>(0),
+                                               static_cast<uint8_t>(255)));
+                } else {
+                  accessor.setValue(upsample_grid_xyz, val);
+                }
+              }
+            }
           }
         }
       }
-    }
-  }
-};
+    };
 
 // keep only voxels strictly greater than bkg_thresh
 auto convert_buffer_to_vdb = [](auto buffer, GridCoord buffer_lengths,
@@ -1769,7 +1774,8 @@ auto read_tiff_planes = [](const std::vector<std::string> &fns,
     size_t n_image_bytes = (size_t)bytes_per_pixel * image_height * image_width;
 
     uint16_t *data_ptr = dense.data();
-    uint64_t z_offset = static_cast<uint64_t>(z) * bbox.dim()[0] * bbox.dim()[1];
+    uint64_t z_offset =
+        static_cast<uint64_t>(z) * bbox.dim()[0] * bbox.dim()[1];
     tstrip_t n_strips = TIFFNumberOfStrips(tiff);
     tsize_t strip_size_bytes = TIFFStripSize(tiff);
     int64_t subimg_sample_offset = 0, strip_sample_offset;
@@ -1777,8 +1783,9 @@ auto read_tiff_planes = [](const std::vector<std::string> &fns,
     uint64_t strip_offset = 0;
     for (tstrip_t strip_idx = 0; (tstrip_t)strip_idx < n_strips; ++strip_idx) {
       // decode and place 1 strip
-      auto bytes_read =
-          TIFFReadEncodedStrip(tiff, strip_idx, &data_ptr[z_offset + strip_offset], strip_size_bytes);
+      auto bytes_read = TIFFReadEncodedStrip(tiff, strip_idx,
+                                             &data_ptr[z_offset + strip_offset],
+                                             strip_size_bytes);
       strip_offset += (strip_size_bytes / (bits_per_sample / 8));
     }
   }
@@ -3072,9 +3079,9 @@ auto write_vdb_to_tiff_planes = [](openvdb::FloatGrid::Ptr float_grid,
 // for all active values of the output grid copy the value at that coordinate
 // from the inputs grid this could be replaced by openvdb's provided CSG/copying
 // functions
-auto copy_values = [](openvdb::FloatGrid::Ptr input_grid,
+auto copy_values = [](ImgGrid::Ptr img_grid,
                       openvdb::FloatGrid::Ptr output_grid) {
-  auto accessor = input_grid->getConstAccessor();
+  auto accessor = img_grid->getConstAccessor();
   auto output_accessor = output_grid->getAccessor();
   for (openvdb::FloatGrid::ValueOnCIter iter = output_grid->cbeginValueOn();
        iter.test(); ++iter) {
@@ -3087,7 +3094,7 @@ auto copy_values = [](openvdb::FloatGrid::Ptr input_grid,
 // topology_grid : holds the topology of the neuron cluster in question
 // values copied in topology and written z-plane by z-plane to individual tiff
 // files tiff component also saved
-auto write_output_windows = [](openvdb::FloatGrid::Ptr valued_grid,
+auto write_output_windows = [](ImgGrid::Ptr valued_grid,
                                openvdb::FloatGrid::Ptr topology_grid,
                                std::string dir, int counter = 0) {
   auto timer = high_resolution_timer();
@@ -3176,77 +3183,69 @@ std::vector<MyMarker *> remove_short_leafs(std::vector<MyMarker *> &tree) {
 }
 
 template <typename VType>
-long quick_sort_partition(void* data, long low, long high)
-{
-    static_assert(std::is_arithmetic<VType>(), "must have arithmetic element types");
-    auto vtype_data = (VType*)data;
-    VType pivot = vtype_data[low + (high - low) / 2];
-    while (true)
-    {
-        while (vtype_data[low] < pivot)
-            ++low;
-        while (vtype_data[high] > pivot)
-            --high;
-        if (low >= high)
-            return high;
-        std::swap<VType>(vtype_data[low], vtype_data[high]);
-        ++low;
-        --high;
+long quick_sort_partition(void *data, long low, long high) {
+  static_assert(std::is_arithmetic<VType>(),
+                "must have arithmetic element types");
+  auto vtype_data = (VType *)data;
+  VType pivot = vtype_data[low + (high - low) / 2];
+  while (true) {
+    while (vtype_data[low] < pivot)
+      ++low;
+    while (vtype_data[high] > pivot)
+      --high;
+    if (low >= high)
+      return high;
+    std::swap<VType>(vtype_data[low], vtype_data[high]);
+    ++low;
+    --high;
+  }
+}
+
+template <typename VType> void quick_sort(void *data, long low, long high) {
+  std::stack<long> index_stack;
+  index_stack.push(high);
+  index_stack.push(low);
+  long low_index, high_index, pivot_index;
+  while (!index_stack.empty()) {
+    low_index = index_stack.top();
+    index_stack.pop();
+    high_index = index_stack.top();
+    index_stack.pop();
+    if (low_index < high_index) {
+      pivot_index = ::quick_sort_partition<VType>(data, low_index, high_index);
+      index_stack.push(pivot_index);
+      index_stack.push(low_index);
+      index_stack.push(high_index);
+      index_stack.push(pivot_index + 1);
     }
+  }
+}
+
+template <typename VType> void quick_sort(void *data, long n_elements) {
+  if (n_elements <= 1)
+    return;
+  ::quick_sort<VType>(data, 0, n_elements - 1);
 }
 
 template <typename VType>
-void quick_sort(void *data, long low, long high)
-{
-    std::stack<long> index_stack;
-    index_stack.push(high);
-    index_stack.push(low);
-    long low_index, high_index, pivot_index;
-    while (!index_stack.empty())
-    {
-        low_index = index_stack.top();
-        index_stack.pop();
-        high_index = index_stack.top();
-        index_stack.pop();
-        if (low_index < high_index)
-        {
-            pivot_index = ::quick_sort_partition<VType>(data, low_index, high_index);
-            index_stack.push(pivot_index);
-            index_stack.push(low_index);
-            index_stack.push(high_index);
-            index_stack.push(pivot_index + 1);
-        }
-    }
+VType bkg_threshold(VType *data, const VID_t &n, double q) {
+  static_assert(std::is_arithmetic<VType>::value,
+                "VType must be arithmetic type");
+  assert(data);
+  assertm(q >= 0 && q <= 1, "desired background pct must be between 0 and 1");
+  std::unique_ptr<VType[]> data_copy(new (std::nothrow) VType[n]);
+  assert(data_copy);
+  memcpy(data_copy.get(), data, sizeof(VType) * n);
+  quick_sort<VType>(data_copy.get(), n);
+  double index = (1 - q) * n;
+  if (index < 0)
+    return data_copy[0];
+  if (index > n - 1)
+    return data_copy[n - 1];
+  auto low_index = (long)std::floor(index), high_index = (long)std::ceil(index);
+  // nearest interpolation
+  if (index - low_index <= high_index - index)
+    return data_copy[low_index];
+  else
+    return data_copy[high_index];
 }
-
-template <typename VType>
-void quick_sort(void *data, long n_elements)
-{
-    if (n_elements <= 1)
-        return;
-    ::quick_sort<VType>(data, 0, n_elements - 1);
-}
-
-template <typename VType>
-VType bkg_threshold(VType *data, const VID_t &n, double q)
-{
-    static_assert(std::is_arithmetic<VType>::value, "VType must be arithmetic type");
-    assert(data);
-    assertm(q >= 0 && q <= 1, "desired background pct must be between 0 and 1");
-    std::unique_ptr<VType []> data_copy(new (std::nothrow) VType[n]);
-    assert(data_copy);
-    memcpy(data_copy.get(), data, sizeof(VType) * n);
-    quick_sort<VType>(data_copy.get(), n);
-    double index = (1 - q) * n;
-    if (index < 0)
-        return data_copy[0];
-    if (index > n - 1)
-        return data_copy[n - 1];
-    auto low_index = (long)std::floor(index), high_index = (long)std::ceil(index);
-    // nearest interpolation
-    if (index - low_index <= high_index - index)
-        return data_copy[low_index];
-    else
-        return data_copy[high_index];
-}
-
