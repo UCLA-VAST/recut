@@ -1145,7 +1145,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         auto float_grid = openvdb::FloatGrid::create();
         convert_buffer_to_vdb_acc(inimg1d, grid_extents, zeros(), zeros(),
                                   float_grid->getAccessor(), "float", 0);
-        set_grid_meta(float_grid, grid_extents, bkg_thresh);
+        set_grid_meta(float_grid, grid_extents, actual_slt_pct);
         if (print) {
           // print_grid_metadata(float_grid); // already in create_point_grid
           cout << "float grid\n";
@@ -1153,7 +1153,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         }
 
         // auto point_grid =
-        // copy_to_point_grid(float_grid, grid_extents, bkg_thresh);
+        // copy_to_point_grid(float_grid, grid_extents);
         // if (print) {
         // cout << "point grid\n";
         // print_vdb_mask(point_grid->getConstAccessor(), grid_extents);
@@ -1353,19 +1353,19 @@ TEST(VDB, ConvertFloatToPointGrid) {
 }
 
 TEST(VDB, GetSetGridMeta) {
-  float bkg_thresh = 0.;
+  float fg_pct = 0.0001;
   GridCoord grid_extents(1);
   auto grid = openvdb::FloatGrid::create();
 
   {
-    set_grid_meta(grid, grid_extents, bkg_thresh);
+    set_grid_meta(grid, grid_extents, fg_pct);
     // print_grid_metadata(grid);
   }
 
   // check transferring metadata from one grid to another
-  auto [lengths, bt] = get_metadata(grid);
+  auto [lengths, requested_fg_pct] = get_metadata(grid);
   {
-    ASSERT_EQ(bt, bkg_thresh);
+    ASSERT_EQ(requested_fg_pct, fg_pct);
     ASSERT_EQ(lengths[0], grid_extents[0]);
     ASSERT_EQ(lengths[1], grid_extents[1]);
     ASSERT_EQ(lengths[2], grid_extents[2]);

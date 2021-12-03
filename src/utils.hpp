@@ -909,7 +909,7 @@ template <typename T> void print_grid_metadata(T vdb_grid) {
   cout << '\n';
 }
 
-auto set_grid_meta = [](auto grid, auto lengths, auto bkg_thresh) {
+auto set_grid_meta = [](auto grid, auto lengths, float requested_fg_pct=-1) {
   grid->setName("topology");
   grid->setCreator("recut");
   grid->setIsInWorldSpace(true);
@@ -921,11 +921,11 @@ auto set_grid_meta = [](auto grid, auto lengths, auto bkg_thresh) {
   grid->insertMeta("original_bounding_extent_z",
                    openvdb::FloatMetadata(static_cast<float>(lengths[2])));
 
-  grid->insertMeta("bkg_thresh", openvdb::FloatMetadata(bkg_thresh));
+  grid->insertMeta("requested_fg_pct", openvdb::FloatMetadata(requested_fg_pct));
 };
 
 auto copy_to_point_grid = [](openvdb::FloatGrid::Ptr other, auto lengths,
-                             float bkg_thresh = 0.) {
+                             float requested_fg_pct = -1) {
   throw std::runtime_error("incomplete implementation");
 
   // Use the topology to create a PointDataTree
@@ -968,13 +968,13 @@ auto copy_to_point_grid = [](openvdb::FloatGrid::Ptr other, auto lengths,
 
   grid->tree().prune();
 
-  set_grid_meta(grid, lengths, bkg_thresh);
+  set_grid_meta(grid, lengths, requested_fg_pct);
 
   return grid;
 };
 
 auto create_point_grid = [](auto &positions, auto lengths, auto transform_ptr,
-                            float bkg_thresh = 0.) {
+                            float requested_fg_pct = -1) {
   // The VDB Point-Partioner is used when bucketing points and requires a
   // specific interface. For convenience, we use the PointAttributeVector
   // wrapper around an stl vector wrapper here, however it is also possible to
@@ -991,21 +991,21 @@ auto create_point_grid = [](auto &positions, auto lengths, auto transform_ptr,
 
   grid->tree().prune();
 
-  set_grid_meta(grid, lengths, bkg_thresh);
+  set_grid_meta(grid, lengths, requested_fg_pct);
 
   return grid;
 };
 
-auto create_vdb_grid = [](auto lengths, float bkg_thresh = 0.) {
+auto create_vdb_grid = [](auto lengths, float requested_fg_pct = -1) {
   auto topology_grid = EnlargedPointDataGrid::create();
-  set_grid_meta(topology_grid, lengths, bkg_thresh);
+  set_grid_meta(topology_grid, lengths, requested_fg_pct);
 
   return topology_grid;
 };
 
 auto get_metadata = [](auto vdb_grid) -> std::pair<GridCoord, float> {
   GridCoord image_lengths(0, 0, 0);
-  float bkg_thresh = 0; // default value if not found acceptable
+  float requested_fg_pct = -1; // default value if not found acceptable
   for (openvdb::MetaMap::MetaIterator iter = vdb_grid->beginMeta();
        iter != vdb_grid->endMeta(); ++iter) {
     // name and val
@@ -1018,11 +1018,11 @@ auto get_metadata = [](auto vdb_grid) -> std::pair<GridCoord, float> {
       image_lengths[1] = static_cast<openvdb::FloatMetadata &>(*value).value();
     } else if (name == "original_bounding_extent_z") {
       image_lengths[2] = static_cast<openvdb::FloatMetadata &>(*value).value();
-    } else if (name == "bkg_thresh") {
-      bkg_thresh = static_cast<openvdb::FloatMetadata &>(*value).value();
+    } else if (name == "requested_fg_pct") {
+      requested_fg_pct = static_cast<openvdb::FloatMetadata &>(*value).value();
     }
   }
-  return std::pair(image_lengths, bkg_thresh);
+  return std::pair(image_lengths, requested_fg_pct);
 };
 
 auto append_attributes = [](auto grid) {
@@ -2920,10 +2920,10 @@ convert_float_to_positions(openvdb::FloatGrid::Ptr float_grid) {
 
 EnlargedPointDataGrid::Ptr
 convert_float_to_point(openvdb::FloatGrid::Ptr float_grid) {
-  auto [lengths, bkg_thresh] = get_metadata(float_grid);
+  auto [lengths, requested_fg_pct] = get_metadata(float_grid);
   auto positions = convert_float_to_positions(float_grid);
   auto point_grid =
-      create_point_grid(positions, lengths, get_transform(), bkg_thresh);
+      create_point_grid(positions, lengths, get_transform(), requested_fg_pct);
   return point_grid;
 };
 

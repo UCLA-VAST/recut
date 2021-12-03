@@ -2136,9 +2136,9 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
   if (params->foreground_percent() >= 0) {
     auto timer = high_resolution_timer();
     // TopPercentile takes a fraction 0 -> 1, not a percentile
-    tile_thresholds->bkg_thresh = bkg_threshold<image_t>(
-        tile.data(), interval_vertex_size,
-        (params->foreground_percent()) / 100);
+    tile_thresholds->bkg_thresh =
+        bkg_threshold<image_t>(tile.data(), interval_vertex_size,
+                               (params->foreground_percent()) / 100);
 
 #ifdef LOG
     cout << "Requested foreground percent: " << params->foreground_percent()
@@ -2374,32 +2374,32 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #endif
 
           if (this->args->type_ == "uint8") {
-            convert_buffer_to_vdb_acc(tile, buffer_extents,
-                                      /*buffer_offsets=*/buffer_offsets,
-                                      /*image_offsets=*/interval_offsets,
-                                      this->img_grid->getAccessor(), this->args->type_,
-                                      local_tile_thresholds->bkg_thresh,
-                                      this->params->upsample_z_);
+            convert_buffer_to_vdb_acc(
+                tile, buffer_extents,
+                /*buffer_offsets=*/buffer_offsets,
+                /*image_offsets=*/interval_offsets,
+                this->img_grid->getAccessor(), this->args->type_,
+                local_tile_thresholds->bkg_thresh, this->params->upsample_z_);
             if (params->histogram_) {
               histogram += hist(tile, buffer_extents, buffer_offsets);
             }
           } else if (this->args->type_ == "float") {
-            convert_buffer_to_vdb_acc(tile, buffer_extents,
-                                      /*buffer_offsets=*/buffer_offsets,
-                                      /*image_offsets=*/interval_offsets,
-                                      this->input_grid->getAccessor(), this->args->type_,
-                                      local_tile_thresholds->bkg_thresh,
-                                      this->params->upsample_z_);
+            convert_buffer_to_vdb_acc(
+                tile, buffer_extents,
+                /*buffer_offsets=*/buffer_offsets,
+                /*image_offsets=*/interval_offsets,
+                this->input_grid->getAccessor(), this->args->type_,
+                local_tile_thresholds->bkg_thresh, this->params->upsample_z_);
             if (params->histogram_) {
               histogram += hist(tile, buffer_extents, buffer_offsets);
             }
           } else if (this->args->type_ == "mask") {
-            convert_buffer_to_vdb_acc(tile, buffer_extents,
-                                      /*buffer_offsets=*/buffer_offsets,
-                                      /*image_offsets=*/interval_offsets,
-                                      this->mask_grid->getAccessor(), this->args->type_,
-                                      local_tile_thresholds->bkg_thresh,
-                                      this->params->upsample_z_);
+            convert_buffer_to_vdb_acc(
+                tile, buffer_extents,
+                /*buffer_offsets=*/buffer_offsets,
+                /*image_offsets=*/interval_offsets,
+                this->mask_grid->getAccessor(), this->args->type_,
+                local_tile_thresholds->bkg_thresh, this->params->upsample_z_);
             if (params->histogram_) {
               histogram += hist(tile, buffer_extents, buffer_offsets);
             }
@@ -2417,7 +2417,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
             grids[interval_id] = create_point_grid(
                 positions, this->image_lengths, get_transform(),
-                local_tile_thresholds->bkg_thresh);
+                this->params->foreground_percent());
 
 #ifdef FULL_PRINT
             print_vdb_mask(grids[interval_id]->getConstAccessor(),
@@ -2464,11 +2464,22 @@ Recut<image_t>::update(std::string stage, Container &fifo,
       }
       this->topology_grid = grids[this->grid_interval_size - 1];
 
-      set_grid_meta(this->topology_grid, this->image_lengths, 0);
+      set_grid_meta(this->topology_grid, this->image_lengths,
+                    params->foreground_percent());
       this->topology_grid->tree().prune();
 
-    } else if (this->args->type_ == "float") {
-      set_grid_meta(this->input_grid, this->image_lengths, 0);
+    } else {
+
+      set_grid_meta(this->input_grid, this->image_lengths,
+                    params->foreground_percent());
+
+      if (this->args->type_ == "float") {
+        this->input_grid->tree().prune();
+      } else if (this->args->type_ == "uint8") {
+        this->img_grid->tree().prune();
+      } else if (this->args->type_ == "mask") {
+        this->mask_grid->tree().prune();
+      }
 
       if (params->histogram_) {
         auto write_to_file = [](auto out, std::string fn) {
@@ -2643,8 +2654,8 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     input_image_lengths = args->image_lengths;
 
     // FIXME placeholder grid
-    this->topology_grid =
-        create_vdb_grid(input_image_lengths, this->params->background_thresh());
+    this->topology_grid = create_vdb_grid(input_image_lengths,
+                                          this->params->foreground_percent());
     append_attributes(this->topology_grid);
   } else if (this->input_is_vdb) { // running based of a vdb input
 
@@ -2668,7 +2679,7 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
       // copy topology (bit-mask actives) to the topology grid
       // this->topology_grid =
       // copy_to_point_grid(this->input_grid, input_image_lengths,
-      // this->params->background_thresh());
+      // this->params->foreground_percent());
       this->topology_grid = convert_float_to_point(this->input_grid);
       // cout << "float count " << this->input_grid->activeVoxelCount()
       //<< " point count "
@@ -2676,12 +2687,12 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
       // assertm(this->input_grid->activeVoxelCount() ==
       // openvdb::points::pointCount(this->topology_grid->tree()),
       //"did no match");
-      auto [lengths, bkg_thresh] = get_metadata(input_grid);
+      auto [lengths, _] = get_metadata(input_grid);
       input_image_lengths = lengths;
     } else if (this->args->type_ == "point") {
       this->topology_grid =
           openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
-      auto [lengths, bkg_thresh] = get_metadata(topology_grid);
+      auto [lengths, _] = get_metadata(topology_grid);
       input_image_lengths = lengths;
 
       // you need to use grid if you are outputing windows
@@ -2696,7 +2707,7 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     cout << "Read grid in: " << timer.elapsed() << " s\n";
 #endif
 
-  } else { //converting to a new grid
+  } else { // converting to a new grid
 #ifndef USE_TINYTIFF
     assertm(false, "Input must either be regenerated, use VDB or have the "
                    "USE_TINYTIFF macro for image reading");
@@ -2708,7 +2719,8 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     if (args->type_ == "float") {
       this->input_grid = openvdb::FloatGrid::create();
     } else if (args->type_ == "point") {
-      this->topology_grid = create_vdb_grid(input_image_lengths);
+      this->topology_grid = create_vdb_grid(input_image_lengths,
+                                            this->params->foreground_percent());
       append_attributes(this->topology_grid);
     } else if (args->type_ == "uint8") {
       this->img_grid = ImgGrid::create();
@@ -3071,7 +3083,7 @@ void Recut<image_t>::partition_components(
     auto markers = convert_float_to_markers(component, this->topology_grid);
     // auto markers = convert_to_markers(this->topology_grid, false);
 #ifdef LOG
-    //cout << "Convert to markers in " << timer.elapsed() << '\n';
+    // cout << "Convert to markers in " << timer.elapsed() << '\n';
 #endif
 
 #ifdef LOG
@@ -3079,24 +3091,25 @@ void Recut<image_t>::partition_components(
     fs::remove_all(dir); // make sure it's an overwrite
     fs::create_directories(dir);
     auto name = dir + "/component-" + std::to_string(counter) + ".swc";
-    //cout << name << " active count " << component->activeVoxelCount() << ' '
-         //<< component->evalActiveVoxelBoundingBox() << '\n';
-    //cout << "Marker count: " << markers.size() << '\n';
+    // cout << name << " active count " << component->activeVoxelCount() << '
+    // '
+    //<< component->evalActiveVoxelBoundingBox() << '\n';
+    // cout << "Marker count: " << markers.size() << '\n';
 #endif
 
     timer.restart();
     auto pruned_markers = advantra_prune(markers, this->args->prune_radius_);
 #ifdef LOG
-    //cout << "Prune markers to size " << pruned_markers.size() << " in "
-         //<< timer.elapsed() << '\n';
+    // cout << "Prune markers to size " << pruned_markers.size() << " in "
+    //<< timer.elapsed() << '\n';
 #endif
 
     timer.restart();
     // extract a new tree via bfs
     auto tree = advantra_extract_trees(pruned_markers, true);
 #ifdef LOG
-    //cout << "Extract trees to size: " << tree.size() << " in "
-         //<< timer.elapsed() << '\n';
+    // cout << "Extract trees to size: " << tree.size() << " in "
+    //<< timer.elapsed() << '\n';
 #endif
 
     auto filtered_tree = remove_short_leafs(tree);
@@ -3112,7 +3125,7 @@ void Recut<image_t>::partition_components(
     auto coord_to_swc_id = get_id_map();
     // iter those marker*
     rng::for_each(filtered_tree, [this, &file, &coord_to_swc_id,
-                         &component](const auto marker) {
+                                  &component](const auto marker) {
       auto coord = GridCoord(marker->x, marker->y, marker->z);
 
       auto parent_coord =
@@ -3193,7 +3206,7 @@ void Recut<image_t>::partition_components(
         happ(app2_output_tree, app2_output_tree_prune, window.data(),
              window.bbox().dim()[0], window.bbox().dim()[1],
              window.bbox().dim()[2], tile_thresholds->bkg_thresh,
-        /*length thresh*/ 3.0, /*sr_ratio*/ 1./3);
+             /*length thresh*/ 3.0, /*sr_ratio*/ 1. / 3);
 
         // adjust app2_output_tree_prune to match global image, for swc output
         if (false) {
@@ -3204,7 +3217,8 @@ void Recut<image_t>::partition_components(
         }
 
         // print
-        auto app2_fn = dir + "/app2-component-" + std::to_string(counter) +".swc";
+        auto app2_fn =
+            dir + "/app2-component-" + std::to_string(counter) + ".swc";
         marker_to_swc_file(app2_fn, app2_output_tree_prune);
 
         cout << "Run APP2 in " << timer.elapsed() << '\n';
@@ -3290,9 +3304,8 @@ template <class image_t> void Recut<image_t>::operator()() {
   //// create final list of vertices
   // if (true) {
   // stage = "prune";
-  // this->activate_vids(this->topology_grid, root_pair, stage, this->map_fifo,
-  // this->connected_map);
-  // this->update(stage, map_fifo);
+  // this->activate_vids(this->topology_grid, root_pair, stage,
+  // this->map_fifo, this->connected_map); this->update(stage, map_fifo);
   //// make all unpruned trace a back to a root
   //// any time you remove a node you need to ensure tree validity
   // adjust_parent();
