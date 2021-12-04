@@ -2734,12 +2734,9 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
 template <class image_t>
 std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
-#if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
-  omp_set_num_threads(params->user_thread_count());
 #ifdef LOG
-  cout << "User specific thread count " << params->user_thread_count() << '\n';
+  //cout << "User specific thread count " << params->user_thread_count() << '\n';
   cout << "User specified image root dir " << args->image_root_dir() << '\n';
-#endif
 #endif
   struct timespec time2, time3;
   uint64_t root_64bit;
@@ -2786,7 +2783,7 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
   this->image_bbox = openvdb::math::CoordBBox(
       this->image_offsets, this->image_offsets + this->image_lengths);
 
-  // TODO move this clipping up to the read step
+  // TODO move this clipping up to the read step for faster performance on sub grids
   if (!this->params->convert_only_) {
     this->topology_grid->clip(this->image_bbox);
   }

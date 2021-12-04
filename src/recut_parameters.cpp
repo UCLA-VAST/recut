@@ -143,7 +143,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         ++i;
       } else if (strcmp(argv[i], "--type") == 0) {
         auto arg = std::string(argv[i + 1]);
-        if (arg == "float" || arg == "point") {
+        if (arg == "float" || arg == "point" || arg == "uint8" || arg == "mask") {
           args.set_type(argv[i + 1]);
         } else {
           cerr << "--type option must be one of [float,point]\n";
