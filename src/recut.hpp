@@ -15,6 +15,7 @@
 #include <future>
 #include <iostream>
 #include <map>
+#include <oneapi/tbb/global_control.h>
 #include <openvdb/tools/Composite.h>
 #include <openvdb/tools/VolumeToSpheres.h> // for fillWithSpheres
 #include <set>
@@ -2090,7 +2091,7 @@ Recut<image_t>::load_tile(const VID_t interval_id, const std::string &dir) {
   auto tile_offsets = id_interval_to_img_offsets(interval_id);
   auto interval_max = (tile_offsets + tile_extents).offsetBy(-1);
   const auto bbox = CoordBBox(tile_offsets, interval_max);
-#ifdef LOG
+#ifdef LOG_FULL
   cout << "From image, on ii " << interval_id << " requesting:\n";
   print_coord(tile_offsets, "tile_offsets");
   print_coord(tile_extents, "tile_extents");
@@ -2240,6 +2241,9 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   // multi-grids for convert stage
   // assertm(this->topology_grid, "topology grid not initialized");
   std::vector<EnlargedPointDataGrid::Ptr> grids(this->grid_interval_size);
+  std::vector<ImgGrid::Ptr> uint8_grids(this->grid_interval_size);
+  std::vector<openvdb::FloatGrid::Ptr> float_grids(this->grid_interval_size);
+  std::vector<openvdb::MaskGrid::Ptr> mask_grids(this->grid_interval_size);
 
   auto histogram = Histogram<image_t>();
 
@@ -2251,6 +2255,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
        outer_iteration_idx++) {
 
     // loop through all possible intervals
+    // only safe for conversion stages with more than 1 thread
 #ifdef USE_OMP_INTERVAL
 #pragma omp parallel for
 #endif
@@ -2374,31 +2379,34 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #endif
 
           if (this->args->type_ == "uint8") {
+            uint8_grids[interval_id] = ImgGrid::create();
             convert_buffer_to_vdb_acc(
                 tile, buffer_extents,
                 /*buffer_offsets=*/buffer_offsets,
                 /*image_offsets=*/interval_offsets,
-                this->img_grid->getAccessor(), this->args->type_,
+                uint8_grids[interval_id]->getAccessor(), this->args->type_,
                 local_tile_thresholds->bkg_thresh, this->params->upsample_z_);
             if (params->histogram_) {
               histogram += hist(tile, buffer_extents, buffer_offsets);
             }
           } else if (this->args->type_ == "float") {
+            float_grids[interval_id] = openvdb::FloatGrid::create();
             convert_buffer_to_vdb_acc(
                 tile, buffer_extents,
                 /*buffer_offsets=*/buffer_offsets,
                 /*image_offsets=*/interval_offsets,
-                this->input_grid->getAccessor(), this->args->type_,
+                float_grids[interval_id]->getAccessor(), this->args->type_,
                 local_tile_thresholds->bkg_thresh, this->params->upsample_z_);
             if (params->histogram_) {
               histogram += hist(tile, buffer_extents, buffer_offsets);
             }
           } else if (this->args->type_ == "mask") {
+            mask_grids[interval_id] = openvdb::MaskGrid::create();
             convert_buffer_to_vdb_acc(
                 tile, buffer_extents,
                 /*buffer_offsets=*/buffer_offsets,
                 /*image_offsets=*/interval_offsets,
-                this->mask_grid->getAccessor(), this->args->type_,
+                mask_grids[interval_id]->getAccessor(), this->args->type_,
                 local_tile_thresholds->bkg_thresh, this->params->upsample_z_);
             if (params->histogram_) {
               histogram += hist(tile, buffer_extents, buffer_offsets);
@@ -2447,38 +2455,28 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   if (stage == "convert") {
     auto finalize_start = timer.elapsed();
 
+    assertm(params->convert_only_,
+            "reduce grids only possible for convert_only stage");
     if (args->type_ == "point") {
 
-      assertm(params->convert_only_,
-              "reduce grids only possible for convert_only stage");
-      for (int i = 0; i < (this->grid_interval_size - 1); ++i) {
-        // vb::tools::compActiveLeafVoxels(grids[i]->tree(), grids[i +
-        // 1]->tree());
-        if (leaves_intersect(grids[i + 1], grids[i])) {
-          throw std::runtime_error(
-              "Leaves intersect, can cause undefined behavior\n");
-        }
-        // leaves grids[i] empty, copies all to grids[i+1]
-        grids[i + 1]->tree().merge(grids[i]->tree(),
-                                   vb::MERGE_ACTIVE_STATES_AND_NODES);
-      }
-      this->topology_grid = grids[this->grid_interval_size - 1];
+      this->topology_grid = merge_grids(grids);
 
       set_grid_meta(this->topology_grid, this->image_lengths,
                     params->foreground_percent());
-      this->topology_grid->tree().prune();
 
     } else {
-
-      set_grid_meta(this->input_grid, this->image_lengths,
-                    params->foreground_percent());
-
       if (this->args->type_ == "float") {
-        this->input_grid->tree().prune();
+        this->input_grid = merge_grids(float_grids);
+        set_grid_meta(this->input_grid, this->image_lengths,
+                      params->foreground_percent());
       } else if (this->args->type_ == "uint8") {
-        this->img_grid->tree().prune();
+        this->img_grid = merge_grids(uint8_grids);
+        set_grid_meta(this->img_grid, this->image_lengths,
+                      params->foreground_percent());
       } else if (this->args->type_ == "mask") {
-        this->mask_grid->tree().prune();
+        this->mask_grid = merge_grids(mask_grids);
+        set_grid_meta(this->mask_grid, this->image_lengths,
+                      params->foreground_percent());
       }
 
       if (params->histogram_) {
@@ -2734,12 +2732,22 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
 template <class image_t>
 std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
+#if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
+  if (params->convert_only_) {
+    omp_set_num_threads(params->user_thread_count());
+  } else {
+    // omp num threads is only valid for the convert stage
+    omp_set_num_threads(1);
+    // limit the number of threads for all oneTBB parallel interfaces
+    tbb::global_control global_limit(
+        tbb::global_control::max_allowed_parallelism,
+        params->user_thread_count());
+  }
 #ifdef LOG
-  //cout << "User specific thread count " << params->user_thread_count() << '\n';
+  cout << "Thread count " << params->user_thread_count() << '\n';
   cout << "User specified image root dir " << args->image_root_dir() << '\n';
 #endif
-  struct timespec time2, time3;
-  uint64_t root_64bit;
+#endif
 
   // input type
   {
@@ -2783,7 +2791,8 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
   this->image_bbox = openvdb::math::CoordBBox(
       this->image_offsets, this->image_offsets + this->image_lengths);
 
-  // TODO move this clipping up to the read step for faster performance on sub grids
+  // TODO move this clipping up to the read step for faster performance on sub
+  // grids
   if (!this->params->convert_only_) {
     this->topology_grid->clip(this->image_bbox);
   }

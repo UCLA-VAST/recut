@@ -41,7 +41,7 @@ class RecutParameters {
       parallel_num_ = 1; // default is the max hardware concurrency when not set
       max_intensity_ = -1;
       min_intensity_ = -1;
-      user_thread_count_ = 1;
+      user_thread_count_ = tbb::info::default_concurrency();
       // no getters or setters
       force_regenerate_image = false;
       tcase = -1; // -1 indicates it's not a test case

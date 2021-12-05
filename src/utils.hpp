@@ -909,7 +909,7 @@ template <typename T> void print_grid_metadata(T vdb_grid) {
   cout << '\n';
 }
 
-auto set_grid_meta = [](auto grid, auto lengths, float requested_fg_pct=-1) {
+auto set_grid_meta = [](auto grid, auto lengths, float requested_fg_pct = -1) {
   grid->setName("topology");
   grid->setCreator("recut");
   grid->setIsInWorldSpace(true);
@@ -921,7 +921,8 @@ auto set_grid_meta = [](auto grid, auto lengths, float requested_fg_pct=-1) {
   grid->insertMeta("original_bounding_extent_z",
                    openvdb::FloatMetadata(static_cast<float>(lengths[2])));
 
-  grid->insertMeta("requested_fg_pct", openvdb::FloatMetadata(requested_fg_pct));
+  grid->insertMeta("requested_fg_pct",
+                   openvdb::FloatMetadata(requested_fg_pct));
 };
 
 auto copy_to_point_grid = [](openvdb::FloatGrid::Ptr other, auto lengths,
@@ -2276,8 +2277,8 @@ auto validate_grid = [](EnlargedPointDataGrid::Ptr grid) {
 };
 
 // return sorted origins of all active leafs
-auto get_origins =
-    [](EnlargedPointDataGrid::Ptr grid) -> std::vector<GridCoord> {
+template<typename GridTypePtr>
+std::vector<GridCoord> get_origins(GridTypePtr grid) {
   std::vector<GridCoord> origins;
   // TODO use leafManager and tbb::parallel_for
   for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
@@ -2285,10 +2286,11 @@ auto get_origins =
   }
   std::sort(origins.begin(), origins.end());
   return origins;
-};
+}
 
-auto leaves_intersect = [](EnlargedPointDataGrid::Ptr grid,
-                           EnlargedPointDataGrid::Ptr other) {
+template <typename GridTypePtr>
+bool leaves_intersect(GridTypePtr grid,
+                           GridTypePtr other) {
   std::vector<GridCoord> out;
   // inputs must be sorted
   auto origins = get_origins(grid);
@@ -2296,7 +2298,7 @@ auto leaves_intersect = [](EnlargedPointDataGrid::Ptr grid,
   std::set_intersection(origins.begin(), origins.end(), other_origins.begin(),
                         other_origins.end(), std::back_inserter(out));
   return !out.empty();
-};
+}
 
 auto read_vdb_float = [](std::string fn) {
   auto base_grid = read_vdb_file(fn);
@@ -3248,4 +3250,23 @@ VType bkg_threshold(VType *data, const VID_t &n, double q) {
     return data_copy[low_index];
   else
     return data_copy[high_index];
+}
+
+template <typename GridTypePtr>
+GridTypePtr merge_grids(std::vector<GridTypePtr> grids) {
+
+  for (int i = 0; i < (grids.size() - 1); ++i) {
+    // vb::tools::compActiveLeafVoxels(grids[i]->tree(), grids[i +
+    // 1]->tree());
+    if (leaves_intersect(grids[i + 1], grids[i])) {
+      throw std::runtime_error("Leaves intersect, can cause undefined behavior "
+                               "due to bug in vdb 8.1\n");
+    }
+    // leaves grids[i] empty, copies all to grids[i+1]
+    grids[i + 1]->tree().merge(grids[i]->tree(),
+                               vb::MERGE_ACTIVE_STATES_AND_NODES);
+  }
+  auto final_grid = grids[grids.size() - 1];
+  final_grid->tree().prune(); // collapse uniform values
+  return final_grid;
 }
