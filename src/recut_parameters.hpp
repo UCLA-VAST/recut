@@ -159,7 +159,7 @@ class RecutCommandLineArgs {
     RecutCommandLineArgs()
       : recut_parameters_(RecutParameters{}), image_root_dir_(std::string()),
       swc_path_("out.swc"), channel_("ch0"), resolution_level_(0),
-      image_offsets(0, 0, 0), image_lengths(-1, -1, -1), type_("point"), prune_radius_(10) {}
+      image_offsets(0, 0, 0), image_lengths(-1, -1, -1), type_("point"), prune_radius_(NEURITE_PRUNE_RADIUS_DEFAULT) {}
 
     static void PrintUsage();
     std::string MetaString();

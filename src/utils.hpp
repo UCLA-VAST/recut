@@ -2474,7 +2474,7 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX,
     } else {
       // increase reported radius slightly to remove nodes on edge
       // and decrease proofreading efforts
-      node_radius *= 1.4;
+      node_radius *= SOMA_PRUNE_RADIUS;
     }
     float r2 = node_radius * node_radius;
 
