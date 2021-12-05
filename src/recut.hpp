@@ -3039,21 +3039,24 @@ void Recut<image_t>::partition_components(
   print_point_count(this->topology_grid);
 #endif
 
+  auto timer = high_resolution_timer();
   // this copies only vertices that have already had flags marked as selected
   // selected means they are reachable from a known vertex during traversal
   // in either a connected or value stage
   auto float_grid = copy_selected(this->topology_grid);
+  cout << "Topo to float " << timer.elapsed() << '\n';
+  timer.restart();
 
   cout << "Float active count: " << float_grid->activeVoxelCount() << '\n';
   assertm(float_grid->activeVoxelCount(),
           "active voxels in float grid must be > 0");
 
   // aggregate disjoint connected components
-  auto timer = high_resolution_timer();
   std::vector<openvdb::FloatGrid::Ptr> components;
   vto::segmentActiveVoxels(*float_grid, components);
   cout << "Segment count: " << components.size() << " in " << timer.elapsed()
        << " s\n";
+  timer.restart();
 
   auto output_topology = false;
 
@@ -3093,7 +3096,7 @@ void Recut<image_t>::partition_components(
 #endif
 
 #ifdef LOG
-    auto dir = "./component-" + std::to_string(index);
+    auto dir = "./components/component-" + std::to_string(index);
     fs::remove_all(dir); // make sure it's an overwrite
     fs::create_directories(dir);
     auto name = dir + "/component-" + std::to_string(index) + ".swc";
@@ -3236,6 +3239,7 @@ void Recut<image_t>::partition_components(
     grids.push_back(this->topology_grid);
     write_vdb_file(grids, "final-point-grid.vdb");
   }
+  cout << "Finished prune and write: " << timer.elapsed() << '\n';
 }
 
 template <class image_t> void Recut<image_t>::convert_topology() {
