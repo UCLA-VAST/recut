@@ -2467,7 +2467,7 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX,
     auto nYi = new MyMarker(*(nX[ci]));
     float grp_size = 1;
 
-    auto node_radius = nYi->radius;
+    auto node_radius = static_cast<float>(nYi->radius);
     if (nYi->type != 0) { // not soma
       // upsample by factor to account for anisotropic images
       node_radius *= prune_radius;

@@ -3096,8 +3096,13 @@ void Recut<image_t>::partition_components(
 #endif
 
 #ifdef LOG
-    auto dir = "./components/component-" + std::to_string(index);
-    fs::remove_all(dir); // make sure it's an overwrite
+    std::string run_dir = "./components";
+    // make sure its a clean write
+    while (fs::exists(run_dir)) {
+      run_dir += "-latest";
+    }
+    // is a fresh run_dir
+    auto dir = run_dir + "/component-" + std::to_string(index);
     fs::create_directories(dir);
     auto name = dir + "/component-" + std::to_string(index) + ".swc";
     // cout << name << " active count " << component->activeVoxelCount() << '
