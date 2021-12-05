@@ -15,12 +15,13 @@
 #include <future>
 #include <iostream>
 #include <map>
-#include <oneapi/tbb/global_control.h>
 #include <openvdb/tools/Composite.h>
 #include <openvdb/tools/VolumeToSpheres.h> // for fillWithSpheres
 #include <set>
 #include <sstream>
 #include <stdexcept>
+#include <tbb/global_control.h>
+#include <tbb/parallel_for_each.h>
 #include <type_traits>
 #include <unistd.h>
 #include <unordered_set>
@@ -127,7 +128,7 @@ public:
   void convert_topology();
 
   void
-  partition_components(std::vector<std::pair<GridCoord, uint8_t>> root_pair,
+  partition_components(std::vector<std::pair<GridCoord, uint8_t>> root_pairs,
                        bool prune);
 
   void initialize_globals(const VID_t &grid_interval_size,
@@ -376,7 +377,7 @@ OffsetCoord Recut<image_t>::v_to_off(VID_t interval_id, VID_t block_id,
                    this->block_lengths);
 }
 
-// adds all markers to root_pair
+// adds all markers to root_pairs
 template <class image_t>
 std::vector<std::pair<GridCoord, uint8_t>>
 Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
@@ -3031,7 +3032,7 @@ template <class image_t> void Recut<image_t>::prune_radii() {
 
 template <class image_t>
 void Recut<image_t>::partition_components(
-    std::vector<std::pair<GridCoord, uint8_t>> root_pair, bool prune) {
+    std::vector<std::pair<GridCoord, uint8_t>> root_pairs, bool prune) {
 
   openvdb::GridPtrVec grids;
 #ifdef LOG
@@ -3056,18 +3057,17 @@ void Recut<image_t>::partition_components(
 
   auto output_topology = false;
 
-  auto counter = 0;
-
-  rng::for_each(components, [this, &prune, &counter, float_grid,
-                             output_topology,
-                             &root_pair](const auto component) {
+  auto enum_components = components | rng::views::enumerate | rng::to_vector;
+  tbb::parallel_for_each(enum_components, [this, &root_pairs](
+                                              const auto component_pair) {
+    auto [index, component] = component_pair;
     // all grid transforms across are consistent across recut, so enforce the
     // same interpretation for any new grid
     component->setTransform(get_transform());
 
     // filter all roots within this component
     auto component_roots =
-        root_pair |
+        root_pairs |
         rng::views::remove_if([&component](const auto &coord_radius) {
           auto [coord, radius] = coord_radius;
           return !component->tree().isValueOn(coord);
@@ -3093,10 +3093,10 @@ void Recut<image_t>::partition_components(
 #endif
 
 #ifdef LOG
-    auto dir = "./component-" + std::to_string(counter);
+    auto dir = "./component-" + std::to_string(index);
     fs::remove_all(dir); // make sure it's an overwrite
     fs::create_directories(dir);
-    auto name = dir + "/component-" + std::to_string(counter) + ".swc";
+    auto name = dir + "/component-" + std::to_string(index) + ".swc";
     // cout << name << " active count " << component->activeVoxelCount() << '
     // '
     //<< component->evalActiveVoxelBoundingBox() << '\n';
@@ -3147,7 +3147,7 @@ void Recut<image_t>::partition_components(
 
     if (!params->output_windows_.empty()) {
       auto component_with_values =
-          write_output_windows(this->img_grid, component, dir, counter);
+          write_output_windows(this->img_grid, component, dir, index);
       assertm(component_with_values->evalActiveVoxelBoundingBox() ==
                   component->evalActiveVoxelBoundingBox(),
               "transfered component have mismatched sizes");
@@ -3224,14 +3224,12 @@ void Recut<image_t>::partition_components(
 
         // print
         auto app2_fn =
-            dir + "/app2-component-" + std::to_string(counter) + ".swc";
+            dir + "/app2-component-" + std::to_string(index) + ".swc";
         marker_to_swc_file(app2_fn, app2_output_tree_prune);
 
         cout << "Run APP2 in " << timer.elapsed() << '\n';
       }
     }
-
-    ++counter;
   }); // for each component
 
   if (output_topology) {
@@ -3274,7 +3272,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   }
 
   // read the list of root vids
-  auto root_pair = this->initialize();
+  auto root_pairs = this->initialize();
 
   if (params->convert_only_) {
     convert_topology();
@@ -3287,7 +3285,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   {
     // starting from the roots connected stage saves all surface vertices into
     // fifo
-    this->activate_vids(this->topology_grid, root_pair, stage, this->map_fifo,
+    this->activate_vids(this->topology_grid, root_pairs, stage, this->map_fifo,
                         this->connected_map);
     // first stage of the pipeline
     this->update(stage, map_fifo);
@@ -3299,10 +3297,10 @@ template <class image_t> void Recut<image_t>::operator()() {
     this->setup_radius(map_fifo);
     this->update(stage, map_fifo);
     // redefine soma radii based off info read in original files
-    adjust_soma_radii(root_pair, this->topology_grid);
+    adjust_soma_radii(root_pairs, this->topology_grid);
   }
 
-  partition_components(root_pair, false);
+  partition_components(root_pairs, false);
 
   // old prune strategy
   //{
@@ -3310,7 +3308,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   //// create final list of vertices
   // if (true) {
   // stage = "prune";
-  // this->activate_vids(this->topology_grid, root_pair, stage,
+  // this->activate_vids(this->topology_grid, root_pairs, stage,
   // this->map_fifo, this->connected_map); this->update(stage, map_fifo);
   //// make all unpruned trace a back to a root
   //// any time you remove a node you need to ensure tree validity
