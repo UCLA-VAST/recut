@@ -2741,8 +2741,7 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
     omp_set_num_threads(1);
     // limit the number of threads for all oneTBB parallel interfaces
     tbb::global_control global_limit(
-        tbb::global_control::max_allowed_parallelism,
-        args->user_thread_count);
+        tbb::global_control::max_allowed_parallelism, args->user_thread_count);
   }
 #ifdef LOG
   cout << "Thread count " << args->user_thread_count << '\n';
@@ -2784,10 +2783,11 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
       // use the input length if possible, or maximum otherwise
       this->image_lengths[i] =
           std::min(args->image_lengths[i], max_len_after_off[i]);
-    } else { 
+    } else {
       // -1,-1,-1 means use to the end of input image
       // -1,-1,-5 means length should go up to 5 from the last z
-      this->image_lengths[i] = max_len_after_off[i] + args->image_lengths[i] + 1;
+      this->image_lengths[i] =
+          max_len_after_off[i] + args->image_lengths[i] + 1;
     }
   }
   this->image_bbox = openvdb::math::CoordBBox(
@@ -3041,24 +3041,24 @@ void Recut<image_t>::partition_components(
   print_point_count(this->topology_grid);
 #endif
 
-  auto timer = high_resolution_timer();
+  auto global_timer = high_resolution_timer();
   // this copies only vertices that have already had flags marked as selected
   // selected means they are reachable from a known vertex during traversal
   // in either a connected or value stage
   auto float_grid = copy_selected(this->topology_grid);
-  cout << "Topo to float " << timer.elapsed() << '\n';
-  timer.restart();
+  cout << "Topo to float " << global_timer.elapsed() << '\n';
 
   cout << "Float active count: " << float_grid->activeVoxelCount() << '\n';
   assertm(float_grid->activeVoxelCount(),
           "active voxels in float grid must be > 0");
 
   // aggregate disjoint connected components
+  global_timer.restart();
   std::vector<openvdb::FloatGrid::Ptr> components;
   vto::segmentActiveVoxels(*float_grid, components);
-  cout << "Segment count: " << components.size() << " in " << timer.elapsed()
+  cout << "Segment count: " << components.size() << " in " << global_timer.elapsed()
        << " s\n";
-  timer.restart();
+  global_timer.restart();
 
   auto output_topology = false;
 
@@ -3108,6 +3108,8 @@ void Recut<image_t>::partition_components(
     auto dir = run_dir + "/component-" + std::to_string(index);
     fs::create_directories(dir);
     auto name = dir + "/component-" + std::to_string(index) + ".swc";
+    auto runtime_name =
+        dir + "/component-" + std::to_string(index) + "-runtime.txt";
     // cout << name << " active count " << component->activeVoxelCount() << '
     // '
     //<< component->evalActiveVoxelBoundingBox() << '\n';
@@ -3117,44 +3119,47 @@ void Recut<image_t>::partition_components(
     timer.restart();
     auto pruned_markers = advantra_prune(markers, this->args->prune_radius_);
 #ifdef LOG
-    // cout << "Prune markers to size " << pruned_markers.size() << " in "
-    //<< timer.elapsed() << '\n';
+    std::ofstream runtime;
+    runtime.open(runtime_name);
+    runtime << "Tree compaction " << timer.elapsed() << '\n';
 #endif
 
-    timer.restart();
     // extract a new tree via bfs
     auto tree = advantra_extract_trees(pruned_markers, true);
+
+    timer.restart();
+    auto filtered_tree = remove_short_leafs(tree);
 #ifdef LOG
-    // cout << "Extract trees to size: " << tree.size() << " in "
-    //<< timer.elapsed() << '\n';
+    runtime << "Tree prune " << timer.elapsed() << '\n';
 #endif
 
-    auto filtered_tree = remove_short_leafs(tree);
+    {
+      // start swc and add header metadata
+      std::ofstream file;
+      file.open(name);
+      file << "# Component bounding volume: "
+           << component->evalActiveVoxelBoundingBox() << '\n';
+      file << "# id type_id x y z radius parent_id\n";
 
-    // start swc and add header metadata
-    std::ofstream file;
-    file.open(name);
-    file << "# Component bounding volume: "
-         << component->evalActiveVoxelBoundingBox() << '\n';
-    file << "# id type_id x y z radius parent_id\n";
+      // start a new blank map for coord to a unique swc id
+      auto coord_to_swc_id = get_id_map();
+      // iter those marker*
+      rng::for_each(filtered_tree, [this, &file, &coord_to_swc_id,
+                                    &component](const auto marker) {
+        auto coord = GridCoord(marker->x, marker->y, marker->z);
 
-    // start a new blank map for coord to a unique swc id
-    auto coord_to_swc_id = get_id_map();
-    // iter those marker*
-    rng::for_each(filtered_tree, [this, &file, &coord_to_swc_id,
-                                  &component](const auto marker) {
-      auto coord = GridCoord(marker->x, marker->y, marker->z);
-
-      auto parent_coord =
-          GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
-      auto parent_offset = coord_sub(parent_coord, coord);
-      // print_swc_line() expects an offset to a parent
-      print_swc_line(coord,
-                     /*is_root*/ marker->type == 0, marker->radius,
-                     parent_offset, component->evalActiveVoxelBoundingBox(),
-                     file, coord_to_swc_id,
-                     /*bbox_adjust*/ !params->output_windows_.empty());
-    });
+        auto parent_coord =
+            GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
+        auto parent_offset = coord_sub(parent_coord, coord);
+        // print_swc_line() expects an offset to a parent
+        print_swc_line(coord,
+                       /*is_root*/ marker->type == 0, marker->radius,
+                       parent_offset, component->evalActiveVoxelBoundingBox(),
+                       file, coord_to_swc_id,
+                       /*bbox_adjust*/ !params->output_windows_.empty());
+      });
+      file.close();
+    }
 
     if (!params->output_windows_.empty()) {
       auto component_with_values =
@@ -3163,82 +3168,96 @@ void Recut<image_t>::partition_components(
                   component->evalActiveVoxelBoundingBox(),
               "transfered component have mismatched sizes");
       if (args->run_app2) { // check against app2
-        auto window = convert_vdb_to_dense(component_with_values);
-        assertm(component_with_values->evalActiveVoxelBoundingBox() ==
-                    window.bbox(),
-                "converted component have mismatched sizes");
 
-        // get a per window bkg_thresh, max, min
-        auto tile_thresholds = get_tile_thresholds(window);
+        // skip components that are 0s in the original image
+        float minv = 0;
+        float maxv = 0;
+        component_with_values->tree().evalMinMax(minv, maxv);
+        if (maxv > 0) {
 
-        auto component_markers =
-            component_roots | rng::views::transform([](auto &coord_radius) {
-              auto [coord, radius] = coord_radius;
-              auto marker =
-                  new MyMarker(static_cast<double>(coord.x()),
-                               static_cast<double>(coord.y()),
-                               static_cast<double>(coord.z()), radius);
-              marker->type = 0; // mark as a root
-              return marker;
-            }) |
-            rng::to_vector;
+          auto window = convert_vdb_to_dense(component_with_values);
+          assertm(component_with_values->evalActiveVoxelBoundingBox() ==
+                      window.bbox(),
+                  "converted component have mismatched sizes");
 
-        rng::for_each(component_markers, [&dir](const auto marker) {
-          // write marker file
-          std::ofstream marker_file;
-          auto mass = ((4 * PI) / 3.) * pow(marker->radius, 3);
-          marker_file.open(dir + "/marker_" +
-                           std::to_string(static_cast<int>(marker->x)) + "_" +
-                           std::to_string(static_cast<int>(marker->y)) + "_" +
-                           std::to_string(static_cast<int>(marker->z)) + "_" +
-                           std::to_string(int(mass)));
+          // get a per window bkg_thresh, max, min
+          auto tile_thresholds = get_tile_thresholds(window);
 
-          marker_file << "# x,y,z in original image\n";
-          marker_file << marker->x << ',' << marker->y << ',' << marker->z
-                      << '\n';
-        });
+          auto component_markers =
+              component_roots | rng::views::transform([](auto &coord_radius) {
+                auto [coord, radius] = coord_radius;
+                auto marker =
+                    new MyMarker(static_cast<double>(coord.x()),
+                                 static_cast<double>(coord.y()),
+                                 static_cast<double>(coord.z()), radius);
+                marker->type = 0; // mark as a root
+                return marker;
+              }) |
+              rng::to_vector;
 
-        // start time
-        auto timer = high_resolution_timer();
+          rng::for_each(component_markers, [&dir](const auto marker) {
+            // write marker file
+            std::ofstream marker_file;
+            auto mass = ((4 * PI) / 3.) * pow(marker->radius, 3);
+            marker_file.open(dir + "/marker_" +
+                             std::to_string(static_cast<int>(marker->x)) + "_" +
+                             std::to_string(static_cast<int>(marker->y)) + "_" +
+                             std::to_string(static_cast<int>(marker->z)) + "_" +
+                             std::to_string(int(mass)));
 
-        // adjust component_markers to match window, just for
-        // fastmarching_tree()
-        rng::for_each(component_markers, [&window](auto &marker) {
-          // subtracts the offset so that app2 is with respect to this window
-          // for fastmarching_tree() and happ()
-          adjust_marker(marker, -window.bbox().min());
-        });
-
-        // reconstruct
-        std::vector<MyMarker *> app2_output_tree;
-        std::vector<MyMarker> targets;
-        fastmarching_tree(component_markers, targets, window.data(),
-                          app2_output_tree, window.bbox().dim()[0],
-                          window.bbox().dim()[1], window.bbox().dim()[2],
-                          /* cnn_type*/ 1, tile_thresholds->bkg_thresh,
-                          tile_thresholds->max_int, tile_thresholds->min_int);
-
-        // prune run the seq prune from app2 to compare
-        std::vector<MyMarker *> app2_output_tree_prune;
-        happ(app2_output_tree, app2_output_tree_prune, window.data(),
-             window.bbox().dim()[0], window.bbox().dim()[1],
-             window.bbox().dim()[2], tile_thresholds->bkg_thresh,
-             /*length thresh*/ 3.0, /*sr_ratio*/ 1. / 3);
-
-        // adjust app2_output_tree_prune to match global image, for swc output
-        if (false) {
-          rng::for_each(app2_output_tree_prune, [&window](const auto marker) {
-            // adds the offset so the swc is with respect to whole image
-            adjust_marker(marker, window.bbox().min());
+            marker_file << "# x,y,z in original image\n";
+            marker_file << marker->x << ',' << marker->y << ',' << marker->z
+                        << '\n';
           });
+
+          // start time
+
+          // adjust component_markers to match window, just for
+          // fastmarching_tree()
+          rng::for_each(component_markers, [&window](auto &marker) {
+            // subtracts the offset so that app2 is with respect to this window
+            // for fastmarching_tree() and happ()
+            adjust_marker(marker, -window.bbox().min());
+          });
+
+          // reconstruct
+          auto timer = high_resolution_timer();
+          std::vector<MyMarker *> app2_output_tree;
+          std::vector<MyMarker> targets;
+          fastmarching_tree(component_markers, targets, window.data(),
+                            app2_output_tree, window.bbox().dim()[0],
+                            window.bbox().dim()[1], window.bbox().dim()[2],
+                            /* cnn_type*/ 1, tile_thresholds->bkg_thresh,
+                            tile_thresholds->max_int, tile_thresholds->min_int);
+#ifdef LOG
+          runtime << "Fastmarching " << timer.elapsed() << '\n';
+#endif
+
+          timer.restart();
+          // prune run the seq prune from app2 to compare
+          std::vector<MyMarker *> app2_output_tree_prune;
+          happ(app2_output_tree, app2_output_tree_prune, window.data(),
+               window.bbox().dim()[0], window.bbox().dim()[1],
+               window.bbox().dim()[2], tile_thresholds->bkg_thresh,
+               /*length thresh*/ 3.0, /*sr_ratio*/ 1. / 3);
+#ifdef LOG
+          runtime << "Hierarchical pruning " << timer.elapsed() << '\n';
+          runtime.close();
+#endif
+
+          // adjust app2_output_tree_prune to match global image, for swc output
+          if (false) {
+            rng::for_each(app2_output_tree_prune, [&window](const auto marker) {
+              // adds the offset so the swc is with respect to whole image
+              adjust_marker(marker, window.bbox().min());
+            });
+          }
+
+          // print
+          auto app2_fn =
+              dir + "/app2-component-" + std::to_string(index) + ".swc";
+          marker_to_swc_file(app2_fn, app2_output_tree_prune);
         }
-
-        // print
-        auto app2_fn =
-            dir + "/app2-component-" + std::to_string(index) + ".swc";
-        marker_to_swc_file(app2_fn, app2_output_tree_prune);
-
-        cout << "Run APP2 in " << timer.elapsed() << '\n';
       }
     }
   }); // for each component
@@ -3247,7 +3266,7 @@ void Recut<image_t>::partition_components(
     grids.push_back(this->topology_grid);
     write_vdb_file(grids, "final-point-grid.vdb");
   }
-  cout << "Finished prune and write: " << timer.elapsed() << '\n';
+  cout << "Finished global prune and write: " << global_timer.elapsed() << '\n';
 }
 
 template <class image_t> void Recut<image_t>::convert_topology() {

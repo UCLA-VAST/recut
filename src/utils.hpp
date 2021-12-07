@@ -2468,7 +2468,6 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX,
     float grp_size = 1;
 
     auto node_radius = static_cast<float>(nYi->radius);
-    cout << "original radius: " << node_radius << ' ';
     if (nYi->type != 0) { // not soma
       // upsample by factor to account for anisotropic images
       node_radius *= prune_radius;
@@ -2477,7 +2476,6 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX,
       // and decrease proofreading efforts
       node_radius *= SOMA_PRUNE_RADIUS;
     }
-    cout << "new radius: " << node_radius << '\n';
     float r2 = node_radius * node_radius;
 
     float d2;
