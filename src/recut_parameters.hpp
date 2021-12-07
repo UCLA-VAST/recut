@@ -41,7 +41,6 @@ class RecutParameters {
       parallel_num_ = 1; // default is the max hardware concurrency when not set
       max_intensity_ = -1;
       min_intensity_ = -1;
-      user_thread_count_ = tbb::info::default_concurrency();
       // no getters or setters
       force_regenerate_image = false;
       tcase = -1; // -1 indicates it's not a test case
@@ -53,7 +52,6 @@ class RecutParameters {
     }
     std::string MetaString();
     // getters
-    int user_thread_count() { return user_thread_count_; }
     bool gsdt() const { return gsdt_; }
     bool coverage_prune() const { return coverage_prune_; }
     int prune() const { return prune_; }
@@ -74,10 +72,6 @@ class RecutParameters {
     bool paralel_num() const { return parallel_num_; }
     double get_max_intensity() { return max_intensity_; }
     double get_min_intensity() { return min_intensity_; }
-    // setters
-    void set_user_thread_count(int user_thread_count) {
-      user_thread_count_ = user_thread_count;
-    }
     void set_restart_factor(double factor) { restart_factor_ = factor; }
     void set_restart(bool restart) { restart_ = restart; }
     void set_parallel_num(int num) { parallel_num_ = num; }
@@ -146,7 +140,7 @@ class RecutParameters {
     // no getters
     uint64_t selected, root_vid;
     bool force_regenerate_image, convert_only_, histogram_, gsdt_, coverage_prune_, allow_gap_, cube_256_, radius_from_2d_, swc_resample_, high_intensity_, brightfield_, restart_;
-    int user_thread_count_, background_thresh_, cnn_type_, parallel_num_,
+    int background_thresh_, cnn_type_, parallel_num_,
         prune_, interval_length, tcase, slt_pct, downsample_factor_, upsample_z_;
     double foreground_percent_, sr_ratio_, length_thresh_, restart_factor_,
            max_intensity_, min_intensity_;
@@ -159,7 +153,7 @@ class RecutCommandLineArgs {
     RecutCommandLineArgs()
       : recut_parameters_(RecutParameters{}), image_root_dir_(std::string()),
       swc_path_("out.swc"), channel_("ch0"), resolution_level_(0),
-      image_offsets(0, 0, 0), image_lengths(-1, -1, -1), type_("point"), prune_radius_(NEURITE_PRUNE_RADIUS_DEFAULT) {}
+      image_offsets(0, 0, 0), image_lengths(-1, -1, -1), type_("point"), prune_radius_(NEURITE_PRUNE_RADIUS_DEFAULT), run_app2(false), user_thread_count(tbb::info::default_concurrency()) {}
 
     static void PrintUsage();
     std::string MetaString();
@@ -217,7 +211,8 @@ class RecutCommandLineArgs {
     RecutParameters recut_parameters_;
     std::string image_root_dir_, swc_path_, channel_, type_; 
     int resolution_level_;
-    uint16_t prune_radius_;
+    uint16_t prune_radius_, user_thread_count;
+    bool run_app2;
 };
 
 RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]);

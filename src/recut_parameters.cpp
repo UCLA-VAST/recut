@@ -14,10 +14,8 @@ string RecutParameters::MetaString() {
   stringstream meta_stream;
   meta_stream << "# foreground_percent = " << foreground_percent_ << '\n';
   meta_stream << "# background_thresh = " << background_thresh_ << '\n';
-  meta_stream << "# max_int = " << max_intensity_ << '\n';
-  meta_stream << "# min_int = " << min_intensity_ << '\n';
   meta_stream << "# parallel = " << parallel_num_ << '\n';
-  meta_stream << "# marker_file_path = "
+  meta_stream << "# seeds directory = "
               << (marker_file_path_.empty() ? "none" : marker_file_path_)
               << '\n';
   return meta_stream.str();
@@ -25,31 +23,33 @@ string RecutParameters::MetaString() {
 
 void RecutCommandLineArgs::PrintUsage() {
   cout << "Basic usage : recut <image_root_dir> [--seeds <marker_dir>] "
-          "[--type float/point] "
-          "[--channel <dir>] "
-          "[--convert <vdb_file>] "
-          "[--outswc <swc_file>] "
-          "[--resolution-level <int>] [--image-offsets <int> [<int>] [<int>]] "
-          "[--image-lengths <int> [<int>] [<int>]] "
+          "[--type point/uint8/mask/float] "
+          "[--convert <output_vdb_file_name>] "
           "[--bkg-thresh <int>] [--fg-percent <double>]\n\n";
+          "[--image-offsets <int> [<int>] [<int>]] "
+          "[--image-lengths <int> [<int>] [<int>]] "
+          "\nNote: neurite+soma images are binarized and do not need bkg-thresh or fg-percent passed";
+        // "[--channel <dir>] "
+          //"[--outswc <swc_file>] "
+          // "[--resolution-level <int>] "
 
   cout << "<image_root_dir>     directory for input image\n";
-  cout << "--seeds              files which represent known soma locations\n";
-  cout << "--convert            [-cv] convert image file and exit default "
+  cout << "--seeds              directory of files which represent known root/soma locations\n";
+  cout << "--convert            [-cv] convert image file and exit defaults to "
           "out.vdb\n";
-  cout << "--type               VDB input grid type: 'point' or 'float'\n";
-  cout << "--prune-radius       larger values decrease the sampling density of nodes output to swc, defaults to 10 which is tuned for 30x objective lenses\n";
-  cout << "--max                set max image voxel raw value allowed, "
-          "computed automatically when --bg_thresh or --fg-percent are "
-          "specified\n";
-  cout << "--min                set min image voxel raw value allowed, "
-          "computed automatically when --bg_thresh or --fg-percent are "
-          "specified\n";
-  cout << "--channel            [-c] directory of channel image default ch0\n";
-  cout << "--outswc             [-o] output tracing result default is "
-          "out.swc\n";
-  cout << "--resolution-level   [-rl] resolution level to perform tracing at. "
-          "default is 0, ie original resolution\n";
+  cout << "--type               VDB input grid type: 'point', 'uint8', 'mask' or 'float'\n";
+  cout << "--prune-radius       larger values decrease the sampling density of "
+          "nodes output to swc, defaults to 14 which is tuned for 30x "
+          "objective lenses\n";
+  //cout << "--max                set max image voxel raw value allowed, "
+          //"computed automatically when --bg_thresh or --fg-percent are "
+          //"specified\n";
+  //cout << "--min                set min image voxel raw value allowed, "
+          //"computed automatically when --bg_thresh or --fg-percent are "
+          //"specified\n";
+  //cout << "--channel            [-c] directory of channel image default ch0\n";
+  //cout << "--resolution-level   [-rl] resolution level to perform tracing at. "
+          //"default is 0, ie original resolution\n";
   cout << "--image-offsets      [-io] offsets of subvolume, in x y z order "
           "default 0 0 0\n";
   cout << "--image-lengths      [-ie] lengths of subvolume, in x y z order "
@@ -59,25 +59,29 @@ void RecutCommandLineArgs::PrintUsage() {
   cout << "--bg-thresh          [-bt] background threshold value desired\n";
   cout << "--fg-percent         [-fp] auto calculate a bg-thresh closest to a "
           "foreground \% between (0-100], overriding any --bg-thresh args. "
-          "Value of .08 yields 8 in 10,000 voxels "
+          "Value of .08 yields ~8 in 10,000 voxels "
           "as foreground\n";
-  cout << "--prune              [-pr] prune 0 false, 1 true; defaults to 1 "
-          "(automatically prunes)\n";
-  cout << "--parallel           [-pl] thread count ";
-  "defaults to max hardware threads\n";
-  cout << "--output-windows     specify float vdb file for which to create windows surrounding each neuron cluster/component\n"; 
+  //cout << "--prune              [-pr] prune 0 false, 1 true; defaults to 1 "
+          //"(automatically prunes)\n";
+  cout << "--parallel           [-pl] thread count defaults to max hardware "
+          "threads\n";
+  cout << "--output-windows     specify uint8 vdb file for which to create "
+          "windows surrounding each neuron cluster/component\n";
   cout << "--downsample-factor  for images scaled down in x and z dimension "
           "scale the marker files by specified factor\n";
-  cout << "--upsample-z         during --convert only z-dimension will be upsampled (copied) by specified factor, default is 1 i.e. no upsampling\n";
+  cout << "--upsample-z         during --convert only z-dimension will be "
+          "upsampled (copied) by specified factor, default is 1 i.e. no "
+          "upsampling\n";
+  cout << "--run-app2           for benchmarks and comparisons runs app2 on the vdb passed to --output-windows\n";
   cout << "--help               [-h] print example usage\n";
 }
 
 string RecutCommandLineArgs::MetaString() {
   stringstream meta_stream;
   meta_stream << "# image root dir = " << image_root_dir_ << '\n';
-  meta_stream << "# channel = " << channel_ << '\n';
+  //meta_stream << "# channel = " << channel_ << '\n';
   meta_stream << "prune radius = " << channel_ << '\n';
-  meta_stream << "# resolution level = " << resolution_level_ << '\n';
+  //meta_stream << "# resolution level = " << resolution_level_ << '\n';
   meta_stream << "# offsets (xyz) = " << image_offsets[0] << " "
               << image_offsets[1] << " " << image_offsets[2] << '\n';
   meta_stream << "# lengths (xyz) = " << image_lengths[0] << " "
@@ -137,13 +141,10 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
           ++i;
         }
         args.set_image_lengths(lengths);
-      } else if (strcmp(argv[i], "--outswc") == 0 ||
-                 strcmp(argv[i], "-o") == 0) {
-        args.set_swc_path(argv[i + 1]);
-        ++i;
       } else if (strcmp(argv[i], "--type") == 0) {
         auto arg = std::string(argv[i + 1]);
-        if (arg == "float" || arg == "point" || arg == "uint8" || arg == "mask") {
+        if (arg == "float" || arg == "point" || arg == "uint8" ||
+            arg == "mask") {
           args.set_type(argv[i + 1]);
         } else {
           cerr << "--type option must be one of [float,point]\n";
@@ -189,23 +190,8 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         ++i;
       } else if (strcmp(argv[i], "--parallel") == 0 ||
                  strcmp(argv[i], "-pl") == 0) {
-        int max_threads = 1;
-#if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
-        max_threads = omp_get_max_threads();
-#endif
-        int current_threads = max_threads;
-        cout << "max threads available to CPU = " << max_threads << '\n';
+        args.user_thread_count = atoi(argv[i+1]);
         ++i;
-        if (!(i >= argc || argv[i][0] == '-')) {
-          args.recut_parameters().set_parallel_num(atoi(argv[i]));
-          current_threads = atoi(argv[i]);
-        } else {
-          args.recut_parameters().set_parallel_num(max_threads);
-        }
-        cout << "using total threads = " << current_threads << '\n';
-#if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
-        omp_set_num_threads(current_threads);
-#endif
       } else if (strcmp(argv[i], "--downsample-factor") == 0) {
         args.recut_parameters().set_downsample_factor(atoi(argv[i + 1]));
         ++i;
@@ -221,28 +207,19 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--histogram") == 0) {
         args.recut_parameters().set_histogram(true);
       } else if (strcmp(argv[i], "--output-windows") == 0) {
-        args.recut_parameters().set_output_windows(argv[i+1]);
+        args.recut_parameters().set_output_windows(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--upsample-z") == 0) {
         args.recut_parameters().set_upsample_z(atoi(argv[i + 1]));
+        ++i;
+      } else if (strcmp(argv[i], "--run-app2") == 0) {
+        args.run_app2 = true;
         ++i;
       } else {
         cout << "unknown option \"" << argv[i] << "\"  ...exiting\n\n";
         RecutCommandLineArgs::PrintUsage();
         exit(1);
       }
-    }
-    // give default swc path if not given
-    if (args.swc_path().empty()) {
-      string z_start = to_string(args.image_offsets[0]),
-             y_start = to_string(args.image_offsets[1]),
-             x_start = to_string(args.image_offsets[2]);
-      string z_end = to_string(args.image_offsets[0] + args.image_lengths[0]),
-             y_end = to_string(args.image_offsets[1] + args.image_lengths[1]),
-             x_end = to_string(args.image_offsets[2] + args.image_lengths[2]);
-      args.set_swc_path(args.image_root_dir() + "tracing_z" + z_start + "_" +
-                        z_end + "_y" + y_start + "_" + y_end + "_x" + x_start +
-                        "_" + x_end + ".swc");
     }
     return args;
   } catch (const exception &e) {

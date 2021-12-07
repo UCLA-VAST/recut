@@ -2161,7 +2161,7 @@ TEST(Update, EachStageIteratively) {
                 std::cout << iteration_trace.str();
                 // this outputs to out.swc but we do not want side effects from
                 // running the test binary
-                // recut.print_to_swc();
+                // recut.print_to_swc("out.swc");
 
                 recut_output_tree_prune =
                     convert_to_markers(recut.topology_grid, false);
@@ -2473,7 +2473,7 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
 
     recut.adjust_parent();
 
-    recut.print_to_swc();
+    recut.print_to_swc("out.swc");
 
     recut_output_tree_prune = convert_to_markers(
         recut.topology_grid,

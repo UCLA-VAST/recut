@@ -121,7 +121,7 @@ public:
       : args(&args), params(&(args.recut_parameters())) {}
 
   void operator()();
-  void print_to_swc();
+  void print_to_swc(std::string swc_path);
   void adjust_parent();
   void prune_radii();
   void prune_branch();
@@ -2735,17 +2735,17 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
 #if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
   if (params->convert_only_) {
-    omp_set_num_threads(params->user_thread_count());
+    omp_set_num_threads(args->user_thread_count);
   } else {
     // omp num threads is only valid for the convert stage
     omp_set_num_threads(1);
     // limit the number of threads for all oneTBB parallel interfaces
     tbb::global_control global_limit(
         tbb::global_control::max_allowed_parallelism,
-        params->user_thread_count());
+        args->user_thread_count);
   }
 #ifdef LOG
-  cout << "Thread count " << params->user_thread_count() << '\n';
+  cout << "Thread count " << args->user_thread_count << '\n';
   cout << "User specified image root dir " << args->image_root_dir() << '\n';
 #endif
 #endif
@@ -2780,13 +2780,14 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
   // sanitize in each dimension
   // and protected from faulty offset values
   for (int i = 0; i < 3; i++) {
-    // -1,-1,-1 means use to the end of input image
     if (args->image_lengths[i] > 0) {
       // use the input length if possible, or maximum otherwise
       this->image_lengths[i] =
           std::min(args->image_lengths[i], max_len_after_off[i]);
-    } else {
-      this->image_lengths[i] = max_len_after_off[i];
+    } else { 
+      // -1,-1,-1 means use to the end of input image
+      // -1,-1,-5 means length should go up to 5 from the last z
+      this->image_lengths[i] = max_len_after_off[i] + args->image_lengths[i] + 1;
     }
   }
   this->image_bbox = openvdb::math::CoordBBox(
@@ -2983,7 +2984,8 @@ template <class image_t> void Recut<image_t>::adjust_parent() {
   visit(this->topology_grid, all_valid, adjust_parent);
 }
 
-template <class image_t> void Recut<image_t>::print_to_swc() {
+template <class image_t>
+void Recut<image_t>::print_to_swc(std::string swc_path) {
 
   auto coord_to_swc_id = get_id_map();
 
@@ -2996,7 +2998,7 @@ template <class image_t> void Recut<image_t>::print_to_swc() {
                    /*map*/ coord_to_swc_id, /*adjust*/ true);
   };
 
-  this->out.open(this->args->swc_path());
+  this->out.open(swc_path);
   this->out << "#id type_id x y z radius parent_id\n";
 
   visit(this->topology_grid, keep_root, to_swc);
@@ -3005,7 +3007,7 @@ template <class image_t> void Recut<image_t>::print_to_swc() {
   if (this->out.is_open())
     this->out.close();
 #ifdef LOG
-  cout << "Wrote output to " << this->args->swc_path() << '\n';
+  cout << "Wrote output to " << swc_path << '\n';
 #endif
 }
 
@@ -3060,8 +3062,14 @@ void Recut<image_t>::partition_components(
 
   auto output_topology = false;
 
+  std::string run_dir = "./components";
+  // make sure its a clean write
+  while (fs::exists(run_dir)) {
+    run_dir += "-latest";
+  }
+
   auto enum_components = components | rng::views::enumerate | rng::to_vector;
-  tbb::parallel_for_each(enum_components, [this, &root_pairs](
+  tbb::parallel_for_each(enum_components, [this, &run_dir, &root_pairs](
                                               const auto component_pair) {
     auto [index, component] = component_pair;
     // all grid transforms across are consistent across recut, so enforce the
@@ -3096,11 +3104,6 @@ void Recut<image_t>::partition_components(
 #endif
 
 #ifdef LOG
-    std::string run_dir = "./components";
-    // make sure its a clean write
-    while (fs::exists(run_dir)) {
-      run_dir += "-latest";
-    }
     // is a fresh run_dir
     auto dir = run_dir + "/component-" + std::to_string(index);
     fs::create_directories(dir);
@@ -3159,7 +3162,7 @@ void Recut<image_t>::partition_components(
       assertm(component_with_values->evalActiveVoxelBoundingBox() ==
                   component->evalActiveVoxelBoundingBox(),
               "transfered component have mismatched sizes");
-      if (true) { // check against app2
+      if (args->run_app2) { // check against app2
         auto window = convert_vdb_to_dense(component_with_values);
         assertm(component_with_values->evalActiveVoxelBoundingBox() ==
                     window.bbox(),
