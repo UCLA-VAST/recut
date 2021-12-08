@@ -2474,6 +2474,7 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX,
       // increase reported radius slightly to remove nodes on edge
       // and decrease proofreading efforts
       node_radius *= SOMA_PRUNE_RADIUS;
+      nYi->radius = node_radius; // make the final radius larger as well
     }
     // causes large nodules probably because previously inflated get maxed and creates compounding cycle
     // nYi->radius = node_radius; // make the final radius larger as well
@@ -2534,7 +2535,6 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX,
     }
 
     // nYi.type = Node::AXON; // enforce type
-    nYi->radius = nYi->radius * 1.5;
     nY.push_back(nYi);
   };
 
