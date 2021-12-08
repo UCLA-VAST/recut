@@ -2475,6 +2475,7 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX,
       // and decrease proofreading efforts
       node_radius *= SOMA_PRUNE_RADIUS;
     }
+    nYi->radius = node_radius; // make the final radius larger as well
     float r2 = node_radius * node_radius;
 
     float d2;

@@ -2517,18 +2517,18 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   cout << "Finished I/O within " << io_time << " sec \n";
   cout << "Total interval iterations: " << outer_iteration_idx << '\n';
 
-  auto stage_acr = stage; // line up with paper
-  if (stage == "convert")
-    stage_acr = "VC";
-  if (stage == "connected")
-    stage_acr = "CC";
-  if (stage == "radius")
-    stage_acr = "SDF";
-
-  std::ofstream file;
-  file.open("runtimes.txt", std::ios::app);
-  file << stage_acr << ' ' << total_update_time << '\n';
-  file.close();
+  {
+    auto stage_acr = stage; // line up with paper
+    if (stage == "convert")
+      stage_acr = "VC";
+    if (stage == "connected")
+      stage_acr = "CC";
+    if (stage == "radius")
+      stage_acr = "SDF";
+    std::ofstream file;
+    file.open("runtimes.txt", std::ios::app);
+    file << stage_acr << ' ' << total_update_time << '\n';
+  }
 #endif
 
   return std::make_unique<InstrumentedUpdateStatistics>(
@@ -3061,12 +3061,13 @@ void Recut<image_t>::partition_components(
   cout << "Topo to float " << global_timer.elapsed() << '\n';
 
 #ifdef LOG
-  std::ofstream file;
-  file.open("runtimes.txt", std::ios::app);
-  VID_t selected_count = float_grid->activeVoxelCount();
-  file << "Selected " << selected_count << '\n';
-  file.close();
-  assertm(selected_count, "active voxels in float grid must be > 0");
+  {
+    std::ofstream file;
+    file.open("runtimes.txt", std::ios::app);
+    VID_t selected_count = float_grid->activeVoxelCount();
+    file << "Selected " << selected_count << '\n';
+    assertm(selected_count, "active voxels in float grid must be > 0");
+  }
 #endif
 
   // aggregate disjoint connected components
@@ -3150,6 +3151,7 @@ void Recut<image_t>::partition_components(
     auto filtered_tree = remove_short_leafs(tree);
 #ifdef LOG
     runtime << "TP " << timer.elapsed() << '\n';
+    runtime << "TP count " << filtered_tree.size() << '\n';
 #endif
 
     {
@@ -3177,7 +3179,6 @@ void Recut<image_t>::partition_components(
                        file, coord_to_swc_id,
                        /*bbox_adjust*/ !params->output_windows_.empty());
       });
-      file.close();
     }
 
     if (!params->output_windows_.empty()) {
@@ -3286,7 +3287,11 @@ void Recut<image_t>::partition_components(
     write_vdb_file(grids, "final-point-grid.vdb");
   }
 #ifdef LOG
-  cout << "TC+TP " << global_timer.elapsed() << '\n';
+  {
+    std::ofstream file;
+    file.open("runtimes.txt", std::ios::app);
+    file << "TC+TP " << global_timer.elapsed() << '\n';
+  }
 #endif
 }
 
@@ -3333,10 +3338,11 @@ template <class image_t> void Recut<image_t>::operator()() {
   }
 
 #ifdef LOG
-  std::ofstream file;
-  file.open("runtimes.txt"); //overwrites
-  file << "Active " << ' ' << this->topology_grid->activeVoxelCount() << '\n';
-  file.close();
+  {
+    std::ofstream file;
+    file.open("runtimes.txt"); // overwrites
+    file << "Active " << ' ' << this->topology_grid->activeVoxelCount() << '\n';
+  }
 #endif
 
   // constrain topology to only those reachable from roots
