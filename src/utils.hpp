@@ -2534,6 +2534,7 @@ std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX,
     }
 
     // nYi.type = Node::AXON; // enforce type
+    nYi->radius = nYi->radius * 1.5;
     nY.push_back(nYi);
   };
 
