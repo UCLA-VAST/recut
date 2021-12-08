@@ -2277,7 +2277,7 @@ auto validate_grid = [](EnlargedPointDataGrid::Ptr grid) {
 };
 
 // return sorted origins of all active leafs
-template<typename GridTypePtr>
+template <typename GridTypePtr>
 std::vector<GridCoord> get_origins(GridTypePtr grid) {
   std::vector<GridCoord> origins;
   // TODO use leafManager and tbb::parallel_for
@@ -2289,8 +2289,7 @@ std::vector<GridCoord> get_origins(GridTypePtr grid) {
 }
 
 template <typename GridTypePtr>
-bool leaves_intersect(GridTypePtr grid,
-                           GridTypePtr other) {
+bool leaves_intersect(GridTypePtr grid, GridTypePtr other) {
   std::vector<GridCoord> out;
   // inputs must be sorted
   auto origins = get_origins(grid);
@@ -3098,7 +3097,8 @@ auto copy_values = [](ImgGrid::Ptr img_grid,
 // files tiff component also saved
 auto write_output_windows = [](ImgGrid::Ptr valued_grid,
                                openvdb::FloatGrid::Ptr topology_grid,
-                               std::string dir, int counter = 0) {
+                               std::string dir, int index = 0,
+                               bool output_vdb = false) {
   auto timer = high_resolution_timer();
   assertm(valued_grid, "Must have input grid set to run output_windows_");
   copy_values(valued_grid, topology_grid);
@@ -3112,14 +3112,16 @@ auto write_output_windows = [](ImgGrid::Ptr valued_grid,
   cout << "Wrote window of component to tiff in " << timer.elapsed() << " s\n";
 #endif
 
-  timer.restart();
-  openvdb::GridPtrVec component_grids;
-  component_grids.push_back(topology_grid);
-  write_vdb_file(component_grids,
-                 dir + "/img-component-" + std::to_string(counter) + ".vdb");
+  if (output_vdb) {
+    timer.restart();
+    openvdb::GridPtrVec component_grids;
+    component_grids.push_back(topology_grid);
+    write_vdb_file(component_grids,
+                   dir + "/img-component-" + std::to_string(index) + ".vdb");
 #ifdef LOG
-  cout << "Wrote window of component to vdb in " << timer.elapsed() << " s\n";
+    cout << "Wrote window of component to vdb in " << timer.elapsed() << " s\n";
 #endif
+  }
   return topology_grid;
 };
 

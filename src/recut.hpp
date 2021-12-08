@@ -2516,7 +2516,19 @@ Recut<image_t>::update(std::string stage, Container &fifo,
        << " sec \n";
   cout << "Finished I/O within " << io_time << " sec \n";
   cout << "Total interval iterations: " << outer_iteration_idx << '\n';
-//", block iterations: "<< final_inner_iter + 1<< '\n';
+
+  auto stage_acr = stage; // line up with paper
+  if (stage == "convert")
+    stage_acr = "VC";
+  if (stage == "connected")
+    stage_acr = "CC";
+  if (stage == "radius")
+    stage_acr = "SDF";
+
+  std::ofstream file;
+  file.open("runtimes.txt", std::ios::app);
+  file << stage_acr << ' ' << total_update_time << '\n';
+  file.close();
 #endif
 
   return std::make_unique<InstrumentedUpdateStatistics>(
@@ -3048,16 +3060,21 @@ void Recut<image_t>::partition_components(
   auto float_grid = copy_selected(this->topology_grid);
   cout << "Topo to float " << global_timer.elapsed() << '\n';
 
-  cout << "Float active count: " << float_grid->activeVoxelCount() << '\n';
-  assertm(float_grid->activeVoxelCount(),
-          "active voxels in float grid must be > 0");
+#ifdef LOG
+  std::ofstream file;
+  file.open("runtimes.txt", std::ios::app);
+  VID_t selected_count = float_grid->activeVoxelCount();
+  file << "Selected " << selected_count << '\n';
+  file.close();
+  assertm(selected_count, "active voxels in float grid must be > 0");
+#endif
 
   // aggregate disjoint connected components
   global_timer.restart();
   std::vector<openvdb::FloatGrid::Ptr> components;
   vto::segmentActiveVoxels(*float_grid, components);
-  cout << "Segment count: " << components.size() << " in " << global_timer.elapsed()
-       << " s\n";
+  cout << "Segment count: " << components.size() << " in "
+       << global_timer.elapsed() << " s\n";
   global_timer.restart();
 
   auto output_topology = false;
@@ -3093,7 +3110,6 @@ void Recut<image_t>::partition_components(
       return; // skip
     }
 
-    // FIXME delete this once performance improves
     auto voxel_count = component->activeVoxelCount();
 
     auto timer = high_resolution_timer();
@@ -3121,7 +3137,10 @@ void Recut<image_t>::partition_components(
 #ifdef LOG
     std::ofstream runtime;
     runtime.open(runtime_name);
-    runtime << "Tree compaction " << timer.elapsed() << '\n';
+    runtime << "Soma count " << component_roots.size() << '\n';
+    runtime << "Component count " << markers.size() << '\n';
+    runtime << "TC count " << pruned_markers.size() << '\n';
+    runtime << "TC " << timer.elapsed() << '\n';
 #endif
 
     // extract a new tree via bfs
@@ -3130,7 +3149,7 @@ void Recut<image_t>::partition_components(
     timer.restart();
     auto filtered_tree = remove_short_leafs(tree);
 #ifdef LOG
-    runtime << "Tree prune " << timer.elapsed() << '\n';
+    runtime << "TP " << timer.elapsed() << '\n';
 #endif
 
     {
@@ -3230,7 +3249,7 @@ void Recut<image_t>::partition_components(
                             /* cnn_type*/ 1, tile_thresholds->bkg_thresh,
                             tile_thresholds->max_int, tile_thresholds->min_int);
 #ifdef LOG
-          runtime << "Fastmarching " << timer.elapsed() << '\n';
+          runtime << "FM " << timer.elapsed() << '\n';
 #endif
 
           timer.restart();
@@ -3241,7 +3260,7 @@ void Recut<image_t>::partition_components(
                window.bbox().dim()[2], tile_thresholds->bkg_thresh,
                /*length thresh*/ 3.0, /*sr_ratio*/ 1. / 3);
 #ifdef LOG
-          runtime << "Hierarchical pruning " << timer.elapsed() << '\n';
+          runtime << "HP " << timer.elapsed() << '\n';
           runtime.close();
 #endif
 
@@ -3266,7 +3285,9 @@ void Recut<image_t>::partition_components(
     grids.push_back(this->topology_grid);
     write_vdb_file(grids, "final-point-grid.vdb");
   }
-  cout << "Finished global prune and write: " << global_timer.elapsed() << '\n';
+#ifdef LOG
+  cout << "TC+TP " << global_timer.elapsed() << '\n';
+#endif
 }
 
 template <class image_t> void Recut<image_t>::convert_topology() {
@@ -3310,6 +3331,13 @@ template <class image_t> void Recut<image_t>::operator()() {
     // no more work to do, exiting
     return;
   }
+
+#ifdef LOG
+  std::ofstream file;
+  file.open("runtimes.txt"); //overwrites
+  file << "Active " << ' ' << this->topology_grid->activeVoxelCount() << '\n';
+  file.close();
+#endif
 
   // constrain topology to only those reachable from roots
   auto stage = "connected";
