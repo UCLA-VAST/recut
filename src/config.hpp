@@ -88,5 +88,5 @@ using GridCoord = std::vector<int32_t>;
 #define MIN_RADII 2
 #define MIN_LENGTH 2
 #define SWC_MIN_LINE 10
-#define NEURITE_PRUNE_RADIUS_DEFAULT 14
+#define NEURITE_PRUNE_RADIUS_DEFAULT 8
 #define SOMA_PRUNE_RADIUS 1.6

@@ -39,7 +39,7 @@ void RecutCommandLineArgs::PrintUsage() {
           "out.vdb\n";
   cout << "--type               VDB input grid type: 'point', 'uint8', 'mask' or 'float'\n";
   cout << "--prune-radius       larger values decrease the sampling density of "
-          "nodes output to swc, defaults to 14 which is tuned for 30x "
+          "nodes output to swc, defaults to 8 which is roughly tuned for anisotropic 30x "
           "objective lenses\n";
   //cout << "--max                set max image voxel raw value allowed, "
           //"computed automatically when --bg_thresh or --fg-percent are "
