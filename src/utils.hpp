@@ -3265,10 +3265,6 @@ GridTypePtr merge_grids(std::vector<GridTypePtr> grids) {
   for (int i = 0; i < (grids.size() - 1); ++i) {
     // vb::tools::compActiveLeafVoxels(grids[i]->tree(), grids[i +
     // 1]->tree());
-    if (leaves_intersect(grids[i + 1], grids[i])) {
-      throw std::runtime_error("Leaves intersect, can cause undefined behavior "
-                               "due to bug in vdb 8.1\n");
-    }
     // leaves grids[i] empty, copies all to grids[i+1]
     grids[i + 1]->tree().merge(grids[i]->tree(),
                                vb::MERGE_ACTIVE_STATES_AND_NODES);

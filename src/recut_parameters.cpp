@@ -67,6 +67,7 @@ void RecutCommandLineArgs::PrintUsage() {
           "threads\n";
   cout << "--output-windows     specify uint8 vdb file for which to create "
           "windows surrounding each neuron cluster/component\n";
+  cout << "--interval-z         z-depth of fg percentages and conversion, defaults to 8\n"; 
   cout << "--downsample-factor  for images scaled down in x and z dimension "
           "scale the marker files by specified factor\n";
   cout << "--upsample-z         during --convert only z-dimension will be "
@@ -175,6 +176,9 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--length-thresh") == 0 ||
                  strcmp(argv[i], "-lt") == 0) {
         args.recut_parameters().set_length_thresh(atof(argv[i + 1]));
+        ++i;
+      } else if (strcmp(argv[i], "--interval-z") == 0) {
+        args.interval_z = atoi(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--sr-ratio") == 0 ||
                  strcmp(argv[i], "-sr") == 0) {

@@ -2831,7 +2831,8 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
     if (params->interval_length) {
       this->interval_lengths[2] = params->interval_length;
     } else {
-      this->interval_lengths[2] = LEAF_LENGTH;
+      this->interval_lengths[2] = this->args->interval_z;
+      //this->interval_lengths[2] = LEAF_LENGTH;
       // auto recommended_max_mem = GetAvailMem() / 16;
       // guess how many z-depth tiles will fit before a bad_alloc is likely
       // auto simultaneous_tiles =

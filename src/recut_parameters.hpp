@@ -153,7 +153,7 @@ class RecutCommandLineArgs {
     RecutCommandLineArgs()
       : recut_parameters_(RecutParameters{}), image_root_dir_(std::string()),
       swc_path_("out.swc"), channel_("ch0"), resolution_level_(0),
-      image_offsets(0, 0, 0), image_lengths(-1, -1, -1), type_("point"), prune_radius_(NEURITE_PRUNE_RADIUS_DEFAULT), run_app2(false), user_thread_count(tbb::info::default_concurrency()) {}
+      image_offsets(0, 0, 0), image_lengths(-1, -1, -1), type_("point"), prune_radius_(NEURITE_PRUNE_RADIUS_DEFAULT), run_app2(false), user_thread_count(tbb::info::default_concurrency()), interval_z(8) {}
 
     static void PrintUsage();
     std::string MetaString();
@@ -211,7 +211,7 @@ class RecutCommandLineArgs {
     RecutParameters recut_parameters_;
     std::string image_root_dir_, swc_path_, channel_, type_; 
     int resolution_level_;
-    uint16_t prune_radius_, user_thread_count;
+    uint16_t prune_radius_, user_thread_count, interval_z;
     bool run_app2;
 };
 
