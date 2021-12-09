@@ -1690,8 +1690,8 @@ void write_tiff_page(image_t *inimg1d, TIFF *tiff, const GridCoord dims,
   TIFFSetField(tiff, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_UINT);
   TIFFSetField(tiff, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
   TIFFSetField(tiff, TIFFTAG_ROWSPERSTRIP, dims[1]);
-  TIFFSetField(out, TIFFTAG_XRESOLUTION, 1);
-  TIFFSetField(out, TIFFTAG_YRESOLUTION, 1);
+  TIFFSetField(tiff, TIFFTAG_XRESOLUTION, 1);
+  TIFFSetField(tiff, TIFFTAG_YRESOLUTION, 1);
   TIFFSetField(tiff, TIFFTAG_RESOLUTIONUNIT, RESUNIT_NONE);
   // TIFFSetField(tiff, TIFFTAG_ROWSPERSTRIP,
   // TIFFDefaultStripSize(tiff, (unsigned int)-1));
