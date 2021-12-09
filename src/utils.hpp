@@ -1682,16 +1682,21 @@ void write_tiff_page(image_t *inimg1d, TIFF *tiff, const GridCoord dims,
    * format, but it's the only we way can write the page_number number
    * without knowing the final number of pages in advance.
    */
-  TIFFSetField(tiff, TIFFTAG_PAGENUMBER, page_number, page_number);
-  TIFFSetField(tiff, TIFFTAG_SUBFILETYPE, FILETYPE_PAGE);
+  // TIFFSetField(tiff, TIFFTAG_PAGENUMBER, page_number, page_number);
+  // TIFFSetField(tiff, TIFFTAG_SUBFILETYPE, FILETYPE_PAGE);
   TIFFSetField(tiff, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
   TIFFSetField(tiff, TIFFTAG_IMAGEWIDTH, dims[0]);
   TIFFSetField(tiff, TIFFTAG_IMAGELENGTH, dims[1]);
   TIFFSetField(tiff, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_UINT);
-  TIFFSetField(tiff, TIFFTAG_ROWSPERSTRIP,
-               TIFFDefaultStripSize(tiff, (unsigned int)-1));
+  TIFFSetField(tiff, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
+  TIFFSetField(tiff, TIFFTAG_ROWSPERSTRIP, dims[1]);
+  TIFFSetField(out, TIFFTAG_XRESOLUTION, 1);
+  TIFFSetField(out, TIFFTAG_YRESOLUTION, 1);
+  TIFFSetField(tiff, TIFFTAG_RESOLUTIONUNIT, RESUNIT_NONE);
+  // TIFFSetField(tiff, TIFFTAG_ROWSPERSTRIP,
+  // TIFFDefaultStripSize(tiff, (unsigned int)-1));
 
-  unsigned int bits_per_sample = sizeof(image_t);
+  unsigned int bits_per_sample = 8 * sizeof(image_t);
   TIFFSetField(tiff, TIFFTAG_BITSPERSAMPLE, bits_per_sample);
   TIFFSetField(tiff, TIFFTAG_SAMPLESPERPIXEL, samples_per_pixel);
 
@@ -3087,9 +3092,9 @@ auto write_vdb_to_tiff_page = [](openvdb::FloatGrid::Ptr float_grid,
   auto fn = base + "/bounding_volume.tif";
   TIFF *tiff = TIFFOpen(fn.c_str(), "w");
 
-// inclusive range with index
+  // inclusive range with index
   auto zrng = rng::closed_iota_view(bbox.min()[2], bbox.max()[2]) |
-              rng::views::enumerate; 
+              rng::views::enumerate;
 
   // output each plane to separate page within the same file
   rng::for_each(zrng, [&float_grid, tiff, &bbox](const auto zpair) {
