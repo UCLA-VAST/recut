@@ -2110,7 +2110,7 @@ Recut<image_t>::load_tile(const VID_t interval_id, const std::string &dir) {
   // returns row-major (c-order) buffers
   auto dense = read_tiff_planes(interval_filenames, bbox);
 #ifdef LOG
-  cout << "Load image in " << timer.elapsed() << " sec." << '\n';
+  //cout << "Load image in " << timer.elapsed() << " sec." << '\n';
 #endif
   ////} catch (...) {
   //// throw std::runtime_error(
@@ -2143,9 +2143,9 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
                                (params->foreground_percent()) / 100);
 
 #ifdef LOG
-    cout << "Requested foreground percent: " << params->foreground_percent()
-         << " yielded background threshold: " << tile_thresholds->bkg_thresh
-         << " in " << timer.elapsed() << " s\n";
+    //cout << "Requested foreground percent: " << params->foreground_percent()
+         //<< " yielded background threshold: " << tile_thresholds->bkg_thresh
+         //<< " in " << timer.elapsed() << " s\n";
 #endif
   } else { // if bkg set explicitly and foreground wasn't
     if (params->background_thresh() >= 0) {
@@ -2273,6 +2273,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           visited_intervals[interval_id] = true;
         }
 #endif
+        auto interval_timer = high_resolution_timer();
 
 #ifdef SCHEDULE_INTERVAL_RV
         // number of iterations to wait before a visited
@@ -2438,9 +2439,10 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
           active_intervals[interval_id] = false;
 #ifdef LOG
-          cout << "Completed traversal of interval " << interval_id + 1
+               //auto traveral_time = timer.elapsed() - convert_start;
+          cout << "Completed interval " << interval_id + 1
                << " of " << grid_interval_size << " in "
-               << timer.elapsed() - convert_start << " s\n";
+               << interval_timer.elapsed() << " s\n";
 #endif
         } else {
           computation_time =
