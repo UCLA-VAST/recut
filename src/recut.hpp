@@ -2832,7 +2832,7 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
       this->interval_lengths[2] = params->interval_length;
     } else {
       this->interval_lengths[2] = this->args->interval_z;
-      //this->interval_lengths[2] = LEAF_LENGTH;
+      // this->interval_lengths[2] = LEAF_LENGTH;
       // auto recommended_max_mem = GetAvailMem() / 16;
       // guess how many z-depth tiles will fit before a bad_alloc is likely
       // auto simultaneous_tiles =
@@ -3183,8 +3183,8 @@ void Recut<image_t>::partition_components(
     }
 
     if (!params->output_windows_.empty()) {
-      auto component_with_values =
-          write_output_windows(this->img_grid, component, dir, index);
+      auto component_with_values = write_output_windows(
+          this->img_grid, component, dir, index, false, true);
       assertm(component_with_values->evalActiveVoxelBoundingBox() ==
                   component->evalActiveVoxelBoundingBox(),
               "transfered component have mismatched sizes");
@@ -3311,7 +3311,7 @@ template <class image_t> void Recut<image_t>::convert_topology() {
   } else if (args->type_ == "uint8") {
     print_grid_metadata(this->img_grid);
     grids.push_back(this->img_grid);
-  } else if (args->type_ == "mask_grid") {
+  } else if (args->type_ == "mask") {
     print_grid_metadata(this->mask_grid);
     grids.push_back(this->mask_grid);
   } else if (args->type_ == "point") {

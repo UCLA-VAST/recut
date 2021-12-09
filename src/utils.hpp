@@ -1671,14 +1671,47 @@ auto convert_buffer_to_vdb = [](auto buffer, GridCoord buffer_lengths,
 //}
 //} ;
 
+// passing a page number >= 0 means write a multipage tiff file
+template <typename image_t>
+void write_tiff_page(image_t *inimg1d, TIFF *tiff, const GridCoord dims,
+                     uint32_t page_number) {
+
+  unsigned int samples_per_pixel = 1; // grayscale=1 ; RGB=3
+  /*
+   * may not be supported by the
+   * format, but it's the only we way can write the page_number number
+   * without knowing the final number of pages in advance.
+   */
+  TIFFSetField(tiff, TIFFTAG_PAGENUMBER, page_number, page_number);
+  TIFFSetField(tiff, TIFFTAG_SUBFILETYPE, FILETYPE_PAGE);
+  TIFFSetField(tiff, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+  TIFFSetField(tiff, TIFFTAG_IMAGEWIDTH, dims[0]);
+  TIFFSetField(tiff, TIFFTAG_IMAGELENGTH, dims[1]);
+  TIFFSetField(tiff, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_UINT);
+  TIFFSetField(tiff, TIFFTAG_ROWSPERSTRIP,
+               TIFFDefaultStripSize(tiff, (unsigned int)-1));
+
+  unsigned int bits_per_sample = sizeof(image_t);
+  TIFFSetField(tiff, TIFFTAG_BITSPERSAMPLE, bits_per_sample);
+  TIFFSetField(tiff, TIFFTAG_SAMPLESPERPIXEL, samples_per_pixel);
+
+  for (unsigned int y = 0; y < dims[1]; ++y) {
+    TIFFWriteScanline(tiff, inimg1d + y * dims[0], y, 0);
+  }
+
+  TIFFWriteDirectory(tiff);
+  return;
+}
+
+// passing a page number >= 0 means write a multipage tiff file
 auto write_single_z_plane = [](uint16_t *inimg1d, std::ostringstream &fn,
                                const GridCoord dims) {
+  unsigned int samples_per_pixel = 1; // grayscale=1 ; RGB=3
   auto bits_per_sample = 16;
-  auto samples = 1; // grayscale=1 ; RGB=3
 
 #ifdef USE_TINYTIFF
   TinyTIFFWriterFile *tif = TinyTIFFWriter_open(
-      &fn.str()[0], bits_per_sample, TinyTIFFWriter_UInt, samples,
+      &fn.str()[0], bits_per_sample, TinyTIFFWriter_UInt, samples_per_pixel,
       /*width*/ dims[0], /* height*/ dims[1], TinyTIFFWriter_Greyscale);
   assertm(tif, "tif file did not open properly");
   TinyTIFFWriter_writeImage(tif, inimg1d);
@@ -3043,6 +3076,38 @@ auto convert_vdb_to_dense = [](openvdb::FloatGrid::Ptr float_grid) {
   return dense;
 };
 
+// Write a multi-page (pyramidal) tiff file using the libtiff library
+// join conversion and writing by z plane for performance, note that for large
+// components, create a full dense buffer will fault with bad_alloc due to size
+// z-plane by z-plane helps prevents this
+auto write_vdb_to_tiff_page = [](openvdb::FloatGrid::Ptr float_grid,
+                                 std::string base) {
+  auto bbox = float_grid->evalActiveVoxelBoundingBox(); // inclusive both ends
+
+  auto fn = base + "/bounding_volume.tif";
+  TIFF *tiff = TIFFOpen(fn.c_str(), "w");
+
+// inclusive range with index
+  auto zrng = rng::closed_iota_view(bbox.min()[2], bbox.max()[2]) |
+              rng::views::enumerate; 
+
+  // output each plane to separate page within the same file
+  rng::for_each(zrng, [&float_grid, tiff, &bbox](const auto zpair) {
+    auto [page_number, z] = zpair;
+    auto min = GridCoord(bbox.min()[0], bbox.min()[1], z);
+    auto max = GridCoord(bbox.max()[0], bbox.max()[1], z); // inclusive
+    auto plane_bbox = CoordBBox(min, max);
+
+    // inclusive of both ends of bounding box
+    vto::Dense<uint8_t, vto::LayoutXYZ> dense(plane_bbox, /*fill*/ 0.);
+    vto::copyToDense(*float_grid, dense);
+
+    write_tiff_page(dense.data(), tiff, plane_bbox.dim(), page_number);
+  });
+
+  TIFFClose(tiff);
+};
+
 // join conversion and writing by z plane for performance, note that for large
 // components, create a full dense buffer will fault with bad_alloc due to size
 // z-plane by z-plane like below prevents this
@@ -3054,12 +3119,12 @@ auto write_vdb_to_tiff_planes = [](openvdb::FloatGrid::Ptr float_grid,
   fs::remove_all(base); // make sure it's an overwrite
   fs::create_directories(base);
 
-  auto zrng =
-      rng::closed_iota_view(bbox.min()[2], bbox.max()[2]); // inclusive range
+  auto zrng = rng::closed_iota_view(bbox.min()[2], bbox.max()[2]) |
+              rng::views::enumerate; // inclusive range
 
-  auto zcount = 0;
   // output each plane to separate file
-  rng::for_each(zrng, [&float_grid, &base, &bbox, &zcount](auto z) {
+  rng::for_each(zrng, [&float_grid, &base, &bbox](const auto zpair) {
+    auto [index, z] = zpair;
     auto min = GridCoord(bbox.min()[0], bbox.min()[1], z);
     auto max = GridCoord(bbox.max()[0], bbox.max()[1], z); // inclusive
     auto plane_bbox = CoordBBox(min, max);
@@ -3070,15 +3135,13 @@ auto write_vdb_to_tiff_planes = [](openvdb::FloatGrid::Ptr float_grid,
 
     // overflows at 1 million z planes
     std::ostringstream fn;
-    fn << base << "/img_" << std::setfill('0') << std::setw(6) << zcount
+    fn << base << "/img_" << std::setfill('0') << std::setw(6) << index
        << ".tif";
 
     // cout << '\n' << fn.str() << '\n';
     // print_image_3D(dense.data(), plane_bbox.dim());
 
     write_single_z_plane(dense.data(), fn, plane_bbox.dim());
-
-    ++zcount;
   });
 };
 
@@ -3103,7 +3166,7 @@ auto copy_values = [](ImgGrid::Ptr img_grid,
 auto write_output_windows = [](ImgGrid::Ptr valued_grid,
                                openvdb::FloatGrid::Ptr topology_grid,
                                std::string dir, int index = 0,
-                               bool output_vdb = false) {
+                               bool output_vdb = false, bool paged = false) {
   auto timer = high_resolution_timer();
   assertm(valued_grid, "Must have input grid set to run output_windows_");
   copy_values(valued_grid, topology_grid);
@@ -3112,7 +3175,10 @@ auto write_output_windows = [](ImgGrid::Ptr valued_grid,
 #endif
 
   timer.restart();
-  write_vdb_to_tiff_planes(topology_grid, dir);
+  if (paged)
+    write_vdb_to_tiff_page(topology_grid, dir);
+  else
+    write_vdb_to_tiff_planes(topology_grid, dir);
 #ifdef LOG
   cout << "Wrote window of component to tiff in " << timer.elapsed() << " s\n";
 #endif

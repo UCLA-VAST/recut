@@ -67,7 +67,7 @@ void RecutCommandLineArgs::PrintUsage() {
           "threads\n";
   cout << "--output-windows     specify uint8 vdb file for which to create "
           "windows surrounding each neuron cluster/component\n";
-  cout << "--interval-z         z-depth of fg percentages and conversion, defaults to 8\n"; 
+  cout << "--interval-z         z-depth of fg percentages and conversion, defaults to 1\n"; 
   cout << "--downsample-factor  for images scaled down in x and z dimension "
           "scale the marker files by specified factor\n";
   cout << "--upsample-z         during --convert only z-dimension will be "
