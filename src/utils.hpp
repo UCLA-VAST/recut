@@ -1677,11 +1677,7 @@ void write_tiff_page(image_t *inimg1d, TIFF *tiff, const GridCoord dims,
                      uint32_t page_number) {
 
   unsigned int samples_per_pixel = 1; // grayscale=1 ; RGB=3
-  /*
-   * may not be supported by the
-   * format, but it's the only we way can write the page_number number
-   * without knowing the final number of pages in advance.
-   */
+  unsigned int bits_per_sample = 8 * sizeof(image_t);
   // TIFFSetField(tiff, TIFFTAG_PAGENUMBER, page_number, page_number);
   // TIFFSetField(tiff, TIFFTAG_SUBFILETYPE, FILETYPE_PAGE);
   TIFFSetField(tiff, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
@@ -1693,10 +1689,11 @@ void write_tiff_page(image_t *inimg1d, TIFF *tiff, const GridCoord dims,
   TIFFSetField(tiff, TIFFTAG_XRESOLUTION, 1);
   TIFFSetField(tiff, TIFFTAG_YRESOLUTION, 1);
   TIFFSetField(tiff, TIFFTAG_RESOLUTIONUNIT, RESUNIT_NONE);
+  TIFFSetField(tiff, TIFFTAG_RESOLUTIONUNIT, RESUNIT_NONE);
+  TIFFSetField(tiff, TIFFTAG_COMPRESSION, COMPRESSION_LZW);
   // TIFFSetField(tiff, TIFFTAG_ROWSPERSTRIP,
   // TIFFDefaultStripSize(tiff, (unsigned int)-1));
 
-  unsigned int bits_per_sample = 8 * sizeof(image_t);
   TIFFSetField(tiff, TIFFTAG_BITSPERSAMPLE, bits_per_sample);
   TIFFSetField(tiff, TIFFTAG_SAMPLESPERPIXEL, samples_per_pixel);
 
