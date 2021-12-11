@@ -3031,7 +3031,7 @@ template <class image_t> void Recut<image_t>::prune_branch() {
                           const auto &radius_handle, const auto &ind) {
     auto parents = parents_handle.get(*ind);
     return is_valid(flags_handle, ind) && !is_root(flags_handle, ind) &&
-           ((parents[0] + parents[1] + parents[2]) < MIN_LENGTH);
+           ((parents[0] + parents[1] + parents[2]) < MIN_BRANCH_LENGTH);
   };
 
   visit(this->topology_grid, filter_branch, prunes_visited);
@@ -3106,15 +3106,17 @@ void Recut<image_t>::partition_components(
         }) |
         rng::to_vector;
 
-    if (component_roots.size() < 1)
-      return; // skip
-
-    if (component_roots.size() > 1) {
-      cout << "Skipping component with more than 1 root\n";
+    if (component_roots.size() > MAX_SOMA_PER_COMPONENT) {
       return; // skip
     }
 
     auto voxel_count = component->activeVoxelCount();
+    if (voxel_count < SWC_MIN_LINE) {
+      return; //skip
+    }
+
+    if (component->evalActiveVoxelBoundingBox().dim()[2] < MIN_Z_DEPTH)
+      return; // skip
 
     auto timer = high_resolution_timer();
     auto markers = convert_float_to_markers(component, this->topology_grid);
@@ -3345,6 +3347,9 @@ template <class image_t> void Recut<image_t>::operator()() {
     std::ofstream file;
     file.open("runtimes.txt"); // overwrites
     file << "Active " << ' ' << this->topology_grid->activeVoxelCount() << '\n';
+    file << "Prune radius " << args->prune_radius_ << '\n';
+    file << "Soma radius " << SOMA_PRUNE_RADIUS << '\n';
+    file << "Min branch " << MIN_BRANCH_LENGTH << '\n';
   }
 #endif
 
