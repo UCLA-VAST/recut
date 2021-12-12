@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <math.h>
 #include <numeric>
+#include <openvdb/tools/Clip.h>
 #include <openvdb/tools/Composite.h>
 #include <openvdb/tools/Dense.h> // copyToDense
 #include <queue>
@@ -3070,7 +3071,7 @@ auto all_invalid = [](const auto &flags_handle, const auto &parents_handle,
   return !is_selected(flags_handle, ind);
 };
 
-auto convert_vdb_to_dense = [](openvdb::FloatGrid::Ptr float_grid) {
+auto convert_vdb_to_dense = [](auto float_grid) {
   // inclusive of both ends of bounding box
   vto::Dense<uint16_t, vto::LayoutXYZ> dense(
       float_grid->evalActiveVoxelBoundingBox(), /*fill*/ 0.);
@@ -3082,9 +3083,9 @@ auto convert_vdb_to_dense = [](openvdb::FloatGrid::Ptr float_grid) {
 // join conversion and writing by z plane for performance, note that for large
 // components, create a full dense buffer will fault with bad_alloc due to size
 // z-plane by z-plane helps prevents this
-auto write_vdb_to_tiff_page = [](openvdb::FloatGrid::Ptr float_grid,
-                                 std::string base) {
-  auto bbox = float_grid->evalActiveVoxelBoundingBox(); // inclusive both ends
+template <typename GridT>
+void write_vdb_to_tiff_page(GridT grid, std::string base) {
+  auto bbox = grid->evalActiveVoxelBoundingBox(); // inclusive both ends
 
   auto fn = base + "/bounding_volume.tif";
   TIFF *tiff = TIFFOpen(fn.c_str(), "w");
@@ -3094,7 +3095,7 @@ auto write_vdb_to_tiff_page = [](openvdb::FloatGrid::Ptr float_grid,
               rng::views::enumerate;
 
   // output each plane to separate page within the same file
-  rng::for_each(zrng, [&float_grid, tiff, &bbox](const auto zpair) {
+  rng::for_each(zrng, [&grid, tiff, &bbox](const auto zpair) {
     auto [page_number, z] = zpair;
     auto min = GridCoord(bbox.min()[0], bbox.min()[1], z);
     auto max = GridCoord(bbox.max()[0], bbox.max()[1], z); // inclusive
@@ -3102,20 +3103,20 @@ auto write_vdb_to_tiff_page = [](openvdb::FloatGrid::Ptr float_grid,
 
     // inclusive of both ends of bounding box
     vto::Dense<uint8_t, vto::LayoutXYZ> dense(plane_bbox, /*fill*/ 0.);
-    vto::copyToDense(*float_grid, dense);
+    vto::copyToDense(*grid, dense);
 
     write_tiff_page(dense.data(), tiff, plane_bbox.dim(), page_number);
   });
 
   TIFFClose(tiff);
-};
+}
 
 // join conversion and writing by z plane for performance, note that for large
 // components, create a full dense buffer will fault with bad_alloc due to size
 // z-plane by z-plane like below prevents this
-auto write_vdb_to_tiff_planes = [](openvdb::FloatGrid::Ptr float_grid,
-                                   std::string base) {
-  auto bbox = float_grid->evalActiveVoxelBoundingBox(); // inclusive both ends
+template <typename GridT>
+void write_vdb_to_tiff_planes(GridT grid, std::string base) {
+  auto bbox = grid->evalActiveVoxelBoundingBox(); // inclusive both ends
 
   base = base + "/ch0";
   fs::remove_all(base); // make sure it's an overwrite
@@ -3125,7 +3126,7 @@ auto write_vdb_to_tiff_planes = [](openvdb::FloatGrid::Ptr float_grid,
               rng::views::enumerate; // inclusive range
 
   // output each plane to separate file
-  rng::for_each(zrng, [&float_grid, &base, &bbox](const auto zpair) {
+  rng::for_each(zrng, [&grid, &base, &bbox](const auto zpair) {
     auto [index, z] = zpair;
     auto min = GridCoord(bbox.min()[0], bbox.min()[1], z);
     auto max = GridCoord(bbox.max()[0], bbox.max()[1], z); // inclusive
@@ -3133,7 +3134,7 @@ auto write_vdb_to_tiff_planes = [](openvdb::FloatGrid::Ptr float_grid,
 
     // inclusive of both ends of bounding box
     vto::Dense<uint16_t, vto::LayoutXYZ> dense(plane_bbox, /*fill*/ 0.);
-    vto::copyToDense(*float_grid, dense);
+    vto::copyToDense(*grid, dense);
 
     // overflows at 1 million z planes
     std::ostringstream fn;
@@ -3145,58 +3146,72 @@ auto write_vdb_to_tiff_planes = [](openvdb::FloatGrid::Ptr float_grid,
 
     write_single_z_plane(dense.data(), fn, plane_bbox.dim());
   });
-};
+}
 
 // for all active values of the output grid copy the value at that coordinate
 // from the inputs grid this could be replaced by openvdb's provided CSG/copying
 // functions
-auto copy_values = [](ImgGrid::Ptr img_grid,
-                      openvdb::FloatGrid::Ptr output_grid) {
+template <typename ValueGridT, typename OutputGridT>
+void copy_values(ValueGridT img_grid, OutputGridT output_grid) {
   auto accessor = img_grid->getConstAccessor();
   auto output_accessor = output_grid->getAccessor();
-  for (openvdb::FloatGrid::ValueOnCIter iter = output_grid->cbeginValueOn();
-       iter.test(); ++iter) {
+  for (auto iter = output_grid->cbeginValueOn(); iter.test(); ++iter) {
     auto val = accessor.getValue(iter.getCoord());
     output_accessor.setValue(iter.getCoord(), val);
   }
-};
+}
 
 // valued_grid : holds the pixel intensity values
 // topology_grid : holds the topology of the neuron cluster in question
 // values copied in topology and written z-plane by z-plane to individual tiff
 // files tiff component also saved
-auto write_output_windows = [](ImgGrid::Ptr valued_grid,
-                               openvdb::FloatGrid::Ptr topology_grid,
-                               std::string dir, int index = 0,
-                               bool output_vdb = false, bool paged = false) {
-  auto timer = high_resolution_timer();
+template <typename GridT, typename ValuedGridT>
+ValuedGridT write_output_windows(const ValuedGridT valued_grid,
+                                 GridT component_grid, std::string dir,
+                                 int index = 0, bool output_vdb = false,
+                                 bool paged = false) {
+
   assertm(valued_grid, "Must have input grid set to run output_windows_");
-  copy_values(valued_grid, topology_grid);
-#ifdef LOG
-  cout << "Copied component values in " << timer.elapsed() << " s\n";
-#endif
+  auto timer = high_resolution_timer();
+  // if an expanded crop is requested, the actual image values outside of the
+  // component bounding volume are needed therefore clip the original image
+  // to a bounding volume
+  auto bbox =
+      component_grid->evalActiveVoxelBoundingBox().expandBy(EXPAND_CROP_PIXELS);
+
+  vb::BBoxd clipBox(bbox.min().asVec3d(), bbox.max().asVec3d());
+  const auto output_grid = vto::clip(*valued_grid, clipBox);
+
+  // alternatively... for simply carrying values across:
+  // copy_values(valued_grid, component_grid);
+  // or you can use the component_grid to mask the valued_grid
+  // to isolate window pixels to those covered by the component like:
+  // output_grid = vto::tools::clip(output_grid, component_grid);
 
   timer.restart();
   if (paged)
-    write_vdb_to_tiff_page(topology_grid, dir);
+    write_vdb_to_tiff_page(output_grid, dir);
   else
-    write_vdb_to_tiff_planes(topology_grid, dir);
+    write_vdb_to_tiff_planes(output_grid, dir);
+
 #ifdef LOG
-  cout << "Wrote window of component to tiff in " << timer.elapsed() << " s\n";
+    // cout << "Wrote window of component to tiff in " << timer.elapsed() << "
+    // s\n";
 #endif
 
   if (output_vdb) {
     timer.restart();
     openvdb::GridPtrVec component_grids;
-    component_grids.push_back(topology_grid);
+    component_grids.push_back(output_grid);
     write_vdb_file(component_grids,
                    dir + "/img-component-" + std::to_string(index) + ".vdb");
 #ifdef LOG
-    cout << "Wrote window of component to vdb in " << timer.elapsed() << " s\n";
+    // cout << "Wrote window of component to vdb in " << timer.elapsed() << "
+    // s\n";
 #endif
   }
-  return topology_grid;
-};
+  return output_grid;
+}
 
 auto adjust_marker = [](MyMarker *marker, GridCoord offsets) {
   marker->x += offsets[0];

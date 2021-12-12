@@ -3187,16 +3187,13 @@ void Recut<image_t>::partition_components(
     }
 
     if (!params->output_windows_.empty()) {
+
       auto component_with_values = write_output_windows(
           this->img_grid, component, dir, index, false, true);
-      assertm(component_with_values->evalActiveVoxelBoundingBox() ==
-                  component->evalActiveVoxelBoundingBox(),
-              "transfered component have mismatched sizes");
       if (args->run_app2) { // check against app2
 
         // skip components that are 0s in the original image
-        float minv = 0;
-        float maxv = 0;
+        unsigned int minv = 0, maxv = 0;
         component_with_values->tree().evalMinMax(minv, maxv);
         if (maxv > 0) {
 
