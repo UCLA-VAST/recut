@@ -5,7 +5,6 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     mcp3d.url = "git+ssh://git@github.com/ucla-brain/mcp3d?ref=master";
     openvdb.url = "git+ssh://git@github.com/UCLA-VAST/openvdb";
-    tiff.url = "git+ssh://git@github.com/kdmarrett/TinyTIFF?ref=nix";
     # alternatively you could pin a certain commit like:
     # mcp3d.url = "git+ssh://git@github.com/ucla-brain/mcp3d?ref=kdm-dev&rev=<commit hash>";
     # or you could with your local filesystem branch with:
@@ -22,7 +21,6 @@
       nixpkgs = inputs.nixpkgs;
       mcp3d = inputs.mcp3d;
       openvdb = inputs.openvdb;
-      tiff = inputs.tiff;
     };
   };
 }

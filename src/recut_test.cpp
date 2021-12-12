@@ -23,11 +23,7 @@
 
 // If input is not vdb, and you do not force regeneration of the image
 // then you must use the MCP3D library to read the image filenames
-#ifdef USE_TINYTIFF
-#define GEN_IMAGE false
-#else
 #define GEN_IMAGE true
-#endif
 
 // This source file is for functions or tests that include test macros only
 // note defining a function that contains test function MACROS
@@ -380,7 +376,6 @@ TEST(Histogram, CallAndPrint) {
     }
   }
 
-#ifdef USE_TINYTIFF
   {
     auto tcase = 0;
     auto grid_size = 2;
@@ -397,7 +392,6 @@ TEST(Histogram, CallAndPrint) {
           << "all values are 1 so only first first bin should exist";
     }
   }
-#endif
 }
 
 TEST(VDB, IntegrateUpdateGrid) {
@@ -1184,9 +1178,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
           cout << "Write tiff\n";
         }
 
-#ifdef USE_TINYTIFF
         write_tiff(inimg1d, image_dir, grid_extents);
-#endif
 
         {
           openvdb::GridPtrVec grids;
@@ -1251,7 +1243,6 @@ TEST(Install, DISABLED_ConvertVDBToDense) {
   }
   ASSERT_EQ(active_count, float_grid->activeVoxelCount());
 
-#ifdef USE_TINYTIFF
   { // planes
     std::string fn = "./data/test_images/convert-vdb-to-dense-planes";
     write_vdb_to_tiff_planes(float_grid, fn);
@@ -1268,7 +1259,6 @@ TEST(Install, DISABLED_ConvertVDBToDense) {
     ASSERT_NO_FATAL_FAILURE(
         check_image_equality(check_dense.data(), from_file.data(), volume));
   }
-#endif
 }
 
 TEST(VDB, ConvertDenseToVDB) {
@@ -1372,7 +1362,6 @@ TEST(VDB, GetSetGridMeta) {
   }
 }
 
-#ifdef USE_TINYTIFF
 TEST(Install, DISABLED_ImageReadWrite) {
   auto grid_size = 2;
   auto grid_extents = GridCoord(grid_size);
@@ -1420,7 +1409,6 @@ TEST(Install, DISABLED_ImageReadWrite) {
 
   delete[] inimg1d;
 }
-#endif // USE_TINYTIFF
 
 TEST(VertexAttr, Defaults) {
   auto v1 = new VertexAttr();
@@ -1449,7 +1437,6 @@ TEST(TileThresholds, AllTcases) {
     auto tile_thresholds = new TileThresholds<uint16_t>();
     uint16_t bkg_thresh;
 
-#ifdef USE_TINYTIFF
     if (tcase == 6) {
       auto image = read_tiff_dir(args.image_root_dir() + "/ch0");
       if (print_image) {
@@ -1465,7 +1452,6 @@ TEST(TileThresholds, AllTcases) {
              << '\n';
       }
     }
-#endif
 
     if (tcase <= 5) {
       create_image(tcase, inimg1d.get(), grid_size, selected,
@@ -2329,7 +2315,7 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
   // shared params
   // generate image so that you can read it below
   // first make sure it can pass
-  auto input_is_vdb = true; // must be true if USE_TINYTIFF is false/undefined
+  auto input_is_vdb = true; 
   auto args = get_args(grid_size, interval_size, block_size, slt_pct, tcase,
                        force_regenerate_image, input_is_vdb);
   args.set_type("float");

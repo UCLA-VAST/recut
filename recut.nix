@@ -1,4 +1,4 @@
-{ nixpkgs, mcp3d, openvdb, tiff, ... }:
+{ nixpkgs, mcp3d, openvdb, ... }:
 let
   pkgs = import nixpkgs {
     system = "x86_64-linux";
@@ -19,7 +19,7 @@ in
 
   enableParallelBuilding = true;
 
-  cmakeFlags = ["-DUSE_VDB=ON -DLOG=ON -DLOG_FULL=OFF -DFULL_PRINT=OFF -DUSE_OMP_BLOCK=ON -DUSE_OMP_INTERVAL=ON -DTEST_ALL_BENCHMARKS=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MODULE_PATH=${openvdb.defaultPackage.x86_64-linux}/lib/cmake/OpenVDB -DTINYTIFF_PATH=${tiff.defaultPackage.x86_64-linux}/lib/cmake/TinyTIFFShared"];
+  cmakeFlags = ["-DUSE_VDB=ON -DLOG=ON -DLOG_FULL=OFF -DFULL_PRINT=OFF -DUSE_OMP_BLOCK=ON -DUSE_OMP_INTERVAL=ON -DTEST_ALL_BENCHMARKS=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MODULE_PATH=${openvdb.defaultPackage.x86_64-linux}/lib/cmake/OpenVDB"];
 
   nativeBuildInputs = [ cmake gcc11 ];
 
@@ -32,7 +32,6 @@ in
 
     # optional dependencies
     openvdb.defaultPackage.x86_64-linux
-    tiff.defaultPackage.x86_64-linux
     #mcp3d.defaultPackage.x86_64-linux
     gbenchmark
 

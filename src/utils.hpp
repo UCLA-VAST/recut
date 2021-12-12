@@ -20,11 +20,6 @@
 #include <stdlib.h> // ultoa
 #include <tiffio.h>
 
-#ifdef USE_TINYTIFF
-#include "tinytiffreader.h"
-#include "tinytiffwriter.h"
-#endif
-
 #ifdef USE_MCP3D
 #include <common/mcp3d_common.hpp>
 #include <image/mcp3d_image.hpp>
@@ -1053,10 +1048,6 @@ auto append_attributes = [](auto grid) {
   openvdb::NamePair valueAttribute =
       openvdb::points::TypedAttributeArray<float, Codec>::attributeType();
   openvdb::points::appendAttribute(grid->tree(), "value", valueAttribute);
-
-#ifdef LOG
-  cout << "appended all attributes\n";
-#endif
 };
 
 auto read_vdb_file(std::string fn, std::string grid_name = "topology") {
@@ -1677,52 +1668,35 @@ template <typename image_t>
 void write_tiff_page(image_t *inimg1d, TIFF *tiff, const GridCoord dims,
                      uint32_t page_number) {
 
-  unsigned int samples_per_pixel = 1; // grayscale=1 ; RGB=3
-  unsigned int bits_per_sample = 8 * sizeof(image_t);
-  // TIFFSetField(tiff, TIFFTAG_PAGENUMBER, page_number, page_number);
+  TIFFSetField(tiff, TIFFTAG_PAGENUMBER, page_number, page_number);
   // TIFFSetField(tiff, TIFFTAG_SUBFILETYPE, FILETYPE_PAGE);
-  TIFFSetField(tiff, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
-  TIFFSetField(tiff, TIFFTAG_IMAGEWIDTH, dims[0]);
-  TIFFSetField(tiff, TIFFTAG_IMAGELENGTH, dims[1]);
-  TIFFSetField(tiff, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_UINT);
-  TIFFSetField(tiff, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
-  TIFFSetField(tiff, TIFFTAG_ROWSPERSTRIP, dims[1]);
-  TIFFSetField(tiff, TIFFTAG_XRESOLUTION, 1);
-  TIFFSetField(tiff, TIFFTAG_YRESOLUTION, 1);
-  TIFFSetField(tiff, TIFFTAG_RESOLUTIONUNIT, RESUNIT_NONE);
-  TIFFSetField(tiff, TIFFTAG_RESOLUTIONUNIT, RESUNIT_NONE);
-  TIFFSetField(tiff, TIFFTAG_COMPRESSION, COMPRESSION_LZW);
-  // TIFFSetField(tiff, TIFFTAG_ROWSPERSTRIP,
-  // TIFFDefaultStripSize(tiff, (unsigned int)-1));
+  encoded_tiff_write(inimg1d, tiff, dims);
 
-  TIFFSetField(tiff, TIFFTAG_BITSPERSAMPLE, bits_per_sample);
-  TIFFSetField(tiff, TIFFTAG_SAMPLESPERPIXEL, samples_per_pixel);
-
-  for (unsigned int y = 0; y < dims[1]; ++y) {
-    TIFFWriteScanline(tiff, inimg1d + y * dims[0], y, 0);
-  }
+  // for (unsigned int y = 0; y < dims[1]; ++y) {
+  // TIFFWriteScanline(tiff, inimg1d + y * dims[0], y, 0);
+  //}
 
   TIFFWriteDirectory(tiff);
-  return;
 }
 
 // passing a page number >= 0 means write a multipage tiff file
-auto write_single_z_plane = [](uint16_t *inimg1d, std::ostringstream &fn,
-                               const GridCoord dims) {
-  unsigned int samples_per_pixel = 1; // grayscale=1 ; RGB=3
-  auto bits_per_sample = 16;
+template <typename image_t>
+void write_single_z_plane(image_t *inimg1d, std::string fn,
+                          const GridCoord dims) {
 
-#ifdef USE_TINYTIFF
-  TinyTIFFWriterFile *tif = TinyTIFFWriter_open(
-      &fn.str()[0], bits_per_sample, TinyTIFFWriter_UInt, samples_per_pixel,
-      /*width*/ dims[0], /* height*/ dims[1], TinyTIFFWriter_Greyscale);
-  assertm(tif, "tif file did not open properly");
-  TinyTIFFWriter_writeImage(tif, inimg1d);
-  TinyTIFFWriter_close(tif);
-#else
-  throw std::runtime_error("must compile in CMAKE with TINYTIFF_PATH set");
-#endif
-};
+  TIFF *tiff = TIFFOpen(fn.c_str(), "w");
+  if (!tiff) {
+    throw std::runtime_error(
+        "ERROR reading (not existent, not accessible or no TIFF file)");
+  }
+
+  encoded_tiff_write(inimg1d, tiff, dims);
+  // for (unsigned int y = 0; y < dims[1]; ++y) {
+  // TIFFWriteScanline(tiff, inimg1d + y * dims[0], y, 0);
+  //}
+
+  TIFFClose(tiff);
+}
 
 void write_tiff(uint16_t *inimg1d, std::string base, const GridCoord dims,
                 bool rerun = false) {
@@ -1742,7 +1716,8 @@ void write_tiff(uint16_t *inimg1d, std::string base, const GridCoord dims,
       fn << base << "/img_" << std::setfill('0') << std::setw(6) << z << ".tif";
       VID_t start = z * dims[0] * dims[1];
 
-      write_single_z_plane(&(inimg1d[start]), fn, dims);
+      // write_tiff_page(&(inimg1d[start]), fn, dims);
+      write_single_z_plane(&(inimg1d[start]), fn.str(), dims);
     }
     if (print)
       cout << "      Wrote test images in: " << base << '\n';
@@ -1830,58 +1805,6 @@ auto read_tiff_planes = [](const std::vector<std::string> &fns,
   return dense;
 };
 
-#ifdef USE_TINYTIFF
-
-auto read_tiff_planes_dep = [](const std::vector<std::string> &fns,
-                               const CoordBBox &bbox) {
-  vto::Dense<uint16_t, vto::LayoutXYZ> dense(bbox, /*fill*/ 0.);
-
-  for (auto z = 0; z < fns.size(); ++z) {
-    const auto fn = fns[z];
-    TinyTIFFReaderFile *tiffr = NULL;
-    tiffr = TinyTIFFReader_open(&fn[0]);
-    if (!tiffr) {
-      throw std::runtime_error(
-          "ERROR reading (not existent, not accessible or no TIFF file)");
-    }
-
-    const uint16_t bitspersample = TinyTIFFReader_getBitsPerSample(tiffr, 0);
-    if (bitspersample != 16) {
-      throw std::runtime_error("ERROR expected tiff file of uint16\n");
-    }
-    const uint32_t width = TinyTIFFReader_getWidth(tiffr);
-    const uint32_t height = TinyTIFFReader_getHeight(tiffr);
-
-#ifdef TINYTIFF_DEBUG
-    const uint16_t samples = TinyTIFFReader_getSamplesPerPixel(tiffr);
-    std::cout << "    each pixel has " << samples << " samples with "
-              << bitspersample << " bits each\n";
-    cout << "format: " << TinyTIFFReader_getSampleFormat(tiffr) << '\n';
-    std::cout << "    ImageDescription:\n"
-              << TinyTIFFReader_getImageDescription(tiffr) << "\n";
-    uint32_t frames = TinyTIFFReader_countFrames(tiffr);
-    std::cout << "    frames: " << frames << "\n";
-#endif
-
-    if (width != bbox.dim()[0] || height != bbox.dim()[1]) {
-      std::ostringstream os;
-      os << "mismatch among tif file contents in width or height\nexpected: "
-         << bbox.dim() << "\ngot " << width << " by " << height << '\n';
-      throw std::runtime_error(os.str());
-    }
-    auto start = z * bbox.dim()[0] * bbox.dim()[1];
-
-    // IN ROW-MAJOR xyz order
-    TinyTIFFReader_getSampleData(tiffr, &dense.data()[start], 0);
-    if (TinyTIFFReader_wasError(tiffr)) {
-      throw std::runtime_error(TinyTIFFReader_getLastError(tiffr));
-    }
-    TinyTIFFReader_close(tiffr);
-  }
-
-  return dense;
-};
-
 auto get_dir_files = [](const std::string &dir, const std::string &ext) {
   std::ostringstream os;
   os << "Passed : " << dir;
@@ -1910,16 +1833,16 @@ auto get_dir_files = [](const std::string &dir, const std::string &ext) {
 };
 
 auto get_tif_dims = [](const std::vector<std::string> &tif_filenames) {
-  TinyTIFFReaderFile *tiffr = NULL;
-  tiffr = TinyTIFFReader_open(
-      &tif_filenames[0][0]); // take the first file, conver to char*
-  if (!tiffr) {
+  // take the first file, conver to char*
+  TIFF *tiff = TIFFOpen(&tif_filenames[0][0], "r");
+  if (!tiff) {
     throw std::runtime_error(
-        "ERROR reading (not existent, not accessible or no TIFF file)\n");
+        "ERROR reading (not existent, not accessible or no TIFF file)");
   }
-  const uint32_t width = TinyTIFFReader_getWidth(tiffr);
-  const uint32_t height = TinyTIFFReader_getHeight(tiffr);
-  return GridCoord(width, height, tif_filenames.size());
+  uint32_t image_width, image_height;
+  TIFFGetField(tiff, TIFFTAG_IMAGEWIDTH, &image_width);
+  TIFFGetField(tiff, TIFFTAG_IMAGELENGTH, &image_height);
+  return GridCoord(image_width, image_height, tif_filenames.size());
 };
 
 auto read_tiff_dir = [](const std::string &dir) {
@@ -1930,8 +1853,6 @@ auto read_tiff_dir = [](const std::string &dir) {
   assertm(dims == bbox.dim(), "dims and bbox dims must match");
   return read_tiff_planes(tif_filenames, bbox);
 };
-
-#endif
 
 // stamp the compile time config
 // so that past logs are explicit about
@@ -3089,6 +3010,10 @@ void write_vdb_to_tiff_page(GridT grid, std::string base) {
 
   auto fn = base + "/bounding_volume.tif";
   TIFF *tiff = TIFFOpen(fn.c_str(), "w");
+  if (!tiff) {
+    throw std::runtime_error(
+        "ERROR reading (not existent, not accessible or no TIFF file)");
+  }
 
   // inclusive range with index
   auto zrng = rng::closed_iota_view(bbox.min()[2], bbox.max()[2]) |
@@ -3109,6 +3034,32 @@ void write_vdb_to_tiff_page(GridT grid, std::string base) {
   });
 
   TIFFClose(tiff);
+}
+
+template <typename image_t>
+void encoded_tiff_write(image_t *inimg1d, TIFF *tiff, const GridCoord dims) {
+  unsigned int samples_per_pixel = 1; // grayscale=1 ; RGB=3
+  unsigned int bits_per_sample = 8 * sizeof(image_t);
+  TIFFSetField(tiff, TIFFTAG_BITSPERSAMPLE, bits_per_sample);
+  TIFFSetField(tiff, TIFFTAG_SAMPLESPERPIXEL, samples_per_pixel);
+  TIFFSetField(tiff, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+  TIFFSetField(tiff, TIFFTAG_IMAGEWIDTH, dims[0]);
+  TIFFSetField(tiff, TIFFTAG_IMAGELENGTH, dims[1]);
+  TIFFSetField(tiff, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_UINT);
+  TIFFSetField(tiff, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
+  TIFFSetField(tiff, TIFFTAG_ROWSPERSTRIP, dims[1]);
+  TIFFSetField(tiff, TIFFTAG_XRESOLUTION, 1);
+  TIFFSetField(tiff, TIFFTAG_YRESOLUTION, 1);
+  TIFFSetField(tiff, TIFFTAG_RESOLUTIONUNIT, RESUNIT_NONE);
+  TIFFSetField(tiff, TIFFTAG_RESOLUTIONUNIT, RESUNIT_NONE);
+  TIFFSetField(tiff, TIFFTAG_COMPRESSION, COMPRESSION_LZW);
+
+  auto length_of_strip_in_bytes = dims[0] * dims[1] * sizeof(image_t);
+  auto err_code =
+      TIFFWriteEncodedStrip(tiff, 0, inimg1d, length_of_strip_in_bytes);
+  if (err_code == -1) {
+    throw std::runtime_error("ERROR write encoded strip of TIFF file)");
+  }
 }
 
 // join conversion and writing by z plane for performance, note that for large
@@ -3144,7 +3095,7 @@ void write_vdb_to_tiff_planes(GridT grid, std::string base) {
     // cout << '\n' << fn.str() << '\n';
     // print_image_3D(dense.data(), plane_bbox.dim());
 
-    write_single_z_plane(dense.data(), fn, plane_bbox.dim());
+    write_single_z_plane(dense.data(), fn.str(), plane_bbox.dim());
   });
 }
 

@@ -37,22 +37,6 @@
         "type": "github"
       }
     },
-    "nixpkgs_2": {
-      "locked": {
-        "lastModified": 1635934775,
-        "narHash": "sha256-DUkBfZjgeefgqyvFxnkZiOOWXgHP5Y1oKp/Zm+LT05Y=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "4789953e5c1ef6d10e3ff437e5b7ab8eed526942",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "ref": "nixpkgs-unstable",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
     "openvdb": {
       "inputs": {
         "nixpkgs": [
@@ -94,27 +78,7 @@
         "mcp3d": "mcp3d",
         "nixpkgs": "nixpkgs",
         "openvdb": "openvdb",
-        "pinned": "pinned",
-        "tiff": "tiff"
-      }
-    },
-    "tiff": {
-      "inputs": {
-        "nixpkgs": "nixpkgs_2"
-      },
-      "locked": {
-        "lastModified": 1636303111,
-        "narHash": "sha256-ZR5GS4EdS/Fs6HIuGxnDtyVEqulym9YW/XtfZ/ueARw=",
-        "ref": "nix",
-        "rev": "13b37df4d04d7fb280d9863a1e70a6a84b1a121c",
-        "revCount": 84,
-        "type": "git",
-        "url": "ssh://git@github.com/kdmarrett/TinyTIFF"
-      },
-      "original": {
-        "ref": "nix",
-        "type": "git",
-        "url": "ssh://git@github.com/kdmarrett/TinyTIFF"
+        "pinned": "pinned"
       }
     }
   },

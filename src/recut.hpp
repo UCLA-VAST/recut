@@ -238,12 +238,10 @@ public:
                   const TileThresholds<image_t> *tile_thresholds,
                   Container &fifo, VID_t revisits, T2 leaf_iter);
   void create_march_thread(VID_t interval_id, VID_t block_id);
-#ifdef USE_TINYTIFF
   vto::Dense<uint16_t, vto::LayoutXYZ> load_tile(const VID_t interval_id,
                                                  const std::string &dir);
   TileThresholds<image_t> *
   get_tile_thresholds(vto::Dense<uint16_t, vto::LayoutXYZ> &tile);
-#endif
   template <typename T2>
   std::atomic<double>
   process_interval(VID_t interval_id, const image_t *tile, std::string stage,
@@ -2069,8 +2067,6 @@ std::atomic<double> Recut<image_t>::process_interval(
   return timer.elapsed();
 }
 
-#ifdef USE_TINYTIFF
-
 /*
  * The interval size and shape define the requested "view" of the image
  * an image view is referred to as a tile
@@ -2204,8 +2200,6 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
 
   return tile_thresholds;
 } // end load_tile()
-
-#endif // USE_TINYTIFF
 
 // returns the execution time for updating the entire
 // stage excluding I/O
@@ -2344,7 +2338,6 @@ Recut<image_t>::update(std::string stage, Container &fifo,
         }
 
         if (stage == "convert") {
-#ifdef USE_TINYTIFF
           auto dense_tile = load_tile(interval_id, args->image_root_dir());
           if (!local_tile_thresholds) {
             auto thresh_start = timer.elapsed();
@@ -2353,14 +2346,6 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                 computation_time + (timer.elapsed() - thresh_start);
           }
           tile = dense_tile.data();
-#else
-          if (!(this->params->force_regenerate_image)) {
-            assertm(this->input_is_vdb,
-                    "If USE_TINYTIFF macro is not set, "
-                    "input must either by VDB or "
-                    "this->params->force_regenerate_image must be set to True");
-          }
-#endif
 
           assertm(!this->input_is_vdb,
                   "input can't be vdb during convert stage");
@@ -2721,13 +2706,8 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
 #endif
 
   } else { // converting to a new grid
-#ifndef USE_TINYTIFF
-    assertm(false, "Input must either be regenerated, use VDB or have the "
-                   "USE_TINYTIFF macro for image reading");
-#else
     const auto tif_filenames = get_dir_files(args->image_root_dir(), ".tif");
     input_image_lengths = get_tif_dims(tif_filenames);
-#endif
 
     if (args->type_ == "float") {
       this->input_grid = openvdb::FloatGrid::create();
