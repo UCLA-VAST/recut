@@ -13,3 +13,4 @@ result
 *.swc
 perf*
 *.png
+runtimes.txt

@@ -84,13 +84,11 @@ public:
   GridCoord interval_block_lengths;
 
   bool input_is_vdb;
-#ifdef USE_VDB
   EnlargedPointDataGrid::Ptr topology_grid;
   openvdb::FloatGrid::Ptr input_grid;
   openvdb::BoolGrid::Ptr update_grid;
   openvdb::MaskGrid::Ptr mask_grid;
   ImgGrid::Ptr img_grid;
-#endif
 
   std::vector<OffsetCoord> const lower_stencil{new_offset_coord(0, 0, -1),
                                                new_offset_coord(0, -1, 0),
@@ -2659,11 +2657,6 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
 
     assertm(!params->convert_only_,
             "Convert only option is not valid from vdb to vdb");
-
-#ifndef USE_VDB
-    assertm(false, "Input must either be regenerated, vdb or from image, "
-                   "USE_VDB must be defined");
-#endif
 
     auto timer = high_resolution_timer();
     auto base_grid = read_vdb_file(args->image_root_dir());

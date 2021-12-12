@@ -103,28 +103,26 @@ if (NOT CMAKE_EXPORT_NO_PACKAGE_REGISTRY)
     FetchContent_MakeAvailable(googlebenchmark)
   endif()
 
-  if (USE_VDB)
-    # Dependencies of OpenVDB TODO FIXME use nix for now
-    FetchContent_Declare(
-      Blosc
-      GIT_REPOSITORY "https://github.com/Blosc/c-blosc.git"
-      GIT_TAG master
-      )
-    FetchContent_MakeAvailable(Blosc)
+  # Dependencies of OpenVDB TODO FIXME use nix for now {
+  FetchContent_Declare(
+    Blosc
+    GIT_REPOSITORY "https://github.com/Blosc/c-blosc.git"
+    GIT_TAG master
+    )
+  FetchContent_MakeAvailable(Blosc)
 
-    # TODO FIXME non-nix / plain cmake install will have to install all dependencies to OpenVDB
-    #find_package(Blosc REQUIRED)
-    #find_package(TBB REQUIRED)
-    # etc...
+  # TODO FIXME non-nix / plain cmake install will have to install all dependencies to OpenVDB
+  #find_package(Blosc REQUIRED)
+  #find_package(TBB REQUIRED)
+  # etc...
 
-    FetchContent_Declare(
-      OpenVDB
-      GIT_REPOSITORY "https://github.com/AcademySoftwareFoundation/openvdb.git"
-      GIT_TAG master
-      )
-    FetchContent_MakeAvailable(OpenVDB)
-
-  endif()
+  FetchContent_Declare(
+    OpenVDB
+    GIT_REPOSITORY "https://github.com/AcademySoftwareFoundation/openvdb.git"
+    GIT_TAG master
+    )
+  FetchContent_MakeAvailable(OpenVDB)
+  # }
 
 endif()
 
@@ -146,7 +144,6 @@ option( SCHEDULE_INTERVAL_RV OFF)
 # Note you can't have both OMP_BLOCK and OMP_INTERVAL defined
 option( USE_OMP_INTERVAL OFF)
 option( USE_OMP_BLOCK OFF)
-option( USE_VDB OFF)
 # Define how revisits/reupdates to previous seen vertices is handled
 option( RV "Count the number of revisits or attempted revisits of vertices" OFF)
 option(NO_RV "Reject any vertices from having new updated values after they have already been visited" OFF)
@@ -263,9 +260,6 @@ foreach(I ${ALL_TARGETS})
   if (USE_MCP3D)
     target_compile_definitions(${I} PRIVATE USE_MCP3D)
   endif()
-  if (USE_VDB)
-    target_compile_definitions(${I} PRIVATE USE_VDB)
-  endif()
   if (NO_INTERVAL_RV)
     target_compile_definitions(${I} PRIVATE NO_INTERVAL_RV)
   endif()
@@ -314,12 +308,11 @@ foreach(I ${ALL_TARGETS})
       )
   endif()
 
-  if (USE_VDB)
-    message(STATUS "CMAKE_MODULE_PATH: ${CMAKE_MODULE_PATH}")
-    find_package(OpenVDB REQUIRED)
-    target_link_libraries(${I} PRIVATE OpenVDB::openvdb)
-    message(STATUS "Linked OpenVDB")
-  endif()
+  # USE_VDB
+  message(STATUS "CMAKE_MODULE_PATH: ${CMAKE_MODULE_PATH}")
+  find_package(OpenVDB REQUIRED)
+  target_link_libraries(${I} PRIVATE OpenVDB::openvdb)
+  message(STATUS "Linked OpenVDB")
 
   # make Recut libraries truly relocatable when linking from downstream programs
   set_target_properties(${I} PROPERTIES INSTALL_RPATH "$ORIGIN/../bin")

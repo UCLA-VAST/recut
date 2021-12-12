@@ -11,12 +11,10 @@
 // typedef uint32_t VID_t; // overflows after ~2e9 ~= 2 1024^3 tiles
 typedef uint64_t VID_t; // for multi-interval runs
 
-#ifdef USE_VDB
 #include <openvdb/openvdb.h>
 #include <openvdb/points/PointConversion.h>
 #include <openvdb/points/PointCount.h>
 
-// using OffsetCoord = openvdb::Vec3<int8_t>;
 using OffsetCoord = openvdb::Coord; // = Int32 = int32_t
 using GridCoord = openvdb::Coord;
 // position must be a openvdb::math:Vec?? type not a Coord
@@ -76,10 +74,6 @@ using ImgGrid = openvdb::Grid<UInt8Tree>;
 // using EnlargedPointIndexGrid = openvdb::Grid<vp::PointIndexTree>;
 using EnlargedPointIndexGrid = vto::PointIndexGrid;
 
-#else // not VDB
-using OffsetCoord = std::vector<int8_t>;
-using GridCoord = std::vector<int32_t>;
-#endif
 
 #define SWC_MIN_LINE 110
 #define NEURITE_PRUNE_RADIUS_DEFAULT 10
