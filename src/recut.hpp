@@ -3169,7 +3169,7 @@ void Recut<image_t>::partition_components(
     if (!params->output_windows_.empty()) {
 
       auto component_with_values = write_output_windows(
-          this->img_grid, component, dir, index, false, true);
+          this->img_grid, component, dir, runtime, index, false, true);
       if (args->run_app2) { // check against app2
 
         // skip components that are 0s in the original image

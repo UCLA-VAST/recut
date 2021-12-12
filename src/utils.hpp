@@ -2150,18 +2150,19 @@ auto covered_by_bboxs = [](const auto coord, const auto bboxs) {
 // http://www.neuronland.org/NLMorphologyConverter/MorphologyFormats/SWC/Spec.html
 // https://github.com/HumanBrainProject/swcPlus/blob/master/SWCplus_specification.html
 auto print_swc_line = [](GridCoord swc_coord, bool is_root, uint8_t radius,
-                         const OffsetCoord parent_offset_coord,
-                         const CoordBBox &bbox, std::ofstream &out,
+                         const OffsetCoord parent_offset_coord, CoordBBox bbox,
+                         std::ofstream &out,
                          std::map<GridCoord, uint32_t> &coord_to_swc_id,
                          bool bbox_adjust = true) {
   std::ostringstream line;
 
-  GridCoord swc_lengths = bbox.extents();
-  if (bbox_adjust) {
+  if (bbox_adjust) { // implies output window crops is set
+    bbox.expand(EXPAND_CROP_PIXELS);
     swc_coord = swc_coord - bbox.min();
-    // CoordBBox uses extents inclusively, but we want exclusive bbox
-    swc_lengths = bbox.extents().offsetBy(-1);
   }
+
+  // CoordBBox uses extents inclusively, but we want exclusive bbox
+  GridCoord swc_lengths = bbox.extents().offsetBy(-1);
 
   auto find_or_assign = [&coord_to_swc_id](GridCoord swc_coord) -> uint32_t {
     auto val = coord_to_swc_id.find(swc_coord);
@@ -3119,8 +3120,8 @@ void copy_values(ValueGridT img_grid, OutputGridT output_grid) {
 template <typename GridT, typename ValuedGridT>
 ValuedGridT write_output_windows(const ValuedGridT valued_grid,
                                  GridT component_grid, std::string dir,
-                                 int index = 0, bool output_vdb = false,
-                                 bool paged = false) {
+                                 std::ofstream &runtime, int index = 0,
+                                 bool output_vdb = false, bool paged = false) {
 
   assertm(valued_grid, "Must have input grid set to run output_windows_");
   auto timer = high_resolution_timer();
@@ -3132,6 +3133,7 @@ ValuedGridT write_output_windows(const ValuedGridT valued_grid,
 
   vb::BBoxd clipBox(bbox.min().asVec3d(), bbox.max().asVec3d());
   const auto output_grid = vto::clip(*valued_grid, clipBox);
+  runtime << "Clip " << timer.elapsed() << '\n';
 
   // alternatively... for simply carrying values across:
   // copy_values(valued_grid, component_grid);
@@ -3144,6 +3146,8 @@ ValuedGridT write_output_windows(const ValuedGridT valued_grid,
     write_vdb_to_tiff_page(output_grid, dir);
   else
     write_vdb_to_tiff_planes(output_grid, dir);
+
+  runtime << "Write tiff " << timer.elapsed() << '\n';
 
 #ifdef LOG
     // cout << "Wrote window of component to tiff in " << timer.elapsed() << "
