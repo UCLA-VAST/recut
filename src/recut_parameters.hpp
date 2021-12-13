@@ -24,7 +24,6 @@ public:
     histogram_ = false;
     background_thresh_ = -1;
     foreground_percent_ = -0.01;
-    length_thresh_ = 5.0;
     cnn_type_ = 2;
     sr_ratio_ = 1.0 / 3;
     cube_256_ = false;
@@ -58,7 +57,6 @@ public:
   bool allow_gap() const { return allow_gap_; }
   int background_thresh() const { return background_thresh_; }
   double foreground_percent() const { return foreground_percent_; }
-  double length_thresh() const { return length_thresh_; }
   int cnn_type() const { return cnn_type_; }
   double sr_ratio() const { return sr_ratio_; }
   double restart_factor() const { return restart_factor_; }
@@ -91,9 +89,6 @@ public:
   // get_tile_thresholds
   void set_foreground_percent(double foreground_percent) {
     foreground_percent_ = std::max(0.0, std::min(100.0, foreground_percent));
-  }
-  void set_length_thresh(double length_thresh) {
-    length_thresh_ = std::max(length_thresh, 1.0);
   }
   void set_cnn_type(int cnn_type) {
     if (cnn_type == 1 || cnn_type == 2 || cnn_type == 3)
@@ -135,7 +130,7 @@ public:
       high_intensity_, brightfield_, restart_;
   int background_thresh_, cnn_type_, parallel_num_, prune_, interval_length,
       tcase, slt_pct, downsample_factor_, upsample_z_;
-  double foreground_percent_, sr_ratio_, length_thresh_, restart_factor_,
+  double foreground_percent_, sr_ratio_, restart_factor_,
       max_intensity_, min_intensity_;
   std::string marker_file_path_, out_vdb_, second_grid_, output_windows_;
 };
@@ -147,7 +142,8 @@ public:
         swc_path_("out.swc"), channel_("ch0"), resolution_level_(0),
         image_offsets(0, 0, 0), image_lengths(-1, -1, -1), type_("point"),
         prune_radius_(NEURITE_PRUNE_RADIUS_DEFAULT), run_app2(false),
-        user_thread_count(tbb::info::default_concurrency()), interval_z(1) {}
+        user_thread_count(tbb::info::default_concurrency()), interval_z(1),
+        min_branch_length(MIN_BRANCH_LENGTH) {}
 
   static void PrintUsage();
   std::string MetaString();
@@ -198,8 +194,7 @@ public:
 
   RecutParameters recut_parameters_;
   std::string image_root_dir_, swc_path_, channel_, type_;
-  int resolution_level_;
-  uint16_t prune_radius_, user_thread_count, interval_z;
+  uint16_t prune_radius_, user_thread_count, interval_z, min_branch_length, resolution_level_;
   bool run_app2;
 };
 

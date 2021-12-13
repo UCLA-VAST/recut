@@ -82,9 +82,10 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 #define MIN_Z_DEPTH 30
 // if value is 0, uses only bounding volume and the binarized component for output windows
 #define EXPAND_CROP_PIXELS 30
+// euclidean voxel path distance of branches to prune
+#define MIN_BRANCH_LENGTH 5
 // Below are deprecated or are not (yet) affecting behavior:
 #define MIN_RADII 2
-#define MIN_BRANCH_LENGTH 2
 // Set the pruning / coverage semantics by defining what adjacent hop count
 // qualifies as covering its neighbor.
 // Must be 1 or greater

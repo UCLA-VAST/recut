@@ -835,7 +835,7 @@ TEST(Utils, RemoveShortLeafs) {
   tree.push_back(g);
   ASSERT_EQ(tree.size(), 8);
 
-  auto filtered = remove_short_leafs(tree);
+  auto filtered = prune_short_branches(tree);
   ASSERT_EQ(filtered.size(), 4);
 
   rng::for_each(filtered, [](auto marker) { ASSERT_NE(marker->type, 5); });

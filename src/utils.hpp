@@ -3180,8 +3180,8 @@ auto adjust_marker = [](MyMarker *marker, GridCoord offsets) {
 };
 
 // returns a new set of valid markers
-std::vector<MyMarker *> remove_short_leafs(std::vector<MyMarker *> &tree,
-                                           int length_thresh = 0) {
+std::vector<MyMarker *> prune_short_branches(std::vector<MyMarker *> &tree,
+                                           int min_branch_length = MIN_BRANCH_LENGTH) {
   // build a map to save coords with 1 or 2 children
   // coords not in this map are therefore leafs
   auto child_count = std::map<GridCoord, uint8_t>();
@@ -3220,7 +3220,7 @@ std::vector<MyMarker *> remove_short_leafs(std::vector<MyMarker *> &tree,
   // diagnose bug
   auto filtered_tree =
       tree |
-      rng::views::remove_if([&length_thresh, &is_a_leaf,
+      rng::views::remove_if([&min_branch_length, &is_a_leaf,
                              &is_a_bifurcation](auto marker) {
         // only check non roots
         if (marker->parent) {
@@ -3233,8 +3233,8 @@ std::vector<MyMarker *> remove_short_leafs(std::vector<MyMarker *> &tree,
           if (is_a_bifurcation(marker->parent))
             return true;
 
-          // filter short branches below length_thresh
-          if (length_thresh) {
+          // filter short branches below min_branch_length
+          if (min_branch_length) {
             auto accum_euc_dist = 0.;
             do {
               accum_euc_dist += marker_dist(marker, marker->parent);
@@ -3246,7 +3246,7 @@ std::vector<MyMarker *> remove_short_leafs(std::vector<MyMarker *> &tree,
                 marker->parent &&
                 !is_a_bifurcation(marker)); // not a root and not a bifurcation
 
-            return accum_euc_dist < length_thresh; // remove if true
+            return accum_euc_dist < min_branch_length; // remove if true
 
           } else {
             return false; // keep
@@ -3260,7 +3260,7 @@ std::vector<MyMarker *> remove_short_leafs(std::vector<MyMarker *> &tree,
 
   // must be called repeatedly until convergence
   if (pruned_count)
-    return remove_short_leafs(filtered_tree);
+    return prune_short_branches(filtered_tree);
   else
     return filtered_tree;
 }

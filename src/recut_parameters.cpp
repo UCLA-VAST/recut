@@ -57,6 +57,7 @@ void RecutCommandLineArgs::PrintUsage() {
           " to max range from offset start to max length in each axis (-1, -1, "
           "-1)\n";
   cout << "--bg-thresh          [-bt] background threshold value desired\n";
+  cout << "--min-branch-length  prune leaf branches lower, defaults to 5\n";
   cout << "--fg-percent         [-fp] auto calculate a bg-thresh closest to a "
           "foreground \% between (0-100], overriding any --bg-thresh args. "
           "Value of .08 yields ~8 in 10,000 voxels "
@@ -173,9 +174,8 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
                  strcmp(argv[i], "-fp") == 0) {
         args.recut_parameters().set_foreground_percent(atof(argv[i + 1]));
         ++i;
-      } else if (strcmp(argv[i], "--length-thresh") == 0 ||
-                 strcmp(argv[i], "-lt") == 0) {
-        args.recut_parameters().set_length_thresh(atof(argv[i + 1]));
+      } else if (strcmp(argv[i], "--min-branch-length") == 0) {
+        args.min_branch_length = atoi(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--interval-z") == 0) {
         args.interval_z = atoi(argv[i + 1]);

@@ -2104,7 +2104,7 @@ Recut<image_t>::load_tile(const VID_t interval_id, const std::string &dir) {
   // returns row-major (c-order) buffers
   auto dense = read_tiff_planes(interval_filenames, bbox);
 #ifdef LOG
-  //cout << "Load image in " << timer.elapsed() << " sec." << '\n';
+  // cout << "Load image in " << timer.elapsed() << " sec." << '\n';
 #endif
   ////} catch (...) {
   //// throw std::runtime_error(
@@ -2137,9 +2137,9 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
                                (params->foreground_percent()) / 100);
 
 #ifdef LOG
-    //cout << "Requested foreground percent: " << params->foreground_percent()
-         //<< " yielded background threshold: " << tile_thresholds->bkg_thresh
-         //<< " in " << timer.elapsed() << " s\n";
+    // cout << "Requested foreground percent: " << params->foreground_percent()
+    //<< " yielded background threshold: " << tile_thresholds->bkg_thresh
+    //<< " in " << timer.elapsed() << " s\n";
 #endif
   } else { // if bkg set explicitly and foreground wasn't
     if (params->background_thresh() >= 0) {
@@ -2422,10 +2422,10 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
           active_intervals[interval_id] = false;
 #ifdef LOG
-               //auto traveral_time = timer.elapsed() - convert_start;
-          cout << "Completed interval " << interval_id + 1
-               << " of " << grid_interval_size << " in "
-               << interval_timer.elapsed() << " s\n";
+          // auto traveral_time = timer.elapsed() - convert_start;
+          cout << "Completed interval " << interval_id + 1 << " of "
+               << grid_interval_size << " in " << interval_timer.elapsed()
+               << " s\n";
 #endif
         } else {
           computation_time =
@@ -3085,7 +3085,7 @@ void Recut<image_t>::partition_components(
 
     auto voxel_count = component->activeVoxelCount();
     if (voxel_count < SWC_MIN_LINE) {
-      return; //skip
+      return; // skip
     }
 
     if (component->evalActiveVoxelBoundingBox().dim()[2] < MIN_Z_DEPTH)
@@ -3126,7 +3126,8 @@ void Recut<image_t>::partition_components(
     auto tree = advantra_extract_trees(pruned_markers, true);
 
     timer.restart();
-    auto filtered_tree = remove_short_leafs(tree);
+    auto filtered_tree =
+        prune_short_branches(tree, this->args->min_branch_length);
 #ifdef LOG
     runtime << "TP " << timer.elapsed() << '\n';
     runtime << "TP count " << filtered_tree.size() << '\n';
@@ -3234,7 +3235,8 @@ void Recut<image_t>::partition_components(
           happ(app2_output_tree, app2_output_tree_prune, window.data(),
                window.bbox().dim()[0], window.bbox().dim()[1],
                window.bbox().dim()[2], tile_thresholds->bkg_thresh,
-               /*length thresh*/ 3.0, /*sr_ratio*/ 1. / 3);
+               /*length thresh*/ this->args->min_branch_length,
+               /*sr_ratio*/ 1. / 3);
 #ifdef LOG
           runtime << "HP " << timer.elapsed() << '\n';
           runtime.close();
@@ -3320,7 +3322,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     file << "Active " << ' ' << this->topology_grid->activeVoxelCount() << '\n';
     file << "Prune radius " << args->prune_radius_ << '\n';
     file << "Soma radius " << SOMA_PRUNE_RADIUS << '\n';
-    file << "Min branch " << MIN_BRANCH_LENGTH << '\n';
+    file << "Min branch " << args->min_branch_length << '\n';
   }
 #endif
 
