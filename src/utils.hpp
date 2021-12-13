@@ -3011,18 +3011,18 @@ auto convert_vdb_to_dense = [](auto float_grid) {
 // components, create a full dense buffer will fault with bad_alloc due to size
 // z-plane by z-plane helps prevents this
 template <typename GridT>
-void write_vdb_to_tiff_page(GridT grid, std::string base) {
-  auto bbox = grid->evalActiveVoxelBoundingBox(); // inclusive both ends
-
+void write_vdb_to_tiff_page(GridT grid, std::string base, CoordBBox bbox) {
   auto fn = base + "/bounding_volume.tif";
   TIFF *tiff = TIFFOpen(fn.c_str(), "w");
   if (!tiff) {
     throw std::runtime_error(
         "ERROR reading (not existent, not accessible or no TIFF file)");
   }
+  auto minz = bbox.min()[2];
+  auto maxz = bbox.max()[2];
 
   // inclusive range with index
-  auto zrng = rng::closed_iota_view(bbox.min()[2], bbox.max()[2]) |
+  auto zrng = rng::closed_iota_view(minz, maxz) |
               rng::views::enumerate;
 
   // output each plane to separate page within the same file
@@ -3148,7 +3148,7 @@ ValuedGridT write_output_windows(const ValuedGridT valued_grid,
 
   timer.restart();
   if (paged)
-    write_vdb_to_tiff_page(output_grid, dir);
+    write_vdb_to_tiff_page(output_grid, dir, bbox);
   else
     write_vdb_to_tiff_planes(output_grid, dir);
 
@@ -3234,7 +3234,7 @@ std::vector<MyMarker *> prune_short_branches(std::vector<MyMarker *> &tree,
             return true;
 
           // filter short branches below min_branch_length
-          if (min_branch_length) {
+          if (min_branch_length > 0) {
             auto accum_euc_dist = 0.;
             do {
               accum_euc_dist += marker_dist(marker, marker->parent);
@@ -3260,7 +3260,7 @@ std::vector<MyMarker *> prune_short_branches(std::vector<MyMarker *> &tree,
 
   // must be called repeatedly until convergence
   if (pruned_count)
-    return prune_short_branches(filtered_tree);
+    return prune_short_branches(filtered_tree, min_branch_length);
   else
     return filtered_tree;
 }

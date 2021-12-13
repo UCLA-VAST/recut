@@ -794,7 +794,7 @@ TEST(Utils, AdjustSomaRadii) {
   });
 }
 
-TEST(Utils, RemoveShortLeafs) {
+TEST(Utils, PruneShortBranches) {
   auto soma = new MyMarker(0, 0, 0);
   soma->parent = 0;
 
@@ -835,7 +835,8 @@ TEST(Utils, RemoveShortLeafs) {
   tree.push_back(g);
   ASSERT_EQ(tree.size(), 8);
 
-  auto filtered = prune_short_branches(tree);
+  auto min_branch_length = 0;
+  auto filtered = prune_short_branches(tree, min_branch_length);
   ASSERT_EQ(filtered.size(), 4);
 
   rng::for_each(filtered, [](auto marker) { ASSERT_NE(marker->type, 5); });
@@ -2315,7 +2316,7 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
   // shared params
   // generate image so that you can read it below
   // first make sure it can pass
-  auto input_is_vdb = true; 
+  auto input_is_vdb = true;
   auto args = get_args(grid_size, interval_size, block_size, slt_pct, tcase,
                        force_regenerate_image, input_is_vdb);
   args.set_type("float");
