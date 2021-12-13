@@ -3346,28 +3346,29 @@ template <class image_t> void Recut<image_t>::operator()() {
     adjust_soma_radii(root_pairs, this->topology_grid);
   }
 
-  partition_components(root_pairs, false);
+  // partition_components(root_pairs, false);
 
   // old prune strategy
-  //{
-  //// starting from roots, prune stage will
-  //// create final list of vertices
-  // if (true) {
-  // stage = "prune";
-  // this->activate_vids(this->topology_grid, root_pairs, stage,
-  // this->map_fifo, this->connected_map); this->update(stage, map_fifo);
-  //// make all unpruned trace a back to a root
-  //// any time you remove a node you need to ensure tree validity
-  // adjust_parent();
-  //}
+  {
+    // starting from roots, prune stage will
+    // create final list of vertices
+    if (true) {
+      stage = "prune";
+      this->activate_vids(this->topology_grid, root_pairs, stage,
+                          this->map_fifo, this->connected_map);
+      this->update(stage, map_fifo);
+      // make all unpruned trace a back to a root
+      // any time you remove a node you need to ensure tree validity
+      adjust_parent();
+    }
 
-  // prune_radii();
-  // adjust_parent();
+    prune_radii();
+    adjust_parent();
 
-  //// produces bad reach-back artifact
-  //// prune_branch();
-  //// adjust_parent();
+    // produces bad reach-back artifact
+    // prune_branch();
+    // adjust_parent();
 
-  // print_to_swc();
-  //}
+    print_to_swc();
+  }
 }
