@@ -185,6 +185,11 @@ const auto unique_count = [](std::vector<MyMarker *> v) {
                        rng::actions::unique(eq));
 };
 
+auto marker_dist = [](MyMarker *a, MyMarker *b) {
+  return sqrt((a->x - b->x) * (a->x - b->x) + (a->y - b->y) * (a->y - b->y) +
+              (a->z - b->z) * (a->z - b->z));
+};
+
 // taken from Bryce Adelstein Lelbach's Benchmarking C++ Code talk:
 struct high_resolution_timer {
   high_resolution_timer() : start_time_(take_time_stamp()) {}
@@ -3150,8 +3155,8 @@ ValuedGridT write_output_windows(const ValuedGridT valued_grid,
   runtime << "Write tiff " << timer.elapsed() << '\n';
 
 #ifdef LOG
-    // cout << "Wrote window of component to tiff in " << timer.elapsed() << "
-    // s\n";
+  // cout << "Wrote window of component to tiff in " << timer.elapsed() << "
+  // s\n";
 #endif
 
   if (output_vdb) {
@@ -3175,7 +3180,8 @@ auto adjust_marker = [](MyMarker *marker, GridCoord offsets) {
 };
 
 // returns a new set of valid markers
-std::vector<MyMarker *> remove_short_leafs(std::vector<MyMarker *> &tree) {
+std::vector<MyMarker *> remove_short_leafs(std::vector<MyMarker *> &tree,
+                                           int length_thresh = 0) {
   // build a map to save coords with 1 or 2 children
   // coords not in this map are therefore leafs
   auto child_count = std::map<GridCoord, uint8_t>();
@@ -3198,31 +3204,61 @@ std::vector<MyMarker *> remove_short_leafs(std::vector<MyMarker *> &tree) {
   // cout << m.first << ' ' << +(m.second) << '\n';
   //}
 
+  auto is_a_bifurcation = [&child_count](auto const marker) {
+    const auto val_count =
+        child_count.find(GridCoord(marker->x, marker->y, marker->z));
+    return val_count != child_count.end() ? (val_count->second > 1) : false;
+  };
+
+  auto is_a_leaf = [&child_count](auto const marker) {
+    return child_count.find(GridCoord(marker->x, marker->y, marker->z)) ==
+           child_count.end();
+  };
+
   // filter leafs with a parent that is a bifurcation
+  // otherwise persistence homology in TMD (Kanari et al.) has difficult to
+  // diagnose bug
   auto filtered_tree =
-      tree | rng::views::remove_if([&child_count](auto const marker) {
+      tree |
+      rng::views::remove_if([&length_thresh, &is_a_leaf,
+                             &is_a_bifurcation](auto marker) {
+        // only check non roots
         if (marker->parent) {
-          const auto val_count =
-              child_count.find(GridCoord(marker->x, marker->y, marker->z));
-          const auto is_leaf = val_count == child_count.end();
+          // only check from leafs, since they define the beginning of a branch
+          if (!is_a_leaf(marker))
+            return false;
 
-          const auto parent_coord = GridCoord(
-              marker->parent->x, marker->parent->y, marker->parent->z);
-          const auto parent_val_count = child_count.find(parent_coord);
-          const auto parent_is_bifurcation =
-              parent_val_count != child_count.end()
-                  ? (parent_val_count->second > 1)
-                  : false;
+          // prune if immediate parent is bifurcation
+          // marker passed must be valid
+          if (is_a_bifurcation(marker->parent))
+            return true;
 
-          return is_leaf && parent_is_bifurcation;
+          // filter short branches below length_thresh
+          if (length_thresh) {
+            auto accum_euc_dist = 0.;
+            do {
+              accum_euc_dist += marker_dist(marker, marker->parent);
+              // recurse upwards until finding bifurcation or root
+              marker = marker->parent; // known to exist already
+              // stop recursing when you find a soma or bifurcation
+              // since that defines the end of the branch
+            } while (
+                marker->parent &&
+                !is_a_bifurcation(marker)); // not a root and not a bifurcation
+
+            return accum_euc_dist < length_thresh; // remove if true
+
+          } else {
+            return false; // keep
+          }
         }
-        return false; // keep somas whose parent might be undefined
+        return false; // keep somas -- soma parent can be undefined
       }) |
       rng::to_vector;
 
   const auto pruned_count = tree.size() - filtered_tree.size();
-  // cout << "Pruned: " << pruned_count << '\n';
 
+  // must be called repeatedly until convergence
   if (pruned_count)
     return remove_short_leafs(filtered_tree);
   else

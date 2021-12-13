@@ -3255,6 +3255,7 @@ void Recut<image_t>::partition_components(
         }
       }
     }
+    cout << "Completed component " << index << '\n';
   }); // for each component
 
   if (output_topology) {
