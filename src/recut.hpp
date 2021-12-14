@@ -3092,7 +3092,7 @@ void Recut<image_t>::partition_components(
       return; // skip
 
     auto timer = high_resolution_timer();
-    auto markers = convert_float_to_markers(component, this->topology_grid);
+    auto [markers, coord_to_idx] = convert_float_to_markers(component, this->topology_grid);
     // auto markers = convert_to_markers(this->topology_grid, false);
 #ifdef LOG
     // cout << "Convert to markers in " << timer.elapsed() << '\n';
@@ -3112,7 +3112,7 @@ void Recut<image_t>::partition_components(
 #endif
 
     timer.restart();
-    auto pruned_markers = advantra_prune(markers, this->args->prune_radius_);
+    auto pruned_markers = advantra_prune(markers, this->args->prune_radius_, coord_to_idx);
 #ifdef LOG
     std::ofstream runtime;
     runtime.open(runtime_name);
@@ -3239,7 +3239,6 @@ void Recut<image_t>::partition_components(
                /*sr_ratio*/ 1. / 3);
 #ifdef LOG
           runtime << "HP " << timer.elapsed() << '\n';
-          runtime.close();
 #endif
 
           // adjust app2_output_tree_prune to match global image, for swc output

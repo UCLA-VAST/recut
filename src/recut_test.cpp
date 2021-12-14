@@ -729,6 +729,19 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
   // Check values
 }
 
+TEST(Utils, SphereIterator) {
+  auto center = GridCoord(0, 0, 0);
+  int radius = 3;
+  auto rng = sphere_iterator(center, radius);
+
+  for (auto e : rng) {
+    cout << e << ' ';
+    //ASSERT_LE(coord_dist(center, e), radius); 
+  }
+  //cout << '\n';
+  ASSERT_EQ(rng::distance(rng), 123);
+}
+
 TEST(Utils, AdjustSomaRadii) {
   VID_t grid_size = 8;
   auto grid_extents = GridCoord(grid_size);

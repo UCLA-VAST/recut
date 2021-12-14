@@ -2401,9 +2401,11 @@ void check_nbr(vector<MyMarker *> &nX) {
   }
 };
 
-// sphere grouping Advantra prune strategy
-std::vector<MyMarker *> advantra_prune(vector<MyMarker *> nX,
-                                       uint16_t prune_radius) {
+// sphere grouping compaction/pruning strategy inspired by Advantra's code
+// switched from n^2 to nr^3 where r is the radii of a given node
+std::vector<MyMarker *>
+advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius,
+               std::map<GridCoord, VID_t> coord_to_idx) {
 
   std::vector<MyMarker *> nY;
   auto no_neighbor_count = 0;
@@ -2896,7 +2898,7 @@ convert_float_to_point(openvdb::FloatGrid::Ptr float_grid) {
   return point_grid;
 };
 
-vector<MyMarker *>
+std::pair<vector<MyMarker *>, std::map<GridCoord, VID_t>>
 convert_float_to_markers(openvdb::FloatGrid::Ptr component,
                          EnlargedPointDataGrid::Ptr point_grid) {
 #ifdef FULL_PRINT
@@ -2990,7 +2992,7 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
   cout << "Finished generating results within " << timer.elapsed() << " sec."
        << '\n';
 #endif
-  return outtree;
+  return {outtree, coord_to_idx};
 }
 
 auto all_invalid = [](const auto &flags_handle, const auto &parents_handle,
@@ -3022,8 +3024,7 @@ void write_vdb_to_tiff_page(GridT grid, std::string base, CoordBBox bbox) {
   auto maxz = bbox.max()[2];
 
   // inclusive range with index
-  auto zrng = rng::closed_iota_view(minz, maxz) |
-              rng::views::enumerate;
+  auto zrng = rng::closed_iota_view(minz, maxz) | rng::views::enumerate;
 
   // output each plane to separate page within the same file
   rng::for_each(zrng, [&grid, tiff, &bbox](const auto zpair) {
@@ -3180,8 +3181,9 @@ auto adjust_marker = [](MyMarker *marker, GridCoord offsets) {
 };
 
 // returns a new set of valid markers
-std::vector<MyMarker *> prune_short_branches(std::vector<MyMarker *> &tree,
-                                           int min_branch_length = MIN_BRANCH_LENGTH) {
+std::vector<MyMarker *>
+prune_short_branches(std::vector<MyMarker *> &tree,
+                     int min_branch_length = MIN_BRANCH_LENGTH) {
   // build a map to save coords with 1 or 2 children
   // coords not in this map are therefore leafs
   auto child_count = std::map<GridCoord, uint8_t>();
@@ -3347,3 +3349,29 @@ GridTypePtr merge_grids(std::vector<GridTypePtr> grids) {
   final_grid->tree().prune(); // collapse uniform values
   return final_grid;
 }
+
+auto coord_dist = [](const GridCoord &a, const GridCoord &b) {
+  auto diff = a - b;
+  return std::sqrt(diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]);
+};
+
+// creates an iterator in zyx order for probing VDB grids for the interior of a sphere 
+auto sphere_iterator = [](const GridCoord &center, const int radius) {
+  //passing center by ref & through the lambdas causes UB
+  return rng::views::for_each(
+      rng::views::iota(static_cast<int>(center.x()) - radius, 1 + static_cast<int>(center.x()) + radius),
+      [=](int x) {
+        return rng::views::for_each(
+            rng::views::iota(static_cast<int>(center.y()) - radius, 1 + static_cast<int>(center.y()) + radius),
+            [=](int y) {
+              return rng::views::for_each(
+                  rng::views::iota(static_cast<int>(center.z()) - radius,
+                                   1 + static_cast<int>(center.z()) + radius),
+                  [=](int z) {
+                    auto const new_coord = GridCoord(x, y, z);
+                    return rng::yield_if(
+                        coord_dist(new_coord, center) <= radius, new_coord);
+                  });
+            });
+      });
+};
