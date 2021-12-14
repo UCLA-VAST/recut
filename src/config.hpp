@@ -78,7 +78,7 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 #define SWC_MIN_LINE 110
 #define NEURITE_PRUNE_RADIUS_DEFAULT 10
 #define SOMA_PRUNE_RADIUS 1.6
-#define MAX_SOMA_PER_COMPONENT 1
+#define MAX_SOMA_PER_COMPONENT 5000
 #define MIN_Z_DEPTH 30
 // if value is 0, uses only bounding volume and the binarized component for output windows
 #define EXPAND_CROP_PIXELS 30

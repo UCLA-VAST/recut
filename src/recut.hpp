@@ -114,11 +114,14 @@ public:
 
   // interval specific global data structures
   vector<bool> active_intervals;
+  std::string run_dir;
+  std::string log_fn;
 
   Recut(RecutCommandLineArgs &args)
       : args(&args), params(&(args.recut_parameters())) {}
 
   void operator()();
+  void init_run();
   void print_to_swc(std::string swc_path);
   void adjust_parent();
   void prune_radii();
@@ -2467,10 +2470,10 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
       if (params->histogram_) {
         auto write_to_file = [](auto out, std::string fn) {
-          std::ofstream file;
-          file.open(fn);
-          file << out;
-          file.close();
+          std::ofstream hist_file;
+          hist_file.open(fn);
+          hist_file << out;
+          hist_file.close();
         };
 
         write_to_file(histogram, "hist.txt");
@@ -2510,9 +2513,10 @@ Recut<image_t>::update(std::string stage, Container &fifo,
       stage_acr = "CC";
     if (stage == "radius")
       stage_acr = "SDF";
-    std::ofstream file;
-    file.open("runtimes.txt", std::ios::app);
-    file << stage_acr << ' ' << total_update_time << '\n';
+
+    std::ofstream run_log;
+    run_log.open(log_fn, std::ios::app);
+    run_log << stage_acr << ' ' << total_update_time << '\n';
   }
 #endif
 
@@ -3038,10 +3042,12 @@ void Recut<image_t>::partition_components(
 
 #ifdef LOG
   {
-    std::ofstream file;
-    file.open("runtimes.txt", std::ios::app);
     VID_t selected_count = float_grid->activeVoxelCount();
-    file << "Selected " << selected_count << '\n';
+    std::ofstream run_log;
+    run_log.open(log_fn, std::ios::app);
+    run_log << "Active " << ' ' << this->topology_grid->activeVoxelCount()
+            << '\n';
+    run_log << "Selected " << selected_count << '\n';
     assertm(selected_count, "active voxels in float grid must be > 0");
   }
 #endif
@@ -3056,14 +3062,8 @@ void Recut<image_t>::partition_components(
 
   auto output_topology = false;
 
-  std::string run_dir = "./components";
-  // make sure its a clean write
-  while (fs::exists(run_dir)) {
-    run_dir += "-latest";
-  }
-
   auto enum_components = components | rng::views::enumerate | rng::to_vector;
-  tbb::parallel_for_each(enum_components, [this, &run_dir, &root_pairs](
+  tbb::parallel_for_each(enum_components, [this, &root_pairs](
                                               const auto component_pair) {
     auto [index, component] = component_pair;
     // all grid transforms across are consistent across recut, so enforce the
@@ -3079,47 +3079,47 @@ void Recut<image_t>::partition_components(
         }) |
         rng::to_vector;
 
+    std::string prefix = "";
     if (component_roots.size() > MAX_SOMA_PER_COMPONENT) {
-      return; // skip
+      prefix = "a-multi-";
+      //return; // skip
     }
 
     auto voxel_count = component->activeVoxelCount();
     if (voxel_count < SWC_MIN_LINE) {
-      return; // skip
+      prefix = "discard-";
+      //return; // skip
     }
 
-    if (component->evalActiveVoxelBoundingBox().dim()[2] < MIN_Z_DEPTH)
-      return; // skip
+    if (component->evalActiveVoxelBoundingBox().dim()[2] < MIN_Z_DEPTH) {
+      prefix = "discard-";
+      //return; // skip
+    }
 
     auto timer = high_resolution_timer();
-    auto [markers, coord_to_idx] = convert_float_to_markers(component, this->topology_grid);
+    auto [markers, coord_to_idx] =
+        convert_float_to_markers(component, this->topology_grid);
     // auto markers = convert_to_markers(this->topology_grid, false);
 #ifdef LOG
     // cout << "Convert to markers in " << timer.elapsed() << '\n';
 #endif
 
+    timer.restart();
+    auto pruned_markers =
+        advantra_prune(markers, this->args->prune_radius_, coord_to_idx);
 #ifdef LOG
     // is a fresh run_dir
-    auto dir = run_dir + "/component-" + std::to_string(index);
-    fs::create_directories(dir);
-    auto name = dir + "/component-" + std::to_string(index) + ".swc";
-    auto runtime_name =
-        dir + "/component-" + std::to_string(index) + "-runtime.txt";
-    // cout << name << " active count " << component->activeVoxelCount() << '
-    // '
-    //<< component->evalActiveVoxelBoundingBox() << '\n';
-    // cout << "Marker count: " << markers.size() << '\n';
-#endif
-
-    timer.restart();
-    auto pruned_markers = advantra_prune(markers, this->args->prune_radius_, coord_to_idx);
-#ifdef LOG
-    std::ofstream runtime;
-    runtime.open(runtime_name);
-    runtime << "Soma count " << component_roots.size() << '\n';
-    runtime << "Component count " << markers.size() << '\n';
-    runtime << "TC count " << pruned_markers.size() << '\n';
-    runtime << "TC " << timer.elapsed() << '\n';
+    auto component_dir_fn = this->run_dir + "/" + prefix + "component-" + std::to_string(index);
+    fs::create_directories(component_dir_fn);
+    auto component_log_fn =
+        component_dir_fn + "/component-" + std::to_string(index) + "-log.txt";
+    std::ofstream component_log;
+    component_log.open(component_log_fn);
+    component_log << std::fixed << std::setprecision(6);
+    component_log << "Soma count " << component_roots.size() << '\n';
+    component_log << "Component count " << markers.size() << '\n';
+    component_log << "TC count " << pruned_markers.size() << '\n';
+    component_log << "TC " << timer.elapsed() << '\n';
 #endif
 
     // extract a new tree via bfs
@@ -3129,22 +3129,24 @@ void Recut<image_t>::partition_components(
     auto filtered_tree =
         prune_short_branches(tree, this->args->min_branch_length);
 #ifdef LOG
-    runtime << "TP " << timer.elapsed() << '\n';
-    runtime << "TP count " << filtered_tree.size() << '\n';
+    component_log << "TP " << timer.elapsed() << '\n';
+    component_log << "TP count " << filtered_tree.size() << '\n';
+    component_log << "Volume " << component->evalActiveVoxelBoundingBox().volume() << '\n';
 #endif
 
     {
       // start swc and add header metadata
-      std::ofstream file;
-      file.open(name);
-      file << "# Component bounding volume: "
-           << component->evalActiveVoxelBoundingBox() << '\n';
-      file << "# id type_id x y z radius parent_id\n";
+      auto swc_name = component_dir_fn + "/component-" + std::to_string(index) + ".swc";
+      std::ofstream swc_file;
+      swc_file.open(swc_name);
+      swc_file << "# Component bounding volume: "
+               << component->evalActiveVoxelBoundingBox() << '\n';
+      swc_file << "# id type_id x y z radius parent_id\n";
 
       // start a new blank map for coord to a unique swc id
       auto coord_to_swc_id = get_id_map();
       // iter those marker*
-      rng::for_each(filtered_tree, [this, &file, &coord_to_swc_id,
+      rng::for_each(filtered_tree, [this, &swc_file, &coord_to_swc_id,
                                     &component](const auto marker) {
         auto coord = GridCoord(marker->x, marker->y, marker->z);
 
@@ -3155,7 +3157,7 @@ void Recut<image_t>::partition_components(
         print_swc_line(coord,
                        /*is_root*/ marker->type == 0, marker->radius,
                        parent_offset, component->evalActiveVoxelBoundingBox(),
-                       file, coord_to_swc_id,
+                       swc_file, coord_to_swc_id,
                        /*bbox_adjust*/ !params->output_windows_.empty());
       });
     }
@@ -3163,7 +3165,7 @@ void Recut<image_t>::partition_components(
     if (!params->output_windows_.empty()) {
 
       auto component_with_values = write_output_windows(
-          this->img_grid, component, dir, runtime, index, false, true);
+          this->img_grid, component, component_dir_fn, component_log, index, false, true);
       if (args->run_app2) { // check against app2
 
         // skip components that are 0s in the original image
@@ -3191,11 +3193,11 @@ void Recut<image_t>::partition_components(
               }) |
               rng::to_vector;
 
-          rng::for_each(component_markers, [&dir](const auto marker) {
+          rng::for_each(component_markers, [&component_dir_fn](const auto marker) {
             // write marker file
             std::ofstream marker_file;
             auto mass = ((4 * PI) / 3.) * pow(marker->radius, 3);
-            marker_file.open(dir + "/marker_" +
+            marker_file.open(component_dir_fn + "/marker_" +
                              std::to_string(static_cast<int>(marker->x)) + "_" +
                              std::to_string(static_cast<int>(marker->y)) + "_" +
                              std::to_string(static_cast<int>(marker->z)) + "_" +
@@ -3226,7 +3228,7 @@ void Recut<image_t>::partition_components(
                             /* cnn_type*/ 1, tile_thresholds->bkg_thresh,
                             tile_thresholds->max_int, tile_thresholds->min_int);
 #ifdef LOG
-          runtime << "FM " << timer.elapsed() << '\n';
+          component_log << std::fixed << "FM " << timer.elapsed() << '\n';
 #endif
 
           timer.restart();
@@ -3238,7 +3240,7 @@ void Recut<image_t>::partition_components(
                /*length thresh*/ this->args->min_branch_length,
                /*sr_ratio*/ 1. / 3);
 #ifdef LOG
-          runtime << "HP " << timer.elapsed() << '\n';
+          component_log << std::fixed << "HP " << timer.elapsed() << '\n';
 #endif
 
           // adjust app2_output_tree_prune to match global image, for swc output
@@ -3251,7 +3253,7 @@ void Recut<image_t>::partition_components(
 
           // print
           auto app2_fn =
-              dir + "/app2-component-" + std::to_string(index) + ".swc";
+              component_dir_fn + "/app2-component-" + std::to_string(index) + ".swc";
           marker_to_swc_file(app2_fn, app2_output_tree_prune);
         }
       }
@@ -3265,9 +3267,9 @@ void Recut<image_t>::partition_components(
   }
 #ifdef LOG
   {
-    std::ofstream file;
-    file.open("runtimes.txt", std::ios::app);
-    file << "TC+TP " << global_timer.elapsed() << '\n';
+    std::ofstream run_log;
+    run_log.open(log_fn, std::ios::app);
+    run_log << std::fixed << "TC+TP " << global_timer.elapsed() << '\n';
   }
 #endif
 }
@@ -3298,7 +3300,25 @@ template <class image_t> void Recut<image_t>::convert_topology() {
   write_vdb_file(grids, this->params->out_vdb_);
 }
 
+template <class image_t> void Recut<image_t>::init_run() {
+  std::string probe_dir = "./components";
+  // make sure its a clean write
+  while (fs::exists(probe_dir)) {
+    probe_dir += "-latest";
+  }
+  this->run_dir = probe_dir;
+  this->log_fn = this->run_dir + "/log.txt";
+  fs::create_directories(run_dir);
+#ifdef LOG
+  std::ofstream run_log(log_fn);
+  run_log << "Prune radius " << args->prune_radius_ << '\n';
+  run_log << "Soma radius " << SOMA_PRUNE_RADIUS << '\n';
+  run_log << "Min branch " << args->min_branch_length << '\n';
+#endif
+}
+
 template <class image_t> void Recut<image_t>::operator()() {
+
   if (!params->second_grid_.empty()) {
     combine_grids(args->image_root_dir(), params->second_grid_,
                   this->params->out_vdb_);
@@ -3308,22 +3328,13 @@ template <class image_t> void Recut<image_t>::operator()() {
   // read the list of root vids
   auto root_pairs = this->initialize();
 
+  init_run();
+
   if (params->convert_only_) {
     convert_topology();
     // no more work to do, exiting
     return;
   }
-
-#ifdef LOG
-  {
-    std::ofstream file;
-    file.open("runtimes.txt"); // overwrites
-    file << "Active " << ' ' << this->topology_grid->activeVoxelCount() << '\n';
-    file << "Prune radius " << args->prune_radius_ << '\n';
-    file << "Soma radius " << SOMA_PRUNE_RADIUS << '\n';
-    file << "Min branch " << args->min_branch_length << '\n';
-  }
-#endif
 
   // constrain topology to only those reachable from roots
   auto stage = "connected";
