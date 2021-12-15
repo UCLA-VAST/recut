@@ -3013,7 +3013,8 @@ auto convert_vdb_to_dense = [](auto float_grid) {
 // components, create a full dense buffer will fault with bad_alloc due to size
 // z-plane by z-plane helps prevents this
 template <typename GridT>
-void write_vdb_to_tiff_page(GridT grid, std::string base, CoordBBox bbox) {
+void write_vdb_to_tiff_page(GridT grid, std::string base) {
+  auto bbox = grid->evalActiveVoxelBoundingBox(); // inclusive both ends
   auto fn = base + "/bounding_volume.tif";
   TIFF *tiff = TIFFOpen(fn.c_str(), "w");
   if (!tiff) {
@@ -3124,10 +3125,9 @@ void copy_values(ValueGridT img_grid, OutputGridT output_grid) {
 // values copied in topology and written z-plane by z-plane to individual tiff
 // files tiff component also saved
 template <typename GridT, typename ValuedGridT>
-ValuedGridT write_output_windows(const ValuedGridT valued_grid,
-                                 GridT component_grid, std::string dir,
-                                 std::ofstream &runtime, int index = 0,
-                                 bool output_vdb = false, bool paged = false) {
+ValuedGridT create_window_grid(const ValuedGridT valued_grid,
+                               GridT component_grid,
+                               std::ofstream &component_log) {
 
   assertm(valued_grid, "Must have input grid set to run output_windows_");
   auto timer = high_resolution_timer();
@@ -3139,39 +3139,49 @@ ValuedGridT write_output_windows(const ValuedGridT valued_grid,
 
   vb::BBoxd clipBox(bbox.min().asVec3d(), bbox.max().asVec3d());
   const auto output_grid = vto::clip(*valued_grid, clipBox);
-  runtime << "Clip " << timer.elapsed() << '\n';
+  component_log << "Clip " << timer.elapsed() << '\n';
 
   // alternatively... for simply carrying values across:
   // copy_values(valued_grid, component_grid);
   // or you can use the component_grid to mask the valued_grid
   // to isolate window pixels to those covered by the component like:
   // output_grid = vto::tools::clip(output_grid, component_grid);
-
-  timer.restart();
-  if (paged)
-    write_vdb_to_tiff_page(output_grid, dir, bbox);
-  else
-    write_vdb_to_tiff_planes(output_grid, dir);
-
-  runtime << "Write tiff " << timer.elapsed() << '\n';
-
-#ifdef LOG
-  // cout << "Wrote window of component to tiff in " << timer.elapsed() << "
-  // s\n";
-#endif
-
-  if (output_vdb) {
-    timer.restart();
-    openvdb::GridPtrVec component_grids;
-    component_grids.push_back(output_grid);
-    write_vdb_file(component_grids,
-                   dir + "/img-component-" + std::to_string(index) + ".vdb");
-#ifdef LOG
-    // cout << "Wrote window of component to vdb in " << timer.elapsed() << "
-    // s\n";
-#endif
-  }
   return output_grid;
+}
+
+// valued_grid : holds the pixel intensity values
+// topology_grid : holds the topology of the neuron cluster in question
+// values copied in topology and written z-plane by z-plane to individual tiff
+// files tiff component also saved
+template <typename ValuedGridT>
+void write_output_windows(const ValuedGridT output_grid, std::string dir,
+                          std::ofstream &runtime, int index = 0,
+                          bool output_vdb = false, bool paged = false) {
+
+  if (output_grid->activeVoxelCount()) {
+    auto timer = high_resolution_timer();
+    if (paged)
+      write_vdb_to_tiff_page(output_grid, dir);
+    else
+      write_vdb_to_tiff_planes(output_grid, dir);
+
+    runtime << "Write tiff " << timer.elapsed() << '\n';
+
+    if (output_vdb) {
+      timer.restart();
+      openvdb::GridPtrVec component_grids;
+      component_grids.push_back(output_grid);
+      write_vdb_file(component_grids,
+                     dir + "/img-component-" + std::to_string(index) + ".vdb");
+#ifdef LOG
+      // cout << "Wrote window of component to vdb in " << timer.elapsed() << "
+      // s\n";
+#endif
+    }
+  } else {
+    cout << "Component " << index
+         << " had an empty window for the --output-windows grid\n";
+  }
 }
 
 auto adjust_marker = [](MyMarker *marker, GridCoord offsets) {
@@ -3355,14 +3365,17 @@ auto coord_dist = [](const GridCoord &a, const GridCoord &b) {
   return std::sqrt(diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]);
 };
 
-// creates an iterator in zyx order for probing VDB grids for the interior of a sphere 
+// creates an iterator in zyx order for probing VDB grids for the interior of a
+// sphere
 auto sphere_iterator = [](const GridCoord &center, const int radius) {
-  //passing center by ref & through the lambdas causes UB
+  // passing center by ref & through the lambdas causes UB
   return rng::views::for_each(
-      rng::views::iota(static_cast<int>(center.x()) - radius, 1 + static_cast<int>(center.x()) + radius),
+      rng::views::iota(static_cast<int>(center.x()) - radius,
+                       1 + static_cast<int>(center.x()) + radius),
       [=](int x) {
         return rng::views::for_each(
-            rng::views::iota(static_cast<int>(center.y()) - radius, 1 + static_cast<int>(center.y()) + radius),
+            rng::views::iota(static_cast<int>(center.y()) - radius,
+                             1 + static_cast<int>(center.y()) + radius),
             [=](int y) {
               return rng::views::for_each(
                   rng::views::iota(static_cast<int>(center.z()) - radius,

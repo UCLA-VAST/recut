@@ -3082,18 +3082,18 @@ void Recut<image_t>::partition_components(
     std::string prefix = "";
     if (component_roots.size() > MAX_SOMA_PER_COMPONENT) {
       prefix = "a-multi-";
-      //return; // skip
+      // return; // skip
     }
 
     auto voxel_count = component->activeVoxelCount();
     if (voxel_count < SWC_MIN_LINE) {
       prefix = "discard-";
-      //return; // skip
+      // return; // skip
     }
 
     if (component->evalActiveVoxelBoundingBox().dim()[2] < MIN_Z_DEPTH) {
       prefix = "discard-";
-      //return; // skip
+      // return; // skip
     }
 
     auto timer = high_resolution_timer();
@@ -3109,7 +3109,8 @@ void Recut<image_t>::partition_components(
         advantra_prune(markers, this->args->prune_radius_, coord_to_idx);
 #ifdef LOG
     // is a fresh run_dir
-    auto component_dir_fn = this->run_dir + "/" + prefix + "component-" + std::to_string(index);
+    auto component_dir_fn =
+        this->run_dir + "/" + prefix + "component-" + std::to_string(index);
     fs::create_directories(component_dir_fn);
     auto component_log_fn =
         component_dir_fn + "/component-" + std::to_string(index) + "-log.txt";
@@ -3131,12 +3132,14 @@ void Recut<image_t>::partition_components(
 #ifdef LOG
     component_log << "TP " << timer.elapsed() << '\n';
     component_log << "TP count " << filtered_tree.size() << '\n';
-    component_log << "Volume " << component->evalActiveVoxelBoundingBox().volume() << '\n';
+    component_log << "Volume "
+                  << component->evalActiveVoxelBoundingBox().volume() << '\n';
 #endif
 
     {
       // start swc and add header metadata
-      auto swc_name = component_dir_fn + "/component-" + std::to_string(index) + ".swc";
+      auto swc_name =
+          component_dir_fn + "/component-" + std::to_string(index) + ".swc";
       std::ofstream swc_file;
       swc_file.open(swc_name);
       swc_file << "# Component bounding volume: "
@@ -3162,100 +3165,104 @@ void Recut<image_t>::partition_components(
       });
     }
 
-    if (!params->output_windows_.empty()) {
+    if (args->run_app2) { // check against app2
 
-      auto component_with_values = write_output_windows(
-          this->img_grid, component, component_dir_fn, component_log, index, false, true);
-      if (args->run_app2) { // check against app2
+      auto component_with_values =
+          create_window_grid(this->img_grid, component, component_log);
 
-        // skip components that are 0s in the original image
-        unsigned int minv = 0, maxv = 0;
-        component_with_values->tree().evalMinMax(minv, maxv);
-        if (maxv > 0) {
+      if (!params->output_windows_.empty()) {
+        write_output_windows(component_with_values, component_dir_fn,
+                             component_log, index, false, true);
+      }
 
-          auto window = convert_vdb_to_dense(component_with_values);
-          assertm(component_with_values->evalActiveVoxelBoundingBox() ==
-                      window.bbox(),
-                  "converted component have mismatched sizes");
+      // skip components that are 0s in the original image
+      unsigned int minv = 0, maxv = 0;
+      component_with_values->tree().evalMinMax(minv, maxv);
+      if (maxv > 0) {
 
-          // get a per window bkg_thresh, max, min
-          auto tile_thresholds = get_tile_thresholds(window);
+        auto window = convert_vdb_to_dense(component_with_values);
+        assertm(component_with_values->evalActiveVoxelBoundingBox() ==
+                    window.bbox(),
+                "converted component have mismatched sizes");
 
-          auto component_markers =
-              component_roots | rng::views::transform([](auto &coord_radius) {
-                auto [coord, radius] = coord_radius;
-                auto marker =
-                    new MyMarker(static_cast<double>(coord.x()),
-                                 static_cast<double>(coord.y()),
-                                 static_cast<double>(coord.z()), radius);
-                marker->type = 0; // mark as a root
-                return marker;
-              }) |
-              rng::to_vector;
+        // get a per window bkg_thresh, max, min
+        auto tile_thresholds = get_tile_thresholds(window);
 
-          rng::for_each(component_markers, [&component_dir_fn](const auto marker) {
-            // write marker file
-            std::ofstream marker_file;
-            auto mass = ((4 * PI) / 3.) * pow(marker->radius, 3);
-            marker_file.open(component_dir_fn + "/marker_" +
-                             std::to_string(static_cast<int>(marker->x)) + "_" +
-                             std::to_string(static_cast<int>(marker->y)) + "_" +
-                             std::to_string(static_cast<int>(marker->z)) + "_" +
-                             std::to_string(int(mass)));
+        auto component_markers =
+            component_roots | rng::views::transform([](auto &coord_radius) {
+              auto [coord, radius] = coord_radius;
+              auto marker =
+                  new MyMarker(static_cast<double>(coord.x()),
+                               static_cast<double>(coord.y()),
+                               static_cast<double>(coord.z()), radius);
+              marker->type = 0; // mark as a root
+              return marker;
+            }) |
+            rng::to_vector;
 
-            marker_file << "# x,y,z in original image\n";
-            marker_file << marker->x << ',' << marker->y << ',' << marker->z
-                        << '\n';
-          });
+        rng::for_each(component_markers, [&component_dir_fn](
+                                             const auto marker) {
+          // write marker file
+          std::ofstream marker_file;
+          auto mass = ((4 * PI) / 3.) * pow(marker->radius, 3);
+          marker_file.open(component_dir_fn + "/marker_" +
+                           std::to_string(static_cast<int>(marker->x)) + "_" +
+                           std::to_string(static_cast<int>(marker->y)) + "_" +
+                           std::to_string(static_cast<int>(marker->z)) + "_" +
+                           std::to_string(int(mass)));
 
-          // start time
+          marker_file << "# x,y,z in original image\n";
+          marker_file << marker->x << ',' << marker->y << ',' << marker->z
+                      << '\n';
+        });
 
-          // adjust component_markers to match window, just for
-          // fastmarching_tree()
-          rng::for_each(component_markers, [&window](auto &marker) {
-            // subtracts the offset so that app2 is with respect to this window
-            // for fastmarching_tree() and happ()
-            adjust_marker(marker, -window.bbox().min());
-          });
+        // start time
 
-          // reconstruct
-          auto timer = high_resolution_timer();
-          std::vector<MyMarker *> app2_output_tree;
-          std::vector<MyMarker> targets;
-          fastmarching_tree(component_markers, targets, window.data(),
-                            app2_output_tree, window.bbox().dim()[0],
-                            window.bbox().dim()[1], window.bbox().dim()[2],
-                            /* cnn_type*/ 1, tile_thresholds->bkg_thresh,
-                            tile_thresholds->max_int, tile_thresholds->min_int);
+        // adjust component_markers to match window, just for
+        // fastmarching_tree()
+        rng::for_each(component_markers, [&window](auto &marker) {
+          // subtracts the offset so that app2 is with respect to this window
+          // for fastmarching_tree() and happ()
+          adjust_marker(marker, -window.bbox().min());
+        });
+
+        // reconstruct
+        auto timer = high_resolution_timer();
+        std::vector<MyMarker *> app2_output_tree;
+        std::vector<MyMarker> targets;
+        fastmarching_tree(component_markers, targets, window.data(),
+                          app2_output_tree, window.bbox().dim()[0],
+                          window.bbox().dim()[1], window.bbox().dim()[2],
+                          /* cnn_type*/ 1, tile_thresholds->bkg_thresh,
+                          tile_thresholds->max_int, tile_thresholds->min_int);
 #ifdef LOG
-          component_log << std::fixed << "FM " << timer.elapsed() << '\n';
+        component_log << std::fixed << "FM " << timer.elapsed() << '\n';
 #endif
 
-          timer.restart();
-          // prune run the seq prune from app2 to compare
-          std::vector<MyMarker *> app2_output_tree_prune;
-          happ(app2_output_tree, app2_output_tree_prune, window.data(),
-               window.bbox().dim()[0], window.bbox().dim()[1],
-               window.bbox().dim()[2], tile_thresholds->bkg_thresh,
-               /*length thresh*/ this->args->min_branch_length,
-               /*sr_ratio*/ 1. / 3);
+        timer.restart();
+        // prune run the seq prune from app2 to compare
+        std::vector<MyMarker *> app2_output_tree_prune;
+        happ(app2_output_tree, app2_output_tree_prune, window.data(),
+             window.bbox().dim()[0], window.bbox().dim()[1],
+             window.bbox().dim()[2], tile_thresholds->bkg_thresh,
+             /*length thresh*/ this->args->min_branch_length,
+             /*sr_ratio*/ 1. / 3);
 #ifdef LOG
-          component_log << std::fixed << "HP " << timer.elapsed() << '\n';
+        component_log << std::fixed << "HP " << timer.elapsed() << '\n';
 #endif
 
-          // adjust app2_output_tree_prune to match global image, for swc output
-          if (false) {
-            rng::for_each(app2_output_tree_prune, [&window](const auto marker) {
-              // adds the offset so the swc is with respect to whole image
-              adjust_marker(marker, window.bbox().min());
-            });
-          }
-
-          // print
-          auto app2_fn =
-              component_dir_fn + "/app2-component-" + std::to_string(index) + ".swc";
-          marker_to_swc_file(app2_fn, app2_output_tree_prune);
+        // adjust app2_output_tree_prune to match global image, for swc output
+        if (false) {
+          rng::for_each(app2_output_tree_prune, [&window](const auto marker) {
+            // adds the offset so the swc is with respect to whole image
+            adjust_marker(marker, window.bbox().min());
+          });
         }
+
+        // print
+        auto app2_fn = component_dir_fn + "/app2-component-" +
+                       std::to_string(index) + ".swc";
+        marker_to_swc_file(app2_fn, app2_output_tree_prune);
       }
     }
     cout << "Completed component " << index << '\n';
