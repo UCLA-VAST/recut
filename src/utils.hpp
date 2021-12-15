@@ -2433,17 +2433,9 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius,
 
     auto node_radius = static_cast<float>(nYi->radius);
     if (nYi->type != 0) { // not soma
-      // upsample by factor to account for anisotropic images
+      // you can decrease the sampling density along any branch
+      // by increasing the prune radius here
       node_radius *= prune_radius;
-      // neurites may appear thinner due to anisotropic imaging
-      // however, dilation trick like below causes large nodules probably
-      // because previously inflated get maxed and creates compounding cycle
-      // nYi->radius = node_radius; // make the final radius larger as well
-    } else {
-      // increase reported radius slightly to remove nodes on edge
-      // and decrease proofreading efforts
-      node_radius *= SOMA_PRUNE_RADIUS;
-      nYi->radius = node_radius; // make final radius reflect its prune radii
     }
     float r2 = node_radius * node_radius;
 
@@ -2930,11 +2922,24 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
     auto marker = new MyMarker(coord[0], coord[1], coord[2]);
     assertm(marker != nullptr, "is a nullptr");
 
+    marker->radius = radius_handle.get(*ind);
     if (is_root(flags_handle, ind)) {
       // a marker with a type of 0, must be a root
       marker->type = 0;
+      // increase reported radius slightly to remove nodes on edge
+      // and decrease proofreading efforts
+      // otherwise any concavities outside of a sphere get marked as branches
+      // which can heavily impact morphological metrics
+      marker->radius *= SOMA_PRUNE_RADIUS;
+    } else {
+      // upsample by factor to account for anisotropic images
+      // neurites may appear thinner due to anisotropic imaging
+      // this mitigates this effect
+      // however, dilation trick like below causes large nodules probably
+      // because previously inflated get maxed and creates compounding cycle
+      marker->radius *= ANISOTROPIC_FACTOR;
     }
-    marker->radius = radius_handle.get(*ind);
+
     // save this marker ptr to a map
     coord_to_marker_ptr.emplace(coord, marker);
     assertm(marker->radius, "can't have 0 radius");
