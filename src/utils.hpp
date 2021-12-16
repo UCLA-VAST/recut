@@ -2466,16 +2466,21 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius,
 
               // non roots can be averaged
               if (nYi->type != 0) {
-                // adjust the radii to be a max
-                if (nX[j]->radius > nYi->radius) {
-                  nYi->radius = nX[j]->radius;
-                }
                 // adjust the coordinate to be an average
                 float a = (grp_size - 1) / grp_size;
                 float b = (1.0 / grp_size);
                 nYi->x = a * nYi->x + b * nX[j]->x;
                 nYi->y = a * nYi->y + b * nX[j]->y;
                 nYi->z = a * nYi->z + b * nX[j]->z;
+                // average the radius
+                //nYi->radius = a * nYi->radius + nX[j]->radius;
+                // adjust the radii to be a max
+                // this is a cheat to avoid having to sort the list of markers
+                // by radii, since the maximum SDF value will tend to
+                // be found and is about the same along the centerline of neurites
+                if (nX[j]->radius > nYi->radius) {
+                  nYi->radius = nX[j]->radius;
+                }
               }
             }
           }
@@ -2937,7 +2942,7 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
       // this mitigates this effect
       // however, dilation trick like below causes large nodules probably
       // because previously inflated get maxed and creates compounding cycle
-      marker->radius *= ANISOTROPIC_FACTOR;
+      marker->radius *= (ANISOTROPIC_FACTOR / 2);
     }
 
     // save this marker ptr to a map

@@ -141,7 +141,7 @@ public:
       : recut_parameters_(RecutParameters{}), image_root_dir_(std::string()),
         swc_path_("out.swc"), channel_("ch0"), resolution_level_(0),
         image_offsets(0, 0, 0), image_lengths(-1, -1, -1), type_("point"),
-        prune_radius_(NEURITE_PRUNE_RADIUS_DEFAULT), run_app2(false),
+        prune_radius_(ANISOTROPIC_FACTOR), run_app2(false),
         user_thread_count(tbb::info::default_concurrency()), interval_z(1),
         min_branch_length(MIN_BRANCH_LENGTH) {}
 
