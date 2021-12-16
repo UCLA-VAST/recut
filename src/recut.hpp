@@ -2500,10 +2500,10 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #ifdef LOG
   cout << "Finished stage: " << stage << '\n';
   cout << "Finished total updating within " << total_update_time << " sec \n";
-  //cout << "Finished computation (no I/O) within " << computation_time
-       //<< " sec \n";
-  //cout << "Finished I/O within " << io_time << " sec \n";
-  //cout << "Total interval iterations: " << outer_iteration_idx << '\n';
+  // cout << "Finished computation (no I/O) within " << computation_time
+  //<< " sec \n";
+  // cout << "Finished I/O within " << io_time << " sec \n";
+  // cout << "Total interval iterations: " << outer_iteration_idx << '\n';
 
   {
     auto stage_acr = stage; // line up with paper
@@ -2877,11 +2877,11 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
 #ifdef LOG
   print_coord(this->image_lengths, "image");
-  //print_coord(this->interval_lengths, "interval");
-  //print_coord(this->block_lengths, "block");
-  //print_coord(this->interval_block_lengths, "interval block lengths");
-  //std::cout << "intervals per grid: " << grid_interval_size
-            //<< " blocks per interval: " << interval_block_size << '\n';
+  // print_coord(this->interval_lengths, "interval");
+  // print_coord(this->block_lengths, "block");
+  // print_coord(this->interval_block_lengths, "interval block lengths");
+  // std::cout << "intervals per grid: " << grid_interval_size
+  //<< " blocks per interval: " << interval_block_size << '\n';
 #endif
 
   auto timer = high_resolution_timer();
@@ -3045,8 +3045,7 @@ void Recut<image_t>::partition_components(
     VID_t selected_count = float_grid->activeVoxelCount();
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
-    run_log << "Active, " << this->topology_grid->activeVoxelCount()
-            << '\n';
+    run_log << "Active, " << this->topology_grid->activeVoxelCount() << '\n';
     run_log << "Selected, " << selected_count << '\n';
     assertm(selected_count, "active voxels in float grid must be > 0");
   }
@@ -3080,9 +3079,12 @@ void Recut<image_t>::partition_components(
         rng::to_vector;
 
     std::string prefix = "";
-    if (component_roots.size() > MAX_SOMA_PER_COMPONENT) {
+    if (component_roots.size() > 1) {
       prefix = "a-multi-";
-      // return; // skip
+    }
+
+    if (component_roots.size() > MAX_SOMA_PER_COMPONENT) {
+      return; // skip
     }
 
     auto voxel_count = component->activeVoxelCount();
@@ -3123,8 +3125,12 @@ void Recut<image_t>::partition_components(
     component_log << "TC, " << timer.elapsed() << '\n';
 #endif
 
+    timer.restart();
     // extract a new tree via bfs
     auto tree = advantra_extract_trees(pruned_markers, true);
+#ifdef LOG
+    component_log << "ET, " << timer.elapsed() << '\n';
+#endif
 
     timer.restart();
     auto filtered_tree =

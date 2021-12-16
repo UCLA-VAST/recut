@@ -1,6 +1,10 @@
 #pragma once
 #include <cstdint>
 #include <utility>
+#include <openvdb/openvdb.h>
+#include <openvdb/points/PointConversion.h>
+#include <openvdb/points/PointCount.h>
+#include <numeric>
 
 // Define preprocessor macros, templates and types to be used for
 // configuration and compile time behavior
@@ -10,10 +14,6 @@
 // uint32_t overflows at ~2e9 nodes, ~ 1024 * 1024 * 1024 * 2
 // typedef uint32_t VID_t; // overflows after ~2e9 ~= 2 1024^3 tiles
 typedef uint64_t VID_t; // for multi-interval runs
-
-#include <openvdb/openvdb.h>
-#include <openvdb/points/PointConversion.h>
-#include <openvdb/points/PointCount.h>
 
 using OffsetCoord = openvdb::Coord; // = Int32 = int32_t
 using GridCoord = openvdb::Coord;
@@ -77,7 +77,7 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 
 #define SWC_MIN_LINE 110
 #define SOMA_PRUNE_RADIUS 1.6
-#define MAX_SOMA_PER_COMPONENT 5000
+#define MAX_SOMA_PER_COMPONENT std::numeric_limits<int>::max()
 #define MIN_Z_DEPTH 30
 // if value is 0, uses only bounding volume and the binarized component for output windows
 #define EXPAND_CROP_PIXELS 30

@@ -12,7 +12,6 @@
 #include <ctime>   // for srand
 #include <filesystem>
 #include <math.h>
-#include <numeric>
 #include <openvdb/tools/Clip.h>
 #include <openvdb/tools/Composite.h>
 #include <openvdb/tools/Dense.h> // copyToDense
@@ -2157,7 +2156,7 @@ auto covered_by_bboxs = [](const auto coord, const auto bboxs) {
 auto print_swc_line = [](GridCoord swc_coord, bool is_root, uint8_t radius,
                          const OffsetCoord parent_offset_coord, CoordBBox bbox,
                          std::ofstream &out,
-                         std::map<GridCoord, uint32_t> &coord_to_swc_id,
+                         std::unordered_map<GridCoord, uint32_t> &coord_to_swc_id,
                          bool bbox_adjust = true) {
   std::ostringstream line;
 
@@ -2290,7 +2289,7 @@ auto combine_grids = [](std::string lhs, std::string rhs, std::string out) {
 };
 
 auto get_id_map = []() {
-  std::map<GridCoord, uint32_t> coord_to_swc_id;
+  std::unordered_map<GridCoord, uint32_t> coord_to_swc_id;
   // add a dummy value that will never be on to the map so that real indices
   // start at 1
   coord_to_swc_id[GridCoord(INT_MIN, INT_MIN, INT_MIN)] = 0;
@@ -2409,18 +2408,21 @@ auto coord_dist = [](const GridCoord &a, const GridCoord &b) {
 // creates an iterator in zyx order for probing VDB grids for the interior of a
 // sphere
 auto sphere_iterator = [](const GridCoord &center, const int radius) {
-  // passing center by ref & through the lambdas causes UB
+  // passing center by ref & through the lambda captures causes UB
+  int cx = center.x();
+  int cy = center.y();
+  int cz = center.z();
   return rng::views::for_each(
-      rng::views::iota(static_cast<int>(center.x()) - radius,
-                       1 + static_cast<int>(center.x()) + radius),
+      rng::views::iota(cx - radius,
+                       1 + cx + radius),
       [=](int x) {
         return rng::views::for_each(
-            rng::views::iota(static_cast<int>(center.y()) - radius,
-                             1 + static_cast<int>(center.y()) + radius),
+            rng::views::iota(cy - radius,
+                             1 + cy + radius),
             [=](int y) {
               return rng::views::for_each(
-                  rng::views::iota(static_cast<int>(center.z()) - radius,
-                                   1 + static_cast<int>(center.z()) + radius),
+                  rng::views::iota(cz - radius,
+                                   1 + cz + radius),
                   [=](int z) {
                     auto const new_coord = GridCoord(x, y, z);
                     return rng::yield_if(
@@ -2434,7 +2436,7 @@ auto sphere_iterator = [](const GridCoord &center, const int radius) {
 // switched from n^2 to nr^3 where r is the radii of a given node
 std::vector<MyMarker *>
 advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
-               std::map<GridCoord, VID_t> coord_to_idx) {
+               std::unordered_map<GridCoord, VID_t> coord_to_idx) {
 
   std::vector<MyMarker *> nY;
   auto no_neighbor_count = 0;
@@ -2702,8 +2704,8 @@ std::vector<MyMarker *> convert_to_markers(EnlargedPointDataGrid::Ptr grid,
 
   // get a mapping to stable address pointers in outtree such that a markers
   // parent is valid pointer when returning just outtree
-  std::map<GridCoord, MyMarker *> coord_to_marker_ptr;
-  std::map<GridCoord, VID_t> coord_to_idx;
+  std::unordered_map<GridCoord, MyMarker *> coord_to_marker_ptr;
+  std::unordered_map<GridCoord, VID_t> coord_to_idx;
 
   // iterate all active vertices ahead of time so each marker
   // can have a pointer to it's parent marker
@@ -2916,7 +2918,7 @@ convert_float_to_point(openvdb::FloatGrid::Ptr float_grid) {
   return point_grid;
 };
 
-std::pair<vector<MyMarker *>, std::map<GridCoord, VID_t>>
+std::pair<vector<MyMarker *>, std::unordered_map<GridCoord, VID_t>>
 convert_float_to_markers(openvdb::FloatGrid::Ptr component,
                          EnlargedPointDataGrid::Ptr point_grid) {
 #ifdef FULL_PRINT
@@ -2928,10 +2930,10 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
 
   // get a mapping to stable address pointers in outtree such that a markers
   // parent is valid pointer when returning just outtree
-  std::map<GridCoord, MyMarker *> coord_to_marker_ptr;
+  std::unordered_map<GridCoord, MyMarker *> coord_to_marker_ptr;
 
   // temporary for advantra prune method
-  std::map<GridCoord, VID_t> coord_to_idx;
+  std::unordered_map<GridCoord, VID_t> coord_to_idx;
 
   auto keep_if = [](const auto coord, const auto float_leaf) {
     return float_leaf->isValueOn(coord);
@@ -3227,7 +3229,7 @@ prune_short_branches(std::vector<MyMarker *> &tree,
                      int min_branch_length = MIN_BRANCH_LENGTH) {
   // build a map to save coords with 1 or 2 children
   // coords not in this map are therefore leafs
-  auto child_count = std::map<GridCoord, uint8_t>();
+  auto child_count = std::unordered_map<GridCoord, uint8_t>();
   rng::for_each(tree, [&child_count](auto marker) {
     if (marker->parent) {
       assertm(marker->parent, "Parent missing");
