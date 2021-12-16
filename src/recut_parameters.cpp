@@ -28,7 +28,7 @@ void RecutCommandLineArgs::PrintUsage() {
           "[--bkg-thresh <int>] [--fg-percent <double>]\n\n";
           "[--image-offsets <int> [<int>] [<int>]] "
           "[--image-lengths <int> [<int>] [<int>]] "
-          "\nNote: neurite+soma images are binarized and do not need bkg-thresh or fg-percent passed";
+          "\nNote: neurite+soma images are binarized and do not need bkg-thresh or fg-percent specified";
         // "[--channel <dir>] "
           //"[--outswc <swc_file>] "
           // "[--resolution-level <int>] "
@@ -38,9 +38,8 @@ void RecutCommandLineArgs::PrintUsage() {
   cout << "--convert            [-cv] convert image file and exit defaults to "
           "out.vdb\n";
   cout << "--type               VDB input grid type: 'point', 'uint8', 'mask' or 'float'\n";
-  cout << "--prune-radius       larger values decrease the sampling density of "
-          "nodes output to swc, defaults to 5 which is roughly tuned for anisotropic 30x "
-          "objective lenses\n";
+  cout << "--prune-radius       larger values decrease node sampling density "
+          "along paths, default 5 the z anisotropic factor\n";
   //cout << "--max                set max image voxel raw value allowed, "
           //"computed automatically when --bg_thresh or --fg-percent are "
           //"specified\n";
@@ -57,11 +56,11 @@ void RecutCommandLineArgs::PrintUsage() {
           " to max range from offset start to max length in each axis (-1, -1, "
           "-1)\n";
   cout << "--bg-thresh          [-bt] background threshold value desired\n";
-  cout << "--min-branch-length  prune leaf branches lower, defaults to 10\n";
+  cout << "--min-branch-length  prune leaf branches lower, defaults to 20\n";
   cout << "--fg-percent         [-fp] auto calculate a bg-thresh closest to a "
           "foreground \% between (0-100], overriding any --bg-thresh args. "
           "Value of .08 yields ~8 in 10,000 voxels "
-          "as foreground\n";
+          "as foreground per z-plane\n";
   //cout << "--prune              [-pr] prune 0 false, 1 true; defaults to 1 "
           //"(automatically prunes)\n";
   cout << "--parallel           [-pl] thread count defaults to max hardware "
@@ -75,7 +74,7 @@ void RecutCommandLineArgs::PrintUsage() {
           "upsampled (copied) by specified factor, default is 1 i.e. no "
           "upsampling\n";
   cout << "--run-app2           for benchmarks and comparisons runs app2 on the vdb passed to --output-windows\n";
-  cout << "--help               [-h] print example usage\n";
+  cout << "--help               [-h] print this example usage summary\n";
 }
 
 string RecutCommandLineArgs::MetaString() {

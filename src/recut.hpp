@@ -2500,10 +2500,10 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #ifdef LOG
   cout << "Finished stage: " << stage << '\n';
   cout << "Finished total updating within " << total_update_time << " sec \n";
-  cout << "Finished computation (no I/O) within " << computation_time
-       << " sec \n";
-  cout << "Finished I/O within " << io_time << " sec \n";
-  cout << "Total interval iterations: " << outer_iteration_idx << '\n';
+  //cout << "Finished computation (no I/O) within " << computation_time
+       //<< " sec \n";
+  //cout << "Finished I/O within " << io_time << " sec \n";
+  //cout << "Total interval iterations: " << outer_iteration_idx << '\n';
 
   {
     auto stage_acr = stage; // line up with paper
@@ -2516,7 +2516,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
-    run_log << stage_acr << ' ' << total_update_time << '\n';
+    run_log << stage_acr << ", " << total_update_time << '\n';
   }
 #endif
 
@@ -2877,11 +2877,11 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
 #ifdef LOG
   print_coord(this->image_lengths, "image");
-  print_coord(this->interval_lengths, "interval");
-  print_coord(this->block_lengths, "block");
-  print_coord(this->interval_block_lengths, "interval block lengths");
-  std::cout << "intervals per grid: " << grid_interval_size
-            << " blocks per interval: " << interval_block_size << '\n';
+  //print_coord(this->interval_lengths, "interval");
+  //print_coord(this->block_lengths, "block");
+  //print_coord(this->interval_block_lengths, "interval block lengths");
+  //std::cout << "intervals per grid: " << grid_interval_size
+            //<< " blocks per interval: " << interval_block_size << '\n';
 #endif
 
   auto timer = high_resolution_timer();
@@ -3045,9 +3045,9 @@ void Recut<image_t>::partition_components(
     VID_t selected_count = float_grid->activeVoxelCount();
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
-    run_log << "Active " << ' ' << this->topology_grid->activeVoxelCount()
+    run_log << "Active, " << this->topology_grid->activeVoxelCount()
             << '\n';
-    run_log << "Selected " << selected_count << '\n';
+    run_log << "Selected, " << selected_count << '\n';
     assertm(selected_count, "active voxels in float grid must be > 0");
   }
 #endif
@@ -3117,10 +3117,10 @@ void Recut<image_t>::partition_components(
     std::ofstream component_log;
     component_log.open(component_log_fn);
     component_log << std::fixed << std::setprecision(6);
-    component_log << "Soma count " << component_roots.size() << '\n';
-    component_log << "Component count " << markers.size() << '\n';
-    component_log << "TC count " << pruned_markers.size() << '\n';
-    component_log << "TC " << timer.elapsed() << '\n';
+    component_log << "Soma count, " << component_roots.size() << '\n';
+    component_log << "Component count, " << markers.size() << '\n';
+    component_log << "TC count, " << pruned_markers.size() << '\n';
+    component_log << "TC, " << timer.elapsed() << '\n';
 #endif
 
     // extract a new tree via bfs
@@ -3130,9 +3130,9 @@ void Recut<image_t>::partition_components(
     auto filtered_tree =
         prune_short_branches(tree, this->args->min_branch_length);
 #ifdef LOG
-    component_log << "TP " << timer.elapsed() << '\n';
-    component_log << "TP count " << filtered_tree.size() << '\n';
-    component_log << "Volume "
+    component_log << "TP, " << timer.elapsed() << '\n';
+    component_log << "TP count, " << filtered_tree.size() << '\n';
+    component_log << "Volume, "
                   << component->evalActiveVoxelBoundingBox().volume() << '\n';
 #endif
 
@@ -3236,7 +3236,7 @@ void Recut<image_t>::partition_components(
                           /* cnn_type*/ 1, tile_thresholds->bkg_thresh,
                           tile_thresholds->max_int, tile_thresholds->min_int);
 #ifdef LOG
-        component_log << std::fixed << "FM " << timer.elapsed() << '\n';
+        component_log << "FM, " << timer.elapsed() << '\n';
 #endif
 
         timer.restart();
@@ -3248,7 +3248,7 @@ void Recut<image_t>::partition_components(
              /*length thresh*/ this->args->min_branch_length,
              /*sr_ratio*/ 1. / 3);
 #ifdef LOG
-        component_log << std::fixed << "HP " << timer.elapsed() << '\n';
+        component_log << "HP, " << timer.elapsed() << '\n';
 #endif
 
         // adjust app2_output_tree_prune to match global image, for swc output
@@ -3276,7 +3276,7 @@ void Recut<image_t>::partition_components(
   {
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
-    run_log << std::fixed << "TC+TP " << global_timer.elapsed() << '\n';
+    run_log << "TC+TP, " << global_timer.elapsed() << '\n';
   }
 #endif
 }
@@ -3318,9 +3318,9 @@ template <class image_t> void Recut<image_t>::init_run() {
   fs::create_directories(run_dir);
 #ifdef LOG
   std::ofstream run_log(log_fn);
-  run_log << "Prune radius " << args->prune_radius_ << '\n';
-  run_log << "Soma radius " << SOMA_PRUNE_RADIUS << '\n';
-  run_log << "Min branch " << args->min_branch_length << '\n';
+  run_log << "Prune radius, " << args->prune_radius_ << '\n';
+  run_log << "Soma radius, " << SOMA_PRUNE_RADIUS << '\n';
+  run_log << "Min branch, " << args->min_branch_length << '\n';
 #endif
 }
 

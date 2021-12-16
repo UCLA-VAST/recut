@@ -1070,7 +1070,7 @@ auto read_vdb_file(std::string fn, std::string grid_name = "topology") {
   // openvdb::gridPtrCast<EnlargedPointDataGrid>(file.readGrid(grid_name));
   file.close();
 
-#ifdef LOG
+#ifdef LOG_FULL
   print_grid_metadata(base_grid);
 #endif
   return base_grid;
@@ -2265,7 +2265,7 @@ bool leaves_intersect(GridTypePtr grid, GridTypePtr other) {
 auto read_vdb_float = [](std::string fn) {
   auto base_grid = read_vdb_file(fn);
   auto float_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
-#ifdef LOG
+#ifdef LOG_FULL
   print_grid_metadata(float_grid);
 #endif
   return float_grid;
@@ -2279,7 +2279,7 @@ auto combine_grids = [](std::string lhs, std::string rhs, std::string out) {
     // arithmetic sums in-place to first_grid and empties second_grid
     vb::tools::compSum(*first_grid, *second_grid);
 
-#ifdef LOG
+#ifdef LOG_FULL
     print_grid_metadata(first_grid);
 #endif
   }
