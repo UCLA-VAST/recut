@@ -813,10 +813,10 @@ bool topo_segs2swc(vector<HierarchySegment *> &topo_segs,
   }
   max_level = MIN(max_level, 20); // todo1
 
-  cout << "min_dst = " << min_dst << endl;
-  cout << "max_dst = " << max_dst << endl;
-  cout << "min_level = " << min_level << endl;
-  cout << "max_level = " << max_level << endl;
+  //cout << "min_dst = " << min_dst << endl;
+  //cout << "max_dst = " << max_dst << endl;
+  //cout << "min_level = " << min_level << endl;
+  //cout << "max_level = " << max_level << endl;
 
   max_dst -= min_dst;
   if (max_dst == 0.0)
@@ -940,7 +940,7 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
           double length_thresh = 2.0, double SR_ratio = 1.0 / 9.0,
           bool is_leaf_prune = true, bool is_smooth = true) {
   double T_max = (1ll << sizeof(T));
-  cout << "Input SR_ratio: " << SR_ratio << '\n';
+  //cout << "Input SR_ratio: " << SR_ratio << '\n';
 
   const int64_t sz01 = sz0 * sz1;
   const int64_t tol_sz = sz01 * sz2;
@@ -1597,7 +1597,7 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
 
   if (is_smooth) // smooth curve
   {
-    cout << "Smooth the final curve" << endl;
+    //cout << "Smooth the final curve" << endl;
     for (int64_t i = 0; i < filter_segs.size(); i++) {
       HierarchySegment *seg = filter_segs[i];
       MyMarker *leaf_marker = seg->leaf_marker;
@@ -1624,8 +1624,8 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
 
 bool marker_to_swc_file(std::string swc_file,
                         std::vector<MyMarker *> &outmarkers) {
-  cout << "marker num = " << outmarkers.size() << ", save swc file to "
-       << swc_file << endl;
+  //cout << "marker num = " << outmarkers.size() << ", save swc file to "
+       //<< swc_file << endl;
   map<MyMarker *, int> ind;
   ofstream ofs(swc_file.c_str());
 

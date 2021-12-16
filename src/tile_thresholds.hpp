@@ -93,7 +93,7 @@ template <class image_t> struct TileThresholds {
     this->max_int = local_max;
     this->min_int = local_min;
 
-#ifdef LOG
+#ifdef FULL_PRINT
     printf("Find max min wtime: %.1f s\n", timer->elapsed());
 #endif
   }

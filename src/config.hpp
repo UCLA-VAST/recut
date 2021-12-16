@@ -82,7 +82,7 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 // if value is 0, uses only bounding volume and the binarized component for output windows
 #define EXPAND_CROP_PIXELS 30
 // euclidean voxel path distance of branches to prune
-#define MIN_BRANCH_LENGTH 10
+#define MIN_BRANCH_LENGTH 20
 #define ANISOTROPIC_FACTOR 5
 
 // Below are deprecated or are not (yet) affecting behavior:
