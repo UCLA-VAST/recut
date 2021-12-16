@@ -2401,10 +2401,39 @@ void check_nbr(vector<MyMarker *> &nX) {
   }
 };
 
+auto coord_dist = [](const GridCoord &a, const GridCoord &b) {
+  auto diff = a - b;
+  return std::sqrt(diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]);
+};
+
+// creates an iterator in zyx order for probing VDB grids for the interior of a
+// sphere
+auto sphere_iterator = [](const GridCoord &center, const int radius) {
+  // passing center by ref & through the lambdas causes UB
+  return rng::views::for_each(
+      rng::views::iota(static_cast<int>(center.x()) - radius,
+                       1 + static_cast<int>(center.x()) + radius),
+      [=](int x) {
+        return rng::views::for_each(
+            rng::views::iota(static_cast<int>(center.y()) - radius,
+                             1 + static_cast<int>(center.y()) + radius),
+            [=](int y) {
+              return rng::views::for_each(
+                  rng::views::iota(static_cast<int>(center.z()) - radius,
+                                   1 + static_cast<int>(center.z()) + radius),
+                  [=](int z) {
+                    auto const new_coord = GridCoord(x, y, z);
+                    return rng::yield_if(
+                        coord_dist(new_coord, center) <= radius, new_coord);
+                  });
+            });
+      });
+};
+
 // sphere grouping compaction/pruning strategy inspired by Advantra's code
 // switched from n^2 to nr^3 where r is the radii of a given node
 std::vector<MyMarker *>
-advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius,
+advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
                std::map<GridCoord, VID_t> coord_to_idx) {
 
   std::vector<MyMarker *> nY;
@@ -2431,58 +2460,50 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius,
     auto nYi = new MyMarker(*(nX[ci]));
     float grp_size = 1;
 
-    auto node_radius = static_cast<float>(nYi->radius);
+    auto radius_for_pruning = static_cast<float>(nYi->radius);
     if (nYi->type != 0) { // not soma
       // you can decrease the sampling density along any branch
       // by increasing the prune radius here
-      node_radius *= prune_radius;
+      radius_for_pruning *= prune_radius_factor;
     }
-    float r2 = node_radius * node_radius;
 
-    float d2;
-    // TODO optimize this for closest point
-    for (long j = 0; j < nX.size();
-         ++j) { // check the rest that was not grouped
-      if (j != ci && X2Y[j] == -1) {
-        d2 = pow(nX[j]->x - nX[ci]->x, 2);
-        if (d2 <= r2) {
-          d2 += pow(nX[j]->y - nX[ci]->y, 2);
-          if (d2 <= r2) {
-            d2 += pow(nX[j]->z - nX[ci]->z, 2);
-            if (d2 <= r2) {
+    // rounds the current iteratively averaged location of nYi
+    auto center =
+        GridCoord(std::round(nYi->x), std::round(nYi->y), std::round(nYi->z));
+    for (const auto coord : sphere_iterator(center, radius_for_pruning)) {
+      auto ipair = coord_to_idx.find(coord);
+      if (ipair == coord_to_idx.end()) continue; // skip not found
+      auto nbr_idx = ipair->second;
+      // found?, not the same node?, not already grouped
+      if (nbr_idx != ci && X2Y[nbr_idx] == -1) {
+        // mark the idx, since nY is being accumulated to
+        X2Y[nbr_idx] = nY.size();
 
-              // mark the idx, since nY is being accumulated to
-              X2Y[j] = nY.size();
+        // modifies marker to have a set of marker nbs
+        for (int k = 0; k < nX[nbr_idx]->nbr.size(); ++k) {
+          nYi->nbr.push_back(
+              nX[nbr_idx]->nbr[k]); // append the neighbours of the group members
+        }
 
-              // modifies marker to have a set of marker nbs
-              for (int k = 0; k < nX[j]->nbr.size(); ++k) {
-                nYi->nbr.push_back(
-                    nX[j]
-                        ->nbr[k]); // append the neighbours of the group members
-              }
+        // update local average with x,y,z,sig elements from nX[nbr_idx]
+        ++grp_size;
 
-              // update local average with x,y,z,sig elements from nX[j]
-              ++grp_size;
-
-              // non roots can be averaged
-              if (nYi->type != 0) {
-                // adjust the coordinate to be an average
-                float a = (grp_size - 1) / grp_size;
-                float b = (1.0 / grp_size);
-                nYi->x = a * nYi->x + b * nX[j]->x;
-                nYi->y = a * nYi->y + b * nX[j]->y;
-                nYi->z = a * nYi->z + b * nX[j]->z;
-                // average the radius
-                //nYi->radius = a * nYi->radius + nX[j]->radius;
-                // adjust the radii to be a max
-                // this is a cheat to avoid having to sort the list of markers
-                // by radii, since the maximum SDF value will tend to
-                // be found and is about the same along the centerline of neurites
-                if (nX[j]->radius > nYi->radius) {
-                  nYi->radius = nX[j]->radius;
-                }
-              }
-            }
+        // non roots can be averaged
+        if (nYi->type != 0) {
+          // adjust the coordinate to be an average
+          float a = (grp_size - 1) / grp_size;
+          float b = (1.0 / grp_size);
+          nYi->x = a * nYi->x + b * nX[nbr_idx]->x;
+          nYi->y = a * nYi->y + b * nX[nbr_idx]->y;
+          nYi->z = a * nYi->z + b * nX[nbr_idx]->z;
+          // average the radius
+          // nYi->radius = a * nYi->radius + nX[nbr_idx]->radius;
+          // adjust the radii to be a max
+          // this is a cheat to avoid having to sort the list of markers
+          // by radii, since the maximum SDF value will tend to
+          // be found and is about the same along the centerline of neurites
+          if (nX[nbr_idx]->radius > nYi->radius) {
+            nYi->radius = nX[nbr_idx]->radius;
           }
         }
       }
@@ -2536,8 +2557,8 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius,
   // the original linear index to the new sparse group index according
   // to the X2Y idx map vector
   for (int i = 1; i < nY.size(); ++i) {
-    for (int j = 0; j < nY[i]->nbr.size(); ++j) {
-      nY[i]->nbr[j] = X2Y[nY[i]->nbr[j]];
+    for (int nbr_idx = 0; nbr_idx < nY[i]->nbr.size(); ++nbr_idx) {
+      nY[i]->nbr[nbr_idx] = X2Y[nY[i]->nbr[nbr_idx]];
     }
   }
 
@@ -2643,9 +2664,9 @@ advantra_extract_trees(std::vector<MyMarker *> nlist,
       ++nodesInTree;
 
       // for each node adjacent to current
-      for (int j = 0; j < nlist[curr]->nbr.size(); j++) {
+      for (int nbr_idx = 0; nbr_idx < nlist[curr]->nbr.size(); nbr_idx++) {
 
-        int adj = nlist[curr]->nbr[j];
+        int adj = nlist[curr]->nbr[nbr_idx];
 
         if (dist[adj] == INT_MAX) {
           dist[adj] = dist[curr] + 1;
@@ -3370,31 +3391,3 @@ GridTypePtr merge_grids(std::vector<GridTypePtr> grids) {
   return final_grid;
 }
 
-auto coord_dist = [](const GridCoord &a, const GridCoord &b) {
-  auto diff = a - b;
-  return std::sqrt(diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]);
-};
-
-// creates an iterator in zyx order for probing VDB grids for the interior of a
-// sphere
-auto sphere_iterator = [](const GridCoord &center, const int radius) {
-  // passing center by ref & through the lambdas causes UB
-  return rng::views::for_each(
-      rng::views::iota(static_cast<int>(center.x()) - radius,
-                       1 + static_cast<int>(center.x()) + radius),
-      [=](int x) {
-        return rng::views::for_each(
-            rng::views::iota(static_cast<int>(center.y()) - radius,
-                             1 + static_cast<int>(center.y()) + radius),
-            [=](int y) {
-              return rng::views::for_each(
-                  rng::views::iota(static_cast<int>(center.z()) - radius,
-                                   1 + static_cast<int>(center.z()) + radius),
-                  [=](int z) {
-                    auto const new_coord = GridCoord(x, y, z);
-                    return rng::yield_if(
-                        coord_dist(new_coord, center) <= radius, new_coord);
-                  });
-            });
-      });
-};
