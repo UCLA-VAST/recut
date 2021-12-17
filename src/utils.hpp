@@ -2153,80 +2153,118 @@ auto covered_by_bboxs = [](const auto coord, const auto bboxs) {
 // for more info see:
 // http://www.neuronland.org/NLMorphologyConverter/MorphologyFormats/SWC/Spec.html
 // https://github.com/HumanBrainProject/swcPlus/blob/master/SWCplus_specification.html
-auto print_swc_line = [](GridCoord swc_coord, bool is_root, uint8_t radius,
-                         const OffsetCoord parent_offset_coord, CoordBBox bbox,
-                         std::ofstream &out,
-                         std::unordered_map<GridCoord, uint32_t> &coord_to_swc_id,
-                         bool bbox_adjust = true) {
-  std::ostringstream line;
+auto print_swc_line =
+    [](GridCoord swc_coord, bool is_root, uint8_t radius,
+       const OffsetCoord parent_offset_coord, CoordBBox bbox,
+       std::ofstream &out,
+       std::unordered_map<GridCoord, uint32_t> &coord_to_swc_id,
+       bool bbox_adjust = true) {
+      std::ostringstream line;
 
-  if (bbox_adjust) { // implies output window crops is set
-    bbox.expand(EXPAND_CROP_PIXELS);
-    swc_coord = swc_coord - bbox.min();
-  }
+      if (bbox_adjust) { // implies output window crops is set
+        bbox.expand(EXPAND_CROP_PIXELS);
+        swc_coord = swc_coord - bbox.min();
+      }
 
-  // CoordBBox uses extents inclusively, but we want exclusive bbox
-  GridCoord swc_lengths = bbox.extents().offsetBy(-1);
+      // CoordBBox uses extents inclusively, but we want exclusive bbox
+      GridCoord swc_lengths = bbox.extents().offsetBy(-1);
 
-  auto find_or_assign = [&coord_to_swc_id](GridCoord swc_coord) -> uint32_t {
-    auto val = coord_to_swc_id.find(swc_coord);
-    if (val == coord_to_swc_id.end()) {
-      auto new_val = coord_to_swc_id.size();
-      coord_to_swc_id[swc_coord] = new_val;
-      assertm(new_val == (coord_to_swc_id.size() - 1),
-              "map must now be 1 size larger");
-      return new_val;
-    }
-    return coord_to_swc_id[swc_coord];
-  };
+      auto find_or_assign =
+          [&coord_to_swc_id](GridCoord swc_coord) -> uint32_t {
+        auto val = coord_to_swc_id.find(swc_coord);
+        if (val == coord_to_swc_id.end()) {
+          auto new_val = coord_to_swc_id.size();
+          coord_to_swc_id[swc_coord] = new_val;
+          assertm(new_val == (coord_to_swc_id.size() - 1),
+                  "map must now be 1 size larger");
+          return new_val;
+        }
+        return coord_to_swc_id[swc_coord];
+      };
 
-  // n
-  uint32_t id;
-  if (coord_to_swc_id.empty()) {
-    id = coord_to_id(swc_coord, swc_lengths);
-  } else {
-    id = find_or_assign(swc_coord);
-  }
-  assertm(id < std::numeric_limits<int32_t>::max(),
-          "id overflows int32_t limit");
-  line << id << ' ';
+      // n
+      uint32_t id;
+      if (coord_to_swc_id.empty()) {
+        id = coord_to_id(swc_coord, swc_lengths);
+      } else {
+        id = find_or_assign(swc_coord);
+      }
+      assertm(id < std::numeric_limits<int32_t>::max(),
+              "id overflows int32_t limit");
+      line << id << ' ';
 
-  // type_id
-  if (is_root) {
-    line << "1" << ' ';
-  } else {
-    line << '3' << ' ';
-  }
+      // type_id
+      if (is_root) {
+        line << "1" << ' ';
+      } else {
+        line << '3' << ' ';
+      }
 
-  // coordinates
-  line << swc_coord[0] << ' ' << swc_coord[1] << ' ' << swc_coord[2] << ' ';
+      // coordinates
+      line << swc_coord[0] << ' ' << swc_coord[1] << ' ' << swc_coord[2] << ' ';
 
-  // radius
-  line << +(radius) << ' ';
+      // radius
+      line << +(radius) << ' ';
 
-  // parent
-  if (is_root) {
-    line << "-1";
-  } else {
-    auto parent_coord = coord_add(swc_coord, parent_offset_coord);
-    uint32_t parent_vid;
-    if (coord_to_swc_id.empty()) {
-      parent_vid = coord_to_id(parent_coord, swc_lengths);
-    } else {
-      parent_vid = find_or_assign(parent_coord);
-    }
-    assertm(parent_vid < std::numeric_limits<int32_t>::max(),
-            "id overflows int32_t limit");
-    line << parent_vid;
-  }
+      // parent
+      if (is_root) {
+        line << "-1";
+      } else {
+        auto parent_coord = coord_add(swc_coord, parent_offset_coord);
+        uint32_t parent_vid;
+        if (coord_to_swc_id.empty()) {
+          parent_vid = coord_to_id(parent_coord, swc_lengths);
+        } else {
+          parent_vid = find_or_assign(parent_coord);
+        }
+        assertm(parent_vid < std::numeric_limits<int32_t>::max(),
+                "id overflows int32_t limit");
+        line << parent_vid;
+      }
 
-  line << '\n';
+      line << '\n';
 
-  if (out.is_open()) {
-    out << line.str();
-  } else {
-    std::cout << line.str();
-  }
+      if (out.is_open()) {
+        out << line.str();
+      } else {
+        std::cout << line.str();
+      }
+    };
+
+auto get_id_map = []() {
+  std::unordered_map<GridCoord, uint32_t> coord_to_swc_id;
+  // add a dummy value that will never be on to the map so that real indices
+  // start at 1
+  coord_to_swc_id[GridCoord(INT_MIN, INT_MIN, INT_MIN)] = 0;
+  return coord_to_swc_id;
+};
+
+auto write_swc = [](std::vector<MyMarker *> tree, CoordBBox bbox,
+                    std::string component_dir_fn, int index,
+                    bool bbox_adjust = false) {
+  // start swc and add header metadata
+  auto swc_name =
+      component_dir_fn + "/component-" + std::to_string(index) + ".swc";
+  std::ofstream swc_file;
+  swc_file.open(swc_name);
+  swc_file << "# Crop windows bounding volume: " << bbox << '\n';
+  swc_file << "# id type_id x y z radius parent_id\n";
+
+  // start a new blank map for coord to a unique swc id
+  auto coord_to_swc_id = get_id_map();
+  // iter those marker*
+  rng::for_each(tree, [&swc_file, &coord_to_swc_id, &bbox,
+                       bbox_adjust](const auto marker) {
+    auto coord = GridCoord(marker->x, marker->y, marker->z);
+
+    auto parent_coord =
+        GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
+    auto parent_offset = coord_sub(parent_coord, coord);
+    // print_swc_line() expects an offset to a parent
+    print_swc_line(coord,
+                   /*is_root*/ marker->type == 0, marker->radius, parent_offset,
+                   bbox, swc_file, coord_to_swc_id, bbox_adjust);
+  });
 };
 
 // throws if any leaf does not have monotonically increasing offsets or
@@ -2286,14 +2324,6 @@ auto combine_grids = [](std::string lhs, std::string rhs, std::string out) {
   openvdb::GridPtrVec grids;
   grids.push_back(first_grid);
   write_vdb_file(grids, out);
-};
-
-auto get_id_map = []() {
-  std::unordered_map<GridCoord, uint32_t> coord_to_swc_id;
-  // add a dummy value that will never be on to the map so that real indices
-  // start at 1
-  coord_to_swc_id[GridCoord(INT_MIN, INT_MIN, INT_MIN)] = 0;
-  return coord_to_swc_id;
 };
 
 auto upsample_idx = [](int original_idx, int upsample_factor) -> int {
@@ -2413,17 +2443,11 @@ auto sphere_iterator = [](const GridCoord &center, const int radius) {
   int cy = center.y();
   int cz = center.z();
   return rng::views::for_each(
-      rng::views::iota(cx - radius,
-                       1 + cx + radius),
-      [=](int x) {
+      rng::views::iota(cx - radius, 1 + cx + radius), [=](int x) {
         return rng::views::for_each(
-            rng::views::iota(cy - radius,
-                             1 + cy + radius),
-            [=](int y) {
+            rng::views::iota(cy - radius, 1 + cy + radius), [=](int y) {
               return rng::views::for_each(
-                  rng::views::iota(cz - radius,
-                                   1 + cz + radius),
-                  [=](int z) {
+                  rng::views::iota(cz - radius, 1 + cz + radius), [=](int z) {
                     auto const new_coord = GridCoord(x, y, z);
                     return rng::yield_if(
                         coord_dist(new_coord, center) <= radius, new_coord);
@@ -2474,7 +2498,8 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
         GridCoord(std::round(nYi->x), std::round(nYi->y), std::round(nYi->z));
     for (const auto coord : sphere_iterator(center, radius_for_pruning)) {
       auto ipair = coord_to_idx.find(coord);
-      if (ipair == coord_to_idx.end()) continue; // skip not found
+      if (ipair == coord_to_idx.end())
+        continue; // skip not found
       auto nbr_idx = ipair->second;
       // found?, not the same node?, not already grouped
       if (nbr_idx != ci && X2Y[nbr_idx] == -1) {
@@ -2484,7 +2509,8 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
         // modifies marker to have a set of marker nbs
         for (int k = 0; k < nX[nbr_idx]->nbr.size(); ++k) {
           nYi->nbr.push_back(
-              nX[nbr_idx]->nbr[k]); // append the neighbours of the group members
+              nX[nbr_idx]
+                  ->nbr[k]); // append the neighbours of the group members
         }
 
         // update local average with x,y,z,sig elements from nX[nbr_idx]
@@ -3046,8 +3072,11 @@ auto convert_vdb_to_dense = [](auto float_grid) {
 // components, create a full dense buffer will fault with bad_alloc due to size
 // z-plane by z-plane helps prevents this
 template <typename GridT>
-void write_vdb_to_tiff_page(GridT grid, std::string base) {
-  auto bbox = grid->evalActiveVoxelBoundingBox(); // inclusive both ends
+void write_vdb_to_tiff_page(GridT grid, std::string base, CoordBBox bbox = {}) {
+
+  if (bbox.empty())
+    bbox = grid->evalActiveVoxelBoundingBox(); // inclusive both ends
+
   auto fn = base + "/bounding_volume.tif";
   TIFF *tiff = TIFFOpen(fn.c_str(), "w");
   if (!tiff) {
@@ -3107,8 +3136,10 @@ void encoded_tiff_write(image_t *inimg1d, TIFF *tiff, const GridCoord dims) {
 // components, create a full dense buffer will fault with bad_alloc due to size
 // z-plane by z-plane like below prevents this
 template <typename GridT>
-void write_vdb_to_tiff_planes(GridT grid, std::string base) {
-  auto bbox = grid->evalActiveVoxelBoundingBox(); // inclusive both ends
+void write_vdb_to_tiff_planes(GridT grid, std::string base,
+                              CoordBBox bbox = {}) {
+  if (bbox.empty())
+    bbox = grid->evalActiveVoxelBoundingBox(); // inclusive both ends
 
   base = base + "/ch0";
   fs::remove_all(base); // make sure it's an overwrite
@@ -3158,9 +3189,9 @@ void copy_values(ValueGridT img_grid, OutputGridT output_grid) {
 // values copied in topology and written z-plane by z-plane to individual tiff
 // files tiff component also saved
 template <typename GridT, typename ValuedGridT>
-ValuedGridT create_window_grid(const ValuedGridT valued_grid,
-                               GridT component_grid,
-                               std::ofstream &component_log) {
+std::pair<ValuedGridT, CoordBBox>
+create_window_grid(const ValuedGridT valued_grid, GridT component_grid,
+                   std::ofstream &component_log) {
 
   assertm(valued_grid, "Must have input grid set to run output_windows_");
   auto timer = high_resolution_timer();
@@ -3172,14 +3203,15 @@ ValuedGridT create_window_grid(const ValuedGridT valued_grid,
 
   vb::BBoxd clipBox(bbox.min().asVec3d(), bbox.max().asVec3d());
   const auto output_grid = vto::clip(*valued_grid, clipBox);
-  component_log << "Clip " << timer.elapsed() << '\n';
+  // component_log << "Clip " << timer.elapsed() << '\n';
 
   // alternatively... for simply carrying values across:
   // copy_values(valued_grid, component_grid);
   // or you can use the component_grid to mask the valued_grid
   // to isolate window pixels to those covered by the component like:
   // output_grid = vto::tools::clip(output_grid, component_grid);
-  return output_grid;
+
+  return {output_grid, bbox};
 }
 
 // valued_grid : holds the pixel intensity values
@@ -3189,14 +3221,15 @@ ValuedGridT create_window_grid(const ValuedGridT valued_grid,
 template <typename ValuedGridT>
 void write_output_windows(const ValuedGridT output_grid, std::string dir,
                           std::ofstream &runtime, int index = 0,
-                          bool output_vdb = false, bool paged = false) {
+                          bool output_vdb = false, bool paged = false,
+                          CoordBBox bbox = {}) {
 
   if (output_grid->activeVoxelCount()) {
     auto timer = high_resolution_timer();
     if (paged)
-      write_vdb_to_tiff_page(output_grid, dir);
+      write_vdb_to_tiff_page(output_grid, dir, bbox);
     else
-      write_vdb_to_tiff_planes(output_grid, dir);
+      write_vdb_to_tiff_planes(output_grid, dir, bbox);
 
     runtime << "Write tiff " << timer.elapsed() << '\n';
 
@@ -3392,4 +3425,3 @@ GridTypePtr merge_grids(std::vector<GridTypePtr> grids) {
   final_grid->tree().prune(); // collapse uniform values
   return final_grid;
 }
-

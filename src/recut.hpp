@@ -3068,6 +3068,7 @@ void Recut<image_t>::partition_components(
     // all grid transforms across are consistent across recut, so enforce the
     // same interpretation for any new grid
     component->setTransform(get_transform());
+    auto bbox = component->evalActiveVoxelBoundingBox();
 
     // filter all roots within this component
     auto component_roots =
@@ -3093,7 +3094,7 @@ void Recut<image_t>::partition_components(
       // return; // skip
     }
 
-    if (component->evalActiveVoxelBoundingBox().dim()[2] < MIN_Z_DEPTH) {
+    if (bbox.dim()[2] < MIN_Z_DEPTH) {
       prefix = "discard-";
       // return; // skip
     }
@@ -3139,57 +3140,29 @@ void Recut<image_t>::partition_components(
     component_log << "TP, " << timer.elapsed() << '\n';
     component_log << "TP count, " << filtered_tree.size() << '\n';
     component_log << "Volume, "
-                  << component->evalActiveVoxelBoundingBox().volume() << '\n';
+                  << bbox.volume() << '\n';
 #endif
 
-    {
-      // start swc and add header metadata
-      auto swc_name =
-          component_dir_fn + "/component-" + std::to_string(index) + ".swc";
-      std::ofstream swc_file;
-      swc_file.open(swc_name);
-      swc_file << "# Component bounding volume: "
-               << component->evalActiveVoxelBoundingBox() << '\n';
-      swc_file << "# id type_id x y z radius parent_id\n";
-
-      // start a new blank map for coord to a unique swc id
-      auto coord_to_swc_id = get_id_map();
-      // iter those marker*
-      rng::for_each(filtered_tree, [this, &swc_file, &coord_to_swc_id,
-                                    &component](const auto marker) {
-        auto coord = GridCoord(marker->x, marker->y, marker->z);
-
-        auto parent_coord =
-            GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
-        auto parent_offset = coord_sub(parent_coord, coord);
-        // print_swc_line() expects an offset to a parent
-        print_swc_line(coord,
-                       /*is_root*/ marker->type == 0, marker->radius,
-                       parent_offset, component->evalActiveVoxelBoundingBox(),
-                       swc_file, coord_to_swc_id,
-                       /*bbox_adjust*/ !params->output_windows_.empty());
-      });
-    }
-
-    if (args->run_app2) { // check against app2
-
-      auto component_with_values =
+    // is output window needed?
+    if (args->run_app2 || !params->output_windows_.empty()) { 
+      auto [component_with_values, window_bbox] =
           create_window_grid(this->img_grid, component, component_log);
 
-      if (!params->output_windows_.empty()) {
+      if (!params->output_windows_.empty()) { // write to disk
+        // if outputting crops/windows, SWCs coordinates need to be adjusted accordingly
         write_output_windows(component_with_values, component_dir_fn,
-                             component_log, index, false, true);
+                             component_log, index, false, true, window_bbox);
+        bbox = window_bbox; // for offset adjusts
       }
 
       // skip components that are 0s in the original image
       unsigned int minv = 0, maxv = 0;
       component_with_values->tree().evalMinMax(minv, maxv);
-      if (maxv > 0) {
+      if (args->run_app2 && (maxv > 0)) {// check against app2
 
+        // for comparison/benchmark/testing purposes
+        //run_app2(component_with_values, component_roots, component_dir_fn, index, this->args->min_branch_length, params->output_windows_.empty());
         auto window = convert_vdb_to_dense(component_with_values);
-        assertm(component_with_values->evalActiveVoxelBoundingBox() ==
-                    window.bbox(),
-                "converted component have mismatched sizes");
 
         // get a per window bkg_thresh, max, min
         auto tile_thresholds = get_tile_thresholds(window);
@@ -3258,7 +3231,7 @@ void Recut<image_t>::partition_components(
 #endif
 
         // adjust app2_output_tree_prune to match global image, for swc output
-        if (false) {
+        if (params->output_windows_.empty()) {
           rng::for_each(app2_output_tree_prune, [&window](const auto marker) {
             // adds the offset so the swc is with respect to whole image
             adjust_marker(marker, window.bbox().min());
@@ -3269,8 +3242,12 @@ void Recut<image_t>::partition_components(
         auto app2_fn = component_dir_fn + "/app2-component-" +
                        std::to_string(index) + ".swc";
         marker_to_swc_file(app2_fn, app2_output_tree_prune);
-      }
-    }
+      } // end app2
+    } // end window created if any
+
+    write_swc(filtered_tree, bbox, component_dir_fn, index,
+              /*bbox_adjust*/ !params->output_windows_.empty());
+
     cout << "Completed component " << index << '\n';
   }); // for each component
 
