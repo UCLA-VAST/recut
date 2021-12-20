@@ -2122,8 +2122,8 @@ Recut<image_t>::load_tile(const VID_t interval_id, const std::string &dir) {
 template <class image_t>
 TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
     vto::Dense<uint16_t, vto::LayoutXYZ> &tile) {
-  auto tile_thresholds = new TileThresholds<image_t>();
 
+  auto tile_thresholds = new TileThresholds<image_t>();
   auto interval_dims = tile.bbox().dim();
   auto interval_vertex_size = coord_prod_accum(interval_dims);
 
@@ -3139,17 +3139,17 @@ void Recut<image_t>::partition_components(
 #ifdef LOG
     component_log << "TP, " << timer.elapsed() << '\n';
     component_log << "TP count, " << filtered_tree.size() << '\n';
-    component_log << "Volume, "
-                  << bbox.volume() << '\n';
+    component_log << "Volume, " << bbox.volume() << '\n';
 #endif
 
     // is output window needed?
-    if (args->run_app2 || !params->output_windows_.empty()) { 
+    if (args->run_app2 || !params->output_windows_.empty()) {
       auto [component_with_values, window_bbox] =
           create_window_grid(this->img_grid, component, component_log);
 
       if (!params->output_windows_.empty()) { // write to disk
-        // if outputting crops/windows, SWCs coordinates need to be adjusted accordingly
+        // if outputting crops/windows, SWCs coordinates need to be adjusted
+        // accordingly
         write_output_windows(component_with_values, component_dir_fn,
                              component_log, index, false, true, window_bbox);
         bbox = window_bbox; // for offset adjusts
@@ -3158,91 +3158,12 @@ void Recut<image_t>::partition_components(
       // skip components that are 0s in the original image
       unsigned int minv = 0, maxv = 0;
       component_with_values->tree().evalMinMax(minv, maxv);
-      if (args->run_app2 && (maxv > 0)) {// check against app2
-
+      if (args->run_app2 && (maxv > 0)) {
         // for comparison/benchmark/testing purposes
-        //run_app2(component_with_values, component_roots, component_dir_fn, index, this->args->min_branch_length, params->output_windows_.empty());
-        auto window = convert_vdb_to_dense(component_with_values);
-
-        // get a per window bkg_thresh, max, min
-        auto tile_thresholds = get_tile_thresholds(window);
-
-        auto component_markers =
-            component_roots | rng::views::transform([](auto &coord_radius) {
-              auto [coord, radius] = coord_radius;
-              auto marker =
-                  new MyMarker(static_cast<double>(coord.x()),
-                               static_cast<double>(coord.y()),
-                               static_cast<double>(coord.z()), radius);
-              marker->type = 0; // mark as a root
-              return marker;
-            }) |
-            rng::to_vector;
-
-        rng::for_each(component_markers, [&component_dir_fn](
-                                             const auto marker) {
-          // write marker file
-          std::ofstream marker_file;
-          auto mass = ((4 * PI) / 3.) * pow(marker->radius, 3);
-          marker_file.open(component_dir_fn + "/marker_" +
-                           std::to_string(static_cast<int>(marker->x)) + "_" +
-                           std::to_string(static_cast<int>(marker->y)) + "_" +
-                           std::to_string(static_cast<int>(marker->z)) + "_" +
-                           std::to_string(int(mass)));
-
-          marker_file << "# x,y,z in original image\n";
-          marker_file << marker->x << ',' << marker->y << ',' << marker->z
-                      << '\n';
-        });
-
-        // start time
-
-        // adjust component_markers to match window, just for
-        // fastmarching_tree()
-        rng::for_each(component_markers, [&window](auto &marker) {
-          // subtracts the offset so that app2 is with respect to this window
-          // for fastmarching_tree() and happ()
-          adjust_marker(marker, -window.bbox().min());
-        });
-
-        // reconstruct
-        auto timer = high_resolution_timer();
-        std::vector<MyMarker *> app2_output_tree;
-        std::vector<MyMarker> targets;
-        fastmarching_tree(component_markers, targets, window.data(),
-                          app2_output_tree, window.bbox().dim()[0],
-                          window.bbox().dim()[1], window.bbox().dim()[2],
-                          /* cnn_type*/ 1, tile_thresholds->bkg_thresh,
-                          tile_thresholds->max_int, tile_thresholds->min_int);
-#ifdef LOG
-        component_log << "FM, " << timer.elapsed() << '\n';
-#endif
-
-        timer.restart();
-        // prune run the seq prune from app2 to compare
-        std::vector<MyMarker *> app2_output_tree_prune;
-        happ(app2_output_tree, app2_output_tree_prune, window.data(),
-             window.bbox().dim()[0], window.bbox().dim()[1],
-             window.bbox().dim()[2], tile_thresholds->bkg_thresh,
-             /*length thresh*/ this->args->min_branch_length,
-             /*sr_ratio*/ 1. / 3);
-#ifdef LOG
-        component_log << "HP, " << timer.elapsed() << '\n';
-#endif
-
-        // adjust app2_output_tree_prune to match global image, for swc output
-        if (params->output_windows_.empty()) {
-          rng::for_each(app2_output_tree_prune, [&window](const auto marker) {
-            // adds the offset so the swc is with respect to whole image
-            adjust_marker(marker, window.bbox().min());
-          });
-        }
-
-        // print
-        auto app2_fn = component_dir_fn + "/app2-component-" +
-                       std::to_string(index) + ".swc";
-        marker_to_swc_file(app2_fn, app2_output_tree_prune);
-      } // end app2
+        run_app2(component_with_values, component_roots, component_dir_fn,
+                 index, this->args->min_branch_length, component_log,
+                 params->output_windows_.empty());
+      }
     } // end window created if any
 
     write_swc(filtered_tree, bbox, component_dir_fn, index,
@@ -3256,7 +3177,8 @@ void Recut<image_t>::partition_components(
     write_vdb_file(grids, "final-point-grid.vdb");
   }
 #ifdef LOG
-  {
+  // only log this if it isn't occluded by app2 and window write times
+  if (!(args->run_app2 || !params->output_windows_.empty())) {
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
     run_log << "TC+TP, " << global_timer.elapsed() << '\n';

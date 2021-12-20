@@ -3059,11 +3059,11 @@ auto all_invalid = [](const auto &flags_handle, const auto &parents_handle,
   return !is_selected(flags_handle, ind);
 };
 
-auto convert_vdb_to_dense = [](auto float_grid) {
+auto convert_vdb_to_dense = [](auto grid) {
   // inclusive of both ends of bounding box
   vto::Dense<uint16_t, vto::LayoutXYZ> dense(
-      float_grid->evalActiveVoxelBoundingBox(), /*fill*/ 0.);
-  vto::copyToDense(*float_grid, dense);
+      grid->evalActiveVoxelBoundingBox(), /*fill*/ 0.);
+  vto::copyToDense(*grid, dense);
   return dense;
 };
 

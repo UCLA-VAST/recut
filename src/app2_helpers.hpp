@@ -813,10 +813,10 @@ bool topo_segs2swc(vector<HierarchySegment *> &topo_segs,
   }
   max_level = MIN(max_level, 20); // todo1
 
-  //cout << "min_dst = " << min_dst << endl;
-  //cout << "max_dst = " << max_dst << endl;
-  //cout << "min_level = " << min_level << endl;
-  //cout << "max_level = " << max_level << endl;
+  // cout << "min_dst = " << min_dst << endl;
+  // cout << "max_dst = " << max_dst << endl;
+  // cout << "min_level = " << min_level << endl;
+  // cout << "max_level = " << max_level << endl;
 
   max_dst -= min_dst;
   if (max_dst == 0.0)
@@ -872,8 +872,7 @@ bool hierarchy_prune(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc,
 
 template <class T> // should be a struct included members of (x,y,z), like
                    // Coord3D
-                   bool smooth_curve_and_radius(std::vector<T *> &mCoord,
-                                                int winsize) {
+bool smooth_curve_and_radius(std::vector<T *> &mCoord, int winsize) {
   // std::cout<<" smooth_curve ";
   if (winsize < 2)
     return true;
@@ -940,7 +939,7 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
           double length_thresh = 2.0, double SR_ratio = 1.0 / 9.0,
           bool is_leaf_prune = true, bool is_smooth = true) {
   double T_max = (1ll << sizeof(T));
-  //cout << "Input SR_ratio: " << SR_ratio << '\n';
+  // cout << "Input SR_ratio: " << SR_ratio << '\n';
 
   const int64_t sz01 = sz0 * sz1;
   const int64_t tol_sz = sz01 * sz2;
@@ -1597,7 +1596,7 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
 
   if (is_smooth) // smooth curve
   {
-    //cout << "Smooth the final curve" << endl;
+    // cout << "Smooth the final curve" << endl;
     for (int64_t i = 0; i < filter_segs.size(); i++) {
       HierarchySegment *seg = filter_segs[i];
       MyMarker *leaf_marker = seg->leaf_marker;
@@ -1624,8 +1623,8 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
 
 bool marker_to_swc_file(std::string swc_file,
                         std::vector<MyMarker *> &outmarkers) {
-  //cout << "marker num = " << outmarkers.size() << ", save swc file to "
-       //<< swc_file << endl;
+  // cout << "marker num = " << outmarkers.size() << ", save swc file to "
+  //<< swc_file << endl;
   map<MyMarker *, int> ind;
   ofstream ofs(swc_file.c_str());
 
@@ -1650,4 +1649,86 @@ bool marker_to_swc_file(std::string swc_file,
   }
   ofs.close();
   return true;
+}
+
+// component_with_values and component_roots are in global image coordinate frame
+template <typename ValuedGrid>
+void run_app2(ValuedGrid component_with_values,
+              std::vector<std::pair<GridCoord, uint8_t>> component_roots,
+              std::string component_dir_fn, int index, int min_branch_length,
+              std::ofstream& component_log,
+              bool bbox_adjust = false) {
+  // the bkg_thresh is 0 for vdb to dense
+  uint16_t bkg_thresh = 0;
+  auto window = convert_vdb_to_dense(component_with_values);
+
+  auto component_markers =
+      component_roots | rng::views::transform([](auto &coord_radius) {
+        auto [coord, radius] = coord_radius;
+        auto marker = new MyMarker(static_cast<double>(coord.x()),
+                                   static_cast<double>(coord.y()),
+                                   static_cast<double>(coord.z()), radius);
+        marker->type = 0; // mark as a root
+        return marker;
+      }) |
+      rng::to_vector;
+
+  rng::for_each(component_markers, [&component_dir_fn](const auto marker) {
+    // write marker file
+    std::ofstream marker_file;
+    auto mass = ((4 * PI) / 3.) * pow(marker->radius, 3);
+    marker_file.open(component_dir_fn + "/marker_" +
+                     std::to_string(static_cast<int>(marker->x)) + "_" +
+                     std::to_string(static_cast<int>(marker->y)) + "_" +
+                     std::to_string(static_cast<int>(marker->z)) + "_" +
+                     std::to_string(int(mass)));
+
+    marker_file << "# x,y,z in original image\n";
+    marker_file << marker->x << ',' << marker->y << ',' << marker->z << '\n';
+  });
+
+  // adjust component_markers to match window, just for
+  // fastmarching_tree()
+  rng::for_each(component_markers, [&window](auto &marker) {
+    // subtracts the offset so that app2 is with respect to this window
+    // for fastmarching_tree() and happ()
+    adjust_marker(marker, -window.bbox().min());
+  });
+
+  // reconstruct
+  auto timer = high_resolution_timer();
+  std::vector<MyMarker *> app2_output_tree;
+  std::vector<MyMarker> targets;
+  fastmarching_tree(component_markers, targets, window.data(), app2_output_tree,
+                    window.bbox().dim()[0], window.bbox().dim()[1],
+                    window.bbox().dim()[2],
+                    /* cnn_type*/ 1, bkg_thresh);
+#ifdef LOG
+  component_log << "FM, " << timer.elapsed() << '\n';
+#endif
+
+  // prune run the seq prune from app2 to compare
+  timer.restart();
+  std::vector<MyMarker *> app2_output_tree_prune;
+  happ(app2_output_tree, app2_output_tree_prune, window.data(),
+       window.bbox().dim()[0], window.bbox().dim()[1], window.bbox().dim()[2],
+       bkg_thresh,
+       /*length thresh*/ min_branch_length,
+       /*sr_ratio*/ 1. / 3);
+#ifdef LOG
+  component_log << "HP, " << timer.elapsed() << '\n';
+#endif
+
+  // adjust app2_output_tree_prune to match global image, for swc output
+  if (bbox_adjust) {
+    rng::for_each(app2_output_tree_prune, [&window](const auto marker) {
+      // adds the offset so the swc is with respect to whole image
+      adjust_marker(marker, window.bbox().min());
+    });
+  }
+
+  // print
+  auto app2_fn =
+      component_dir_fn + "/app2-component-" + std::to_string(index) + ".swc";
+  marker_to_swc_file(app2_fn, app2_output_tree_prune);
 }
