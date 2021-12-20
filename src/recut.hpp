@@ -3163,7 +3163,7 @@ void Recut<image_t>::partition_components(
         // for comparison/benchmark/testing purposes
         run_app2(component_with_values, component_roots, component_dir_fn,
                  index, this->args->min_branch_length, component_log,
-                 !params->output_windows_.empty());
+                 params->output_windows_.empty());
       }
     } // end window created if any
 

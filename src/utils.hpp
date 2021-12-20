@@ -3425,3 +3425,20 @@ GridTypePtr merge_grids(std::vector<GridTypePtr> grids) {
   final_grid->tree().prune(); // collapse uniform values
   return final_grid;
 }
+
+void write_marker_files(std::vector<MyMarker *> component_markers,
+                        std::string component_dir_fn) {
+  rng::for_each(component_markers, [&component_dir_fn](const auto marker) {
+    // write marker file
+    std::ofstream marker_file;
+    auto mass = ((4 * PI) / 3.) * pow(marker->radius, 3);
+    marker_file.open(component_dir_fn + "/marker_" +
+                     std::to_string(static_cast<int>(marker->x)) + "_" +
+                     std::to_string(static_cast<int>(marker->y)) + "_" +
+                     std::to_string(static_cast<int>(marker->z)) + "_" +
+                     std::to_string(int(mass)));
+
+    marker_file << "# soma/seed x,y,z in original image\n";
+    marker_file << marker->x << ',' << marker->y << ',' << marker->z << '\n';
+  });
+}

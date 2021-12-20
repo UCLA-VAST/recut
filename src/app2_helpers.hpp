@@ -1657,7 +1657,7 @@ void run_app2(ValuedGrid component_with_values,
               std::vector<std::pair<GridCoord, uint8_t>> component_roots,
               std::string component_dir_fn, int index, int min_branch_length,
               std::ofstream& component_log,
-              bool bbox_adjust = false) {
+              bool global_bbox_adjust = false) {
   // the bkg_thresh is 0 for vdb to dense
   uint16_t bkg_thresh = 0;
   auto window = convert_vdb_to_dense(component_with_values);
@@ -1672,20 +1672,6 @@ void run_app2(ValuedGrid component_with_values,
         return marker;
       }) |
       rng::to_vector;
-
-  rng::for_each(component_markers, [&component_dir_fn](const auto marker) {
-    // write marker file
-    std::ofstream marker_file;
-    auto mass = ((4 * PI) / 3.) * pow(marker->radius, 3);
-    marker_file.open(component_dir_fn + "/marker_" +
-                     std::to_string(static_cast<int>(marker->x)) + "_" +
-                     std::to_string(static_cast<int>(marker->y)) + "_" +
-                     std::to_string(static_cast<int>(marker->z)) + "_" +
-                     std::to_string(int(mass)));
-
-    marker_file << "# x,y,z in original image\n";
-    marker_file << marker->x << ',' << marker->y << ',' << marker->z << '\n';
-  });
 
   // adjust component_markers to match window, just for
   // fastmarching_tree()
@@ -1720,7 +1706,7 @@ void run_app2(ValuedGrid component_with_values,
 #endif
 
   // adjust app2_output_tree_prune to match global image, for swc output
-  if (bbox_adjust) {
+  if (global_bbox_adjust) {
     rng::for_each(app2_output_tree_prune, [&window](const auto marker) {
       // adds the offset so the swc is with respect to whole image
       adjust_marker(marker, window.bbox().min());
