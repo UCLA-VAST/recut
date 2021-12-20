@@ -324,8 +324,8 @@ bool fastmarching_tree(std::vector<MyMarker *> roots, vector<MyMarker> &target,
       if (inimg1d[i] < min_int)
         min_int = inimg1d[i];
     }
-    cout << "max_int: " << max_int << '\n';
-    cout << "min_int: " << min_int << '\n';
+    //cout << "max_int: " << max_int << '\n';
+    //cout << "min_int: " << min_int << '\n';
   }
 
   assertm(max_int != 0, "max_int can't be zero");

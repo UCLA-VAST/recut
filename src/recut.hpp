@@ -3169,7 +3169,7 @@ void Recut<image_t>::partition_components(
     write_swc(filtered_tree, bbox, component_dir_fn, index,
               /*bbox_adjust*/ !params->output_windows_.empty());
 
-    cout << "Completed component " << index << '\n';
+    cout << "Component " << index << " complete and safe to open\n";
   }); // for each component
 
   if (output_topology) {
