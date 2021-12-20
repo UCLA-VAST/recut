@@ -2162,7 +2162,6 @@ auto print_swc_line =
       std::ostringstream line;
 
       if (bbox_adjust) { // implies output window crops is set
-        bbox.expand(EXPAND_CROP_PIXELS);
         swc_coord = swc_coord - bbox.min();
       }
 
@@ -3061,8 +3060,8 @@ auto all_invalid = [](const auto &flags_handle, const auto &parents_handle,
 
 auto convert_vdb_to_dense = [](auto grid) {
   // inclusive of both ends of bounding box
-  vto::Dense<uint16_t, vto::LayoutXYZ> dense(
-      grid->evalActiveVoxelBoundingBox(), /*fill*/ 0.);
+  vto::Dense<uint16_t, vto::LayoutXYZ> dense(grid->evalActiveVoxelBoundingBox(),
+                                             /*fill*/ 0.);
   vto::copyToDense(*grid, dense);
   return dense;
 };
@@ -3194,7 +3193,6 @@ create_window_grid(const ValuedGridT valued_grid, GridT component_grid,
                    std::ofstream &component_log) {
 
   assertm(valued_grid, "Must have input grid set to run output_windows_");
-  auto timer = high_resolution_timer();
   // if an expanded crop is requested, the actual image values outside of the
   // component bounding volume are needed therefore clip the original image
   // to a bounding volume
@@ -3203,7 +3201,9 @@ create_window_grid(const ValuedGridT valued_grid, GridT component_grid,
 
   vb::BBoxd clipBox(bbox.min().asVec3d(), bbox.max().asVec3d());
   const auto output_grid = vto::clip(*valued_grid, clipBox);
-  // component_log << "Clip " << timer.elapsed() << '\n';
+  if (output_grid->activeVoxelCount()) {
+    bbox = output_grid->evalActiveVoxelBoundingBox();
+  }
 
   // alternatively... for simply carrying values across:
   // copy_values(valued_grid, component_grid);
