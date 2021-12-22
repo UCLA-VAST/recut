@@ -29,6 +29,7 @@ in
     range-v3
     gtest
     libtiff
+    hdf5
 
     # optional dependencies
     openvdb.defaultPackage.x86_64-linux

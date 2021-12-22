@@ -229,7 +229,11 @@ find_package(OpenMP REQUIRED)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
+# Image I/O libraries
 find_package(TIFF REQUIRED)
+find_package(HDF5 COMPONENTS C REQUIRED)
+message(STATUS "HDF5_INCLUDE_DIR: ${HDF5_INCLUDE_DIR}")
+set(HDF5_LIBRARIES libhdf5.so)
 
 foreach(I ${ALL_TARGETS})
   message(STATUS "${I}")
@@ -290,6 +294,7 @@ foreach(I ${ALL_TARGETS})
   target_link_libraries(${I} PRIVATE Threads::Threads)
 
   target_link_libraries(${I} PRIVATE ${TIFF_LIBRARIES})
+  target_link_libraries(${I} PRIVATE ${HDF5_LIBRARIES})
 
   if (USE_MCP3D)
     message(STATUS "USE_MCP3D ON")
