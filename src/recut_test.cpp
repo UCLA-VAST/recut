@@ -352,6 +352,13 @@ TEST(Histogram, Add) {
   }
 }
 
+#ifdef USE_MCP3D
+TEST(Utils, DISABLED_HDF5MCP3D) {
+  mcp3d::MImage image("/mnt/d/Reconstructions_Working/For_Karl/TME12-1/ims/Camk2a-MORF3-D1Tom_TME12-1_30x_Str_02A.ims");
+  read_imaris(image);
+}
+#endif
+
 TEST(Histogram, CallAndPrint) {
   auto n = 1 << 8;
   auto granularity = 8;

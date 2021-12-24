@@ -19,7 +19,7 @@ in
 
   enableParallelBuilding = true;
 
-  cmakeFlags = ["-DLOG=ON -DLOG_FULL=OFF -DFULL_PRINT=OFF -DUSE_OMP_BLOCK=ON -DUSE_OMP_INTERVAL=ON -DTEST_ALL_BENCHMARKS=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MODULE_PATH=${openvdb.defaultPackage.x86_64-linux}/lib/cmake/OpenVDB"];
+  cmakeFlags = ["-DUSE_MCP3D=ON -DLOG=ON -DLOG_FULL=OFF -DFULL_PRINT=OFF -DUSE_OMP_BLOCK=ON -DUSE_OMP_INTERVAL=ON -DTEST_ALL_BENCHMARKS=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MODULE_PATH=${openvdb.defaultPackage.x86_64-linux}/lib/cmake/OpenVDB"];
 
   nativeBuildInputs = [ cmake gcc11 ];
 
@@ -32,7 +32,7 @@ in
 
     # optional dependencies
     openvdb.defaultPackage.x86_64-linux
-    #mcp3d.defaultPackage.x86_64-linux
+    mcp3d.defaultPackage.x86_64-linux
     gbenchmark
 
     # For debug purposes only:

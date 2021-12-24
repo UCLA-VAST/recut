@@ -1729,16 +1729,18 @@ void write_tiff(uint16_t *inimg1d, std::string base, const GridCoord dims,
 }
 
 #ifdef USE_MCP3D
-auto read_tiff = [](std::string fn, auto image_offsets, auto image_lengths,
-                    mcp3d::MImage &image) {
-  // read data from channel 0
-  image.ReadImageInfo({0}, true);
+auto read_imaris = [](mcp3d::MImage &image, CoordBBox bbox = {},
+                      int channel_number = 0) {
+  image.ReadImageInfo({channel_number}, true);
+  if (bbox.empty()) {
+    auto dims = image.xyz_dims();
+    bbox = CoordBBox(zeros(), GridCoord(dims[0], dims[1], dims[2]));
+  }
   try {
     // use unit strides only
-    mcp3d::MImageBlock block(
-        {image_offsets[0], image_offsets[1], image_offsets[2]},
-        {image_lengths[0], image_lengths[1], image_lengths[2]});
-    image.SelectView(block, 0);
+    mcp3d::MImageBlock block({bbox.min()[0], bbox.min()[1], bbox.min()[2]},
+                             {bbox.max()[0], bbox.max()[1], bbox.max()[2]});
+    image.SelectView(block, channel_number);
     image.ReadData(true, "quiet");
   } catch (...) {
     assertm(false, "error in image io. neuron tracing not performed");
