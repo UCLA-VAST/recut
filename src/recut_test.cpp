@@ -153,7 +153,7 @@ void check_recut_error(Recut<uint16_t> &recut, DataType *ground_truth,
 
 template <typename T, typename T2> void check_parents(T markers, T2 grid_size) {
   VID_t counter;
-  auto children_count = make_shared<uint8_t[]>(markers.size());
+  auto children_count = std::vector<uint8_t>(markers.size(), 0);
   for (auto &marker : markers) {
     auto current = marker;
     counter = 0;
@@ -354,7 +354,8 @@ TEST(Histogram, Add) {
 
 #ifdef USE_MCP3D
 TEST(Utils, DISABLED_HDF5MCP3D) {
-  mcp3d::MImage image("/mnt/d/Reconstructions_Working/For_Karl/TME12-1/ims/Camk2a-MORF3-D1Tom_TME12-1_30x_Str_02A.ims");
+  mcp3d::MImage image("/mnt/d/Reconstructions_Working/For_Karl/TME12-1/ims/"
+                      "Camk2a-MORF3-D1Tom_TME12-1_30x_Str_02A.ims");
   read_imaris(image);
 }
 #endif
@@ -743,9 +744,9 @@ TEST(Utils, SphereIterator) {
 
   for (auto e : rng) {
     cout << e << ' ';
-    //ASSERT_LE(coord_dist(center, e), radius); 
+    // ASSERT_LE(coord_dist(center, e), radius);
   }
-  //cout << '\n';
+  // cout << '\n';
   ASSERT_EQ(rng::distance(rng), 123);
 }
 
@@ -1158,6 +1159,10 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         }
 
         auto float_grid = openvdb::FloatGrid::create();
+        if (print) {
+          // print_grid_metadata(float_grid); // already in create_point_grid
+          cout << "convert buffer to vdb\n";
+        }
         convert_buffer_to_vdb_acc(inimg1d, grid_extents, zeros(), zeros(),
                                   float_grid->getAccessor(), "float", 0);
         set_grid_meta(float_grid, grid_extents, actual_slt_pct);
@@ -1196,10 +1201,14 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
           // zeros(), grid_extents));
 
           // print_image_3D(inimg1d, grid_extents);
-          cout << "Write tiff\n";
+          cout << "Writing tiff\n";
         }
 
         write_tiff(inimg1d, image_dir, grid_extents);
+
+        if (print) {
+          cout << "Writing vdbs\n";
+        }
 
         {
           openvdb::GridPtrVec grids;

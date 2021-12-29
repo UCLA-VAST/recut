@@ -1,17 +1,13 @@
 {
   description = "recut";
   inputs = {
-    pinned.url = "github:NixOS/nixpkgs/733e537a8ad76fd355b6f501127f7d0eb8861775";
-    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    mcp3d.url = "git+ssh://git@github.com/ucla-brain/mcp3d?ref=master";
+    # pick latest commit from stable branch and test it so no suprises
+    nixpkgs.url = "github:NixOS/nixpkgs/d53978239b265066804a45b7607b010b9cb4c50c";
+    mcp3d.url = "git+ssh://git@github.com/ucla-brain/mcp3d";
     openvdb.url = "git+ssh://git@github.com/UCLA-VAST/openvdb";
-    # alternatively you could pin a certain commit like:
-    # mcp3d.url = "git+ssh://git@github.com/ucla-brain/mcp3d?ref=kdm-dev&rev=<commit hash>";
-    # or you could with your local filesystem branch with:
-    # mcp3d.url = "/home/kdmarrett/mcp3d";
 
     # pin nix package manager versions to exact match between mcp3d and recut
-    mcp3d.inputs.nixpkgs.follows = "pinned";
+    mcp3d.inputs.nixpkgs.follows = "nixpkgs";
     openvdb.inputs.nixpkgs.follows = "nixpkgs";
   };
 

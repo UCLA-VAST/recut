@@ -3,37 +3,36 @@
     "mcp3d": {
       "inputs": {
         "nixpkgs": [
-          "pinned"
+          "nixpkgs"
         ]
       },
       "locked": {
-        "lastModified": 1636478829,
-        "narHash": "sha256-iV0xtgT+/P1lT1cVY2ICxS6kQwMOExilr/Dk93TV8OE=",
+        "lastModified": 1640801179,
+        "narHash": "sha256-Ccdj0YqtDwCEjN9J6HSUchMXBAw+V1n0zEOSe+pN0Ik=",
         "ref": "master",
-        "rev": "48681d66ad2bf2fd766599e02e146de9f21c480d",
-        "revCount": 468,
+        "rev": "19f213c0628b95a3b016f6a9de4de36348402a3a",
+        "revCount": 472,
         "type": "git",
         "url": "ssh://git@github.com/ucla-brain/mcp3d"
       },
       "original": {
-        "ref": "master",
         "type": "git",
         "url": "ssh://git@github.com/ucla-brain/mcp3d"
       }
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1636409124,
-        "narHash": "sha256-mX687Iy8SVhhdo16Sdqt0irrEgBjL54viPmOZBZJubQ=",
+        "lastModified": 1640718479,
+        "narHash": "sha256-hm5yC3ynZE9bH564NmFdWv07RtCKr/fgT8Veh594j4M=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "d14ae62671fd4eaec57427da1e50f91d6a5f9605",
+        "rev": "d53978239b265066804a45b7607b010b9cb4c50c",
         "type": "github"
       },
       "original": {
         "owner": "NixOS",
-        "ref": "nixpkgs-unstable",
         "repo": "nixpkgs",
+        "rev": "d53978239b265066804a45b7607b010b9cb4c50c",
         "type": "github"
       }
     },
@@ -44,41 +43,24 @@
         ]
       },
       "locked": {
-        "lastModified": 1636478435,
-        "narHash": "sha256-4QsWKa74LH6bjFrXBl5e8GDYQ/dCCNelG3h78Jje5D8=",
+        "lastModified": 1640727881,
+        "narHash": "sha256-m8HECsPdrUav6Ybs81T/tfxkeKT0D7ApBZg2P9e7Re8=",
         "ref": "master",
-        "rev": "36ccaa2a4be28eb99e851481eeccbf8d7c4385ee",
-        "revCount": 3274,
+        "rev": "d671a528898aaabdac0c78f221d05bc6987e5fc8",
+        "revCount": 3275,
         "type": "git",
         "url": "ssh://git@github.com/UCLA-VAST/openvdb"
       },
       "original": {
         "type": "git",
         "url": "ssh://git@github.com/UCLA-VAST/openvdb"
-      }
-    },
-    "pinned": {
-      "locked": {
-        "lastModified": 1609254719,
-        "narHash": "sha256-XB3391z8r81Bt8NfQzB+tYdTWoraY0QVdXM21JhfW+Y=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "733e537a8ad76fd355b6f501127f7d0eb8861775",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "733e537a8ad76fd355b6f501127f7d0eb8861775",
-        "type": "github"
       }
     },
     "root": {
       "inputs": {
         "mcp3d": "mcp3d",
         "nixpkgs": "nixpkgs",
-        "openvdb": "openvdb",
-        "pinned": "pinned"
+        "openvdb": "openvdb"
       }
     }
   },
