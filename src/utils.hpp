@@ -1728,29 +1728,11 @@ void write_tiff(uint16_t *inimg1d, std::string base, const GridCoord dims,
   }
 }
 
-#ifdef USE_MCP3D
-auto read_imaris = [](mcp3d::MImage &image, CoordBBox bbox = {},
-                      int channel_number = 0) {
-  image.ReadImageInfo({channel_number}, true);
-  if (bbox.empty()) {
-    auto dims = image.xyz_dims();
-    bbox = CoordBBox(zeros(), GridCoord(dims[0], dims[1], dims[2]));
-  }
-  try {
-    // use unit strides only
-    mcp3d::MImageBlock block({bbox.min()[0], bbox.min()[1], bbox.min()[2]},
-                             {bbox.max()[0], bbox.max()[1], bbox.max()[2]});
-    image.SelectView(block, channel_number);
-    image.ReadData(true, "quiet");
-  } catch (...) {
-    assertm(false, "error in image io. neuron tracing not performed");
-  }
-};
-#endif
-
+template <typename image_t = uint16_t>
 auto read_tiff_planes = [](const std::vector<std::string> &fns,
                            const CoordBBox &bbox) {
-  vto::Dense<uint16_t, vto::LayoutXYZ> dense(bbox, /*fill*/ 0.);
+  auto dense =
+      std::make_unique<vto::Dense<image_t, vto::LayoutXYZ>>(bbox, /*fill*/ 0.);
 
   for (auto z = 0; z < fns.size(); ++z) {
     const auto fn = fns[z];
@@ -1768,8 +1750,10 @@ auto read_tiff_planes = [](const std::vector<std::string> &fns,
 
     short bits_per_sample, samples_per_pixel;
     TIFFGetField(tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
-    if (bits_per_sample != 16) {
-      throw std::runtime_error("ERROR expected tiff file of uint16\n");
+    auto output_bits = 8 * sizeof(image_t);
+    if (bits_per_sample != output_bits) {
+      throw std::runtime_error("ERROR expected tiff file of uint" +
+                               std::to_string(output_bits) + "\n");
     }
 
     TIFFGetField(tiff, TIFFTAG_SAMPLESPERPIXEL, &samples_per_pixel);
@@ -1791,7 +1775,7 @@ auto read_tiff_planes = [](const std::vector<std::string> &fns,
     size_t bytes_per_pixel = (size_t)bits_per_sample / 8 * samples_per_pixel;
     size_t n_image_bytes = (size_t)bytes_per_pixel * image_height * image_width;
 
-    uint16_t *data_ptr = dense.data();
+    uint16_t *data_ptr = dense->data();
     uint64_t z_offset =
         static_cast<uint64_t>(z) * bbox.dim()[0] * bbox.dim()[1];
     tstrip_t n_strips = TIFFNumberOfStrips(tiff);
@@ -1851,14 +1835,15 @@ auto get_tif_dims = [](const std::vector<std::string> &tif_filenames) {
   return GridCoord(image_width, image_height, tif_filenames.size());
 };
 
-auto read_tiff_dir = [](const std::string &dir) {
+template <typename image_t = uint16_t>
+auto read_tiff_dir(const std::string &dir) {
   const auto tif_filenames = get_dir_files(dir, ".tif");
   const auto dims = get_tif_dims(tif_filenames);
   // bbox is inclusive
   const auto bbox = CoordBBox(zeros(), dims.offsetBy(-1));
   assertm(dims == bbox.dim(), "dims and bbox dims must match");
-  return read_tiff_planes(tif_filenames, bbox);
-};
+  return read_tiff_planes<image_t>(tif_filenames, bbox);
+}
 
 // stamp the compile time config
 // so that past logs are explicit about
@@ -3443,4 +3428,83 @@ void write_marker_files(std::vector<MyMarker *> component_markers,
     marker_file << "# soma/seed x,y,z in original image\n";
     marker_file << marker->x << ',' << marker->y << ',' << marker->z << '\n';
   });
+}
+
+#ifdef USE_MCP3D
+auto get_image_bbox = [](mcp3d::MImage &image, int channel_number = 0) {
+  image.ReadImageInfo({channel_number}, true);
+  auto dims = image.xyz_dims();
+  // reverse mcp3d's z y x parameter order
+  return CoordBBox(zeros(), GridCoord(dims[2], dims[1], dims[0]));
+};
+
+// image is a input/output parameter holding the data in .Volume(channel_number)
+// this is to make ownership of the tile buffer clear to clients
+auto load_imaris_tile = [](mcp3d::MImage &image, CoordBBox bbox = {},
+                           int channel_number = 0) {
+  auto timer = high_resolution_timer();
+
+  if (bbox.empty()) {
+    bbox = get_image_bbox(image, channel_number);
+  }
+  // try {
+  // mcp3d takes inputs in in z y x order
+  mcp3d::MImageBlock block({bbox.min()[2], bbox.min()[1], bbox.min()[0]},
+                           {bbox.max()[2], bbox.max()[1], bbox.max()[0]});
+  image.SelectView(block, channel_number);
+  // returns row-major (c-order) buffers
+  image.ReadData(true, "quiet");
+  //} catch (...) {
+  // throw std::runtime_error(false, "error in image io. neuron tracing not
+  // performed");
+  //}
+#ifdef LOG
+  cout << "Load image " << bbox << " in " << timer.elapsed() << " sec." << '\n';
+#endif
+};
+
+// FIXME delete this
+mcp3d::MImage *get_mcp3d_image(std::string fn) {
+
+  // const auto ims_names = get_dir_files(dir, ".ims"); // sorted
+  // if (ims_names.empty()) {
+  // throw std::runtime_error("No .ims or .tiff images found in directory: " +
+  // dir);
+  //}
+
+  // mcp3d::MImage image(ims_names[0]);
+  return new mcp3d::MImage(fn);
+}
+
+#endif // USE_MCP3D
+
+/*
+ * The interval size and shape define the requested "view" of the image
+ * an image view is referred to as a tile
+ * that we will load at one time. There is a one to one mapping
+ * of an image view and an interval. There is also a one to
+ * one mapping between each voxel of the image view and the
+ * vertex of the interval. Note the interval is an array of
+ * initialized unvisited structs so they start off at arbitrary
+ * location but are defined as they are visited.
+ */
+template <typename image_t = uint16_t>
+std::unique_ptr<vto::Dense<image_t, vto::LayoutXYZ>>
+load_tile(const CoordBBox &bbox, const std::string &dir) {
+  auto timer = high_resolution_timer();
+
+  const auto tif_filenames = get_dir_files(dir, ".tif"); // sorted by z
+  if (tif_filenames.empty()) {
+    throw std::runtime_error("No .ims or .tiff images found in directory: " +
+                             dir);
+  }
+
+  auto interval_filenames = tif_filenames |
+                            rng::views::slice(bbox.min()[2], bbox.max()[2]) |
+                            rng::to_vector;
+  auto dense = read_tiff_planes<image_t>(interval_filenames, bbox);
+#ifdef LOG
+  cout << "Load image " << bbox << " in " << timer.elapsed() << " sec." << '\n';
+#endif
+  return dense;
 }

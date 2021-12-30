@@ -356,7 +356,7 @@ TEST(Histogram, Add) {
 TEST(Utils, DISABLED_HDF5MCP3D) {
   mcp3d::MImage image("/mnt/d/Reconstructions_Working/For_Karl/TME12-1/ims/"
                       "Camk2a-MORF3-D1Tom_TME12-1_30x_Str_02A.ims");
-  read_imaris(image);
+  load_imaris_tile(image);
 }
 #endif
 
@@ -390,7 +390,7 @@ TEST(Histogram, CallAndPrint) {
     auto args = get_args(grid_size, grid_size, grid_size, 100, tcase);
     auto check = read_tiff_dir(args.image_root_dir());
     auto histogram =
-        hist(check.data(), args.image_lengths, zeros(), granularity);
+        hist(check->data(), args.image_lengths, zeros(), granularity);
     ASSERT_EQ(histogram.size(), 1)
         << "all values are 1 so only first first bin should exist";
     for (const auto &[lower_limit, bin_count] : histogram.bin_counts) {
@@ -1283,11 +1283,11 @@ TEST(Install, DISABLED_ConvertVDBToDense) {
 
     if (print) {
       cout << "Z-plane written then read image:\n";
-      print_image_3D(from_file.data(), bbox.dim());
+      print_image_3D(from_file->data(), bbox.dim());
     }
 
     ASSERT_NO_FATAL_FAILURE(
-        check_image_equality(check_dense.data(), from_file.data(), volume));
+        check_image_equality(check_dense.data(), from_file->data(), volume));
   }
 }
 
@@ -1423,10 +1423,10 @@ TEST(Install, DISABLED_ImageReadWrite) {
 
   if (print_all) {
     cout << "Read image:\n";
-    print_image_3D(check.data(), grid_extents);
+    print_image_3D(check->data(), grid_extents);
   }
 
-  ASSERT_NO_FATAL_FAILURE(check_image_equality(inimg1d, check.data(), volume));
+  ASSERT_NO_FATAL_FAILURE(check_image_equality(inimg1d, check->data(), volume));
 
   // check again
   if (print_all) {
@@ -1435,7 +1435,7 @@ TEST(Install, DISABLED_ImageReadWrite) {
   }
 
   auto check2 = read_tiff_dir(fn_ch0);
-  ASSERT_NO_FATAL_FAILURE(check_image_equality(inimg1d, check2.data(), volume));
+  ASSERT_NO_FATAL_FAILURE(check_image_equality(inimg1d, check2->data(), volume));
 
   delete[] inimg1d;
 }
@@ -1470,11 +1470,11 @@ TEST(TileThresholds, AllTcases) {
     if (tcase == 6) {
       auto image = read_tiff_dir(args.image_root_dir() + "/ch0");
       if (print_image) {
-        print_image_3D(image.data(), grid_extents);
+        print_image_3D(image->data(), grid_extents);
       }
-      bkg_thresh = recut.get_bkg_threshold(image.data(), grid_vertex_size,
+      bkg_thresh = recut.get_bkg_threshold(image->data(), grid_vertex_size,
                                            slt_pct / 100.);
-      tile_thresholds->get_max_min(image.data(), grid_vertex_size);
+      tile_thresholds->get_max_min(image->data(), grid_vertex_size);
 
       if (print_image) {
         cout << "tcase " << tcase << " bkg_thresh " << bkg_thresh << "\nmax "

@@ -22,22 +22,22 @@ string RecutParameters::MetaString() {
 }
 
 void RecutCommandLineArgs::PrintUsage() {
-  cout << "Basic usage : recut <image_root_dir> [--seeds <marker_dir>] "
-          "[--type point/uint8/mask/float] "
+  cout << "Basic usage : recut <image file or dir> [--seeds <marker_dir>] "
+          "[--type point/uint8/mask/float/ims/tiff] "
           "[--convert <output_vdb_file_name>] "
           "[--bkg-thresh <int>] [--fg-percent <double>]\n\n";
           "[--image-offsets <int> [<int>] [<int>]] "
           "[--image-lengths <int> [<int>] [<int>]] "
+          "[--channel <int>] "
           "\nNote: neurite+soma images are binarized and do not need bkg-thresh or fg-percent specified";
-        // "[--channel <dir>] "
           //"[--outswc <swc_file>] "
           // "[--resolution-level <int>] "
 
-  cout << "<image_root_dir>     directory for input image\n";
+  cout << "<image file or dir>  file or directory of input image(s)\n";
   cout << "--seeds              directory of files which represent known root/soma locations\n";
   cout << "--convert            [-cv] convert image file and exit defaults to "
           "out.vdb\n";
-  cout << "--type               VDB input grid type: 'point', 'uint8', 'mask' or 'float'\n";
+  cout << "--type               input type img: 'ims', 'tiff' | VDB: 'point', 'uint8', 'mask' or 'float'\n";
   cout << "--prune-radius       larger values decrease node sampling density "
           "along paths, default 5 the z anisotropic factor\n";
   //cout << "--max                set max image voxel raw value allowed, "
@@ -46,7 +46,7 @@ void RecutCommandLineArgs::PrintUsage() {
   //cout << "--min                set min image voxel raw value allowed, "
           //"computed automatically when --bg_thresh or --fg-percent are "
           //"specified\n";
-  //cout << "--channel            [-c] directory of channel image default ch0\n";
+  cout << "--channel            [-c] channel number, default 0\n";
   //cout << "--resolution-level   [-rl] resolution level to perform tracing at. "
           //"default is 0, ie original resolution\n";
   cout << "--image-offsets      [-io] offsets of subvolume, in x y z order "
@@ -79,9 +79,9 @@ void RecutCommandLineArgs::PrintUsage() {
 
 string RecutCommandLineArgs::MetaString() {
   stringstream meta_stream;
-  meta_stream << "# image root dir = " << image_root_dir_ << '\n';
-  //meta_stream << "# channel = " << channel_ << '\n';
-  meta_stream << "prune radius = " << channel_ << '\n';
+  meta_stream << "# image file/dir = " << image_root_dir_ << '\n';
+  meta_stream << "# channel = " << channel << '\n';
+  meta_stream << "prune radius = " << prune_radius_ << '\n';
   //meta_stream << "# resolution level = " << resolution_level_ << '\n';
   meta_stream << "# offsets (xyz) = " << image_offsets[0] << " "
               << image_offsets[1] << " " << image_offsets[2] << '\n';
@@ -145,16 +145,16 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--type") == 0) {
         auto arg = std::string(argv[i + 1]);
         if (arg == "float" || arg == "point" || arg == "uint8" ||
-            arg == "mask") {
+            arg == "mask" || arg == "ims" || arg == "tiff") {
           args.set_type(argv[i + 1]);
         } else {
-          cerr << "--type option must be one of [float,point]\n";
+          cerr << "--type option must be one of [float,point,uint8,mask,ims,tiff]\n";
           exit(1);
         }
         ++i;
       } else if (strcmp(argv[i], "--channel") == 0 ||
                  strcmp(argv[i], "-c") == 0) {
-        args.set_channel(argv[i + 1]);
+        args.channel = atoi(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--prune-radius") == 0) {
         args.set_prune_radius(atoi(argv[i + 1]));

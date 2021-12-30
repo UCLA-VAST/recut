@@ -239,10 +239,8 @@ public:
                   const TileThresholds<image_t> *tile_thresholds,
                   Container &fifo, VID_t revisits, T2 leaf_iter);
   void create_march_thread(VID_t interval_id, VID_t block_id);
-  vto::Dense<uint16_t, vto::LayoutXYZ> load_tile(const VID_t interval_id,
-                                                 const std::string &dir);
-  TileThresholds<image_t> *
-  get_tile_thresholds(vto::Dense<uint16_t, vto::LayoutXYZ> &tile);
+  TileThresholds<image_t> *get_tile_thresholds(
+      std::unique_ptr<vto::Dense<uint16_t, vto::LayoutXYZ>> &tile);
   template <typename T2>
   std::atomic<double>
   process_interval(VID_t interval_id, const image_t *tile, std::string stage,
@@ -2068,63 +2066,15 @@ std::atomic<double> Recut<image_t>::process_interval(
   return timer.elapsed();
 }
 
-/*
- * The interval size and shape define the requested "view" of the image
- * an image view is referred to as a tile
- * that we will load at one time. There is a one to one mapping
- * of an image view and an interval. There is also a one to
- * one mapping between each voxel of the image view and the
- * vertex of the interval. Note the interval is an array of
- * initialized unvisited structs so they start off at arbitrary
- * location but are defined as they are visited.
- */
-template <class image_t>
-vto::Dense<uint16_t, vto::LayoutXYZ>
-Recut<image_t>::load_tile(const VID_t interval_id, const std::string &dir) {
-#ifdef LOG
-  auto timer = high_resolution_timer();
-#endif
-
-  auto tile_extents = this->interval_lengths;
-  auto tile_offsets = id_interval_to_img_offsets(interval_id);
-  auto interval_max = (tile_offsets + tile_extents).offsetBy(-1);
-  const auto bbox = CoordBBox(tile_offsets, interval_max);
-#ifdef LOG_FULL
-  cout << "From image, on ii " << interval_id << " requesting:\n";
-  print_coord(tile_offsets, "tile_offsets");
-  print_coord(tile_extents, "tile_extents");
-  cout << bbox << '\n';
-#endif
-
-  const auto tif_filenames = get_dir_files(dir, ".tif"); // sorted
-  auto interval_filenames = tif_filenames | rng::views::drop(tile_offsets[2]) |
-                            rng::views::take(tile_extents[2]) | rng::to_vector;
-  // bbox is inclusive, therefore substract 1
-  // const auto dims = get_tif_dims(interval_filenames);
-  // assertm(dims == bbox.dim(), "dims and bbox dims must match");
-
-  // try {
-  // returns row-major (c-order) buffers
-  auto dense = read_tiff_planes(interval_filenames, bbox);
-#ifdef LOG
-  // cout << "Load image in " << timer.elapsed() << " sec." << '\n';
-#endif
-  ////} catch (...) {
-  //// throw std::runtime_error(
-  ////"error in mcp3d_tile io. neuron tracing not performed");
-  ////}
-  return dense;
-}
-
 // Calculate new tile thresholds or use input thresholds according
 // to params and args this function has no sideffects outside
 // of the returned tile_thresholds struct
 template <class image_t>
 TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
-    vto::Dense<uint16_t, vto::LayoutXYZ> &tile) {
+    std::unique_ptr<vto::Dense<uint16_t, vto::LayoutXYZ>> &tile) {
 
   auto tile_thresholds = new TileThresholds<image_t>();
-  auto interval_dims = tile.bbox().dim();
+  auto interval_dims = tile->bbox().dim();
   auto interval_vertex_size = coord_prod_accum(interval_dims);
 
   // assign thresholding value
@@ -2136,7 +2086,7 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
     auto timer = high_resolution_timer();
     // TopPercentile takes a fraction 0 -> 1, not a percentile
     tile_thresholds->bkg_thresh =
-        bkg_threshold<image_t>(tile.data(), interval_vertex_size,
+        bkg_threshold<image_t>(tile->data(), interval_vertex_size,
                                (params->foreground_percent()) / 100);
 
 #ifdef LOG
@@ -2158,7 +2108,7 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
       tile_thresholds->min_int = std::numeric_limits<image_t>::min();
     } else {
       // max and min members will be set
-      tile_thresholds->get_max_min(tile.data(), interval_vertex_size);
+      tile_thresholds->get_max_min(tile->data(), interval_vertex_size);
 #ifdef LOG_FULL
       cout << "max_int: " << +(tile_thresholds->max_int)
            << " min_int: " << +(tile_thresholds->min_int) << '\n';
@@ -2176,7 +2126,7 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
         tile_thresholds->min_int = std::numeric_limits<image_t>::min();
       } else {
         // max and min members will be set
-        tile_thresholds->get_max_min(tile.data(), interval_vertex_size);
+        tile_thresholds->get_max_min(tile->data(), interval_vertex_size);
 #ifdef LOG_FULL
         cout << "max_int: " << +(tile_thresholds->max_int)
              << " min_int: " << +(tile_thresholds->min_int) << '\n';
@@ -2200,7 +2150,7 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
   }
 
   return tile_thresholds;
-} // end load_tile()
+}
 
 // returns the execution time for updating the entire
 // stage excluding I/O
@@ -2339,23 +2289,42 @@ Recut<image_t>::update(std::string stage, Container &fifo,
         }
 
         if (stage == "convert") {
-          auto dense_tile = load_tile(interval_id, args->image_root_dir());
+          auto tile_offsets = id_interval_to_img_offsets(interval_id);
+          // bbox is inclusive, therefore substract 1
+          auto interval_max =
+              (tile_offsets + this->interval_lengths).offsetBy(-1);
+          const auto tile_bbox = CoordBBox(tile_offsets, interval_max);
+          std::unique_ptr<vto::Dense<image_t, vto::LayoutXYZ>> dense_tile;
+#ifdef USE_MCP3D
+          // keep image in scope while accessing dense_tile
+          mcp3d::MImage image(args->image_root_dir());
+          if (args->type_ == "ims") {
+            load_imaris_tile(image, tile_bbox, args->channel);
+            // assign ownership of the image tile buffer to dense_tile
+            // warning: UB if image goes out of scope while accessing dense_tile
+            dense_tile = std::make_unique<vto::Dense<image_t, vto::LayoutXYZ>>(
+                tile_bbox, image.Volume<image_t>(args->channel));
+          }
+#endif
+          if (args->type_ == "tif") {
+            dense_tile = load_tile<image_t>(tile_bbox, args->image_root_dir());
+          }
+
           if (!local_tile_thresholds) {
             auto thresh_start = timer.elapsed();
             local_tile_thresholds = get_tile_thresholds(dense_tile);
             computation_time =
                 computation_time + (timer.elapsed() - thresh_start);
           }
-          tile = dense_tile.data();
+          tile = dense_tile->data();
 
           assertm(!this->input_is_vdb,
                   "input can't be vdb during convert stage");
 
           GridCoord no_offsets = {0, 0, 0};
-          auto interval_offsets = id_interval_to_img_offsets(interval_id);
 
           GridCoord buffer_offsets =
-              params->force_regenerate_image ? interval_offsets : no_offsets;
+              params->force_regenerate_image ? tile_bbox.min() : no_offsets;
           GridCoord buffer_extents = params->force_regenerate_image
                                          ? this->image_lengths
                                          : this->interval_lengths;
@@ -2371,7 +2340,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
             convert_buffer_to_vdb_acc(
                 tile, buffer_extents,
                 /*buffer_offsets=*/buffer_offsets,
-                /*image_offsets=*/interval_offsets,
+                /*image_offsets=*/tile_bbox.min(),
                 uint8_grids[interval_id]->getAccessor(), this->args->type_,
                 local_tile_thresholds->bkg_thresh, this->params->upsample_z_);
             if (params->histogram_) {
@@ -2382,7 +2351,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
             convert_buffer_to_vdb_acc(
                 tile, buffer_extents,
                 /*buffer_offsets=*/buffer_offsets,
-                /*image_offsets=*/interval_offsets,
+                /*image_offsets=*/tile_bbox.min(),
                 float_grids[interval_id]->getAccessor(), this->args->type_,
                 local_tile_thresholds->bkg_thresh, this->params->upsample_z_);
             if (params->histogram_) {
@@ -2393,7 +2362,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
             convert_buffer_to_vdb_acc(
                 tile, buffer_extents,
                 /*buffer_offsets=*/buffer_offsets,
-                /*image_offsets=*/interval_offsets,
+                /*image_offsets=*/tile_bbox.min(),
                 mask_grids[interval_id]->getAccessor(), this->args->type_,
                 local_tile_thresholds->bkg_thresh, this->params->upsample_z_);
             if (params->histogram_) {
@@ -2407,7 +2376,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
             // input by command line user
             convert_buffer_to_vdb(tile, buffer_extents,
                                   /*buffer_offsets=*/buffer_offsets,
-                                  /*image_offsets=*/interval_offsets, positions,
+                                  /*image_offsets=*/tile_bbox.min(), positions,
                                   local_tile_thresholds->bkg_thresh,
                                   this->params->upsample_z_);
 
@@ -2702,9 +2671,18 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
     cout << "Read grid in: " << timer.elapsed() << " s\n";
 #endif
 
-  } else { // converting to a new grid
-    const auto tif_filenames = get_dir_files(args->image_root_dir(), ".tif");
-    input_image_lengths = get_tif_dims(tif_filenames);
+  } else { // converting to a new grid from a raw image
+    if (args->type_ == "tiff") {
+      const auto tif_filenames = get_dir_files(args->image_root_dir(), ".tif");
+      input_image_lengths = get_tif_dims(tif_filenames);
+    } else if (args->type_ == "ims") {
+      mcp3d::MImage image(args->image_root_dir());
+      auto imaris_bbox = get_image_bbox(image, args->channel);
+      input_image_lengths = imaris_bbox.dim();
+    } else {
+      throw std::runtime_error(
+          "If input is not vdb, must pass type of tiff or ims");
+    }
 
     if (args->type_ == "float") {
       this->input_grid = openvdb::FloatGrid::create();
@@ -2736,7 +2714,7 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
   }
 #ifdef LOG
   cout << "Thread count " << args->user_thread_count << '\n';
-  cout << "User specified image root dir " << args->image_root_dir() << '\n';
+  cout << "User specified image " << args->image_root_dir() << '\n';
 #endif
 #endif
 

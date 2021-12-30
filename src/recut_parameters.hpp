@@ -139,7 +139,7 @@ class RecutCommandLineArgs {
 public:
   RecutCommandLineArgs()
       : recut_parameters_(RecutParameters{}), image_root_dir_(std::string()),
-        swc_path_("out.swc"), channel_("ch0"), resolution_level_(0),
+        swc_path_("out.swc"), channel(0), resolution_level_(0),
         image_offsets(0, 0, 0), image_lengths(-1, -1, -1), type_("point"),
         prune_radius_(ANISOTROPIC_FACTOR), run_app2(false),
         user_thread_count(tbb::info::default_concurrency()), interval_z(1),
@@ -153,7 +153,6 @@ public:
   RecutParameters &recut_parameters() { return recut_parameters_; }
   std::string image_root_dir() const { return image_root_dir_; }
   std::string swc_path() const { return swc_path_; }
-  std::string channel() const { return channel_; }
   int resolution_level() const { return resolution_level_; }
 
   // setters
@@ -168,8 +167,6 @@ public:
   }
 
   void set_swc_path(const std::string &swc_path) { swc_path_ = swc_path; }
-
-  void set_channel(std::string channel) { channel_ = channel; }
 
   void set_prune_radius(uint16_t pr) { prune_radius_ = pr; }
 
@@ -193,8 +190,8 @@ public:
   GridCoord image_offsets, image_lengths;
 
   RecutParameters recut_parameters_;
-  std::string image_root_dir_, swc_path_, channel_, type_;
-  uint16_t prune_radius_, user_thread_count, interval_z, min_branch_length, resolution_level_;
+  std::string image_root_dir_, swc_path_, type_;
+  uint16_t prune_radius_, user_thread_count, interval_z, min_branch_length, resolution_level_, channel;
   bool run_app2;
 };
 
