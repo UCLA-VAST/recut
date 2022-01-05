@@ -109,9 +109,9 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
     // expected
     for (int i = 2; i < argc; ++i) {
       if (strcmp(argv[i], "--convert") == 0 || strcmp(argv[i], "-cv") == 0) {
-        ++i;
         if (!(i >= argc || argv[i][0] == '-')) {
           args.recut_parameters().set_out_vdb(argv[i]);
+          ++i;
         } else {
           // still convert but set to default file name
           // only vdb is supported
