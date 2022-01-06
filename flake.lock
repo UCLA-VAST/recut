@@ -7,11 +7,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1640801179,
-        "narHash": "sha256-Ccdj0YqtDwCEjN9J6HSUchMXBAw+V1n0zEOSe+pN0Ik=",
+        "lastModified": 1641484804,
+        "narHash": "sha256-apUjPxj55Jo4oQDyJkf0InNLp2SUrnb9SF/KGqtGPak=",
         "ref": "master",
-        "rev": "19f213c0628b95a3b016f6a9de4de36348402a3a",
-        "revCount": 472,
+        "rev": "eab8caeb795ad888e2e54ab46951072b2e5378ee",
+        "revCount": 473,
         "type": "git",
         "url": "ssh://git@github.com/ucla-brain/mcp3d"
       },
