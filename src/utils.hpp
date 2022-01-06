@@ -3444,9 +3444,14 @@ auto load_imaris_tile = [](mcp3d::MImage &image, CoordBBox bbox = {},
                            int channel_number = 0) {
   auto timer = high_resolution_timer();
 
+  // image state needs to be established via a call to ReadImageInfo
+  // before calling SelectView
   if (bbox.empty()) {
     bbox = get_image_bbox(image, channel_number);
+  } else {
+    image.ReadImageInfo({channel_number}, true);
   }
+
   // try {
   // mcp3d takes inputs in in z y x order
   mcp3d::MImageBlock block({bbox.min()[2], bbox.min()[1], bbox.min()[0]},
