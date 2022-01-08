@@ -1090,12 +1090,12 @@ void write_vdb_file(openvdb::GridPtrVec vdb_grids, std::string fp = "") {
     if (dir.empty() || fs::exists(dir)) {
       if (fs::exists(fp)) {
 #ifdef LOG
-        cout << "Warning: " << fp << " already exists, overwriting...\n";
+        std::cout << "Warning: " << fp << " already exists, overwriting...\n";
 #endif
       }
     } else {
 #ifdef LOG
-      cout << "Directory: " << dir << " does not exist, creating...\n";
+      std::cout << "Directory: " << dir << " does not exist, creating...\n";
 #endif
       fs::create_directories(dir);
     }
@@ -1337,22 +1337,21 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
   return selected;
 }
 
-RecutCommandLineArgs get_args(int grid_size, int interval_length,
-                              int block_size, int slt_pct, int tcase,
-                              bool force_regenerate_image = false,
-                              bool input_is_vdb = false,
-                              std::string type = "point",
-                              int downsample_factor = 1) {
+RecutCommandLineArgs
+get_args(int grid_size, int interval_length, int block_size, int slt_pct,
+         int tcase, bool force_regenerate_image = false,
+         bool input_is_vdb = false, std::string input_type = "point",
+         std::string output_type = "point", int downsample_factor = 1) {
 
   bool print = false;
 
   RecutCommandLineArgs args;
-  args.type_ = type;
-  auto params = args.recut_parameters();
+  args.input_type = input_type;
+  args.output_type = output_type;
   auto str_path = get_data_dir();
-  params.set_marker_file_path(
-      str_path + "/test_markers/" + std::to_string(grid_size) + "/tcase" +
-      std::to_string(tcase) + "/slt_pct" + std::to_string(slt_pct) + "/");
+  args.seed_path = str_path + "/test_markers/" + std::to_string(grid_size) +
+                   "/tcase" + std::to_string(tcase) + "/slt_pct" +
+                   std::to_string(slt_pct) + "/";
   auto lengths = GridCoord(grid_size);
   args.set_image_lengths(lengths);
   args.set_image_offsets(zeros());
@@ -1376,7 +1375,7 @@ RecutCommandLineArgs get_args(int grid_size, int interval_length,
 
     if (const char *env_p = std::getenv("TEST_IMAGE")) {
       std::cout << "Using $TEST_IMAGE environment variable: " << env_p << '\n';
-      args.set_image_root_dir(std::string(env_p));
+      args.image_root_dir = std::string(env_p);
     } else {
       std::cout << "Warning likely fatal: must run: export "
                    "TEST_IMAGE=\"abs/path/to/image\" to set the environment "
@@ -1385,7 +1384,7 @@ RecutCommandLineArgs get_args(int grid_size, int interval_length,
 
     if (const char *env_p = std::getenv("TEST_MARKER")) {
       std::cout << "Using $TEST_MARKER environment variable: " << env_p << '\n';
-      params.set_marker_file_path(std::string(env_p));
+      args.seed_path = std::string(env_p);
     } else {
       std::cout << "Warning likely fatal must run: export "
                    "TEST_MARKER=\"abs/path/to/marker\" to set the environment "
@@ -1393,41 +1392,36 @@ RecutCommandLineArgs get_args(int grid_size, int interval_length,
     }
 
     // foreground_percent is always double between .0 and 1.
-    params.set_foreground_percent(static_cast<double>(slt_pct) / 100.);
+    args.foreground_percent = static_cast<double>(slt_pct) / 100.;
     // pre-determined and hardcoded thresholds for the file above
     // to save time recomputing is disabled
   } else {
     // by setting the max intensities you do not need to recompute them
     // in the update function, this is critical for benchmarking
-    params.set_max_intensity(2);
-    params.set_min_intensity(0);
-    params.force_regenerate_image = force_regenerate_image;
+    args.max_intensity = 2;
+    args.min_intensity = 0;
+    args.force_regenerate_image = force_regenerate_image;
     auto image_root_dir =
         str_path + "/test_images/" + std::to_string(grid_size) + "/tcase" +
         std::to_string(tcase) + "/slt_pct" + std::to_string(slt_pct);
     if (input_is_vdb) {
-      if (args.type_ == "point") {
-        args.set_image_root_dir(image_root_dir + "/point.vdb");
-      } else if (args.type_ == "float") {
-        args.set_image_root_dir(image_root_dir + "/float.vdb");
+      if (args.input_type == "point") {
+        args.image_root_dir = image_root_dir + "/point.vdb";
+      } else if (args.input_type == "float") {
+        args.image_root_dir = image_root_dir + "/float.vdb";
       }
     } else {
-      args.set_image_root_dir(image_root_dir + "/ch0");
+      args.image_root_dir = image_root_dir + "/ch0";
     }
   }
 
   // the total number of blocks allows more parallelism
   VID_t img_vox_num = grid_size * grid_size * grid_size;
-  params.tcase = tcase;
-  params.slt_pct = slt_pct;
-  params.selected = img_vox_num * (slt_pct / (float)100);
-  params.root_vid = get_central_vid(grid_size);
+  args.tcase = tcase;
+  args.slt_pct = slt_pct;
+  args.selected = img_vox_num * (slt_pct / (float)100);
+  args.root_vid = get_central_vid(grid_size);
 
-  // For now, params are only saved if this
-  // function is called, in the future
-  // args and params should be combined to be
-  // flat
-  args.set_recut_parameters(params);
   if (print)
     args.PrintParameters();
 
@@ -3502,10 +3496,11 @@ load_tile(const CoordBBox &bbox, const std::string &dir) {
                              dir);
   }
 
-  auto interval_filenames = tif_filenames |
-                            rng::views::slice(bbox.min()[2], bbox.max()[2]) |
-                            rng::to_vector;
-  auto dense = read_tiff_planes<image_t>(interval_filenames, bbox);
+  auto tile_filenames = tif_filenames |
+                        rng::views::slice(bbox.min()[2], bbox.max()[2] + 1) |
+                        rng::to_vector;
+  std::cout << rng::views::all(tif_filenames);
+  auto dense = read_tiff_planes<image_t>(tile_filenames, bbox);
 #ifdef LOG
   cout << "Load image " << bbox << " in " << timer.elapsed() << " sec." << '\n';
 #endif

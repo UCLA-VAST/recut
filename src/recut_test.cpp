@@ -359,8 +359,8 @@ TEST(Utils, DISABLED_HDF5MCP3D) {
   mcp3d::MImage image(imaris_path);
   load_imaris_tile(image);
 
-  //auto imaris_id = mcp3d::Hdf5Handle(imaris_path);
-  //auto dims = mcp3d::ImarisChannelChunkXyzDims(imaris_id, 0, 0, 0);
+  // auto imaris_id = mcp3d::Hdf5Handle(imaris_path);
+  // auto dims = mcp3d::ImarisChannelChunkXyzDims(imaris_id, 0, 0, 0);
 
   // mcp3d::ImarisChannelInfo info(imaris_path, 0, 0);
   // EXPECT_EQ(vector<int>({8, 256, 256}), info.chunk_xyz_dims());
@@ -395,7 +395,7 @@ TEST(Histogram, CallAndPrint) {
     auto tcase = 0;
     auto grid_size = 2;
     auto args = get_args(grid_size, grid_size, grid_size, 100, tcase);
-    auto check = read_tiff_dir(args.image_root_dir());
+    auto check = read_tiff_dir(args.image_root_dir);
     auto histogram =
         hist(check->data(), args.image_lengths, zeros(), granularity);
     ASSERT_EQ(histogram.size(), 1)
@@ -624,7 +624,7 @@ TEST(VDB, PriorityQueue) {
                              /*force_regenerate_image=*/true,
                              /*input_is_vdb=*/true,
                              /* type =*/"point");
-  auto base_grid = read_vdb_file(point_args.image_root_dir());
+  auto base_grid = read_vdb_file(point_args.image_root_dir);
   recut.topology_grid = openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
   append_attributes(recut.topology_grid);
 
@@ -693,7 +693,7 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
                              /*force_regenerate_image=*/false,
                              /*input_is_vdb=*/true,
                              /*type=*/"float");
-  auto base_grid = read_vdb_file(float_args.image_root_dir());
+  auto base_grid = read_vdb_file(float_args.image_root_dir);
   // priority queue must have type float
   recut.input_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
 
@@ -750,8 +750,8 @@ TEST(Utils, SphereIterator) {
   auto rng = sphere_iterator(center, radius);
 
   for (auto e : rng) {
-    cout << e << ' ';
-    // ASSERT_LE(coord_dist(center, e), radius);
+    // cout << e << ' ';
+    ASSERT_LE(coord_dist(center, e), radius);
   }
   // cout << '\n';
   ASSERT_EQ(rng::distance(rng), 123);
@@ -782,10 +782,9 @@ TEST(Utils, AdjustSomaRadii) {
                              /*force_regenerate_image=*/GEN_IMAGE,
                              /*input_is_vdb=*/true,
                              /* type =*/"point");
-  auto base_grid = read_vdb_file(point_args.image_root_dir());
+  auto base_grid = read_vdb_file(point_args.image_root_dir);
   recut.topology_grid = openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
   append_attributes(recut.topology_grid);
-  // cout << root_coords[0].first << ' ' << +(root_coords[0].second) << '\n';
 
   // check all root radii are 0
   rng::for_each(root_coords, [&recut](const auto &coord_radius) {
@@ -945,8 +944,8 @@ TEST(VDB, Connected) {
 // auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
 //[>force_regenerate_image=<]true);
 // auto recut = Recut<uint16_t>(args);
-// recut.params->convert_only_ = true;
-// recut.params->out_vdb_ = fn;
+// recut.args->convert_only = true;
+// recut.args->out_vdb_ = fn;
 // ASSERT_FALSE(fs::exists(fn));
 // recut();
 
@@ -961,7 +960,7 @@ TEST(VDB, Connected) {
 // ASSERT_TRUE(fs::exists(fn));
 //}
 
-TEST(VDB, Convert) {
+TEST(VDB, ConvertTiffToPoint) {
   VID_t grid_size = 8;
   VID_t interval_size = 8;
   GridCoord grid_extents(grid_size);
@@ -970,80 +969,43 @@ TEST(VDB, Convert) {
   auto tcase = 7;
   double slt_pct = 100;
   bool print_all = false;
-  auto str_path = get_data_dir();
-
-  // generate an image buffer on the fly
-  // then convert to vdb
-  auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-                       /*force_regenerate_image*/ true);
-  auto recut = Recut<uint16_t>(args);
-  recut.params->convert_only_ = true;
-  // recut.params->out_vdb_ = fn;
-  // ASSERT_FALSE(fs::exists(fn));
-  recut.initialize();
-
-  if (print_all) {
-    std::cout << "recut image grid" << endl;
-    print_image_3D(recut.generated_image, grid_extents);
-  }
-
-  /*
-  if (recut.params->convert_only_) {
-    recut.activate_all_intervals();
-  }
-
-  // mutates topology_grid
-  auto stage = "convert";
-  recut.update(stage, recut.map_fifo);
-
-  if (print_all)
-    print_vdb_mask(recut.topology_grid->getConstAccessor(), grid_extents);
-
-  // don't write out the file since you will have read only paths in nix
-  // environments ASSERT_TRUE(fs::exists(fn));
-
-  double write_error_rate;
-  EXPECT_NO_FATAL_FAILURE(
-      check_recut_error(recut, recut.generated_image,
-                        grid_size, stage, write_error_rate, recut.map_fifo,
-                        recut.params->selected, true));
-  ASSERT_NEAR(write_error_rate, 0., NUMERICAL_ERROR);
-  */
 
   // test reading from a pre-generated image file of exact same as
   // recut.generated_image as long as tcase != 4
   // read from file and convert
-  {
-    auto args =
-        get_args(grid_size, interval_size, interval_size, slt_pct, tcase,
-                 /*force_regenerate_image=*/false,
-                 /*input_is_vdb=*/false);
+  auto args = get_args(grid_size, interval_size, interval_size, slt_pct, tcase,
+                       /*force_regenerate_image=*/false,
+                       /*input_is_vdb=*/false, "tiff", "point");
+  auto recut = Recut<uint16_t>(args);
+  recut.args->convert_only = true;
 
-    auto recut_from_tiff_file = Recut<uint16_t>(args);
-    recut_from_tiff_file.params->convert_only_ = true;
-
-    // handle read from vdb
-    recut_from_tiff_file.initialize();
-    recut_from_tiff_file.activate_all_intervals();
-    // mutates topology_grid
-    auto stage = "convert";
-    recut_from_tiff_file.update(stage, recut_from_tiff_file.map_fifo);
-
-    if (print_all)
-      print_vdb_mask(recut_from_tiff_file.topology_grid->getConstAccessor(),
-                     grid_extents);
-
-    // assert equals original grid above
-    double read_from_file_error_rate;
-    EXPECT_NO_FATAL_FAILURE(
-        check_recut_error(recut_from_tiff_file,
-                          /*ground_truth*/ recut.generated_image, grid_size,
-                          stage, read_from_file_error_rate,
-                          recut_from_tiff_file.map_fifo, recut.params->selected,
-                          /*strict_match=*/true));
-
-    ASSERT_NEAR(read_from_file_error_rate, 0., NUMERICAL_ERROR);
+  auto tiff_dense = read_tiff_dir(args.image_root_dir);
+  auto selected = std::accumulate(tiff_dense->data(), tiff_dense->data() + tiff_dense->valueCount(), 0);
+  if (print_all) {
+    std::cout << "tiff_dense\n";
+    print_image_3D(tiff_dense->data(), grid_extents);
   }
+
+  recut.initialize();
+  recut.activate_all_intervals();
+  // mutates topology_grid since point
+  auto stage = "convert";
+  recut.update(stage, recut.map_fifo);
+
+  if (print_all)
+    print_vdb_mask(recut.topology_grid->getConstAccessor(),
+                   grid_extents);
+
+  // assert equals original grid above
+  double read_from_file_error_rate;
+  EXPECT_NO_FATAL_FAILURE(
+      check_recut_error(recut,
+                        /*ground_truth*/ tiff_dense->data(), grid_size,
+                        stage, read_from_file_error_rate,
+                        recut.map_fifo, selected,
+                        /*strict_match=*/true));
+
+  ASSERT_NEAR(read_from_file_error_rate, 0., NUMERICAL_ERROR);
 }
 
 /*
@@ -1053,7 +1015,7 @@ TEST(VDB, Convert) {
  * tcases and selected percents install files into data/
  */
 TEST(Install, DISABLED_CreateImagesMarkers) {
-  // change these to desired params
+  // change these to desired args
   // Note this will delete anything in the
   // same directory before writing
   // tcase 5 is deprecated
@@ -1469,14 +1431,14 @@ TEST(TileThresholds, AllTcases) {
   for (const auto &tcase : tcases) {
     auto args =
         get_args(grid_size, grid_size, grid_size, slt_pct, tcase, false);
-    auto selected = args.recut_parameters().selected;
+    auto selected = args.selected;
     auto recut = Recut<uint16_t>(args);
     auto inimg1d = std::make_unique<uint16_t[]>(grid_vertex_size);
     auto tile_thresholds = new TileThresholds<uint16_t>();
     uint16_t bkg_thresh;
 
     if (tcase == 6) {
-      auto image = read_tiff_dir(args.image_root_dir() + "/ch0");
+      auto image = read_tiff_dir(args.image_root_dir + "/ch0");
       if (print_image) {
         print_image_3D(image->data(), grid_extents);
       }
@@ -1886,14 +1848,13 @@ TEST(Update, EachStageIteratively) {
             // Create ground truth refence for the rest of the loop body
             auto ground_truth_args =
                 get_args(grid_size, interval_size, block_size, slt_pct, tcase);
-            auto ground_truth_params = ground_truth_args.recut_parameters();
             auto ground_truth_image = std::make_unique<uint16_t[]>(tol_sz);
             ASSERT_NE(tcase, 4)
                 << "tcase 4 will fail this test since a new random ground "
                    "truth will mismatch the read file\n";
             auto ground_truth_selected = create_image(
                 tcase, ground_truth_image.get(), grid_size,
-                ground_truth_params.selected, ground_truth_params.root_vid);
+                ground_truth_args.selected, ground_truth_args.root_vid);
 
             // the total number of blocks allows more parallelism
             // ideally intervals >> thread count
@@ -1921,7 +1882,6 @@ TEST(Update, EachStageIteratively) {
 
             auto recut = Recut<uint16_t>(args);
             auto root_coords = recut.initialize();
-            // auto recut_selected = args.recut_parameters().selected;
 
             if (print_all) {
               std::cout << "ground truth image grid" << endl;
@@ -2034,7 +1994,7 @@ TEST(Update, EachStageIteratively) {
                 double xy_err;
                 ASSERT_NO_FATAL_FAILURE(check_image_error(
                     ground_truth_image.get(), app2_accurate_radii_grid.get(),
-                    app2_xy_radii_grid.get(), grid_size, recut.params->selected,
+                    app2_xy_radii_grid.get(), grid_size, recut.args->selected,
                     xy_err));
                 std::ostringstream xy_stream;
                 xy_stream << "XY Error " << iteration_trace.str();
@@ -2350,17 +2310,16 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
   auto interval_extents = GridCoord(interval_size);
   auto block_extents = GridCoord(block_size);
 
-  // shared params
   // generate image so that you can read it below
   // first make sure it can pass
   auto input_is_vdb = true;
   auto args = get_args(grid_size, interval_size, block_size, slt_pct, tcase,
                        force_regenerate_image, input_is_vdb);
-  args.set_type("float");
-  cout << "args.image_root_dir() " << args.image_root_dir() << '\n';
+  args.input_type = "float";
+  cout << "args.image_root_dir " << args.image_root_dir << '\n';
   cout << "image lengths " << grid_extents << '\n';
   cout << "image offsets " << args.image_offsets << '\n';
-  cout << "VDB input type " << args.type_ << '\n';
+  cout << "VDB input type " << args.input_type << '\n';
   // uint16_t is image_t here
   TileThresholds<uint16_t> *tile_thresholds;
   bool print_all = false;
@@ -2539,7 +2498,7 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
   // pregenerated data has a known number of selected
   // pixels
   if (check_against_selected) {
-    ASSERT_EQ(args.output_tree.size(), recut.params->selected);
+    ASSERT_EQ(args.output_tree.size(), recut.args->selected);
   }
 
   // this runs the original app2 fastmarching algorithm
@@ -2830,8 +2789,8 @@ INSTANTIATE_TEST_CASE_P(
 TEST(RecutPipeline, PrintDefaultInfo) {
   auto v1 = new VertexAttr();
   auto vs = sizeof(VertexAttr);
-  cout << "sizeof vertex " << vs << " bytes" << endl;
-  cout << "AvailMem " << GetAvailMem() / (1024 * 1024 * 1024) << " GB" << endl;
+  cout << "sizeof vertex " << vs << " bytes\n";
+  cout << "AvailMem " << GetAvailMem() / (1024 * 1024 * 1024) << " GB\n";
   cout << "Data directory referenced by this test binary: " << get_data_dir()
        << '\n';
 }

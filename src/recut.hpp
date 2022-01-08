@@ -107,7 +107,6 @@ public:
   image_t *generated_image = nullptr;
   atomic<VID_t> global_revisits;
   RecutCommandLineArgs *args;
-  RecutParameters *params;
   std::map<GridCoord, std::deque<VertexAttr>> map_fifo;
   std::map<GridCoord, local_heap> heap_map;
   std::map<GridCoord, std::deque<VertexAttr>> connected_map;
@@ -117,8 +116,7 @@ public:
   std::string run_dir;
   std::string log_fn;
 
-  Recut(RecutCommandLineArgs &args)
-      : args(&args), params(&(args.recut_parameters())) {}
+  Recut(RecutCommandLineArgs &args) : args(&args) {}
 
   void operator()();
   void init_run();
@@ -272,7 +270,7 @@ public:
 };
 
 template <class image_t> Recut<image_t>::~Recut<image_t>() {
-  if (this->params->force_regenerate_image) {
+  if (this->args->force_regenerate_image) {
     // when initialize has been run
     // generated_image is no longer nullptr
     if (this->generated_image) {
@@ -390,59 +388,57 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
 
   // input handler
   {
-    if (params->marker_file_path().empty())
+    if (args->seed_path.empty())
       return {};
 
     // allow either dir or dir/ naming styles
-    if (params->marker_file_path().back() != '/')
-      params->set_marker_file_path(params->marker_file_path().append("/"));
+    if (args->seed_path.back() != '/')
+      args->seed_path = args->seed_path.append("/");
 
 #ifdef LOG
-    cout << "marker dir path: " << params->marker_file_path() << '\n';
-    assertm(fs::exists(params->marker_file_path()),
-            "Marker file path must exist");
+    cout << "marker dir path: " << args->seed_path << '\n';
+    assertm(fs::exists(args->seed_path), "Marker file path must exist");
 #endif
   }
 
   // gather all markers within directory
   auto inmarkers = std::vector<MyMarker>();
-  rng::for_each(
-      fs::directory_iterator(params->marker_file_path()),
-      [&inmarkers, this](auto marker_file) {
-        std::stringstream fn(marker_file.path().filename());
-        const auto full_marker_name =
-            params->marker_file_path() + marker_file.path().filename().string();
-        auto markers = readMarker_file(full_marker_name);
-        assertm(markers.size() == 1, "only 1 marker file per soma");
+  rng::for_each(fs::directory_iterator(args->seed_path), [&inmarkers, this](
+                                                             auto marker_file) {
+    std::stringstream fn(marker_file.path().filename());
+    const auto full_marker_name =
+        args->seed_path + marker_file.path().filename().string();
+    auto markers = readMarker_file(full_marker_name);
+    assertm(markers.size() == 1, "only 1 marker file per soma");
 
-        if (markers[0].radius == 0) {
-          std::string mass; // mass is the last number of the file name
-          while (std::getline(fn, mass, '_')) {
-          }
-          assertm(!mass.empty(), "can not deduce radius size of input marker");
-          markers[0].radius =
-              static_cast<int>(std::cbrt(std::stoi(mass) / (4 * PI / 3)));
-        }
+    if (markers[0].radius == 0) {
+      std::string mass; // mass is the last number of the file name
+      while (std::getline(fn, mass, '_')) {
+      }
+      assertm(!mass.empty(), "can not deduce radius size of input marker");
+      markers[0].radius =
+          static_cast<int>(std::cbrt(std::stoi(mass) / (4 * PI / 3)));
+    }
 #ifdef FULL_PRINT
-        cout << "Read marker assigning radius: " << markers[0].radius << '\n';
+    cout << "Read marker assigning radius: " << markers[0].radius << '\n';
 #endif
 
-        // delete this later
-        // cout << "Warning: temporarily adjusting x,y,z of marker\n";
-        // markers[0].x += this->image_offsets[0];
-        // markers[0].y += this->image_offsets[1];
-        // markers[0].z += this->image_offsets[2];
+    // delete this later
+    // cout << "Warning: temporarily adjusting x,y,z of marker\n";
+    // markers[0].x += this->image_offsets[0];
+    // markers[0].y += this->image_offsets[1];
+    // markers[0].z += this->image_offsets[2];
 
-        inmarkers.insert(inmarkers.end(), markers.begin(), markers.end());
-      });
+    inmarkers.insert(inmarkers.end(), markers.begin(), markers.end());
+  });
 
   // transform to <coord, radius> of all somas/roots
   auto roots =
       inmarkers | rng::views::transform([this](auto marker) {
         return std::pair{
-            ones() + GridCoord(marker.x / params->downsample_factor_,
-                               marker.y / params->downsample_factor_,
-                               upsample_idx(params->upsample_z_, marker.z)),
+            ones() + GridCoord(marker.x / args->downsample_factor,
+                               marker.y / args->downsample_factor,
+                               upsample_idx(args->upsample_z, marker.z)),
             static_cast<uint8_t>(marker.radius)};
       }) |
       rng::to_vector;
@@ -559,7 +555,7 @@ void Recut<image_t>::activate_vids(
 
       rng::for_each(leaf_roots, [&](auto coord) {
         auto ind = leaf_iter->beginIndexVoxel(coord);
-        if (this->args->type_ == "float") {
+        if (this->args->input_type == "float") {
           assertm(this->input_grid->tree().isValueOn(coord),
                   "All root coords must be filtered with respect to topology");
         }
@@ -617,7 +613,7 @@ image_t Recut<image_t>::get_img_val(const image_t *tile, GridCoord coord) {
   // tile so the img vid is the correct address regardless
   // of interval length sizes Note that force_regenerate_image
   // is mostly used in test cases to try different scenarios
-  if (this->params->force_regenerate_image) {
+  if (this->args->force_regenerate_image) {
     return tile[coord_to_id(coord, this->image_lengths)];
   }
 
@@ -696,7 +692,7 @@ void Recut<image_t>::accumulate_prune(
     const uint8_t current_radius, bool current_unvisited, Container &fifo,
     RadiusT radius_handle, FlagsT flags_handle, UpdateIter update_leaf) {
   if (ind && is_selected(flags_handle, ind)) {
-#if FULL_PRINT
+#ifdef FULL_PRINT
     std::cout << "\tcheck foreground dst: " << coord_to_str(dst_coord) << '\n';
 #endif
     auto offset = coord_mod(dst_coord, this->block_lengths);
@@ -791,7 +787,7 @@ void Recut<image_t>::accumulate_radius(VID_t interval_id, VID_t block_id,
   // must be checked to make sure they protude into
   // the actual current block / interval region
   if (ind && is_selected(flags_handle, ind)) {
-#if FULL_PRINT
+#ifdef FULL_PRINT
     std::cout << "\tcheck foreground dst: " << coord_to_str(dst_coord) << '\n';
 #endif
 
@@ -2067,7 +2063,7 @@ std::atomic<double> Recut<image_t>::process_interval(
 }
 
 // Calculate new tile thresholds or use input thresholds according
-// to params and args this function has no sideffects outside
+// to args this function has no sideffects outside
 // of the returned tile_thresholds struct
 template <class image_t>
 TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
@@ -2082,28 +2078,29 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
   // Note if either foreground or background percent is equal to or greater
   // than 0 than it was changed by a user so it takes precedence over the
   // defaults
-  if (params->foreground_percent() >= 0) {
+  if (this->args->foreground_percent >= 0) {
     auto timer = high_resolution_timer();
     // TopPercentile takes a fraction 0 -> 1, not a percentile
     tile_thresholds->bkg_thresh =
         bkg_threshold<image_t>(tile->data(), interval_vertex_size,
-                               (params->foreground_percent()) / 100);
+                               (this->args->foreground_percent) / 100);
 
 #ifdef LOG
-    // cout << "Requested foreground percent: " << params->foreground_percent()
+    // cout << "Requested foreground percent: " <<
+    // this->args->foreground_percent
     //<< " yielded background threshold: " << tile_thresholds->bkg_thresh
     //<< " in " << timer.elapsed() << " s\n";
 #endif
   } else { // if bkg set explicitly and foreground wasn't
-    if (params->background_thresh() >= 0) {
-      tile_thresholds->bkg_thresh = params->background_thresh();
+    if (this->args->background_thresh >= 0) {
+      tile_thresholds->bkg_thresh = this->args->background_thresh;
     }
   }
   // otherwise: tile_thresholds->bkg_thresh default inits to 0
 
   // assign max and min ints for this tile
-  if (this->args->recut_parameters().get_max_intensity() < 0) {
-    if (params->convert_only_) {
+  if (this->args->max_intensity < 0) {
+    if (this->args->convert_only) {
       tile_thresholds->max_int = std::numeric_limits<image_t>::max();
       tile_thresholds->min_int = std::numeric_limits<image_t>::min();
     } else {
@@ -2116,12 +2113,12 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
       cout << "interval dims " << interval_dims << '\n';
 #endif
     }
-  } else if (this->args->recut_parameters().get_min_intensity() < 0) {
+  } else if (this->args->min_intensity < 0) {
     // if max intensity was set but not a min, just use the bkg_thresh value
     if (tile_thresholds->bkg_thresh >= 0) {
       tile_thresholds->min_int = tile_thresholds->bkg_thresh;
     } else {
-      if (params->convert_only_) {
+      if (this->args->convert_only) {
         tile_thresholds->max_int = std::numeric_limits<image_t>::max();
         tile_thresholds->min_int = std::numeric_limits<image_t>::min();
       } else {
@@ -2138,15 +2135,11 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
   } else { // both values were set
     // either of these values are signed and default inited -1, casting
     // them to unsigned image_t would lead to hard to find errors
-    assertm(this->args->recut_parameters().get_max_intensity() >= 0,
-            "invalid user max");
-    assertm(this->args->recut_parameters().get_min_intensity() >= 0,
-            "invalid user min");
+    assertm(this->args->max_intensity >= 0, "invalid user max");
+    assertm(this->args->min_intensity >= 0, "invalid user min");
     // otherwise set global max min from recut_parameters
-    tile_thresholds->max_int =
-        this->args->recut_parameters().get_max_intensity();
-    tile_thresholds->min_int =
-        this->args->recut_parameters().get_min_intensity();
+    tile_thresholds->max_int = this->args->max_intensity;
+    tile_thresholds->min_int = this->args->min_intensity;
   }
 
   return tile_thresholds;
@@ -2272,7 +2265,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
         // pre-generated images are for testing, or when an outside
         // library wants to pass input images instead
-        if (this->params->force_regenerate_image) {
+        if (this->args->force_regenerate_image) {
           assertm(this->generated_image,
                   "Image not generated or set by intialize");
           tile = this->generated_image;
@@ -2297,8 +2290,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           std::unique_ptr<vto::Dense<image_t, vto::LayoutXYZ>> dense_tile;
 #ifdef USE_MCP3D
           // keep image in scope while accessing dense_tile
-          mcp3d::MImage image(args->image_root_dir());
-          if (args->type_ == "ims") {
+          mcp3d::MImage image(args->image_root_dir);
+          if (args->input_type == "ims") {
             load_imaris_tile(image, tile_bbox, args->channel);
             // assign ownership of the image tile buffer to dense_tile
             // warning: UB if image goes out of scope while accessing dense_tile
@@ -2306,8 +2299,8 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                 tile_bbox, image.Volume<image_t>(args->channel));
           }
 #endif
-          if (args->type_ == "tif") {
-            dense_tile = load_tile<image_t>(tile_bbox, args->image_root_dir());
+          if (args->input_type == "tiff") {
+            dense_tile = load_tile<image_t>(tile_bbox, args->image_root_dir);
           }
 
           if (!local_tile_thresholds) {
@@ -2324,48 +2317,51 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           GridCoord no_offsets = {0, 0, 0};
 
           GridCoord buffer_offsets =
-              params->force_regenerate_image ? tile_bbox.min() : no_offsets;
-          GridCoord buffer_extents = params->force_regenerate_image
+              this->args->force_regenerate_image ? tile_bbox.min() : no_offsets;
+          GridCoord buffer_extents = this->args->force_regenerate_image
                                          ? this->image_lengths
                                          : this->interval_lengths;
 
           auto convert_start = timer.elapsed();
 
 #ifdef FULL_PRINT
-          // print_image_3D(tile, buffer_extents);
+          cout << "print_image\n";
+          print_image_3D(tile, buffer_extents);
 #endif
 
-          if (this->args->type_ == "uint8") {
+          if (this->args->output_type == "uint8") {
             uint8_grids[interval_id] = ImgGrid::create();
-            convert_buffer_to_vdb_acc(
-                tile, buffer_extents,
-                /*buffer_offsets=*/buffer_offsets,
-                /*image_offsets=*/tile_bbox.min(),
-                uint8_grids[interval_id]->getAccessor(), this->args->type_,
-                local_tile_thresholds->bkg_thresh, this->params->upsample_z_);
-            if (params->histogram_) {
+            convert_buffer_to_vdb_acc(tile, buffer_extents,
+                                      /*buffer_offsets=*/buffer_offsets,
+                                      /*image_offsets=*/tile_bbox.min(),
+                                      uint8_grids[interval_id]->getAccessor(),
+                                      this->args->output_type,
+                                      local_tile_thresholds->bkg_thresh,
+                                      this->args->upsample_z);
+            if (this->args->histogram) {
               histogram += hist(tile, buffer_extents, buffer_offsets);
             }
-          } else if (this->args->type_ == "float") {
+          } else if (this->args->output_type == "float") {
             float_grids[interval_id] = openvdb::FloatGrid::create();
-            convert_buffer_to_vdb_acc(
-                tile, buffer_extents,
-                /*buffer_offsets=*/buffer_offsets,
-                /*image_offsets=*/tile_bbox.min(),
-                float_grids[interval_id]->getAccessor(), this->args->type_,
-                local_tile_thresholds->bkg_thresh, this->params->upsample_z_);
-            if (params->histogram_) {
+            convert_buffer_to_vdb_acc(tile, buffer_extents,
+                                      /*buffer_offsets=*/buffer_offsets,
+                                      /*image_offsets=*/tile_bbox.min(),
+                                      float_grids[interval_id]->getAccessor(),
+                                      this->args->output_type,
+                                      local_tile_thresholds->bkg_thresh,
+                                      this->args->upsample_z);
+            if (args->histogram) {
               histogram += hist(tile, buffer_extents, buffer_offsets);
             }
-          } else if (this->args->type_ == "mask") {
+          } else if (this->args->output_type == "mask") {
             mask_grids[interval_id] = openvdb::MaskGrid::create();
             convert_buffer_to_vdb_acc(
                 tile, buffer_extents,
                 /*buffer_offsets=*/buffer_offsets,
                 /*image_offsets=*/tile_bbox.min(),
-                mask_grids[interval_id]->getAccessor(), this->args->type_,
-                local_tile_thresholds->bkg_thresh, this->params->upsample_z_);
-            if (params->histogram_) {
+                mask_grids[interval_id]->getAccessor(), this->args->output_type,
+                local_tile_thresholds->bkg_thresh, this->args->upsample_z);
+            if (args->histogram) {
               histogram += hist(tile, buffer_extents, buffer_offsets);
             }
           } else { // point
@@ -2378,11 +2374,11 @@ Recut<image_t>::update(std::string stage, Container &fifo,
                                   /*buffer_offsets=*/buffer_offsets,
                                   /*image_offsets=*/tile_bbox.min(), positions,
                                   local_tile_thresholds->bkg_thresh,
-                                  this->params->upsample_z_);
+                                  this->args->upsample_z);
 
             grids[interval_id] = create_point_grid(
                 positions, this->image_lengths, get_transform(),
-                this->params->foreground_percent());
+                this->args->foreground_percent);
 
 #ifdef FULL_PRINT
             print_vdb_mask(grids[interval_id]->getConstAccessor(),
@@ -2413,31 +2409,31 @@ Recut<image_t>::update(std::string stage, Container &fifo,
   if (stage == "convert") {
     auto finalize_start = timer.elapsed();
 
-    assertm(params->convert_only_,
+    assertm(args->convert_only,
             "reduce grids only possible for convert_only stage");
-    if (args->type_ == "point") {
+    if (args->output_type == "point") {
 
       this->topology_grid = merge_grids(grids);
 
       set_grid_meta(this->topology_grid, this->image_lengths,
-                    params->foreground_percent());
+                    args->foreground_percent);
 
     } else {
-      if (this->args->type_ == "float") {
+      if (this->args->output_type == "float") {
         this->input_grid = merge_grids(float_grids);
         set_grid_meta(this->input_grid, this->image_lengths,
-                      params->foreground_percent());
-      } else if (this->args->type_ == "uint8") {
+                      args->foreground_percent);
+      } else if (this->args->output_type == "uint8") {
         this->img_grid = merge_grids(uint8_grids);
         set_grid_meta(this->img_grid, this->image_lengths,
-                      params->foreground_percent());
-      } else if (this->args->type_ == "mask") {
+                      args->foreground_percent);
+      } else if (this->args->output_type == "mask") {
         this->mask_grid = merge_grids(mask_grids);
         set_grid_meta(this->mask_grid, this->image_lengths,
-                      params->foreground_percent());
+                      args->foreground_percent);
       }
 
-      if (params->histogram_) {
+      if (args->histogram) {
         auto write_to_file = [](auto out, std::string fn) {
           std::ofstream hist_file;
           hist_file.open(fn);
@@ -2551,7 +2547,7 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
 
   auto timer = high_resolution_timer();
 
-  if (!params->convert_only_) {
+  if (!args->convert_only) {
 
     auto is_boundary = [](auto coord) {
       for (int i = 0; i < 3; ++i) {
@@ -2616,34 +2612,34 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
                                                   RecutCommandLineArgs *args) {
   GridCoord input_image_lengths = zeros();
   this->update_grid = openvdb::BoolGrid::create();
-  if (this->params->force_regenerate_image) {
+  if (this->args->force_regenerate_image) {
     // for generated image runs trust the args->image_lengths
     // to reflect the total global image domain
     // see get_args() in utils.hpp
     input_image_lengths = args->image_lengths;
 
     // FIXME placeholder grid
-    this->topology_grid = create_vdb_grid(input_image_lengths,
-                                          this->params->foreground_percent());
+    this->topology_grid =
+        create_vdb_grid(input_image_lengths, this->args->foreground_percent);
     append_attributes(this->topology_grid);
   } else if (this->input_is_vdb) { // running based of a vdb input
 
-    assertm(!params->convert_only_,
+    assertm(!args->convert_only,
             "Convert only option is not valid from vdb to vdb");
 
     auto timer = high_resolution_timer();
-    auto base_grid = read_vdb_file(args->image_root_dir());
+    auto base_grid = read_vdb_file(args->image_root_dir);
 
 #ifdef LOG
-    cout << "VDB input type " << this->args->type_ << '\n';
+    cout << "VDB input type " << this->args->input_type << '\n';
 #endif
 
-    if (this->args->type_ == "float") {
+    if (this->args->input_type == "float") {
       this->input_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
       // copy topology (bit-mask actives) to the topology grid
       // this->topology_grid =
       // copy_to_point_grid(this->input_grid, input_image_lengths,
-      // this->params->foreground_percent());
+      // this->args->foreground_percent);
       this->topology_grid = convert_float_to_point(this->input_grid);
       // cout << "float count " << this->input_grid->activeVoxelCount()
       //<< " point count "
@@ -2653,15 +2649,15 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
       //"did no match");
       auto [lengths, _] = get_metadata(input_grid);
       input_image_lengths = lengths;
-    } else if (this->args->type_ == "point") {
+    } else if (this->args->input_type == "point") {
       this->topology_grid =
           openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
       auto [lengths, _] = get_metadata(topology_grid);
       input_image_lengths = lengths;
 
       // you need to use grid if you are outputing windows
-      if (!params->output_windows_.empty()) {
-        auto raw_grid = read_vdb_file(params->output_windows_);
+      if (!args->output_windows.empty()) {
+        auto raw_grid = read_vdb_file(args->output_windows);
         this->img_grid = openvdb::gridPtrCast<ImgGrid>(raw_grid);
       }
     }
@@ -2672,27 +2668,29 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
 #endif
 
   } else { // converting to a new grid from a raw image
-    if (args->type_ == "tiff") {
-      const auto tif_filenames = get_dir_files(args->image_root_dir(), ".tif");
+    if (args->input_type == "tiff") {
+      const auto tif_filenames = get_dir_files(args->image_root_dir, ".tif");
       input_image_lengths = get_tif_dims(tif_filenames);
-    } else if (args->type_ == "ims") {
-      mcp3d::MImage image(args->image_root_dir());
+    } else if (args->input_type == "ims") {
+      mcp3d::MImage image(args->image_root_dir);
       auto imaris_bbox = get_image_bbox(image, args->channel);
       input_image_lengths = imaris_bbox.dim();
     } else {
-      throw std::runtime_error(
-          "If input is not vdb, must pass type of tiff or ims");
+      if (!(args->force_regenerate_image)) {
+        throw std::runtime_error(
+            "If input is not vdb, must pass type of tiff or ims");
+      }
     }
 
-    if (args->type_ == "float") {
+    if (args->output_type == "float") {
       this->input_grid = openvdb::FloatGrid::create();
-    } else if (args->type_ == "point") {
-      this->topology_grid = create_vdb_grid(input_image_lengths,
-                                            this->params->foreground_percent());
+    } else if (args->output_type == "point") {
+      this->topology_grid =
+          create_vdb_grid(input_image_lengths, this->args->foreground_percent);
       append_attributes(this->topology_grid);
-    } else if (args->type_ == "uint8") {
+    } else if (args->output_type == "uint8") {
       this->img_grid = ImgGrid::create();
-    } else if (args->type_ == "mask") {
+    } else if (args->output_type == "mask") {
       this->mask_grid = openvdb::MaskGrid::create();
     }
   }
@@ -2703,7 +2701,7 @@ template <class image_t>
 std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
 #if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
-  if (params->convert_only_) {
+  if (args->convert_only) {
     omp_set_num_threads(args->user_thread_count);
   } else {
     // omp num threads is only valid for the convert stage
@@ -2714,20 +2712,20 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
   }
 #ifdef LOG
   cout << "Thread count " << args->user_thread_count << '\n';
-  cout << "User specified image " << args->image_root_dir() << '\n';
+  cout << "User specified image " << args->image_root_dir << '\n';
 #endif
 #endif
 
   // input type
   {
     auto path_extension =
-        std::string(fs::path(args->image_root_dir()).extension());
+        std::string(fs::path(args->image_root_dir).extension());
     this->input_is_vdb = path_extension == ".vdb" ? true : false;
   }
 
   // actual possible lengths
   auto input_image_lengths =
-      get_input_image_lengths(this->params->force_regenerate_image, args);
+      get_input_image_lengths(this->args->force_regenerate_image, args);
 
   // account and check requested args->image_offsets and args->image_lengths
   // extents are always the side length of the domain on each dim, in x y z
@@ -2764,7 +2762,7 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
   // TODO move this clipping up to the read step for faster performance on sub
   // grids
-  if (!this->params->convert_only_) {
+  if (!this->args->convert_only) {
     this->topology_grid->clip(this->image_bbox);
   }
 
@@ -2785,15 +2783,15 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
   });
 
   // set good defaults for conversion depending on tiff/ims
-  if (this->params->convert_only_) {
+  if (this->args->convert_only) {
     // images are saved in separate z-planes for tiff, so conversion should
     // respect that for best performance
-    int zchunk = args->type_ == "ims" ? 8 : 1;
+    int zchunk = args->input_type == "ims" ? 8 : 1;
     this->interval_lengths[2] = this->args->interval_lengths[2] < 1
                                     ? zchunk
                                     : this->args->interval_lengths[2];
     // based on imaris chunk size
-    if (args->type_ == "ims") {
+    if (args->input_type == "ims") {
       rng::for_each(rng::views::indices(2), [this](int i) {
         if (this->args->interval_lengths[i] < 1)
           this->interval_lengths[i] = 256;
@@ -2814,7 +2812,7 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
       this->interval_lengths[2];
 
   // the resulting interval size override the user inputted block size
-  if (this->params->convert_only_) {
+  if (this->args->convert_only) {
     this->block_lengths[0] = this->interval_lengths[0];
     this->block_lengths[1] = this->interval_lengths[1];
     this->block_lengths[2] = this->interval_lengths[2];
@@ -2855,16 +2853,14 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
   cout << "Initialized globals " << timer.elapsed() << '\n';
 #endif
 
-  if (this->params->force_regenerate_image) {
+  if (this->args->force_regenerate_image) {
     // This is where we set image to our desired values
     this->generated_image = new image_t[this->image_size];
 
-    assertm(this->params->tcase > -1, "Mismatched tcase for generate image");
-    assertm(this->params->slt_pct > -1,
-            "Mismatched slt_pct for generate image");
-    assertm(this->params->selected > 0,
-            "Mismatched selected for generate image");
-    assertm(this->params->root_vid != numeric_limits<uint64_t>::max(),
+    assertm(this->args->tcase > -1, "Mismatched tcase for generate image");
+    assertm(this->args->slt_pct > -1, "Mismatched slt_pct for generate image");
+    assertm(this->args->selected > 0, "Mismatched selected for generate image");
+    assertm(this->args->root_vid != numeric_limits<uint64_t>::max(),
             "Root vid uninitialized");
 
     // create_image take the length of one dimension
@@ -2875,21 +2871,21 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
             "change create_image implementation to support non-cube images");
     assertm(this->image_lengths[0] == this->image_lengths[1],
             "change create_image implementation to support non-cube images");
-    auto selected = create_image(this->params->tcase, this->generated_image,
-                                 this->image_lengths[0], this->params->selected,
-                                 this->params->root_vid);
-    if (this->params->tcase == 3 || this->params->tcase == 5) {
+    auto selected = create_image(this->args->tcase, this->generated_image,
+                                 this->image_lengths[0], this->args->selected,
+                                 this->args->root_vid);
+    if (this->args->tcase == 3 || this->args->tcase == 5) {
       // only tcase 3 and 5 doens't have a total select count not known
       // ahead of time
-      this->params->selected = selected;
+      this->args->selected = selected;
     }
 
     // add the single root vid to the roots
     return {
-        std::pair{id_to_coord(this->params->root_vid, this->image_lengths), 1}};
+        std::pair{id_to_coord(this->args->root_vid, this->image_lengths), 1}};
 
   } else {
-    if (params->convert_only_) {
+    if (args->convert_only) {
       return {};
     } else {
       // adds all valid markers to roots vector and returns
@@ -3073,7 +3069,7 @@ void Recut<image_t>::partition_components(
 
     timer.restart();
     auto pruned_markers =
-        advantra_prune(markers, this->args->prune_radius_, coord_to_idx);
+        advantra_prune(markers, this->args->prune_radius, coord_to_idx);
 #ifdef LOG
     // is a fresh run_dir
     auto component_dir_fn =
@@ -3108,11 +3104,11 @@ void Recut<image_t>::partition_components(
 #endif
 
     // is output window needed?
-    if (args->run_app2 || !params->output_windows_.empty()) {
+    if (args->run_app2 || !args->output_windows.empty()) {
       auto [component_with_values, window_bbox] =
           create_window_grid(this->img_grid, component, component_log);
 
-      if (!params->output_windows_.empty()) { // write to disk
+      if (!args->output_windows.empty()) { // write to disk
         // if outputting crops/windows, SWCs coordinates need to be adjusted
         // accordingly
         write_output_windows(component_with_values, component_dir_fn,
@@ -3127,12 +3123,12 @@ void Recut<image_t>::partition_components(
         // for comparison/benchmark/testing purposes
         run_app2(component_with_values, component_roots, component_dir_fn,
                  index, this->args->min_branch_length, component_log,
-                 params->output_windows_.empty());
+                 args->output_windows.empty());
       }
     } // end window created if any
 
     write_swc(filtered_tree, bbox, component_dir_fn, index,
-              /*bbox_adjust*/ !params->output_windows_.empty());
+              /*bbox_adjust*/ !args->output_windows.empty());
 
     cout << "Component " << index << " complete and safe to open\n";
   }); // for each component
@@ -3143,7 +3139,7 @@ void Recut<image_t>::partition_components(
   }
 #ifdef LOG
   // only log this if it isn't occluded by app2 and window write times
-  if (!(args->run_app2 || !params->output_windows_.empty())) {
+  if (!(args->run_app2 || !args->output_windows.empty())) {
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
     run_log << "TC+TP, " << global_timer.elapsed() << '\n';
@@ -3160,21 +3156,21 @@ template <class image_t> void Recut<image_t>::convert_topology() {
 
   openvdb::GridPtrVec grids;
 
-  if (args->type_ == "float") {
+  if (args->output_type == "float") {
     print_grid_metadata(this->input_grid);
     grids.push_back(this->input_grid);
-  } else if (args->type_ == "uint8") {
+  } else if (args->output_type == "uint8") {
     print_grid_metadata(this->img_grid);
     grids.push_back(this->img_grid);
-  } else if (args->type_ == "mask") {
+  } else if (args->output_type == "mask") {
     print_grid_metadata(this->mask_grid);
     grids.push_back(this->mask_grid);
-  } else if (args->type_ == "point") {
+  } else if (args->output_type == "point") {
     print_grid_metadata(this->topology_grid);
     grids.push_back(this->topology_grid);
   }
 
-  write_vdb_file(grids, this->params->out_vdb_);
+  write_vdb_file(grids, this->args->output_name);
 }
 
 template <class image_t> void Recut<image_t>::init_run() {
@@ -3188,7 +3184,7 @@ template <class image_t> void Recut<image_t>::init_run() {
   fs::create_directories(run_dir);
 #ifdef LOG
   std::ofstream run_log(log_fn);
-  run_log << "Prune radius, " << args->prune_radius_ << '\n';
+  run_log << "Prune radius, " << args->prune_radius << '\n';
   run_log << "Soma radius, " << SOMA_PRUNE_RADIUS << '\n';
   run_log << "Min branch, " << args->min_branch_length << '\n';
 #endif
@@ -3196,9 +3192,9 @@ template <class image_t> void Recut<image_t>::init_run() {
 
 template <class image_t> void Recut<image_t>::operator()() {
 
-  if (!params->second_grid_.empty()) {
-    combine_grids(args->image_root_dir(), params->second_grid_,
-                  this->params->out_vdb_);
+  if (!args->second_grid.empty()) {
+    combine_grids(args->image_root_dir, args->second_grid,
+                  this->args->output_name);
     return;
   }
 
@@ -3207,7 +3203,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   init_run();
 
-  if (params->convert_only_) {
+  if (args->convert_only) {
     convert_topology();
     // no more work to do, exiting
     return;
