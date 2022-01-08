@@ -354,9 +354,16 @@ TEST(Histogram, Add) {
 
 #ifdef USE_MCP3D
 TEST(Utils, DISABLED_HDF5MCP3D) {
-  mcp3d::MImage image("/mnt/d/Reconstructions_Working/For_Karl/TME12-1/ims/"
-                      "Camk2a-MORF3-D1Tom_TME12-1_30x_Str_02A.ims");
+  auto imaris_path = "/mnt/d/Reconstructions_Working/For_Karl/TME12-1/ims/test/"
+                     "Camk2a-MORF3-D1Tom_TME12-1_30x_Str_02A.ims";
+  mcp3d::MImage image(imaris_path);
   load_imaris_tile(image);
+
+  //auto imaris_id = mcp3d::Hdf5Handle(imaris_path);
+  //auto dims = mcp3d::ImarisChannelChunkXyzDims(imaris_id, 0, 0, 0);
+
+  // mcp3d::ImarisChannelInfo info(imaris_path, 0, 0);
+  // EXPECT_EQ(vector<int>({8, 256, 256}), info.chunk_xyz_dims());
 }
 #endif
 
@@ -1435,7 +1442,8 @@ TEST(Install, DISABLED_ImageReadWrite) {
   }
 
   auto check2 = read_tiff_dir(fn_ch0);
-  ASSERT_NO_FATAL_FAILURE(check_image_equality(inimg1d, check2->data(), volume));
+  ASSERT_NO_FATAL_FAILURE(
+      check_image_equality(inimg1d, check2->data(), volume));
 
   delete[] inimg1d;
 }

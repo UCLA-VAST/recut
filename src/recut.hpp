@@ -2776,43 +2776,29 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
   // Determine the size of each interval in each dim
   // the image size and offsets override the user inputted interval size
-  // continuous id's are the same for current or dst intervals
-  // round up (pad)
+  // since an interval must be at least the size of the image
+  rng::for_each(rng::views::indices(3), [this](int i) {
+    this->interval_lengths[i] =
+        (this->input_is_vdb || (this->args->interval_lengths[i] < 1))
+            ? this->image_lengths[i]
+            : std::min(this->args->interval_lengths[i], this->image_lengths[i]);
+  });
+
+  // set good defaults for conversion depending on tiff/ims
   if (this->params->convert_only_) {
-    // images are saved in separate z-planes, so conversion should respect
-    // that for best performance constrict so less data is allocated
-    // especially in z dimension
-    this->interval_lengths[0] = this->image_lengths[0];
-    this->interval_lengths[1] = this->image_lengths[1];
-    // explicitly set by get_args
-    if (params->interval_length) {
-      this->interval_lengths[2] = params->interval_length;
-    } else {
-      this->interval_lengths[2] = this->args->interval_z;
-      // this->interval_lengths[2] = LEAF_LENGTH;
-      // auto recommended_max_mem = GetAvailMem() / 16;
-      // guess how many z-depth tiles will fit before a bad_alloc is likely
-      // auto simultaneous_tiles =
-      // static_cast<double>(recommended_max_mem) /
-      //(sizeof(image_t) * this->image_lengths[0] * this->image_lengths[1]);
-      // assertm(simultaneous_tiles >= 1, "Tile x and y size too large to fit
-      // in system memory (DRAM)");
-      // this->interval_lengths[2] = std::min(
-      // simultaneous_tiles, static_cast<double>(this->image_lengths[2]));
+    // images are saved in separate z-planes for tiff, so conversion should
+    // respect that for best performance
+    int zchunk = args->type_ == "ims" ? 8 : 1;
+    this->interval_lengths[2] = this->args->interval_lengths[2] < 1
+                                    ? zchunk
+                                    : this->args->interval_lengths[2];
+    // based on imaris chunk size
+    if (args->type_ == "ims") {
+      rng::for_each(rng::views::indices(2), [this](int i) {
+        if (this->args->interval_lengths[i] < 1)
+          this->interval_lengths[i] = 256;
+      });
     }
-  } else if (this->input_is_vdb) {
-    this->interval_lengths[0] = this->image_lengths[0];
-    this->interval_lengths[1] = this->image_lengths[1];
-    this->interval_lengths[2] = this->image_lengths[2];
-  } else {
-    int default_size = 1024;
-    if (params->interval_length) {
-      // explicitly set by get_args
-      default_size = params->interval_length;
-    }
-    this->interval_lengths[0] = std::min(default_size, this->image_lengths[0]);
-    this->interval_lengths[1] = std::min(default_size, this->image_lengths[1]);
-    this->interval_lengths[2] = std::min(default_size, this->image_lengths[2]);
   }
 
   // determine the length of intervals in each dim

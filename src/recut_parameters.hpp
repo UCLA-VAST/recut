@@ -46,7 +46,6 @@ public:
     slt_pct = -1;
     selected = 0;
     root_vid = std::numeric_limits<uint64_t>::max();
-    interval_length = 0;
     upsample_z_ = 1; // i.e. no upsampling
   }
   std::string MetaString();
@@ -128,7 +127,7 @@ public:
   bool force_regenerate_image, convert_only_, histogram_, gsdt_,
       coverage_prune_, allow_gap_, cube_256_, radius_from_2d_, swc_resample_,
       high_intensity_, brightfield_, restart_;
-  int background_thresh_, cnn_type_, parallel_num_, prune_, interval_length,
+  int background_thresh_, cnn_type_, parallel_num_, prune_,
       tcase, slt_pct, downsample_factor_, upsample_z_;
   double foreground_percent_, sr_ratio_, restart_factor_,
       max_intensity_, min_intensity_;
@@ -142,7 +141,7 @@ public:
         swc_path_("out.swc"), channel(0), resolution_level_(0),
         image_offsets(0, 0, 0), image_lengths(-1, -1, -1), type_("point"),
         prune_radius_(ANISOTROPIC_FACTOR), run_app2(false),
-        user_thread_count(tbb::info::default_concurrency()), interval_z(1),
+        user_thread_count(tbb::info::default_concurrency()), interval_lengths({-1, -1, -1}),
         min_branch_length(MIN_BRANCH_LENGTH) {}
 
   static void PrintUsage();
@@ -191,8 +190,9 @@ public:
 
   RecutParameters recut_parameters_;
   std::string image_root_dir_, swc_path_, type_;
-  uint16_t prune_radius_, user_thread_count, interval_z, min_branch_length, resolution_level_, channel;
+  uint16_t prune_radius_, user_thread_count, min_branch_length, resolution_level_, channel;
   bool run_app2;
+  std::array<int,3> interval_lengths;
 };
 
 RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]);

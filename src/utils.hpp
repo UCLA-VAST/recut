@@ -1417,8 +1417,6 @@ RecutCommandLineArgs get_args(int grid_size, int interval_length,
   }
 
   // the total number of blocks allows more parallelism
-  // ideally intervals >> thread count
-  params.interval_length = interval_length;
   VID_t img_vox_num = grid_size * grid_size * grid_size;
   params.tcase = tcase;
   params.slt_pct = slt_pct;
