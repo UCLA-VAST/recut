@@ -909,18 +909,21 @@ template <typename T> void print_grid_metadata(T vdb_grid) {
   cout << '\n';
 }
 
-auto set_grid_meta = [](auto grid, auto lengths, float requested_fg_pct = -1) {
-  grid->setName("topology");
+auto set_grid_meta = [](auto grid, auto lengths, float requested_fg_pct = -1,
+                        int channel = 0, int resolution_level = 0,
+                        std::string name = "topology") {
+  grid->setName(name);
   grid->setCreator("recut");
   grid->setIsInWorldSpace(true);
   grid->setGridClass(openvdb::GRID_FOG_VOLUME);
+  grid->insertMeta("channel", openvdb::Int32Metadata(channel));
+  grid->insertMeta("resolution_level", openvdb::Int32Metadata(resolution_level));
   grid->insertMeta("original_bounding_extent_x",
                    openvdb::FloatMetadata(static_cast<float>(lengths[0])));
   grid->insertMeta("original_bounding_extent_y",
                    openvdb::FloatMetadata(static_cast<float>(lengths[1])));
   grid->insertMeta("original_bounding_extent_z",
                    openvdb::FloatMetadata(static_cast<float>(lengths[2])));
-
   grid->insertMeta("requested_fg_pct",
                    openvdb::FloatMetadata(requested_fg_pct));
 };

@@ -2288,6 +2288,14 @@ Recut<image_t>::update(std::string stage, Container &fifo,
               (tile_offsets + this->interval_lengths).offsetBy(-1);
           const auto tile_bbox = CoordBBox(tile_offsets, interval_max);
           std::unique_ptr<vto::Dense<image_t, vto::LayoutXYZ>> dense_tile;
+
+          auto convert_fn_vdb = [](const std::string &name, auto split_char) {
+            auto stripped = name | rng::views::split(split_char) |
+                            rng::views::drop_last(1) | rng::views::join |
+                            rng::to<std::string>();
+            return stripped + ".vdb";
+          };
+
 #ifdef USE_MCP3D
           // keep image in scope while accessing dense_tile
           mcp3d::MImage image(args->image_root_dir);
@@ -2297,10 +2305,21 @@ Recut<image_t>::update(std::string stage, Container &fifo,
             // warning: UB if image goes out of scope while accessing dense_tile
             dense_tile = std::make_unique<vto::Dense<image_t, vto::LayoutXYZ>>(
                 tile_bbox, image.Volume<image_t>(args->channel));
+            std::vector<string> imaris_paths =
+                mcp3d::StitchedImarisPathsInDir(args->image_root_dir);
+            if (imaris_paths.size() > 1) {
+              std::runtime_error(
+                  "Currently only supports 1 .ims per directory");
+            }
+            this->args->output_name = convert_fn_vdb(imaris_paths[0], '.');
           }
 #endif
+
           if (args->input_type == "tiff") {
             dense_tile = load_tile<image_t>(tile_bbox, args->image_root_dir);
+            const auto tif_filenames =
+                get_dir_files(args->image_root_dir, ".tif");
+            this->args->output_name = convert_fn_vdb(tif_filenames[0], '_');
           }
 
           if (!local_tile_thresholds) {
@@ -2416,21 +2435,25 @@ Recut<image_t>::update(std::string stage, Container &fifo,
       this->topology_grid = merge_grids(grids);
 
       set_grid_meta(this->topology_grid, this->image_lengths,
-                    args->foreground_percent);
+                    args->foreground_percent, args->channel,
+                    args->resolution_level, this->args->output_name);
 
     } else {
       if (this->args->output_type == "float") {
         this->input_grid = merge_grids(float_grids);
         set_grid_meta(this->input_grid, this->image_lengths,
-                      args->foreground_percent);
+                      args->foreground_percent, args->channel,
+                      args->resolution_level, this->args->output_name);
       } else if (this->args->output_type == "uint8") {
         this->img_grid = merge_grids(uint8_grids);
         set_grid_meta(this->img_grid, this->image_lengths,
-                      args->foreground_percent);
+                      args->foreground_percent, args->channel,
+                      args->resolution_level, this->args->output_name);
       } else if (this->args->output_type == "mask") {
         this->mask_grid = merge_grids(mask_grids);
         set_grid_meta(this->mask_grid, this->image_lengths,
-                      args->foreground_percent);
+                      args->foreground_percent, args->channel,
+                      args->resolution_level, this->args->output_name);
       }
 
       if (args->histogram) {

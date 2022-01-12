@@ -112,8 +112,8 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
     // expected
     for (int i = 2; i < argc; ++i) {
       if (strcmp(argv[i], "--convert") == 0 || strcmp(argv[i], "-cv") == 0) {
-        if (!(i >= argc || argv[i][0] == '-')) {
-          args.output_name = argv[i];
+        if (!((i+1) >= argc || argv[i+1][0] == '-')) {
+          args.output_name = argv[i+1];
           ++i;
         }
         args.convert_only = true;
