@@ -22,7 +22,10 @@ void RecutCommandLineArgs::PrintUsage() {
       << "--convert            [-cv] convert image file and exit defaults to "
          "out.vdb\n";
   std::cout
-      << "--type               input type img: 'ims', 'tiff' | VDB: 'point', "
+      << "--input-type               input type img: 'ims', 'tiff' | VDB: 'point', "
+         "'uint8', 'mask' or 'float'\n";
+  std::cout
+      << "--output-type              input type img: 'ims', 'tiff' | VDB: 'point', "
          "'uint8', 'mask' or 'float'\n";
   std::cout
       << "--prune-radius       larger values decrease node sampling density "
@@ -112,8 +115,8 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
     // expected
     for (int i = 2; i < argc; ++i) {
       if (strcmp(argv[i], "--convert") == 0 || strcmp(argv[i], "-cv") == 0) {
-        if (!((i+1) >= argc || argv[i+1][0] == '-')) {
-          args.output_name = argv[i+1];
+        if (!((i + 1) >= argc || argv[i + 1][0] == '-')) {
+          args.output_name = argv[i + 1];
           ++i;
         }
         args.convert_only = true;

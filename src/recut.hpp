@@ -2196,7 +2196,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
     // loop through all possible intervals
     // only safe for conversion stages with more than 1 thread
 #ifdef USE_OMP_INTERVAL
-#pragma omp parallel for
+//#pragma omp parallel for
 #endif
     for (int interval_id = 0; interval_id < grid_interval_size; interval_id++) {
       // only start intervals that have active processing to do
