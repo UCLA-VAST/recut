@@ -2289,10 +2289,13 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           const auto tile_bbox = CoordBBox(tile_offsets, interval_max);
           std::unique_ptr<vto::Dense<image_t, vto::LayoutXYZ>> dense_tile;
 
-          auto convert_fn_vdb = [](const std::string &name, auto split_char) {
+          auto convert_fn_vdb = [this](const std::string &name,
+                                       auto split_char) {
             auto stripped = name | rng::views::split(split_char) |
                             rng::views::drop_last(1) | rng::views::join |
                             rng::to<std::string>();
+            stripped += "-ch" + this->args->channel;
+            stripped += "-" + this->args->output_type;
             return stripped + ".vdb";
           };
 
