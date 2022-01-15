@@ -11,6 +11,7 @@
 #include <cstdlib> //rand srand
 #include <ctime>   // for srand
 #include <filesystem>
+#include <hdf5.h>
 #include <math.h>
 #include <openvdb/tools/Clip.h>
 #include <openvdb/tools/Composite.h>
@@ -917,7 +918,8 @@ auto set_grid_meta = [](auto grid, auto lengths, float requested_fg_pct = -1,
   grid->setIsInWorldSpace(true);
   grid->setGridClass(openvdb::GRID_FOG_VOLUME);
   grid->insertMeta("channel", openvdb::Int32Metadata(channel));
-  grid->insertMeta("resolution_level", openvdb::Int32Metadata(resolution_level));
+  grid->insertMeta("resolution_level",
+                   openvdb::Int32Metadata(resolution_level));
   grid->insertMeta("original_bounding_extent_x",
                    openvdb::FloatMetadata(static_cast<float>(lengths[0])));
   grid->insertMeta("original_bounding_extent_y",
@@ -3426,32 +3428,152 @@ void write_marker_files(std::vector<MyMarker *> component_markers,
 }
 
 #ifdef USE_MCP3D
-auto get_image_bbox = [](mcp3d::MImage &image, int channel_number = 0) {
-  image.ReadImageInfo({channel_number}, true);
+
+int hdf5_attr(hid_t object_id, const char *attribute_name,
+              std::unique_ptr<uint8_t[]> &buffer) {
+  assertm(object_id >= 0, "object_id must be > 0");
+  hid_t attribute_id = H5Aopen(object_id, attribute_name, H5P_DEFAULT);
+  if (attribute_id < 0)
+    std::runtime_error("can not open attribute " + string(attribute_name));
+  H5A_info_t attribute_info;
+  herr_t success = H5Aget_info(attribute_id, &attribute_info);
+  assertm(success >= 0, "H5Aget_info failed");
+  hsize_t n_bytes = attribute_info.data_size;
+  buffer = make_unique<uint8_t[]>(n_bytes);
+  hid_t type_id = H5Aget_type(attribute_id);
+  MCP3D_ASSERT(type_id >= 0)
+  success = H5Aread(attribute_id, type_id, buffer.get());
+  if (success < 0)
+    std::runtime_error("failed to read attribute " + string(attribute_name));
+  size_t n_type_bytes = H5Tget_size(type_id);
+  int n_elements = (int)(n_bytes / n_type_bytes);
+  H5Tclose(type_id);
+  return n_elements;
+}
+
+auto hdf5_bbox = [](std::string file_name, int resolution = 0,
+                    int channel = 0) {
+  auto bbox = CoordBBox(zeros(), zeros());
+  auto file_id = H5Fopen(file_name.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+  {
+    hid_t dataset_id = H5Gopen(file_id, "DataSet", H5P_DEFAULT);
+    {
+      auto rname = "ResolutionLevel " + std::to_string(resolution);
+      hid_t res_id = H5Gopen(dataset_id, rname.c_str(), H5P_DEFAULT);
+      {
+        auto tname = "TimePoint 0";
+        hid_t time_id = H5Gopen(res_id, tname, H5P_DEFAULT);
+        {
+          auto cname = "Channel " + std::to_string(channel);
+          hid_t channel_id = H5Gopen(time_id, cname.c_str(), H5P_DEFAULT);
+          {
+            int zdim, ydim, xdim;
+            unique_ptr<uint8_t[]> buffer;
+            int len = hdf5_attr(channel_id, "ImageSizeZ", buffer);
+            // FIXME change this to static cast
+            zdim = stoi(string((char *)buffer.get(), len));
+            len = hdf5_attr(channel_id, "ImageSizeY", buffer);
+            ydim = stoi(string((char *)buffer.get(), len));
+            len = hdf5_attr(channel_id, "ImageSizeX", buffer);
+            xdim = stoi(string((char *)buffer.get(), len));
+            bbox.moveMax(GridCoord(xdim, ydim, zdim));
+          }
+          H5Gclose(channel_id);
+        }
+        H5Gclose(time_id);
+      }
+      H5Gclose(res_id);
+    }
+    H5Gclose(dataset_id);
+  }
+  H5Fclose(file_id);
+  return bbox;
+};
+
+/*
+auto get_hdf5_bbox = [](std::string file_name, int channel = 0) {
+  auto file_id = H5Fopen(file_name, H5F_ACC_RDONLY, H5P_DEFAULT);
+  // open DataSetInfo group
+  hid_t data_set_info = H5Gopen(file_id, "DataSetInfo");
+  // open image group
+  hid_t image = H5Gopen(data_set_info, "Image");
+  // open attribute LSMEmissionWavelength
+  hid_t vAttributeId = H5Aopen_name(image, "X");
+  // get data space
+  hid_t vAttributeSpaceId = H5Aget_space(vAttributeId);
+  // get attribute value size
+  hsize_t vAttributeSize = 0;
+  H5Sget_simple_extent_dims(vAttributeSpaceId, &vAttributeSize, NULL);
+  // create buffer
+  char *vBuffer = new char[(bpSize)vAttributeSize + 1];
+  vBuffer[vAttributeSize] = '\0';
+  // read attribute value
+  H5Aread(vAttributeId, H5T_C_S1, vBuffer);
+};
+
+auto get_hdf5_bbox = [](std::string file_name, int channel = 0) {
+  auto mFileId = H5Fopen(file_name, H5F_ACC_RDONLY, H5P_DEFAULT);
+  // open DataSetInfo group
+  hid_t vDataSetInfoId = H5Gopen(mFileId, “DataSetInfo”);
+  // open channel group
+  hid_t vChannel3Id = H5Gopen(vDataSetInfoId, “Channel ” +
+std::to_string(channel));
+  // open attribute LSMEmissionWavelength
+  hid_t vAttributeId = H5Aopen_name(vChannelId, “LSMEmissionWavelength”);
+  // get data space
+  hid_t vAttributeSpaceId = H5Aget_space(vAttributeId);
+  // get attribute value size
+  hsize_t vAttributeSize = 0;
+  H5Sget_simple_extent_dims(vAttributeSpaceId, &vAttributeSize, NULL);
+  // create buffer
+  char *vBuffer = new char[(bpSize)vAttributeSize + 1];
+  vBuffer[vAttributeSize] = '\0';
+  // read attribute value
+  H5Aread(vAttributeId, H5T_C_S1, vBuffer);
+};
+
+auto get_hdf5_data = [](std::string file_name, int channel = 0) {
+  mFileId = H5Fopen(mFileName.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+  hid_t vDataSetId = H5Gopen(mFileId, “DataSet”);
+  hid_t vLevelId = H5Gopen(vDataSetId, “Resolution Level 0”);
+  hid_t vTimePointId = H5Gopen(vLevelId, "TimePoint 0");
+  hid_t vChannelId = H5Gopen(vTimePointId, "Channel 0");
+  hid_t vDataId = H5Dopen(vChannelId, “Data”);
+  // read the attributes ImageSizeX,Y,Z
+  hsize_t vFileDim[3];
+  hid_t vFileSpaceId = H5Screate_simple(3, vFileDim, NULL);
+  char *vBuffer = new vBuffer[ImageSizeZ * ImageSizeY * ImageSizeX];
+  H5Dread(vDataId, H5T_NATIVE_CHAR, H5S_ALL, vFileSpaceId, H5P_DEFAULT,
+          vBuffer);
+};
+*/
+
+auto get_image_bbox = [](mcp3d::MImage &image, int channel = 0) {
+  image.ReadImageInfo({channel}, true);
   auto dims = image.xyz_dims();
   // reverse mcp3d's z y x parameter order
   return CoordBBox(zeros(), GridCoord(dims[2], dims[1], dims[0]));
 };
 
-// image is a input/output parameter holding the data in .Volume(channel_number)
+// image is a input/output parameter holding the data in .Volume(channel)
 // this is to make ownership of the tile buffer clear to clients
 auto load_imaris_tile = [](mcp3d::MImage &image, CoordBBox bbox = {},
-                           int channel_number = 0) {
+                           int channel = 0) {
   auto timer = high_resolution_timer();
 
   // image state needs to be established via a call to ReadImageInfo
   // before calling SelectView
   if (bbox.empty()) {
-    bbox = get_image_bbox(image, channel_number);
+    bbox = get_image_bbox(image, channel);
   } else {
-    image.ReadImageInfo({channel_number}, true);
+    image.ReadImageInfo({channel}, true);
   }
 
   // try {
   // mcp3d takes inputs in in z y x order
   mcp3d::MImageBlock block({bbox.min()[2], bbox.min()[1], bbox.min()[0]},
                            {bbox.max()[2], bbox.max()[1], bbox.max()[0]});
-  image.SelectView(block, channel_number);
+  image.SelectView(block, channel);
   // returns row-major (c-order) buffers
   image.ReadData(true, "quiet");
   //} catch (...) {

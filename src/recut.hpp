@@ -2698,8 +2698,11 @@ GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
       const auto tif_filenames = get_dir_files(args->image_root_dir, ".tif");
       input_image_lengths = get_tif_dims(tif_filenames);
     } else if (args->input_type == "ims") {
-      mcp3d::MImage image(args->image_root_dir);
-      auto imaris_bbox = get_image_bbox(image, args->channel);
+      // mcp3d::MImage image(args->image_root_dir);
+      // auto imaris_bbox = get_image_bbox(image, args->channel);
+      std::vector<string> imaris_paths =
+          mcp3d::StitchedImarisPathsInDir(args->image_root_dir);
+      auto imaris_bbox = hdf5_bbox(imaris_paths[0], args->resolution_level, args->channel);
       input_image_lengths = imaris_bbox.dim();
     } else {
       if (!(args->force_regenerate_image)) {
