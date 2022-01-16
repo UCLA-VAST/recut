@@ -23,9 +23,9 @@ public:
         interval_lengths({-1, -1, -1}), min_branch_length(MIN_BRANCH_LENGTH),
         convert_only(false), output_name("out.vdb"), background_thresh(-1),
         foreground_percent(-0.01), combine(false), histogram(false),
-        force_regenerate_image(false), output_windows(std::string()),
-        second_grid(std::string()), upsample_z(1), downsample_factor(1),
-        max_intensity(-1), min_intensity(-1), force_regenerate_image(false) {}
+        output_windows(std::string()), second_grid(std::string()),
+        upsample_z(1), downsample_factor(1), max_intensity(-1),
+        min_intensity(-1), force_regenerate_image(false) {}
 
   static void PrintUsage();
   std::string MetaString();
