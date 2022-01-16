@@ -250,8 +250,7 @@ public:
          TileThresholds<image_t> *tile_thresholds = nullptr);
   GridCoord get_input_image_extents(bool force_regenerate_image,
                                     RecutCommandLineArgs *args);
-  GridCoord get_input_image_lengths(bool force_regenerate_image,
-                                    RecutCommandLineArgs *args);
+  GridCoord get_input_image_lengths(RecutCommandLineArgs *args);
   std::vector<std::pair<GridCoord, uint8_t>> initialize();
   inline VID_t sub_block_to_block_id(VID_t iblock, VID_t jblock, VID_t kblock);
   template <class Container> void setup_radius(Container &fifo);
@@ -2634,11 +2633,10 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_interval_size,
 
 // Deduce lengths from the various input options
 template <class image_t>
-GridCoord Recut<image_t>::get_input_image_lengths(bool force_regenerate_image,
-                                                  RecutCommandLineArgs *args) {
+GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
   GridCoord input_image_lengths = zeros();
   this->update_grid = openvdb::BoolGrid::create();
-  if (this->args->force_regenerate_image) {
+  if (args->force_regenerate_image) {
     // for generated image runs trust the args->image_lengths
     // to reflect the total global image domain
     // see get_args() in utils.hpp
@@ -2754,7 +2752,7 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
   // actual possible lengths
   auto input_image_lengths =
-      get_input_image_lengths(this->args->force_regenerate_image, args);
+      get_input_image_lengths(args);
 
   // account and check requested args->image_offsets and args->image_lengths
   // extents are always the side length of the domain on each dim, in x y z
