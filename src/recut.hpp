@@ -248,8 +248,6 @@ public:
   std::unique_ptr<InstrumentedUpdateStatistics>
   update(std::string stage, Container &fifo = nullptr,
          TileThresholds<image_t> *tile_thresholds = nullptr);
-  GridCoord get_input_image_extents(bool force_regenerate_image,
-                                    RecutCommandLineArgs *args);
   GridCoord get_input_image_lengths(RecutCommandLineArgs *args);
   std::vector<std::pair<GridCoord, uint8_t>> initialize();
   inline VID_t sub_block_to_block_id(VID_t iblock, VID_t jblock, VID_t kblock);
@@ -2698,9 +2696,9 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
     } else if (args->input_type == "ims") {
       // mcp3d::MImage image(args->image_root_dir);
       // auto imaris_bbox = get_image_bbox(image, args->channel);
-      std::vector<string> imaris_paths =
-          mcp3d::StitchedImarisPathsInDir(args->image_root_dir);
-      auto imaris_bbox = hdf5_bbox(imaris_paths[0], args->resolution_level, args->channel);
+      //std::vector<string> imaris_paths =
+          //mcp3d::StitchedImarisPathsInDir(args->image_root_dir);
+      auto imaris_bbox = hdf5_bbox(args->image_root_dir, args->resolution_level, args->channel);
       input_image_lengths = imaris_bbox.dim();
     } else {
       if (!(args->force_regenerate_image)) {

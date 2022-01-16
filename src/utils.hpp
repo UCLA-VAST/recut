@@ -3453,7 +3453,7 @@ int hdf5_attr(hid_t object_id, const char *attribute_name,
 
 auto hdf5_bbox = [](std::string file_name, int resolution = 0,
                     int channel = 0) {
-  auto bbox = CoordBBox(zeros(), zeros());
+  auto max_coord = zeros();
   auto file_id = H5Fopen(file_name.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
   {
     hid_t dataset_id = H5Gopen(file_id, "DataSet", H5P_DEFAULT);
@@ -3476,7 +3476,7 @@ auto hdf5_bbox = [](std::string file_name, int resolution = 0,
             ydim = stoi(string((char *)buffer.get(), len));
             len = hdf5_attr(channel_id, "ImageSizeX", buffer);
             xdim = stoi(string((char *)buffer.get(), len));
-            bbox.moveMax(GridCoord(xdim, ydim, zdim));
+            max_coord = GridCoord(xdim, ydim, zdim);
           }
           H5Gclose(channel_id);
         }
@@ -3487,7 +3487,7 @@ auto hdf5_bbox = [](std::string file_name, int resolution = 0,
     H5Gclose(dataset_id);
   }
   H5Fclose(file_id);
-  return bbox;
+  return CoordBBox(zeros(), max_coord);
 };
 
 /*
