@@ -3461,10 +3461,7 @@ hid_t memory_dataspace(const CoordBBox &bbox) {
   if (mem_dataspace_id < 0)
     std::runtime_error("Error reading mem_dataspace_id");
 
-  // offsets into the image
-  hsize_t mem_dataspace_start[3] = {static_cast<hsize_t>(bbox.min().z()),
-                                    static_cast<hsize_t>(bbox.min().y()),
-                                    static_cast<hsize_t>(bbox.min().x())};
+  hsize_t mem_dataspace_start[3] = {0, 0, 0};
   hsize_t mem_dataspace_stride[3] = {1, 1, 1};
   hsize_t mem_dataspace_count[3] = {static_cast<hsize_t>(bbox.dim().z()),
                                     static_cast<hsize_t>(bbox.dim().y()),
