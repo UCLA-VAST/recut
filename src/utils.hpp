@@ -3569,7 +3569,7 @@ auto load_imaris_tile = [](std::string file_name, const CoordBBox &bbox,
             hid_t mem_type_id = H5T_NATIVE_USHORT;
             hid_t file_dataspace_id = file_dataspace(data_id, bbox);
             herr_t success =
-                H5Dread(dataset_id, mem_type_id, mem_dataspace_id,
+                H5Dread(data_id, mem_type_id, mem_dataspace_id,
                         file_dataspace_id, H5P_DEFAULT, dense->data());
 
             if (success < 0)
