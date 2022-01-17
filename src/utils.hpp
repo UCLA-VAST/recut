@@ -3456,8 +3456,10 @@ hid_t memory_dataspace(const CoordBBox &bbox) {
   hsize_t mem_dims[3] = {static_cast<hsize_t>(bbox.dim().z()),
                          static_cast<hsize_t>(bbox.dim().y()),
                          static_cast<hsize_t>(bbox.dim().x())};
+
   hid_t mem_dataspace_id = H5Screate_simple(3, mem_dims, mem_dims);
-  assert(mem_dataspace_id >= 0);
+  if (mem_dataspace_id < 0)
+    std::runtime_error("Error reading mem_dataspace_id");
 
   // offsets into the image
   hsize_t mem_dataspace_start[3] = {static_cast<hsize_t>(bbox.min().z()),
@@ -3472,9 +3474,10 @@ hid_t memory_dataspace(const CoordBBox &bbox) {
   return mem_dataspace_id;
 }
 
-hid_t file_dataspace(hid_t dataset_id, const CoordBBox &bbox) {
-  hid_t file_dataspace_id = H5Dget_space(dataset_id);
-  MCP3D_ASSERT(file_dataspace_id >= 0)
+hid_t file_dataspace(hid_t data_id, const CoordBBox &bbox) {
+  hid_t file_dataspace_id = H5Dget_space(data_id);
+  if (file_dataspace_id < 0)
+    std::runtime_error("Invalid H5Dget_space read");
 
   // offsets into the image
   hsize_t file_dataspace_start[3] = {static_cast<hsize_t>(bbox.min().z()),
@@ -3558,9 +3561,13 @@ auto load_imaris_tile = [](std::string file_name, const CoordBBox &bbox,
           hid_t channel_id = H5Gopen(time_id, cname.c_str(), H5P_DEFAULT);
           {
             hid_t data_id = H5Dopen(channel_id, "Data", H5P_DEFAULT);
-            hid_t mem_type_id = H5T_NATIVE_USHORT;
+            if (data_id < 0) {
+              std::runtime_error("Can not open Data at " + rname + tname +
+                                 cname);
+            }
             hid_t mem_dataspace_id = memory_dataspace(bbox);
-            hid_t file_dataspace_id = file_dataspace(dataset_id, bbox);
+            hid_t mem_type_id = H5T_NATIVE_USHORT;
+            hid_t file_dataspace_id = file_dataspace(data_id, bbox);
             herr_t success =
                 H5Dread(dataset_id, mem_type_id, mem_dataspace_id,
                         file_dataspace_id, H5P_DEFAULT, dense->data());
