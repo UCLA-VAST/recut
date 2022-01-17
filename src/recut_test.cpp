@@ -21,8 +21,7 @@
 #define EXP_DEV_LOW .05
 #define NUMERICAL_ERROR .00001
 
-// If input is not vdb, and you do not force regeneration of the image
-// then you must use the MCP3D library to read the image filenames
+// If input is not vdb, force regeneration of the image
 #define GEN_IMAGE true
 
 // This source file is for functions or tests that include test macros only
@@ -352,18 +351,12 @@ TEST(Histogram, Add) {
   }
 }
 
-#ifdef USE_MCP3D
-TEST(Utils, DISABLED_HDF5MCP3D) {
+#ifdef USE_HDF5
+TEST(Utils, DISABLED_HDF5) {
   auto imaris_path = "/mnt/d/Reconstructions_Working/For_Karl/TME12-1/ims/test/"
                      "Camk2a-MORF3-D1Tom_TME12-1_30x_Str_02A.ims";
   auto chunk_bbox = CoordBBox(zeros(), {256, 256, 8});
   load_imaris_tile(imaris_path, chunk_bbox);
-
-  // auto imaris_id = mcp3d::Hdf5Handle(imaris_path);
-  // auto dims = mcp3d::ImarisChannelChunkXyzDims(imaris_id, 0, 0, 0);
-
-  // mcp3d::ImarisChannelInfo info(imaris_path, 0, 0);
-  // EXPECT_EQ(vector<int>({8, 256, 256}), info.chunk_xyz_dims());
 }
 #endif
 
@@ -2687,10 +2680,10 @@ INSTANTIATE_TEST_CASE_P(
         // std::make_tuple(4, 4, 4, 1, 100., true, false), // 1
         // std::make_tuple(4, 4, 4, 2, 100., true, false), // 2
         // std::make_tuple(4, 2, 2, 2, 100., true, false)  // 3
-        //#ifdef USE_MCP3D
+        //#ifdef USE_HDF5
         //,
         //// check_against_app2 (final boolean below) currently uses
-        //// MCP3D's reading of image to ensure that both sequential and recut
+        //// reading of image to ensure that both sequential and recut
         //// use the same iamge, to include these test while testing against
         //// sequential change the implementation so that the generated image
         //// from recut is saved and pass it to fastmarching_tree
@@ -2812,9 +2805,6 @@ int main(int argc, char **argv) {
   // this significantly slows performance so it should be stamped to any
   // performance stats
   testing::Test::RecordProperty("FULL_PRINT", 1);
-#endif
-#ifdef USE_MCP3D
-  testing::Test::RecordProperty("USE_MCP3D", 1);
 #endif
 
   // warning: needs to be called once per executable before any related

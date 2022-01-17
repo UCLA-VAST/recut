@@ -1,7 +1,6 @@
 #include <benchmark/benchmark.h>
 #include "tbytesum1.hpp"
 
-//#define TEST_INTERVAL "/curr/kdmarrett/mcp3d/bin/interval_base.bin"
 #define TEST_INTERVAL "interval_base.bin"
 #define RANGE_MULT 2<<9
 //#define RANGE_MULT 1

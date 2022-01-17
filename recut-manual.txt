@@ -8,7 +8,7 @@ This file should live on the desktop for reference
 - For now Recut will be used mainly to convert stitched images to vdb and to run the pipeline after the soma detection stage has run
 
 Note:
-- Recut and mcp3d are both currently in private github repositories so updating them to a newer version requires that you have a github account and are added to the repo and have an ssh key visible to Ubuntu's ssh-agent. However, this will probably be entirely managed by Karl until it is open sourced. Just know that re-cloning or updating recut or mcp3d requires Karl to login and enter his private password for now.
+- Recut is currently in a private github repository so updating it to a newer version requires that you have a github account and are added to the repo and have an ssh key visible to Ubuntu's ssh-agent. However, this will probably be entirely managed by Karl until it is open sourced. Just know that re-cloning or updating recut requires Karl to login and enter his private password for now.
 
 WSL 2 Installation Procedure:
 Anytime you open the windows shell start it instead by right clicking and selecting run as administrator

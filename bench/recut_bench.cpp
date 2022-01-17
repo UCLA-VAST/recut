@@ -2,11 +2,7 @@
 #include "../test/app2_helpers.hpp"
 #include <benchmark/benchmark.h>
 
-#ifdef USE_MCP3D
-#define GEN_IMAGE false
-#else
 #define GEN_IMAGE true
-#endif
 
 /*
  * Benchmark loops over possible image sizes
@@ -242,8 +238,7 @@ BENCHMARK(xy_radius)
     ->ReportAggregatesOnly(true)
     ->Unit(benchmark::kMillisecond);
 
-#ifdef USE_MCP3D
-
+    /* Below code needs to be updated for new IO
 static void load_exact_tile(benchmark::State &state) {
   auto tcase = 0;
   int slt_pct = 100;
@@ -293,6 +288,6 @@ BENCHMARK(load_tile_from_large_image)
     ->ReportAggregatesOnly(true)
     ->Unit(benchmark::kMillisecond);
 
-#endif
+*/
 
 BENCHMARK_MAIN();

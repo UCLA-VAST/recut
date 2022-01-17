@@ -1,6 +1,3 @@
-#ifdef USE_MCP3D
-#include <image/mcp3d_image_utils.hpp>
-#endif
 #include "recut_parameters.hpp"
 
 void RecutCommandLineArgs::PrintUsage() {

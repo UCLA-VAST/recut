@@ -2296,14 +2296,16 @@ Recut<image_t>::update(std::string stage, Container &fifo,
             return stripped + ".vdb";
           };
 
-#ifdef USE_MCP3D
           if (args->input_type == "ims") {
+#ifdef USE_HDF5
             dense_tile =
                 load_imaris_tile(args->input_path, tile_bbox,
                                  args->resolution_level, args->channel);
+#else
+            throw std::runtime_error("HDF5 dependency required for input type ims");
+#endif
             this->args->output_name = convert_fn_vdb(args->input_path, '.');
           }
-#endif
 
           if (args->input_type == "tiff") {
             dense_tile = load_tile<image_t>(tile_bbox, args->input_path);
@@ -2684,13 +2686,13 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
       const auto tif_filenames = get_dir_files(args->input_path, ".tif");
       input_image_lengths = get_tif_dims(tif_filenames);
     } else if (args->input_type == "ims") {
-      // mcp3d::MImage image(args->input_path);
-      // auto imaris_bbox = get_image_bbox(image, args->channel);
-      // std::vector<string> imaris_paths =
-      // mcp3d::StitchedImarisPathsInDir(args->input_path);
+#ifdef USE_HDF5
       auto imaris_bbox = imaris_image_bbox(
           args->input_path, args->resolution_level, args->channel);
       input_image_lengths = imaris_bbox.dim();
+#else
+      throw std::runtime_error("HDF5 dependency required for input type ims");
+#endif
     } else {
       if (!(args->force_regenerate_image)) {
         throw std::runtime_error(

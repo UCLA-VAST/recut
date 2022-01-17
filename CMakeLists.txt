@@ -153,8 +153,7 @@ option(LOG "Overview logging details of the recut run, this suffices for basic t
 option(LOG_FULL "roughly block by block processing granularity" OFF)
 option(FULL_PRINT "Print vertex by vertex behavior. Warning: will significantly slow performance" OFF)
 
-option( USE_MCP3D "Use and link external library MCP3D into recut for image reading of TIF and HDF5 (.ims) file types" OFF)
-
+option( USE_HDF5 "Use and link external library HDF5 into recut for image reading of Imaris HDF5 (.ims) file types" ON)
 
 set(MARKERS ${PROJECT_SOURCE_DIR}/src/markers.cpp)
 set(PARAMS ${PROJECT_SOURCE_DIR}/src/recut_parameters.cpp)
@@ -231,9 +230,11 @@ find_package(Threads REQUIRED)
 
 find_package(TIFF REQUIRED)
 
-find_package(HDF5 COMPONENTS C REQUIRED)
-message(STATUS "HDF5_INCLUDE_DIR: ${HDF5_INCLUDE_DIR}")
-set(HDF5_LIBRARIES libhdf5.so)
+if (USE_HDF5)
+  find_package(HDF5 COMPONENTS C REQUIRED)
+  message(STATUS "HDF5_INCLUDE_DIR: ${HDF5_INCLUDE_DIR}")
+  set(HDF5_LIBRARIES libhdf5.so)
+endif()
 
 foreach(I ${ALL_TARGETS})
   message(STATUS "${I}")
@@ -261,9 +262,6 @@ foreach(I ${ALL_TARGETS})
   if (USE_OMP_INTERVAL)
     target_compile_definitions(${I} PRIVATE USE_OMP_INTERVAL)
   endif()
-  if (USE_MCP3D)
-    target_compile_definitions(${I} PRIVATE USE_MCP3D)
-  endif()
   if (NO_INTERVAL_RV)
     target_compile_definitions(${I} PRIVATE NO_INTERVAL_RV)
   endif()
@@ -273,12 +271,15 @@ foreach(I ${ALL_TARGETS})
   if (GIT_HASH)
     target_compile_definitions(${I} PRIVATE GIT_HASH)
   endif()
+  if (USE_HDF5)
+    target_compile_definitions(${I} PRIVATE USE_HDF5)
+  endif()
   target_compile_definitions(${I} PRIVATE "CMAKE_INSTALL_DATADIR=\"${CMAKE_INSTALL_DATADIR}\"")
 
   # c++20 has compile errors with range-v3 library
   target_compile_features(${I} PRIVATE cxx_std_17)
   # these are the actual flags passed during compilation
-  target_compile_options(${I} PRIVATE -fno-omit-frame-pointer -g)
+  #target_compile_options(${I} PRIVATE -fno-omit-frame-pointer -g)
   install(TARGETS ${I} DESTINATION ${CMAKE_INSTALL_BINDIR})
 
   target_link_libraries(${I} PRIVATE range-v3::range-v3)
@@ -295,23 +296,8 @@ foreach(I ${ALL_TARGETS})
 
   target_link_libraries(${I} PRIVATE ${TIFF_LIBRARIES})
 
+  if (USE_HDF5)
     target_link_libraries(${I} PRIVATE ${HDF5_LIBRARIES})
-
-  if (USE_MCP3D)
-    message(STATUS "USE_MCP3D ON")
-    find_package(Eigen3 REQUIRED)
-    target_include_directories(${I} PRIVATE ${EIGEN3_INCLUDE_DIR})
-
-    find_package(OpenCV REQUIRED core imgcodecs imgproc)
-    target_include_directories(${I} PRIVATE ${OpenCV_INCLUDE_DIRS})
-    target_link_libraries(${I} PRIVATE ${OpenCV_LIBS})
-
-    target_link_libraries(${I} PRIVATE
-      libmcp3d_algorithm.so
-      libmcp3d_image.so
-      libmcp3d_common.so
-      libmcp3d_project_structure.so
-      )
   endif()
 
   # USE_VDB

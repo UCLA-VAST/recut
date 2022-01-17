@@ -1,8 +1,6 @@
 //last edit: by PHC, 20121127. fix a small bug on radius est method
 //last edit: by PHC, 20130103. Change MyMarker to TMarker so to handle different marker classes (which however always share x,y,z,radius fields)
-
-#ifndef MCP3D_VAA3D_MARKER_RADIUS_H
-#define MCP3D_VAA3D_MARKER_RADIUS_H
+#pragma once
 
 #include <cstdint>
 #include <cmath>
@@ -235,5 +233,3 @@ template<class T, class TMarker> double markerRadiusXY(T* &inimg1d, int64_t* sz,
 {
 	return markerRadius_hanchuan_XY(inimg1d, sz, marker, thresh);
 }
-
-#endif // MCP3D_VAA3D_MARKER_RADIUS_H

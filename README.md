@@ -43,26 +43,9 @@ This program relies on:
   for proper gcc support of all necessary c++17 features
 - Optionally: google-test and google-benchmark library submodules ( auto built/linked through cmake, see
   `recut/CMakeLists.txt` for details)
-- Optionally: `mcp3d` an image reading library for Tiff, Imaris/HDF5 file types see below 
+- Optionally: HDF5 an image reading library for Imaris/HDF5 file types
 - Optionally: python3.8 matplotlib, gdb, clang-tools, linux-perf
 - Note: to increase reproducibility and dependencies issues we recommend developing within the Nix package environment (see the Troubleshooting section)
-
-#### Image reading with MCP3D library
-If you need image reading and writing capabilities rerun cmake with the `-D USE_MCP3D=ON`
-flag like so
-```
-rm -rf build
-cmake -B build -D USE_MCP3D=ON
-# you may also want to run the full set of test benchmarks by instead defining
-cmake -B build -D USE_MCP3D=ON -D TEST_ALL_BENCHMARKS=ON
-cd build
-make 
-sudo make install
-# install the test images like so:
-sudo make installcheck
-# run all tests
-./recut_test 
-```
 
 #### Troubleshooting
 Some of Recut's dependencies require later releases then you may have

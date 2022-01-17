@@ -20,11 +20,6 @@
 #include <stdlib.h> // ultoa
 #include <tiffio.h>
 
-#ifdef USE_MCP3D
-#include <common/mcp3d_common.hpp>
-#include <image/mcp3d_image.hpp>
-#endif
-
 namespace fs = std::filesystem;
 namespace rng = ranges;
 
@@ -3427,7 +3422,7 @@ void write_marker_files(std::vector<MyMarker *> component_markers,
   });
 }
 
-#ifdef USE_MCP3D
+#ifdef USE_HDF5
 
 int hdf5_attr(hid_t object_id, const char *attribute_name,
               std::unique_ptr<uint8_t[]> &buffer) {
@@ -3441,7 +3436,7 @@ int hdf5_attr(hid_t object_id, const char *attribute_name,
   hsize_t n_bytes = attribute_info.data_size;
   buffer = make_unique<uint8_t[]>(n_bytes);
   hid_t type_id = H5Aget_type(attribute_id);
-  MCP3D_ASSERT(type_id >= 0)
+  assert(type_id >= 0);
   success = H5Aread(attribute_id, type_id, buffer.get());
   if (success < 0)
     std::runtime_error("failed to read attribute " + string(attribute_name));
@@ -3645,59 +3640,7 @@ auto get_hdf5_data = [](std::string file_name, int channel = 0) {
 };
 */
 
-auto get_image_bbox = [](mcp3d::MImage &image, int channel = 0) {
-  image.ReadImageInfo({channel}, true);
-  auto dims = image.xyz_dims();
-  // reverse mcp3d's z y x parameter order
-  return CoordBBox(zeros(), GridCoord(dims[2], dims[1], dims[0]));
-};
-
-/*
-// image is a input/output parameter holding the data in .Volume(channel)
-// this is to make ownership of the tile buffer clear to clients
-auto load_imaris_tile = [](mcp3d::MImage &image, CoordBBox bbox = {},
-                           int channel = 0) {
-  auto timer = high_resolution_timer();
-
-  // image state needs to be established via a call to ReadImageInfo
-  // before calling SelectView
-  if (bbox.empty()) {
-    bbox = get_image_bbox(image, channel);
-  } else {
-    image.ReadImageInfo({channel}, true);
-  }
-
-  // try {
-  // mcp3d takes inputs in in z y x order
-  mcp3d::MImageBlock block({bbox.min()[2], bbox.min()[1], bbox.min()[0]},
-                           {bbox.max()[2], bbox.max()[1], bbox.max()[0]});
-  image.SelectView(block, channel);
-  // returns row-major (c-order) buffers
-  image.ReadData(true, "quiet");
-  //} catch (...) {
-  // throw std::runtime_error(false, "error in image io. neuron tracing not
-  // performed");
-  //}
-#ifdef LOG
-  cout << "Load image " << bbox << " in " << timer.elapsed() << " sec." << '\n';
-#endif
-};
-*/
-
-// FIXME delete this
-mcp3d::MImage *get_mcp3d_image(std::string fn) {
-
-  // const auto ims_names = get_dir_files(dir, ".ims"); // sorted
-  // if (ims_names.empty()) {
-  // throw std::runtime_error("No .ims or .tiff images found in directory: " +
-  // dir);
-  //}
-
-  // mcp3d::MImage image(ims_names[0]);
-  return new mcp3d::MImage(fn);
-}
-
-#endif // USE_MCP3D
+#endif // USE_HDF5
 
 /*
  * The interval size and shape define the requested "view" of the image

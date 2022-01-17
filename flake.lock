@@ -1,25 +1,5 @@
 {
   "nodes": {
-    "mcp3d": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1641675360,
-        "narHash": "sha256-9KbDBID8jQrd2KC9+DTosQocvjP5RIWQ4bhIlrAY9Fs=",
-        "ref": "master",
-        "rev": "58132c86d050f73a018002f78c9e77c2db3e8774",
-        "revCount": 474,
-        "type": "git",
-        "url": "ssh://git@github.com/ucla-brain/mcp3d"
-      },
-      "original": {
-        "type": "git",
-        "url": "ssh://git@github.com/ucla-brain/mcp3d"
-      }
-    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1640718479,
@@ -58,7 +38,6 @@
     },
     "root": {
       "inputs": {
-        "mcp3d": "mcp3d",
         "nixpkgs": "nixpkgs",
         "openvdb": "openvdb"
       }
