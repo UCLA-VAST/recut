@@ -1380,7 +1380,7 @@ get_args(int grid_size, int interval_length, int block_size, int slt_pct,
 
     if (const char *env_p = std::getenv("TEST_IMAGE")) {
       std::cout << "Using $TEST_IMAGE environment variable: " << env_p << '\n';
-      args.image_root_dir = std::string(env_p);
+      args.input_path = std::string(env_p);
     } else {
       std::cout << "Warning likely fatal: must run: export "
                    "TEST_IMAGE=\"abs/path/to/image\" to set the environment "
@@ -1406,17 +1406,17 @@ get_args(int grid_size, int interval_length, int block_size, int slt_pct,
     args.max_intensity = 2;
     args.min_intensity = 0;
     args.force_regenerate_image = force_regenerate_image;
-    auto image_root_dir =
+    auto input_path =
         str_path + "/test_images/" + std::to_string(grid_size) + "/tcase" +
         std::to_string(tcase) + "/slt_pct" + std::to_string(slt_pct);
     if (input_is_vdb) {
       if (args.input_type == "point") {
-        args.image_root_dir = image_root_dir + "/point.vdb";
+        args.input_path = input_path + "/point.vdb";
       } else if (args.input_type == "float") {
-        args.image_root_dir = image_root_dir + "/float.vdb";
+        args.input_path = input_path + "/float.vdb";
       }
     } else {
-      args.image_root_dir = image_root_dir + "/ch0";
+      args.input_path = input_path + "/ch0";
     }
   }
 

@@ -82,7 +82,7 @@ void RecutCommandLineArgs::PrintUsage() {
 
 std::string RecutCommandLineArgs::MetaString() {
   std::stringstream meta_stream;
-  meta_stream << "image file/dir = " << image_root_dir << '\n';
+  meta_stream << "image file/dir = " << input_path << '\n';
   meta_stream << "channel = " << channel << '\n';
   meta_stream << "prune radius = " << prune_radius << '\n';
   meta_stream << "resolution level = " << resolution_level << '\n';
@@ -109,7 +109,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       exit(0);
     } else {
       // global volume and channel selection
-      args.image_root_dir = argv[1];
+      args.input_path = argv[1];
     }
     // if the switch is given, parameter(s) corresponding to the switch is
     // expected

@@ -395,7 +395,7 @@ TEST(Histogram, CallAndPrint) {
     auto tcase = 0;
     auto grid_size = 2;
     auto args = get_args(grid_size, grid_size, grid_size, 100, tcase);
-    auto check = read_tiff_dir(args.image_root_dir);
+    auto check = read_tiff_dir(args.input_path);
     auto histogram =
         hist(check->data(), args.image_lengths, zeros(), granularity);
     ASSERT_EQ(histogram.size(), 1)
@@ -624,7 +624,7 @@ TEST(VDB, PriorityQueue) {
                              /*force_regenerate_image=*/true,
                              /*input_is_vdb=*/true,
                              /* type =*/"point");
-  auto base_grid = read_vdb_file(point_args.image_root_dir);
+  auto base_grid = read_vdb_file(point_args.input_path);
   recut.topology_grid = openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
   append_attributes(recut.topology_grid);
 
@@ -693,7 +693,7 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
                              /*force_regenerate_image=*/false,
                              /*input_is_vdb=*/true,
                              /*type=*/"float");
-  auto base_grid = read_vdb_file(float_args.image_root_dir);
+  auto base_grid = read_vdb_file(float_args.input_path);
   // priority queue must have type float
   recut.input_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
 
@@ -782,7 +782,7 @@ TEST(Utils, AdjustSomaRadii) {
                              /*force_regenerate_image=*/GEN_IMAGE,
                              /*input_is_vdb=*/true,
                              /* type =*/"point");
-  auto base_grid = read_vdb_file(point_args.image_root_dir);
+  auto base_grid = read_vdb_file(point_args.input_path);
   recut.topology_grid = openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
   append_attributes(recut.topology_grid);
 
@@ -979,7 +979,7 @@ TEST(VDB, ConvertTiffToPoint) {
   auto recut = Recut<uint16_t>(args);
   recut.args->convert_only = true;
 
-  auto tiff_dense = read_tiff_dir(args.image_root_dir);
+  auto tiff_dense = read_tiff_dir(args.input_path);
   auto selected = std::accumulate(tiff_dense->data(), tiff_dense->data() + tiff_dense->valueCount(), 0);
   if (print_all) {
     std::cout << "tiff_dense\n";
@@ -1438,7 +1438,7 @@ TEST(TileThresholds, AllTcases) {
     uint16_t bkg_thresh;
 
     if (tcase == 6) {
-      auto image = read_tiff_dir(args.image_root_dir + "/ch0");
+      auto image = read_tiff_dir(args.input_path + "/ch0");
       if (print_image) {
         print_image_3D(image->data(), grid_extents);
       }
@@ -2316,7 +2316,7 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
   auto args = get_args(grid_size, interval_size, block_size, slt_pct, tcase,
                        force_regenerate_image, input_is_vdb);
   args.input_type = "float";
-  cout << "args.image_root_dir " << args.image_root_dir << '\n';
+  cout << "args.input_path " << args.input_path << '\n';
   cout << "image lengths " << grid_extents << '\n';
   cout << "image offsets " << args.image_offsets << '\n';
   cout << "VDB input type " << args.input_type << '\n';

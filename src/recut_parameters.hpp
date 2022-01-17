@@ -16,7 +16,7 @@
 class RecutCommandLineArgs {
 public:
   RecutCommandLineArgs()
-      : image_root_dir(std::string()), channel(0), resolution_level(0),
+      : input_path(std::string()), channel(0), resolution_level(0),
         image_offsets(0, 0, 0), image_lengths(-1, -1, -1), input_type("point"),
         output_type("uint8"), prune_radius(ANISOTROPIC_FACTOR), run_app2(false),
         user_thread_count(tbb::info::default_concurrency()),
@@ -47,7 +47,7 @@ public:
   std::vector<MyMarker *> output_tree;
   GridCoord image_offsets, image_lengths;
 
-  std::string image_root_dir, input_type, output_type, output_name, seed_path,
+  std::string input_path, input_type, output_type, output_name, seed_path,
       output_windows, second_grid;
   uint16_t prune_radius, user_thread_count, min_branch_length, resolution_level,
       channel, upsample_z, downsample_factor;

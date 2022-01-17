@@ -2299,16 +2299,16 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 #ifdef USE_MCP3D
           if (args->input_type == "ims") {
             dense_tile =
-                load_imaris_tile(args->image_root_dir, tile_bbox,
+                load_imaris_tile(args->input_path, tile_bbox,
                                  args->resolution_level, args->channel);
-            this->args->output_name = convert_fn_vdb(args->image_root_dir, '.');
+            this->args->output_name = convert_fn_vdb(args->input_path, '.');
           }
 #endif
 
           if (args->input_type == "tiff") {
-            dense_tile = load_tile<image_t>(tile_bbox, args->image_root_dir);
+            dense_tile = load_tile<image_t>(tile_bbox, args->input_path);
             const auto tif_filenames =
-                get_dir_files(args->image_root_dir, ".tif");
+                get_dir_files(args->input_path, ".tif");
             this->args->output_name = convert_fn_vdb(tif_filenames[0], '_');
           }
 
@@ -2640,7 +2640,7 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
             "Convert only option is not valid from vdb to vdb");
 
     auto timer = high_resolution_timer();
-    auto base_grid = read_vdb_file(args->image_root_dir);
+    auto base_grid = read_vdb_file(args->input_path);
 
 #ifdef LOG
     cout << "VDB input type " << this->args->input_type << '\n';
@@ -2681,15 +2681,15 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
 
   } else { // converting to a new grid from a raw image
     if (args->input_type == "tiff") {
-      const auto tif_filenames = get_dir_files(args->image_root_dir, ".tif");
+      const auto tif_filenames = get_dir_files(args->input_path, ".tif");
       input_image_lengths = get_tif_dims(tif_filenames);
     } else if (args->input_type == "ims") {
-      // mcp3d::MImage image(args->image_root_dir);
+      // mcp3d::MImage image(args->input_path);
       // auto imaris_bbox = get_image_bbox(image, args->channel);
       // std::vector<string> imaris_paths =
-      // mcp3d::StitchedImarisPathsInDir(args->image_root_dir);
+      // mcp3d::StitchedImarisPathsInDir(args->input_path);
       auto imaris_bbox = imaris_image_bbox(
-          args->image_root_dir, args->resolution_level, args->channel);
+          args->input_path, args->resolution_level, args->channel);
       input_image_lengths = imaris_bbox.dim();
     } else {
       if (!(args->force_regenerate_image)) {
@@ -2735,14 +2735,14 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
   }
 #ifdef LOG
   cout << "Thread count " << final_thread_count << '\n';
-  cout << "User specified image " << args->image_root_dir << '\n';
+  cout << "User specified image " << args->input_path << '\n';
 #endif
 #endif
 
   // input type
   {
     auto path_extension =
-        std::string(fs::path(args->image_root_dir).extension());
+        std::string(fs::path(args->input_path).extension());
     this->input_is_vdb = path_extension == ".vdb" ? true : false;
   }
 
@@ -3209,7 +3209,7 @@ template <class image_t> void Recut<image_t>::init_run() {
 template <class image_t> void Recut<image_t>::operator()() {
 
   if (!args->second_grid.empty()) {
-    combine_grids(args->image_root_dir, args->second_grid,
+    combine_grids(args->input_path, args->second_grid,
                   this->args->output_name);
     return;
   }

@@ -253,8 +253,8 @@ static void load_exact_tile(benchmark::State &state) {
 
   for (auto _ : state) {
     mcp3d::MImage image;
-    cout << args.image_root_dir() << '\n';
-    read_tiff(args.image_root_dir(), {0, 0, 0},
+    cout << args.input_path() << '\n';
+    read_tiff(args.input_path(), {0, 0, 0},
               {grid_size, grid_size, grid_size}, image);
   }
   auto total_pixels = static_cast<VID_t>(grid_size) * grid_size * grid_size;
@@ -278,8 +278,8 @@ static void load_tile_from_large_image(benchmark::State &state) {
 
   for (auto _ : state) {
     mcp3d::MImage image;
-    cout << args.image_root_dir() << '\n';
-    read_tiff(args.image_root_dir(),
+    cout << args.input_path() << '\n';
+    read_tiff(args.input_path(),
               {mid_pixel_in_total_xy_image, mid_pixel_in_total_xy_image, 0},
               {grid_size, grid_size, grid_size}, image);
   }
