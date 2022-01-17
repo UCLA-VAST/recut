@@ -356,8 +356,8 @@ TEST(Histogram, Add) {
 TEST(Utils, DISABLED_HDF5MCP3D) {
   auto imaris_path = "/mnt/d/Reconstructions_Working/For_Karl/TME12-1/ims/test/"
                      "Camk2a-MORF3-D1Tom_TME12-1_30x_Str_02A.ims";
-  mcp3d::MImage image(imaris_path);
-  load_imaris_tile(image);
+  auto chunk_bbox = CoordBBox(zeros(), {256, 256, 8});
+  load_imaris_tile(imaris_path, chunk_bbox);
 
   // auto imaris_id = mcp3d::Hdf5Handle(imaris_path);
   // auto dims = mcp3d::ImarisChannelChunkXyzDims(imaris_id, 0, 0, 0);

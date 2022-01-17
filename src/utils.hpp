@@ -3451,8 +3451,46 @@ int hdf5_attr(hid_t object_id, const char *attribute_name,
   return n_elements;
 }
 
-auto hdf5_bbox = [](std::string file_name, int resolution = 0,
-                    int channel = 0) {
+hid_t memory_dataspace(const CoordBBox &bbox) {
+  // hdf5 is all in z,y,x order but returns buffers in c-order
+  hsize_t mem_dims[3] = {static_cast<hsize_t>(bbox.dim().z()),
+                         static_cast<hsize_t>(bbox.dim().y()),
+                         static_cast<hsize_t>(bbox.dim().x())};
+  hid_t mem_dataspace_id = H5Screate_simple(3, mem_dims, mem_dims);
+  assert(mem_dataspace_id >= 0);
+
+  // offsets into the image
+  hsize_t mem_dataspace_start[3] = {static_cast<hsize_t>(bbox.min().z()),
+                                    static_cast<hsize_t>(bbox.min().y()),
+                                    static_cast<hsize_t>(bbox.min().x())};
+  hsize_t mem_dataspace_stride[3] = {1, 1, 1};
+  hsize_t mem_dataspace_count[3] = {static_cast<hsize_t>(bbox.dim().z()),
+                                    static_cast<hsize_t>(bbox.dim().y()),
+                                    static_cast<hsize_t>(bbox.dim().z())};
+  H5Sselect_hyperslab(mem_dataspace_id, H5S_SELECT_SET, mem_dataspace_start,
+                      mem_dataspace_stride, mem_dataspace_count, NULL);
+  return mem_dataspace_id;
+}
+
+hid_t file_dataspace(hid_t dataset_id, const CoordBBox &bbox) {
+  hid_t file_dataspace_id = H5Dget_space(dataset_id);
+  MCP3D_ASSERT(file_dataspace_id >= 0)
+
+  // offsets into the image
+  hsize_t file_dataspace_start[3] = {static_cast<hsize_t>(bbox.min().z()),
+                                     static_cast<hsize_t>(bbox.min().y()),
+                                     static_cast<hsize_t>(bbox.min().x())};
+  hsize_t file_dataspace_stride[3] = {1, 1, 1};
+  hsize_t file_dataspace_count[3] = {static_cast<hsize_t>(bbox.dim().z()),
+                                     static_cast<hsize_t>(bbox.dim().y()),
+                                     static_cast<hsize_t>(bbox.dim().z())};
+  H5Sselect_hyperslab(file_dataspace_id, H5S_SELECT_SET, file_dataspace_start,
+                      file_dataspace_stride, file_dataspace_count, NULL);
+  return file_dataspace_id;
+}
+
+auto imaris_image_bbox = [](std::string file_name, int resolution = 0,
+                            int channel = 0) {
   auto max_coord = zeros();
   auto file_id = H5Fopen(file_name.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
   {
@@ -3488,6 +3526,61 @@ auto hdf5_bbox = [](std::string file_name, int resolution = 0,
   }
   H5Fclose(file_id);
   return CoordBBox(zeros(), max_coord);
+};
+
+// all HDF5 calls are not thread safe
+auto load_imaris_tile = [](std::string file_name, const CoordBBox &bbox,
+                           int resolution = 0, int channel = 0) {
+  // check inputs
+  auto imaris_bbox = imaris_image_bbox(file_name, resolution, channel);
+  // FIXME get voxel type
+  auto dense =
+      std::make_unique<vto::Dense<uint16_t, vto::LayoutXYZ>>(bbox, /*fill*/ 0.);
+
+  if (!imaris_bbox.isInside(bbox)) {
+    std::ostringstream os;
+    os << "Requested bbox: " << bbox
+       << " is not inside image bbox: " << imaris_bbox << '\n';
+    std::runtime_error(os.str());
+  }
+
+  auto file_id = H5Fopen(file_name.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+  {
+    hid_t dataset_id = H5Gopen(file_id, "DataSet", H5P_DEFAULT);
+    {
+      auto rname = "ResolutionLevel " + std::to_string(resolution);
+      hid_t res_id = H5Gopen(dataset_id, rname.c_str(), H5P_DEFAULT);
+      {
+        auto tname = "TimePoint 0";
+        hid_t time_id = H5Gopen(res_id, tname, H5P_DEFAULT);
+        {
+          auto cname = "Channel " + std::to_string(channel);
+          hid_t channel_id = H5Gopen(time_id, cname.c_str(), H5P_DEFAULT);
+          {
+            hid_t data_id = H5Dopen(channel_id, "Data", H5P_DEFAULT);
+            hid_t mem_type_id = H5T_NATIVE_USHORT;
+            hid_t mem_dataspace_id = memory_dataspace(bbox);
+            hid_t file_dataspace_id = file_dataspace(dataset_id, bbox);
+            herr_t success =
+                H5Dread(dataset_id, mem_type_id, mem_dataspace_id,
+                        file_dataspace_id, H5P_DEFAULT, dense->data());
+
+            if (success < 0)
+              std::runtime_error("Failed to read imaris hdf5 dataset");
+
+            H5Dclose(data_id);
+          }
+          H5Gclose(channel_id);
+        }
+        H5Gclose(time_id);
+      }
+      H5Gclose(res_id);
+    }
+    H5Gclose(dataset_id);
+  }
+  H5Fclose(file_id);
+
+  return dense;
 };
 
 /*
@@ -3555,6 +3648,7 @@ auto get_image_bbox = [](mcp3d::MImage &image, int channel = 0) {
   return CoordBBox(zeros(), GridCoord(dims[2], dims[1], dims[0]));
 };
 
+/*
 // image is a input/output parameter holding the data in .Volume(channel)
 // this is to make ownership of the tile buffer clear to clients
 auto load_imaris_tile = [](mcp3d::MImage &image, CoordBBox bbox = {},
@@ -3584,6 +3678,7 @@ auto load_imaris_tile = [](mcp3d::MImage &image, CoordBBox bbox = {},
   cout << "Load image " << bbox << " in " << timer.elapsed() << " sec." << '\n';
 #endif
 };
+*/
 
 // FIXME delete this
 mcp3d::MImage *get_mcp3d_image(std::string fn) {

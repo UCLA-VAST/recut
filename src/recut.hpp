@@ -2193,7 +2193,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
     // loop through all possible intervals
     // only safe for conversion stages with more than 1 thread
 #ifdef USE_OMP_INTERVAL
-//#pragma omp parallel for
+#pragma omp parallel for
 #endif
     for (int interval_id = 0; interval_id < grid_interval_size; interval_id++) {
       // only start intervals that have active processing to do
@@ -2297,21 +2297,11 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           };
 
 #ifdef USE_MCP3D
-          // keep image in scope while accessing dense_tile
-          mcp3d::MImage image(args->image_root_dir);
           if (args->input_type == "ims") {
-            load_imaris_tile(image, tile_bbox, args->channel);
-            // assign ownership of the image tile buffer to dense_tile
-            // warning: UB if image goes out of scope while accessing dense_tile
-            dense_tile = std::make_unique<vto::Dense<image_t, vto::LayoutXYZ>>(
-                tile_bbox, image.Volume<image_t>(args->channel));
-            std::vector<string> imaris_paths =
-                mcp3d::StitchedImarisPathsInDir(args->image_root_dir);
-            if (imaris_paths.size() > 1) {
-              std::runtime_error(
-                  "Currently only supports 1 .ims per directory");
-            }
-            this->args->output_name = convert_fn_vdb(imaris_paths[0], '.');
+            dense_tile =
+                load_imaris_tile(args->image_root_dir, tile_bbox,
+                                 args->resolution_level, args->channel);
+            this->args->output_name = convert_fn_vdb(args->image_root_dir, '.');
           }
 #endif
 
@@ -2696,9 +2686,10 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
     } else if (args->input_type == "ims") {
       // mcp3d::MImage image(args->image_root_dir);
       // auto imaris_bbox = get_image_bbox(image, args->channel);
-      //std::vector<string> imaris_paths =
-          //mcp3d::StitchedImarisPathsInDir(args->image_root_dir);
-      auto imaris_bbox = hdf5_bbox(args->image_root_dir, args->resolution_level, args->channel);
+      // std::vector<string> imaris_paths =
+      // mcp3d::StitchedImarisPathsInDir(args->image_root_dir);
+      auto imaris_bbox = imaris_image_bbox(
+          args->image_root_dir, args->resolution_level, args->channel);
       input_image_lengths = imaris_bbox.dim();
     } else {
       if (!(args->force_regenerate_image)) {
@@ -2725,9 +2716,16 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
 template <class image_t>
 std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
+  auto final_thread_count = args->user_thread_count;
 #if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
   if (args->convert_only) {
     omp_set_num_threads(args->user_thread_count);
+    if (args->input_type == "ims") {
+      final_thread_count = 1;
+      omp_set_num_threads(final_thread_count);
+    } else {
+      omp_set_num_threads(args->user_thread_count);
+    }
   } else {
     // omp num threads is only valid for the convert stage
     omp_set_num_threads(1);
@@ -2736,7 +2734,7 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
         tbb::global_control::max_allowed_parallelism, args->user_thread_count);
   }
 #ifdef LOG
-  cout << "Thread count " << args->user_thread_count << '\n';
+  cout << "Thread count " << final_thread_count << '\n';
   cout << "User specified image " << args->image_root_dir << '\n';
 #endif
 #endif
@@ -2749,8 +2747,7 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
   }
 
   // actual possible lengths
-  auto input_image_lengths =
-      get_input_image_lengths(args);
+  auto input_image_lengths = get_input_image_lengths(args);
 
   // account and check requested args->image_offsets and args->image_lengths
   // extents are always the side length of the domain on each dim, in x y z
@@ -2770,8 +2767,8 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
   // sanitize in each dimension
   // and protected from faulty offset values
-  for (int i = 0; i < 3; i++) {
-    if (args->image_lengths[i] > 0) {
+  rng::for_each(rng::views::indices(3), [this, &max_len_after_off](int i) {
+    if (this->args->image_lengths[i] > 0) {
       // use the input length if possible, or maximum otherwise
       this->image_lengths[i] =
           std::min(args->image_lengths[i], max_len_after_off[i]);
@@ -2781,7 +2778,7 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
       this->image_lengths[i] =
           max_len_after_off[i] + args->image_lengths[i] + 1;
     }
-  }
+  });
   this->image_bbox = openvdb::math::CoordBBox(
       this->image_offsets, this->image_offsets + this->image_lengths);
 
@@ -2812,12 +2809,14 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
     // images are saved in separate z-planes for tiff, so conversion should
     // respect that for best performance
     int zchunk = args->input_type == "ims" ? 8 : 1;
+    // if it wasn't set by user on command line, then set default
     this->interval_lengths[2] = this->args->interval_lengths[2] < 1
                                     ? zchunk
                                     : this->args->interval_lengths[2];
     // based on imaris chunk size
     if (args->input_type == "ims") {
       rng::for_each(rng::views::indices(2), [this](int i) {
+        // if it wasn't set by user on command line, then set default
         if (this->args->interval_lengths[i] < 1)
           this->interval_lengths[i] = 256;
       });
@@ -2826,15 +2825,11 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
   // determine the length of intervals in each dim
   // rounding up (ceil)
-  this->grid_interval_lengths[0] =
-      (this->image_lengths[0] + this->interval_lengths[0] - 1) /
-      this->interval_lengths[0];
-  this->grid_interval_lengths[1] =
-      (this->image_lengths[1] + this->interval_lengths[1] - 1) /
-      this->interval_lengths[1];
-  this->grid_interval_lengths[2] =
-      (this->image_lengths[2] + this->interval_lengths[2] - 1) /
-      this->interval_lengths[2];
+  rng::for_each(rng::views::indices(3), [this](int i) {
+    this->grid_interval_lengths[i] =
+        (this->image_lengths[i] + this->interval_lengths[i] - 1) /
+        this->interval_lengths[i];
+  });
 
   // the resulting interval size override the user inputted block size
   if (this->args->convert_only) {
@@ -2849,22 +2844,18 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
   // determine length of blocks that span an interval for each dim
   // this rounds up
-  this->interval_block_lengths[0] =
-      (this->interval_lengths[0] + this->block_lengths[0] - 1) /
-      this->block_lengths[0];
-  this->interval_block_lengths[1] =
-      (this->interval_lengths[1] + this->block_lengths[1] - 1) /
-      this->block_lengths[1];
-  this->interval_block_lengths[2] =
-      (this->interval_lengths[2] + this->block_lengths[2] - 1) /
-      this->block_lengths[2];
+  rng::for_each(rng::views::indices(3), [this](int i) {
+    this->interval_block_lengths[i] =
+        (this->interval_lengths[i] + this->block_lengths[i] - 1) /
+        this->block_lengths[i];
+  });
 
   this->grid_interval_size = coord_prod_accum(this->grid_interval_lengths);
   this->interval_block_size = coord_prod_accum(this->interval_block_lengths);
 
 #ifdef LOG
   print_coord(this->image_lengths, "image");
-  // print_coord(this->interval_lengths, "interval");
+  print_coord(this->interval_lengths, "interval");
   // print_coord(this->block_lengths, "block");
   // print_coord(this->interval_block_lengths, "interval block lengths");
   // std::cout << "intervals per grid: " << grid_interval_size
