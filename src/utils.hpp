@@ -3446,44 +3446,6 @@ int hdf5_attr(hid_t object_id, const char *attribute_name,
   return n_elements;
 }
 
-hid_t memory_dataspace(const CoordBBox &bbox) {
-  // hdf5 is all in z,y,x order but returns buffers in c-order
-  hsize_t mem_dims[3] = {static_cast<hsize_t>(bbox.dim().z()),
-                         static_cast<hsize_t>(bbox.dim().y()),
-                         static_cast<hsize_t>(bbox.dim().x())};
-
-  hid_t mem_dataspace_id = H5Screate_simple(3, mem_dims, mem_dims);
-  if (mem_dataspace_id < 0)
-    std::runtime_error("Error reading mem_dataspace_id");
-
-  hsize_t mem_dataspace_start[3] = {0, 0, 0};
-  hsize_t mem_dataspace_stride[3] = {1, 1, 1};
-  hsize_t mem_dataspace_count[3] = {static_cast<hsize_t>(bbox.dim().z()),
-                                    static_cast<hsize_t>(bbox.dim().y()),
-                                    static_cast<hsize_t>(bbox.dim().z())};
-  H5Sselect_hyperslab(mem_dataspace_id, H5S_SELECT_SET, mem_dataspace_start,
-                      mem_dataspace_stride, mem_dataspace_count, NULL);
-  return mem_dataspace_id;
-}
-
-hid_t file_dataspace(hid_t data_id, const CoordBBox &bbox) {
-  hid_t file_dataspace_id = H5Dget_space(data_id);
-  if (file_dataspace_id < 0)
-    std::runtime_error("Invalid H5Dget_space read");
-
-  // offsets into the image
-  hsize_t file_dataspace_start[3] = {static_cast<hsize_t>(bbox.min().z()),
-                                     static_cast<hsize_t>(bbox.min().y()),
-                                     static_cast<hsize_t>(bbox.min().x())};
-  hsize_t file_dataspace_stride[3] = {1, 1, 1};
-  hsize_t file_dataspace_count[3] = {static_cast<hsize_t>(bbox.dim().z()),
-                                     static_cast<hsize_t>(bbox.dim().y()),
-                                     static_cast<hsize_t>(bbox.dim().z())};
-  H5Sselect_hyperslab(file_dataspace_id, H5S_SELECT_SET, file_dataspace_start,
-                      file_dataspace_stride, file_dataspace_count, NULL);
-  return file_dataspace_id;
-}
-
 auto imaris_image_bbox = [](std::string file_name, int resolution = 0,
                             int channel = 0) {
   auto max_coord = zeros();
@@ -3522,6 +3484,44 @@ auto imaris_image_bbox = [](std::string file_name, int resolution = 0,
   H5Fclose(file_id);
   return CoordBBox(zeros(), max_coord);
 };
+
+hid_t memory_dataspace(const CoordBBox &bbox) {
+  // hdf5 is all in z,y,x order but returns buffers in c-order
+  hsize_t mem_dims[3] = {static_cast<hsize_t>(bbox.dim().z()),
+                         static_cast<hsize_t>(bbox.dim().y()),
+                         static_cast<hsize_t>(bbox.dim().x())};
+
+  hid_t mem_dataspace_id = H5Screate_simple(3, mem_dims, mem_dims);
+  if (mem_dataspace_id < 0)
+    std::runtime_error("Error reading mem_dataspace_id");
+
+  hsize_t mem_dataspace_start[3] = {0, 0, 0};
+  hsize_t mem_dataspace_stride[3] = {1, 1, 1};
+  hsize_t mem_dataspace_count[3] = {static_cast<hsize_t>(bbox.dim().z()),
+                                    static_cast<hsize_t>(bbox.dim().y()),
+                                    static_cast<hsize_t>(bbox.dim().x())};
+  H5Sselect_hyperslab(mem_dataspace_id, H5S_SELECT_SET, mem_dataspace_start,
+                      mem_dataspace_stride, mem_dataspace_count, NULL);
+  return mem_dataspace_id;
+}
+
+hid_t file_dataspace(hid_t data_id, const CoordBBox &bbox) {
+  hid_t file_dataspace_id = H5Dget_space(data_id);
+  if (file_dataspace_id < 0)
+    std::runtime_error("Invalid H5Dget_space read");
+
+  // offsets into the image
+  hsize_t file_dataspace_start[3] = {static_cast<hsize_t>(bbox.min().z()),
+                                     static_cast<hsize_t>(bbox.min().y()),
+                                     static_cast<hsize_t>(bbox.min().x())};
+  hsize_t file_dataspace_stride[3] = {1, 1, 1};
+  hsize_t file_dataspace_count[3] = {static_cast<hsize_t>(bbox.dim().z()),
+                                     static_cast<hsize_t>(bbox.dim().y()),
+                                     static_cast<hsize_t>(bbox.dim().x())};
+  H5Sselect_hyperslab(file_dataspace_id, H5S_SELECT_SET, file_dataspace_start,
+                      file_dataspace_stride, file_dataspace_count, NULL);
+  return file_dataspace_id;
+}
 
 // all HDF5 calls are not thread safe
 auto load_imaris_tile = [](std::string file_name, const CoordBBox &bbox,
