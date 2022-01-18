@@ -2286,32 +2286,19 @@ Recut<image_t>::update(std::string stage, Container &fifo,
           const auto tile_bbox = CoordBBox(tile_offsets, interval_max);
           std::unique_ptr<vto::Dense<image_t, vto::LayoutXYZ>> dense_tile;
 
-          auto convert_fn_vdb = [this](const std::string &name,
-                                       auto split_char) {
-            auto stripped = name | rng::views::split(split_char) |
-                            rng::views::drop_last(1) | rng::views::join |
-                            rng::to<std::string>();
-            stripped += "-ch" + std::to_string(this->args->channel);
-            stripped += "-" + this->args->output_type;
-            return stripped + ".vdb";
-          };
-
           if (args->input_type == "ims") {
 #ifdef USE_HDF5
             dense_tile =
                 load_imaris_tile(args->input_path, tile_bbox,
                                  args->resolution_level, args->channel);
 #else
-            throw std::runtime_error("HDF5 dependency required for input type ims");
+            throw std::runtime_error(
+                "HDF5 dependency required for input type ims");
 #endif
-            this->args->output_name = convert_fn_vdb(args->input_path, '.');
           }
 
           if (args->input_type == "tiff") {
             dense_tile = load_tile<image_t>(tile_bbox, args->input_path);
-            const auto tif_filenames =
-                get_dir_files(args->input_path, ".tif");
-            this->args->output_name = convert_fn_vdb(tif_filenames[0], '_');
           }
 
           if (!local_tile_thresholds) {
@@ -2743,8 +2730,7 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
   // input type
   {
-    auto path_extension =
-        std::string(fs::path(args->input_path).extension());
+    auto path_extension = std::string(fs::path(args->input_path).extension());
     this->input_is_vdb = path_extension == ".vdb" ? true : false;
   }
 
@@ -2816,15 +2802,15 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
                                     ? zchunk
                                     : this->args->interval_lengths[2];
 
-    //// based on imaris chunk size, Note this makes performance slower 
+    //// based on imaris chunk size, Note this makes performance slower
     // most likely due to the cost of seeking to the chunk
     // or some other hdf5 overhead
-    //if (args->input_type == "ims") {
-      //rng::for_each(rng::views::indices(2), [this](int i) {
-        //// if it wasn't set by user on command line, then set default
-        //if (this->args->interval_lengths[i] < 1)
-          //this->interval_lengths[i] = 256;
-      //});
+    // if (args->input_type == "ims") {
+    // rng::for_each(rng::views::indices(2), [this](int i) {
+    //// if it wasn't set by user on command line, then set default
+    // if (this->args->interval_lengths[i] < 1)
+    // this->interval_lengths[i] = 256;
+    //});
     //}
   }
 
@@ -3195,27 +3181,55 @@ template <class image_t> void Recut<image_t>::convert_topology() {
 }
 
 template <class image_t> void Recut<image_t>::init_run() {
-  std::string probe_dir = "./components";
-  // make sure its a clean write
-  while (fs::exists(probe_dir)) {
-    probe_dir += "-latest";
-  }
-  this->run_dir = probe_dir;
-  this->log_fn = this->run_dir + "/log.txt";
-  fs::create_directories(run_dir);
-#ifdef LOG
-  std::ofstream run_log(log_fn);
-  run_log << "Prune radius, " << args->prune_radius << '\n';
-  run_log << "Soma radius, " << SOMA_PRUNE_RADIUS << '\n';
-  run_log << "Min branch, " << args->min_branch_length << '\n';
+  // Warning: if you want to fuse conversion with other stages you need
+  // to assign to these variable before running convert, since they
+  // rely on output_name and run dir to be set
+  if (this->args->convert_only) {
+    auto convert_fn_vdb = [this](const std::string &name, auto split_char) {
+      auto stripped = name | rng::views::split(split_char) |
+                      rng::views::drop_last(1) | rng::views::join |
+                      rng::to<std::string>();
+      stripped += "-ch" + std::to_string(this->args->channel);
+      stripped += "-" + this->args->output_type;
+      return stripped + ".vdb";
+    };
+
+    if (args->input_type == "ims") {
+#ifndef USE_HDF5
+      throw std::runtime_error("HDF5 dependency required for input type ims");
 #endif
+      this->args->output_name = convert_fn_vdb(args->input_path, '.');
+    }
+
+    if (args->input_type == "tiff") {
+      const auto tif_filenames = get_dir_files(args->input_path, ".tif");
+      this->args->output_name = convert_fn_vdb(tif_filenames[0], '_');
+    }
+
+    this->run_dir = ".";
+    this->log_fn = this->run_dir + "/" + this->args->output_name + "-log.txt";
+  } else {
+    std::string probe_dir = "./components";
+    // make sure its a clean write
+    while (fs::exists(probe_dir)) {
+      probe_dir += "-latest";
+    }
+    this->run_dir = probe_dir;
+    this->log_fn = this->run_dir + "/log.txt";
+    fs::create_directories(run_dir);
+#ifdef LOG
+    std::ofstream run_log(log_fn);
+    run_log << "Prune radius, " << args->prune_radius << '\n';
+    run_log << "Soma radius, " << SOMA_PRUNE_RADIUS << '\n';
+    run_log << "Min branch, " << args->min_branch_length << '\n';
+#endif
+  }
 }
 
 template <class image_t> void Recut<image_t>::operator()() {
 
   if (!args->second_grid.empty()) {
-    combine_grids(args->input_path, args->second_grid,
-                  this->args->output_name);
+    combine_grids(args->input_path, args->second_grid, this->args->output_name);
     return;
   }
 
