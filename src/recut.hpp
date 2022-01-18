@@ -2291,7 +2291,7 @@ Recut<image_t>::update(std::string stage, Container &fifo,
             auto stripped = name | rng::views::split(split_char) |
                             rng::views::drop_last(1) | rng::views::join |
                             rng::to<std::string>();
-            stripped += "-ch" + this->args->channel;
+            stripped += "-ch" + std::to_string(this->args->channel);
             stripped += "-" + this->args->output_type;
             return stripped + ".vdb";
           };
@@ -2810,19 +2810,22 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
   if (this->args->convert_only) {
     // images are saved in separate z-planes for tiff, so conversion should
     // respect that for best performance
-    int zchunk = args->input_type == "ims" ? 8 : 1;
+    int zchunk = args->input_type == "ims" ? 8 : 8;
     // if it wasn't set by user on command line, then set default
     this->interval_lengths[2] = this->args->interval_lengths[2] < 1
                                     ? zchunk
                                     : this->args->interval_lengths[2];
-    // based on imaris chunk size
-    if (args->input_type == "ims") {
-      rng::for_each(rng::views::indices(2), [this](int i) {
-        // if it wasn't set by user on command line, then set default
-        if (this->args->interval_lengths[i] < 1)
-          this->interval_lengths[i] = 256;
-      });
-    }
+
+    //// based on imaris chunk size, Note this makes performance slower 
+    // most likely due to the cost of seeking to the chunk
+    // or some other hdf5 overhead
+    //if (args->input_type == "ims") {
+      //rng::for_each(rng::views::indices(2), [this](int i) {
+        //// if it wasn't set by user on command line, then set default
+        //if (this->args->interval_lengths[i] < 1)
+          //this->interval_lengths[i] = 256;
+      //});
+    //}
   }
 
   // determine the length of intervals in each dim
