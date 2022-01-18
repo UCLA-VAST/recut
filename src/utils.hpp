@@ -3666,7 +3666,7 @@ load_tile(const CoordBBox &bbox, const std::string &dir) {
   auto tile_filenames = tif_filenames |
                         rng::views::slice(bbox.min()[2], bbox.max()[2] + 1) |
                         rng::to_vector;
-  std::cout << rng::views::all(tif_filenames);
+
   auto dense = read_tiff_planes<image_t>(tile_filenames, bbox);
 #ifdef LOG
   cout << "Load image " << bbox << " in " << timer.elapsed() << " sec." << '\n';

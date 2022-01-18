@@ -278,10 +278,10 @@ template <class image_t> Recut<image_t>::~Recut<image_t>() {
 
 template <class image_t>
 GridCoord Recut<image_t>::id_interval_to_img_offsets(const VID_t interval_id) {
-  // return coord_add(
-  // this->image_offsets,
-  return coord_prod(id_to_coord(interval_id, this->grid_interval_lengths),
-                    this->interval_lengths);
+  return coord_add(
+      this->image_offsets,
+      coord_prod(id_to_coord(interval_id, this->grid_interval_lengths),
+                 this->interval_lengths));
 }
 
 template <class image_t>
