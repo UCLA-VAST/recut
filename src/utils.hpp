@@ -1401,9 +1401,9 @@ get_args(int grid_size, int interval_length, int block_size, int slt_pct,
     args.max_intensity = 2;
     args.min_intensity = 0;
     args.force_regenerate_image = force_regenerate_image;
-    auto input_path =
-        str_path + "/test_images/" + std::to_string(grid_size) + "/tcase" +
-        std::to_string(tcase) + "/slt_pct" + std::to_string(slt_pct);
+    auto input_path = str_path + "/test_images/" + std::to_string(grid_size) +
+                      "/tcase" + std::to_string(tcase) + "/slt_pct" +
+                      std::to_string(slt_pct);
     if (input_is_vdb) {
       if (args.input_type == "point") {
         args.input_path = input_path + "/point.vdb";
@@ -3055,7 +3055,7 @@ void write_vdb_to_tiff_page(GridT grid, std::string base, CoordBBox bbox = {}) {
   if (bbox.empty())
     bbox = grid->evalActiveVoxelBoundingBox(); // inclusive both ends
 
-  auto fn = base + "/bounding_volume.tif";
+  auto fn = base + ".tif";
   TIFF *tiff = TIFFOpen(fn.c_str(), "w");
   if (!tiff) {
     throw std::runtime_error(
@@ -3115,11 +3115,11 @@ void encoded_tiff_write(image_t *inimg1d, TIFF *tiff, const GridCoord dims) {
 // z-plane by z-plane like below prevents this
 template <typename GridT>
 void write_vdb_to_tiff_planes(GridT grid, std::string base,
-                              CoordBBox bbox = {}) {
+                              CoordBBox bbox = {}, int channel=0) {
   if (bbox.empty())
     bbox = grid->evalActiveVoxelBoundingBox(); // inclusive both ends
 
-  base = base + "/ch0";
+  base = base + "/ch" + std::to_string(channel);
   fs::remove_all(base); // make sure it's an overwrite
   fs::create_directories(base);
 
@@ -3201,14 +3201,17 @@ template <typename ValuedGridT>
 void write_output_windows(const ValuedGridT output_grid, std::string dir,
                           std::ofstream &runtime, int index = 0,
                           bool output_vdb = false, bool paged = false,
-                          CoordBBox bbox = {}) {
+                          CoordBBox bbox = {}, int channel = 0) {
+
+  auto base = dir + "/img-component-" + std::to_string(index) + "-ch" +
+              std::to_string(channel);
 
   if (output_grid->activeVoxelCount()) {
     auto timer = high_resolution_timer();
-    if (paged)
-      write_vdb_to_tiff_page(output_grid, dir, bbox);
+    if (paged) // all to one file
+      write_vdb_to_tiff_page(output_grid, base, bbox);
     else
-      write_vdb_to_tiff_planes(output_grid, dir, bbox);
+      write_vdb_to_tiff_planes(output_grid, dir, bbox, channel);
 
     runtime << "Write tiff " << timer.elapsed() << '\n';
 
@@ -3216,8 +3219,7 @@ void write_output_windows(const ValuedGridT output_grid, std::string dir,
       timer.restart();
       openvdb::GridPtrVec component_grids;
       component_grids.push_back(output_grid);
-      write_vdb_file(component_grids,
-                     dir + "/img-component-" + std::to_string(index) + ".vdb");
+      write_vdb_file(component_grids, base + ".vdb");
 #ifdef LOG
       // cout << "Wrote window of component to vdb in " << timer.elapsed() << "
       // s\n";

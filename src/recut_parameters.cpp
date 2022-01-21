@@ -18,12 +18,12 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout
       << "--convert            [-cv] convert image file and exit defaults to "
          "out.vdb\n";
-  std::cout
-      << "--input-type               input type img: 'ims', 'tiff' | VDB: 'point', "
-         "'uint8', 'mask' or 'float'\n";
-  std::cout
-      << "--output-type              input type img: 'ims', 'tiff' | VDB: 'point', "
-         "'uint8', 'mask' or 'float'\n";
+  std::cout << "--input-type               input type img: 'ims', 'tiff' | "
+               "VDB: 'point', "
+               "'uint8', 'mask' or 'float'\n";
+  std::cout << "--output-type              input type img: 'ims', 'tiff' | "
+               "VDB: 'point', "
+               "'uint8', 'mask' or 'float'\n";
   std::cout
       << "--prune-radius       larger values decrease node sampling density "
          "along paths, default 5 the z anisotropic factor\n";
@@ -60,8 +60,8 @@ void RecutCommandLineArgs::PrintUsage() {
       << "--parallel           [-pl] thread count defaults to max hardware "
          "threads\n";
   std::cout
-      << "--output-windows     specify uint8 vdb file for which to create "
-         "windows surrounding each neuron cluster/component\n";
+      << "--output-windows     list 1 or more uint8 vdb files in channel order to create "
+         "image windows for each neuron cluster/component\n";
   std::cout
       << "--chunk-lengths   dimensions for fg percentages and conversion, "
          "defaults to image sizes\n";
@@ -98,7 +98,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
   RecutCommandLineArgs args;
   if (argc < 2) {
     RecutCommandLineArgs::PrintUsage();
-    exit(0);
+    exit(0); // allow CI to test the binary, and receive a success signal
   }
   try {
     if ((strcmp(argv[1], "-h") == 0) || (strcmp(argv[1], "--help") == 0)) {
@@ -199,8 +199,15 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--histogram") == 0) {
         args.histogram = true;
       } else if (strcmp(argv[i], "--output-windows") == 0) {
-        args.output_windows = argv[i + 1];
-        ++i;
+        // need to pass in at least 1 grid name
+        if (argv[i + 1][0] == '-') {
+          RecutCommandLineArgs::PrintUsage();
+          exit(1);
+        }
+        while (argv[i + 1][0] != '-') {
+          args.window_grid_paths.push_back(argv[i + 1]);
+          ++i;
+        }
       } else if (strcmp(argv[i], "--upsample-z") == 0) {
         args.upsample_z = atoi(argv[i + 1]);
         ++i;
@@ -218,5 +225,11 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
     std::cout << e.what() << '\n';
     RecutCommandLineArgs::PrintUsage();
     exit(1);
+  }
+
+  // logic checks
+  if (args.run_app2 && args.window_grid_paths.empty()) {
+    RecutCommandLineArgs::PrintUsage();
+    std::logic_error("If run-app2 option is set an output-window must be passed");
   }
 }

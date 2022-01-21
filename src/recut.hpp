@@ -2655,12 +2655,6 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
           openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
       auto [lengths, _] = get_metadata(topology_grid);
       input_image_lengths = lengths;
-
-      // you need to use grid if you are outputing windows
-      if (!args->output_windows.empty()) {
-        auto raw_grid = read_vdb_file(args->output_windows);
-        this->img_grid = openvdb::gridPtrCast<ImgGrid>(raw_grid);
-      }
     }
     append_attributes(this->topology_grid);
 
@@ -2685,18 +2679,6 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
         throw std::runtime_error(
             "If input is not vdb, must pass type of tiff or ims");
       }
-    }
-
-    if (args->output_type == "float") {
-      this->input_grid = openvdb::FloatGrid::create();
-    } else if (args->output_type == "point") {
-      this->topology_grid =
-          create_vdb_grid(input_image_lengths, this->args->foreground_percent);
-      append_attributes(this->topology_grid);
-    } else if (args->output_type == "uint8") {
-      this->img_grid = ImgGrid::create();
-    } else if (args->output_type == "mask") {
-      this->mask_grid = openvdb::MaskGrid::create();
     }
   }
   return input_image_lengths;
@@ -3028,8 +3010,23 @@ void Recut<image_t>::partition_components(
 
   auto output_topology = false;
 
+  // you need to load the passed image grids if you are outputing windows
+  auto window_grids = args->window_grid_paths |
+                      rng::views::transform([](const auto &gpath) {
+                        auto raw_grid = read_vdb_file(gpath);
+                        return openvdb::gridPtrCast<ImgGrid>(raw_grid);
+                      }) |
+                      rng::to_vector; // force reading once now
+
+  // auto window_grids = std::vector<ImgGrid::Ptr>();
+  // rng::for_each(args->window_grid_paths, []
+  // if (!args->window_grid_paths.empty()) {
+  // auto raw_grid = read_vdb_file(args->window_grid_paths);
+  // auto window_grids.push_back(openvdb::gridPtrCast<ImgGrid>(raw_grid));
+  //}
+
   auto enum_components = components | rng::views::enumerate | rng::to_vector;
-  tbb::parallel_for_each(enum_components, [this, &root_pairs](
+  tbb::parallel_for_each(enum_components, [this, &root_pairs, &window_grids](
                                               const auto component_pair) {
     auto [index, component] = component_pair;
     // all grid transforms across are consistent across recut, so enforce the
@@ -3111,17 +3108,21 @@ void Recut<image_t>::partition_components(
 #endif
 
     // is output window needed?
-    if (args->run_app2 || !args->output_windows.empty()) {
+    if (!window_grids.empty()) {
+      // the first grid passed from CL sets the bbox for the
+      // rest of the output grids
       auto [component_with_values, window_bbox] =
           create_window_grid(this->img_grid, component, component_log);
+      bbox = window_bbox; // for offset adjusts
 
-      if (!args->output_windows.empty()) { // write to disk
+      rng::for_each(window_grids | rng::views::enumerate, [&](const auto window_gridp) {
+        auto [channel, window_grid] = window_gridp;
+        // write to disk
         // if outputting crops/windows, SWCs coordinates need to be adjusted
         // accordingly
-        write_output_windows(component_with_values, component_dir_fn,
-                             component_log, index, false, true, window_bbox);
-        bbox = window_bbox; // for offset adjusts
-      }
+        write_output_windows(window_grid, component_dir_fn, component_log,
+                             index, false, true, window_bbox, channel);
+      });
 
       // skip components that are 0s in the original image
       unsigned int minv = 0, maxv = 0;
@@ -3130,12 +3131,12 @@ void Recut<image_t>::partition_components(
         // for comparison/benchmark/testing purposes
         run_app2(component_with_values, component_roots, component_dir_fn,
                  index, this->args->min_branch_length, component_log,
-                 args->output_windows.empty());
+                 args->window_grid_paths.empty());
       }
     } // end window created if any
 
     write_swc(filtered_tree, bbox, component_dir_fn, index,
-              /*bbox_adjust*/ !args->output_windows.empty());
+              /*bbox_adjust*/ !args->window_grid_paths.empty());
 
     cout << "Component " << index << " complete and safe to open\n";
   }); // for each component
@@ -3146,7 +3147,7 @@ void Recut<image_t>::partition_components(
   }
 #ifdef LOG
   // only log this if it isn't occluded by app2 and window write times
-  if (!(args->run_app2 || !args->output_windows.empty())) {
+  if (!(args->run_app2 || !args->window_grid_paths.empty())) {
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
     run_log << "TC+TP, " << global_timer.elapsed() << '\n';

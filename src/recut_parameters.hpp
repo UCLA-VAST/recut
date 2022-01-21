@@ -23,7 +23,7 @@ public:
         interval_lengths({-1, -1, -1}), min_branch_length(MIN_BRANCH_LENGTH),
         convert_only(false), output_name("out.vdb"), background_thresh(-1),
         foreground_percent(-0.01), combine(false), histogram(false),
-        output_windows(std::string()), second_grid(std::string()),
+        window_grid_paths(std::vector<std::string>()), second_grid(std::string()),
         upsample_z(1), downsample_factor(1), max_intensity(-1),
         min_intensity(-1), force_regenerate_image(false) {}
 
@@ -48,7 +48,8 @@ public:
   GridCoord image_offsets, image_lengths;
 
   std::string input_path, input_type, output_type, output_name, seed_path,
-      output_windows, second_grid;
+      second_grid;
+  std::vector<std::string> window_grid_paths;
   uint16_t prune_radius, user_thread_count, min_branch_length, resolution_level,
       channel, upsample_z, downsample_factor;
   int background_thresh, max_intensity, min_intensity, tcase;
