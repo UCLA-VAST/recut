@@ -1054,7 +1054,7 @@ auto append_attributes = [](auto grid) {
   openvdb::points::appendAttribute(grid->tree(), "value", valueAttribute);
 };
 
-auto read_vdb_file(std::string fn, std::string grid_name = "topology") {
+auto read_vdb_file(std::string fn, std::string grid_name = "") {
 #ifdef LOG
   cout << "Reading vdb file: " << fn << " grid: " << grid_name << " ...\n";
 #endif
@@ -1064,9 +1064,10 @@ auto read_vdb_file(std::string fn, std::string grid_name = "topology") {
   }
   openvdb::io::File file(fn);
   file.open();
+  if (grid_name.empty()) {
+    grid_name = file.beginName().gridName(); // get the 1st grid
+  }
   openvdb::GridBase::Ptr base_grid = file.readGrid(grid_name);
-  // EnlargedPointDataGrid grid =
-  // openvdb::gridPtrCast<EnlargedPointDataGrid>(file.readGrid(grid_name));
   file.close();
 
 #ifdef LOG_FULL
@@ -3114,8 +3115,8 @@ void encoded_tiff_write(image_t *inimg1d, TIFF *tiff, const GridCoord dims) {
 // components, create a full dense buffer will fault with bad_alloc due to size
 // z-plane by z-plane like below prevents this
 template <typename GridT>
-void write_vdb_to_tiff_planes(GridT grid, std::string base,
-                              CoordBBox bbox = {}, int channel=0) {
+void write_vdb_to_tiff_planes(GridT grid, std::string base, CoordBBox bbox = {},
+                              int channel = 0) {
   if (bbox.empty())
     bbox = grid->evalActiveVoxelBoundingBox(); // inclusive both ends
 
