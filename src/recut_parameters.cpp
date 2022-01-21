@@ -59,9 +59,9 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout
       << "--parallel           [-pl] thread count defaults to max hardware "
          "threads\n";
-  std::cout
-      << "--output-windows     list 1 or more uint8 vdb files in channel order to create "
-         "image windows for each neuron cluster/component\n";
+  std::cout << "--output-windows     list 1 or more uint8 vdb files in channel "
+               "order to create "
+               "image windows for each neuron cluster/component\n";
   std::cout
       << "--chunk-lengths   dimensions for fg percentages and conversion, "
          "defaults to image sizes\n";
@@ -200,11 +200,11 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         args.histogram = true;
       } else if (strcmp(argv[i], "--output-windows") == 0) {
         // need to pass in at least 1 grid name
-        if (argv[i + 1][0] == '-') {
+        if ((i + 1 == argc) || (argv[i + 1][0] == '-')) {
           RecutCommandLineArgs::PrintUsage();
           exit(1);
         }
-        while (argv[i + 1][0] != '-') {
+        while ((i + 1 < argc) && (argv[i + 1][0] != '-')) {
           args.window_grid_paths.push_back(argv[i + 1]);
           ++i;
         }
@@ -230,6 +230,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
   // logic checks
   if (args.run_app2 && args.window_grid_paths.empty()) {
     RecutCommandLineArgs::PrintUsage();
-    std::logic_error("If run-app2 option is set an output-window must be passed");
+    std::logic_error(
+        "If run-app2 option is set an output-window must be passed");
   }
 }
