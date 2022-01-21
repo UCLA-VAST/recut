@@ -3112,7 +3112,7 @@ void Recut<image_t>::partition_components(
       // the first grid passed from CL sets the bbox for the
       // rest of the output grids
       auto [component_with_values, window_bbox] =
-          create_window_grid(this->img_grid, component, component_log);
+          create_window_grid(window_grids.front(), component, component_log);
       bbox = window_bbox; // for offset adjusts
 
       rng::for_each(window_grids | rng::views::enumerate, [&](const auto window_gridp) {
