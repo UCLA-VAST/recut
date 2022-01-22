@@ -144,7 +144,7 @@ void check_recut_error(Recut<uint16_t> &recut, DataType *ground_truth,
       }
     }
   }
-  if (stage != "surface" && stage != "convert") {
+  if (stage != "surface") {
     ASSERT_EQ(total_valid, ground_truth_selected_count);
     error_rate = 100 * error_sum / static_cast<double>(tol_sz);
   }
@@ -990,7 +990,7 @@ TEST(VDB, ConvertTiffToPoint) {
                    grid_extents);
 
   // assert equals original grid above
-  double read_from_file_error_rate;
+  double read_from_file_error_rate = 100;
   EXPECT_NO_FATAL_FAILURE(
       check_recut_error(recut,
                         /*ground_truth*/ tiff_dense->data(), grid_size,
@@ -1190,6 +1190,50 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
       }
     }
   }
+}
+
+TEST(VDB, ConvertMaskVDBToDense) {
+  auto grid_size = 4;
+  auto tcase = 5; // symmetric
+  auto grid_extents = GridCoord(grid_size, grid_size, grid_size);
+  auto tol_sz = coord_prod_accum(grid_extents);
+  auto root_vid = get_central_vid(grid_size);
+  auto root_coord = GridCoord(get_central_coord(grid_size));
+  auto print = true;
+
+  auto inimg1d = new uint16_t[tol_sz];
+  VID_t actual_selected =
+      create_image(tcase, inimg1d, grid_size, 100, root_vid);
+
+  // auto topology_grid = create_vdb_grid(extended_grid_extents, 0);
+  auto mask_grid = openvdb::MaskGrid::create();
+  convert_buffer_to_vdb_acc(inimg1d, grid_extents, zeros(), zeros(),
+                            mask_grid->getAccessor(), "mask", 0);
+
+  if (print) {
+    cout << "mask grid\n";
+    print_vdb_mask(mask_grid->getConstAccessor(), grid_extents);
+  }
+
+  // convert back to dense array
+  auto check_dense = convert_vdb_to_dense(mask_grid);
+
+  auto bbox = mask_grid->evalActiveVoxelBoundingBox(); // inclusive both ends
+  if (print) {
+    cout << "Dense 3D\n";
+    print_image_3D(check_dense.data(), bbox.dim());
+  }
+
+  VID_t volume = coord_prod_accum(bbox.dim());
+  ASSERT_EQ(check_dense.valueCount(), volume);
+
+  // check all match
+  auto active_count = 0;
+  for (int i = 0; i < volume; ++i) {
+    if (check_dense.getValue(i))
+      ++active_count;
+  }
+  ASSERT_EQ(active_count, mask_grid->activeVoxelCount());
 }
 
 TEST(Install, DISABLED_ConvertVDBToDense) {

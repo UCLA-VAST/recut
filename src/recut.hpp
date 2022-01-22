@@ -3015,8 +3015,7 @@ void Recut<image_t>::partition_components(
   // you need to load the passed image grids if you are outputing windows
   auto window_grids = args->window_grid_paths |
                       rng::views::transform([](const auto &gpath) {
-                        auto raw_grid = read_vdb_file(gpath);
-                        return openvdb::gridPtrCast<ImgGrid>(raw_grid);
+                        return read_vdb_file(gpath);
                       }) |
                       rng::to_vector; // force reading once now
 
@@ -3024,9 +3023,11 @@ void Recut<image_t>::partition_components(
   cout << "Finished grid reads\n";
 #endif
 
-  if (! window_grids.empty()) {
-	  std::cout << "Outputting windows / partitioning sequentially due to limited RAM\n";
-	  tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, 1);
+  if (!window_grids.empty()) {
+    std::cout << "Outputting windows / partitioning sequentially due to "
+                 "limited RAM\n";
+    tbb::global_control global_limit(
+        tbb::global_control::max_allowed_parallelism, 1);
   }
 
   auto enum_components = components | rng::views::enumerate | rng::to_vector;
@@ -3115,26 +3116,34 @@ void Recut<image_t>::partition_components(
     if (!window_grids.empty()) {
       // the first grid passed from CL sets the bbox for the
       // rest of the output grids
-      auto [component_with_values, window_bbox] =
-          create_window_grid(window_grids.front(), component, component_log);
-      bbox = window_bbox; // for offset adjusts
+      auto image_grid = openvdb::gridPtrCast<ImgGrid>(window_grids.front());
+      auto [valued_window_grid, window_bbox] =
+          create_window_grid(image_grid, component, component_log);
+      write_output_windows(valued_window_grid, component_dir_fn, component_log,
+                           index, false, true, window_bbox, 0);
 
-      rng::for_each(window_grids | rng::views::enumerate, [&](const auto window_gridp) {
-        auto [channel, window_grid] = window_gridp;
-        // write to disk
-        // if outputting crops/windows, SWCs coordinates need to be adjusted
-        // accordingly
-        write_output_windows(window_grid, component_dir_fn, component_log,
-                             index, false, true, window_bbox, channel);
-      });
+      // if outputting crops/windows, offset SWCs coords to match window
+      bbox = window_bbox;
+
+      // skips channel 0
+      rng::for_each(window_grids | rng::views::enumerate | rng::views::tail,
+                    [&](const auto window_gridp) {
+                      auto [channel, window_grid] = window_gridp;
+                      auto mask_grid =
+                          openvdb::gridPtrCast<openvdb::MaskGrid>(window_grid);
+                      // write to disk
+                      write_output_windows(mask_grid, component_dir_fn,
+                                           component_log, index, false, true,
+                                           window_bbox, channel);
+                    });
 
       // skip components that are 0s in the original image
       unsigned int minv = 0, maxv = 0;
-      component_with_values->tree().evalMinMax(minv, maxv);
+      valued_window_grid->tree().evalMinMax(minv, maxv);
       if (args->run_app2 && (maxv > 0)) {
         // for comparison/benchmark/testing purposes
-        run_app2(component_with_values, component_roots, component_dir_fn,
-                 index, this->args->min_branch_length, component_log,
+        run_app2(valued_window_grid, component_roots, component_dir_fn, index,
+                 this->args->min_branch_length, component_log,
                  args->window_grid_paths.empty());
       }
     } // end window created if any

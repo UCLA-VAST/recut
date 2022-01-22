@@ -3167,9 +3167,9 @@ void copy_values(ValueGridT img_grid, OutputGridT output_grid) {
 // topology_grid : holds the topology of the neuron cluster in question
 // values copied in topology and written z-plane by z-plane to individual tiff
 // files tiff component also saved
-template <typename GridT, typename ValuedGridT>
-std::pair<ValuedGridT, CoordBBox>
-create_window_grid(const ValuedGridT valued_grid, GridT component_grid,
+template <typename GridT>
+std::pair<ImgGrid, CoordBBox>
+create_window_grid(ImgGrid valued_grid, GridT component_grid,
                    std::ofstream &component_log) {
 
   assertm(valued_grid, "Must have input grid set to run output_windows_");
@@ -3198,10 +3198,10 @@ create_window_grid(const ValuedGridT valued_grid, GridT component_grid,
 // topology_grid : holds the topology of the neuron cluster in question
 // values copied in topology and written z-plane by z-plane to individual tiff
 // files tiff component also saved
-template <typename ValuedGridT>
-void write_output_windows(const ValuedGridT output_grid, std::string dir,
+template <typename GridT>
+void write_output_windows(const GridT output_grid, std::string dir,
                           std::ofstream &runtime, int index = 0,
-                          bool output_vdb = false, bool paged = false,
+                          bool output_vdb = false, bool paged = true,
                           CoordBBox bbox = {}, int channel = 0) {
 
   auto base = dir + "/img-component-" + std::to_string(index) + "-ch" +
