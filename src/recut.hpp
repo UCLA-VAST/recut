@@ -3004,8 +3004,10 @@ void Recut<image_t>::partition_components(
   global_timer.restart();
   std::vector<openvdb::FloatGrid::Ptr> components;
   vto::segmentActiveVoxels(*float_grid, components);
+#ifdef LOG
   cout << "Segment count: " << components.size() << " in "
        << global_timer.elapsed() << " s\n";
+#endif
   global_timer.restart();
 
   auto output_topology = false;
@@ -3018,12 +3020,14 @@ void Recut<image_t>::partition_components(
                       }) |
                       rng::to_vector; // force reading once now
 
-  // auto window_grids = std::vector<ImgGrid::Ptr>();
-  // rng::for_each(args->window_grid_paths, []
-  // if (!args->window_grid_paths.empty()) {
-  // auto raw_grid = read_vdb_file(args->window_grid_paths);
-  // auto window_grids.push_back(openvdb::gridPtrCast<ImgGrid>(raw_grid));
-  //}
+#ifdef LOG
+  cout << "Finished grid reads\n";
+#endif
+
+  if (! window_grids.empty()) {
+	  std::cout << "Outputting windows / partitioning sequentially due to limited RAM\n";
+	  tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, 1);
+  }
 
   auto enum_components = components | rng::views::enumerate | rng::to_vector;
   tbb::parallel_for_each(enum_components, [this, &root_pairs, &window_grids](
