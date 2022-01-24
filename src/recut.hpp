@@ -3112,11 +3112,9 @@ void Recut<image_t>::partition_components(
           openvdb::gridPtrCast<ImgGrid>(window_grids.front());
       auto [valued_window_grid, window_bbox] =
           create_window_grid(image_grid, component, component_log);
-      std::cout << "created value\n";
       write_output_windows<ImgGrid::Ptr>(image_grid, component_dir_fn,
                                          component_log, index, false, true,
                                          window_bbox, 0);
-      std::cout << "wrote value\n";
 
       // if outputting crops/windows, offset SWCs coords to match window
       bbox = window_bbox;
@@ -3127,12 +3125,10 @@ void Recut<image_t>::partition_components(
                       auto [channel, window_grid] = window_gridp;
                       auto mask_grid =
                           openvdb::gridPtrCast<openvdb::MaskGrid>(window_grid);
-                      std::cout << "cast mask\n";
                       // write to disk
                       write_output_windows(mask_grid, component_dir_fn,
                                            component_log, index, false, true,
                                            window_bbox, channel);
-                      std::cout << "wrote mask\n";
                     });
 
       // skip components that are 0s in the original image
@@ -3234,12 +3230,18 @@ template <class image_t> void Recut<image_t>::init_run() {
     this->run_dir = ".";
     this->log_fn = this->run_dir + "/" + this->args->output_name + "-log.txt";
   } else {
-    std::string probe_dir = "./components";
-    // make sure its a clean write
-    while (fs::exists(probe_dir)) {
-      probe_dir += "-latest";
-    }
-    this->run_dir = probe_dir;
+    auto get_run_dir = [probe_dir =
+                            static_cast<std::string>("./run-1")]() mutable {
+      // make sure its a clean write
+      while (fs::exists(probe_dir)) {
+        auto l = probe_dir | rng::views::split('-') |
+                 rng::to<std::vector<std::string>>();
+        l.back() = std::to_string(std::stoi(l.back()) + 1);
+        probe_dir = l | rng::views::join('-') | rng::to<std::string>();
+      }
+      return probe_dir;
+    };
+    this->run_dir = get_run_dir();
     this->log_fn = this->run_dir + "/log.txt";
     fs::create_directories(run_dir);
 #ifdef LOG

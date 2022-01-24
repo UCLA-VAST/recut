@@ -3207,9 +3207,7 @@ void write_output_windows(GridT output_grid, std::string dir,
   auto base = dir + "/img-component-" + std::to_string(index) + "-ch" +
               std::to_string(channel);
 
-  std::cout << "check voxel count\n";
   if (output_grid->activeVoxelCount()) {
-    std::cout << "got voxel count\n";
     auto timer = high_resolution_timer();
     if (paged) // all to one file
       write_vdb_to_tiff_page(output_grid, base, bbox);
@@ -3229,7 +3227,7 @@ void write_output_windows(GridT output_grid, std::string dir,
 #endif
     }
   } else {
-    cout << "Component " << index
+    cout << "Warning: component " << index
          << " had an empty window for the --output-windows grid\n";
   }
 }
