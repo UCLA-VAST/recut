@@ -3023,8 +3023,8 @@ void Recut<image_t>::partition_components(
   cout << "Finished grid reads\n";
 #endif
 
-  auto process_component = [this, &root_pairs, &window_grids](
-                                              const auto component_pair) {
+  auto process_component = [this, &root_pairs,
+                            &window_grids](const auto component_pair) {
     auto [index, component] = component_pair;
     // all grid transforms across are consistent across recut, so enforce the
     // same interpretation for any new grid
@@ -3108,12 +3108,14 @@ void Recut<image_t>::partition_components(
     if (!window_grids.empty()) {
       // the first grid passed from CL sets the bbox for the
       // rest of the output grids
-      auto image_grid = openvdb::gridPtrCast<ImgGrid>(window_grids.front());
+      ImgGrid::Ptr image_grid =
+          openvdb::gridPtrCast<ImgGrid>(window_grids.front());
       auto [valued_window_grid, window_bbox] =
           create_window_grid(image_grid, component, component_log);
       std::cout << "created value\n";
-      write_output_windows(valued_window_grid, component_dir_fn, component_log,
-                           index, false, true, window_bbox, 0);
+      write_output_windows<ImgGrid::Ptr>(image_grid, component_dir_fn,
+                                         component_log, index, false, true,
+                                         window_bbox, 0);
       std::cout << "wrote value\n";
 
       // if outputting crops/windows, offset SWCs coords to match window
@@ -3204,25 +3206,29 @@ template <class image_t> void Recut<image_t>::init_run() {
   // to assign to these variable before running convert, since they
   // rely on output_name and run dir to be set
   if (this->args->convert_only) {
-    auto convert_fn_vdb = [this](const std::string &name, auto split_char) {
-      auto stripped = name | rng::views::split(split_char) |
-                      rng::views::drop_last(1) | rng::views::join |
-                      rng::to<std::string>();
-      stripped += "-ch" + std::to_string(this->args->channel);
-      stripped += "-" + this->args->output_type;
-      return stripped + ".vdb";
-    };
+    // reassign output_name from the default
+    if (this->args->output_name == "out.vdb") {
+      auto convert_fn_vdb = [this](const std::string &name, auto split_char) {
+        auto stripped = name | rng::views::split(split_char) |
+                        rng::views::drop_last(1) | rng::views::join |
+                        rng::to<std::string>();
+        stripped += "-ch" + std::to_string(this->args->channel);
+        stripped += "-" + this->args->output_type;
+        stripped += "-fg" + std::to_string(this->args->foreground_percent);
+        return stripped + ".vdb";
+      };
 
-    if (args->input_type == "ims") {
+      if (args->input_type == "ims") {
 #ifndef USE_HDF5
-      throw std::runtime_error("HDF5 dependency required for input type ims");
+        throw std::runtime_error("HDF5 dependency required for input type ims");
 #endif
-      this->args->output_name = convert_fn_vdb(args->input_path, '.');
-    }
+        this->args->output_name = convert_fn_vdb(args->input_path, '.');
+      }
 
-    if (args->input_type == "tiff") {
-      const auto tif_filenames = get_dir_files(args->input_path, ".tif");
-      this->args->output_name = convert_fn_vdb(tif_filenames[0], '_');
+      if (args->input_type == "tiff") {
+        const auto tif_filenames = get_dir_files(args->input_path, ".tif");
+        this->args->output_name = convert_fn_vdb(tif_filenames[0], '_');
+      }
     }
 
     this->run_dir = ".";
