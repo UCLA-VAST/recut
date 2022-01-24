@@ -3023,15 +3023,7 @@ void Recut<image_t>::partition_components(
   cout << "Finished grid reads\n";
 #endif
 
-  if (!window_grids.empty()) {
-    std::cout << "Outputting windows / partitioning sequentially due to "
-                 "limited RAM\n";
-    tbb::global_control global_limit(
-        tbb::global_control::max_allowed_parallelism, 1);
-  }
-
-  auto enum_components = components | rng::views::enumerate | rng::to_vector;
-  tbb::parallel_for_each(enum_components, [this, &root_pairs, &window_grids](
+  auto process_component = [this, &root_pairs, &window_grids](
                                               const auto component_pair) {
     auto [index, component] = component_pair;
     // all grid transforms across are consistent across recut, so enforce the
@@ -3156,7 +3148,16 @@ void Recut<image_t>::partition_components(
               /*bbox_adjust*/ !args->window_grid_paths.empty());
 
     cout << "Component " << index << " complete and safe to open\n";
-  }); // for each component
+  }; // for each component
+
+  auto enum_components = components | rng::views::enumerate | rng::to_vector;
+  if (window_grids.empty()) {
+    tbb::parallel_for_each(enum_components, process_component);
+  } else {
+    std::cout << "Outputting windows / partitioning sequentially due to "
+                 "limited RAM\n";
+    rng::for_each(enum_components, process_component);
+  }
 
   if (output_topology) {
     grids.push_back(this->topology_grid);
