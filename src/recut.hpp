@@ -3119,11 +3119,13 @@ void Recut<image_t>::partition_components(
       auto image_grid = openvdb::gridPtrCast<ImgGrid>(window_grids.front());
       auto [valued_window_grid, window_bbox] =
           create_window_grid(image_grid, component, component_log);
-      write_output_windows(valued_window_grid, component_dir_fn, component_log,
-                           index, false, true, window_bbox, 0);
+      std::cout << "created value\n" write_output_windows(
+          valued_window_grid, component_dir_fn, component_log, index, false,
+          true, window_bbox, 0);
+      std::cout << "wrote value\n"
 
-      // if outputting crops/windows, offset SWCs coords to match window
-      bbox = window_bbox;
+          // if outputting crops/windows, offset SWCs coords to match window
+          bbox = window_bbox;
 
       // skips channel 0
       rng::for_each(window_grids | rng::views::enumerate | rng::views::tail,
@@ -3131,10 +3133,12 @@ void Recut<image_t>::partition_components(
                       auto [channel, window_grid] = window_gridp;
                       auto mask_grid =
                           openvdb::gridPtrCast<openvdb::MaskGrid>(window_grid);
-                      // write to disk
-                      write_output_windows(mask_grid, component_dir_fn,
-                                           component_log, index, false, true,
-                                           window_bbox, channel);
+                      std::cout << "cast mask\n"
+                          // write to disk
+                          write_output_windows(mask_grid, component_dir_fn,
+                                               component_log, index, false,
+                                               true, window_bbox, channel);
+                      std::cout << "wrote mask\n"
                     });
 
       // skip components that are 0s in the original image
