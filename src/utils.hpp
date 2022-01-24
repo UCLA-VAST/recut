@@ -3069,7 +3069,7 @@ void write_vdb_to_tiff_page(GridT grid, std::string base, CoordBBox bbox = {}) {
   auto zrng = rng::closed_iota_view(minz, maxz) | rng::views::enumerate;
 
   // output each plane to separate page within the same file
-  rng::for_each(zrng, [&grid, tiff, &bbox](const auto zpair) {
+  rng::for_each(zrng, [grid, tiff, &bbox](const auto zpair) {
     auto [page_number, z] = zpair;
     auto min = GridCoord(bbox.min()[0], bbox.min()[1], z);
     auto max = GridCoord(bbox.max()[0], bbox.max()[1], z); // inclusive
@@ -3168,8 +3168,8 @@ void copy_values(ValueGridT img_grid, OutputGridT output_grid) {
 // values copied in topology and written z-plane by z-plane to individual tiff
 // files tiff component also saved
 template <typename GridT>
-std::pair<ImgGrid, CoordBBox>
-create_window_grid(ImgGrid valued_grid, GridT component_grid,
+std::pair<ImgGrid::Ptr, CoordBBox>
+create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
                    std::ofstream &component_log) {
 
   assertm(valued_grid, "Must have input grid set to run output_windows_");
