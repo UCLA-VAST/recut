@@ -21,7 +21,7 @@ public:
         foreground_percent(-0.01), combine(false), histogram(false),
         window_grid_paths(std::vector<std::string>()), second_grid(std::string()),
         upsample_z(1), downsample_factor(1), max_intensity(-1),
-        min_intensity(-1), force_regenerate_image(false) {}
+        min_intensity(-1) {}
 
   static void PrintUsage();
   std::string MetaString();
@@ -51,7 +51,7 @@ public:
   int background_thresh, max_intensity, min_intensity, tcase;
   double foreground_percent, slt_pct;
   VID_t selected, root_vid;
-  bool run_app2, convert_only, combine, histogram, force_regenerate_image;
+  bool run_app2, convert_only, combine, histogram;
   std::array<int, 3> interval_lengths;
 };
 

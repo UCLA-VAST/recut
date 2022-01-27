@@ -1340,8 +1340,7 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
 
 RecutCommandLineArgs
 get_args(int grid_size, int interval_length, int block_size, int slt_pct,
-         int tcase, bool force_regenerate_image = false,
-         bool input_is_vdb = false, std::string input_type = "point",
+         int tcase, bool input_is_vdb = false, std::string input_type = "point",
          std::string output_type = "point", int downsample_factor = 1) {
 
   bool print = false;
@@ -1401,7 +1400,6 @@ get_args(int grid_size, int interval_length, int block_size, int slt_pct,
     // in the update function, this is critical for benchmarking
     args.max_intensity = 2;
     args.min_intensity = 0;
-    args.force_regenerate_image = force_regenerate_image;
     auto input_path = str_path + "/test_images/" + std::to_string(grid_size) +
                       "/tcase" + std::to_string(tcase) + "/slt_pct" +
                       std::to_string(slt_pct);
@@ -2202,17 +2200,16 @@ auto write_swc = [](std::vector<MyMarker *> tree, CoordBBox bbox,
   // start a new blank map for coord to a unique swc id
   auto coord_to_swc_id = get_id_map();
   // iter those marker*
-  rng::for_each(tree, [&swc_file, &coord_to_swc_id,
-                                               &bbox, bbox_adjust](
-                                                  const auto marker) {
+  rng::for_each(tree, [&swc_file, &coord_to_swc_id, &bbox,
+                       bbox_adjust](const auto marker) {
     auto coord = GridCoord(marker->x, marker->y, marker->z);
 
     auto parent_coord =
         GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
     auto parent_offset = coord_sub(parent_coord, coord);
     // print_swc_line() expects an offset to a parent
-    print_swc_line(coord, /*is_root*/ marker->type == 0, marker->radius, parent_offset,
-                   bbox, swc_file, coord_to_swc_id, bbox_adjust);
+    print_swc_line(coord, /*is_root*/ marker->type == 0, marker->radius,
+                   parent_offset, bbox, swc_file, coord_to_swc_id, bbox_adjust);
   });
 };
 

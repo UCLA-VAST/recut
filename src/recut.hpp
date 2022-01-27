@@ -104,7 +104,6 @@ public:
       new_offset_coord(-1, 0, 0), new_offset_coord(1, 0, 0)};
 
   std::ofstream out;
-  image_t *generated_image = nullptr;
   RecutCommandLineArgs *args;
   std::map<GridCoord, std::deque<VertexAttr>> map_fifo;
   std::map<GridCoord, local_heap> heap_map;
@@ -262,18 +261,7 @@ public:
                      const GridCoord grid_extents);
   void set_parent_non_branch(const VID_t interval_id, const VID_t block_id,
                              VertexAttr *dst, VertexAttr *potential_new_parent);
-  ~Recut<image_t>();
 };
-
-template <class image_t> Recut<image_t>::~Recut<image_t>() {
-  if (this->args->force_regenerate_image) {
-    // when initialize has been run
-    // generated_image is no longer nullptr
-    if (this->generated_image) {
-      delete[] this->generated_image;
-    }
-  }
-}
 
 template <class image_t>
 GridCoord Recut<image_t>::id_interval_to_img_offsets(const VID_t interval_id) {
@@ -605,14 +593,6 @@ template <typename T, typename T2> T absdiff(const T &lhs, const T2 &rhs) {
  */
 template <class image_t>
 image_t Recut<image_t>::get_img_val(const image_t *tile, GridCoord coord) {
-  // force_regenerate_image passes the whole image as the
-  // tile so the img vid is the correct address regardless
-  // of interval length sizes Note that force_regenerate_image
-  // is mostly used in test cases to try different scenarios
-  if (this->args->force_regenerate_image) {
-    return tile[coord_to_id(coord, this->image_lengths)];
-  }
-
   auto buffer_coord = coord_to_id(coord_mod(coord, this->interval_lengths),
                                   this->interval_lengths);
   return tile[buffer_coord];
@@ -2080,21 +2060,6 @@ void Recut<image_t>::io_interval(int interval_id, T1 &grids, T2 &uint8_grids,
   auto interval_timer = high_resolution_timer();
 
   image_t *tile;
-  TileThresholds<image_t> *tile_thresholds;
-
-  // pre-generated images are for testing, or when an outside
-  // library wants to pass input images instead
-  if (this->args->force_regenerate_image) {
-    assertm(this->generated_image, "Image not generated or set by intialize");
-    tile = this->generated_image;
-    // note these default thresholds apply to any generated image
-    // thus they will only be replaced if we're reading a real image
-    tile_thresholds = new TileThresholds<image_t>(
-        /*max*/ 2,
-        /*min*/ 0,
-        /*bkg_thresh*/ 0);
-  }
-
   if (stage == "convert") {
     auto tile_offsets = id_interval_to_img_offsets(interval_id);
     // bbox is inclusive, therefore substract 1
@@ -2115,20 +2080,13 @@ void Recut<image_t>::io_interval(int interval_id, T1 &grids, T2 &uint8_grids,
       dense_tile = load_tile<image_t>(tile_bbox, args->input_path);
     }
 
-    if (!tile_thresholds) {
-      tile_thresholds = get_tile_thresholds(dense_tile);
-    }
+    auto tile_thresholds = get_tile_thresholds(dense_tile);
     tile = dense_tile->data();
 
     assertm(!this->input_is_vdb, "input can't be vdb during convert stage");
 
-    GridCoord no_offsets = {0, 0, 0};
-
-    GridCoord buffer_offsets =
-        this->args->force_regenerate_image ? tile_bbox.min() : no_offsets;
-    GridCoord buffer_extents = this->args->force_regenerate_image
-                                   ? this->image_lengths
-                                   : this->interval_lengths;
+    GridCoord buffer_offsets = zeros();
+    GridCoord buffer_extents = this->interval_lengths;
 
     auto convert_start = interval_timer.elapsed();
 
@@ -2202,15 +2160,15 @@ void Recut<image_t>::io_interval(int interval_id, T1 &grids, T2 &uint8_grids,
     // otherwise seg faults will occur
     auto update_accessor = this->update_grid->getAccessor();
 
-    if (this->input_is_vdb) {
-      tile_thresholds = new TileThresholds<image_t>(
-          /*max*/ 2,
-          /*min*/ 0,
-          /*bkg_thresh*/ 0);
-    } else {
+    if (!this->input_is_vdb) {
       throw std::runtime_error(
           "Unimplemented: need to generate tile_threshold for raw images");
     }
+
+    auto tile_thresholds = new TileThresholds<image_t>(
+        /*max*/ 2,
+        /*min*/ 0,
+        /*bkg_thresh*/ 0);
 
     process_interval(interval_id, tile, stage, tile_thresholds,
                      update_accessor);
@@ -2443,17 +2401,7 @@ template <class image_t>
 GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
   GridCoord input_image_lengths = zeros();
   this->update_grid = openvdb::BoolGrid::create();
-  if (args->force_regenerate_image) {
-    // for generated image runs trust the args->image_lengths
-    // to reflect the total global image domain
-    // see get_args() in utils.hpp
-    input_image_lengths = args->image_lengths;
-
-    // FIXME placeholder grid
-    this->topology_grid =
-        create_vdb_grid(input_image_lengths, this->args->foreground_percent);
-    append_attributes(this->topology_grid);
-  } else if (this->input_is_vdb) { // running based of a vdb input
+  if (this->input_is_vdb) { // running based of a vdb input
 
     assertm(!args->convert_only,
             "Convert only option is not valid from vdb to vdb");
@@ -2505,10 +2453,8 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
       throw std::runtime_error("HDF5 dependency required for input type ims");
 #endif
     } else {
-      if (!(args->force_regenerate_image)) {
         throw std::runtime_error(
             "If input is not vdb, must pass type of tiff or ims");
-      }
     }
   }
   return input_image_lengths;
@@ -2519,7 +2465,7 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
   auto final_thread_count = args->user_thread_count;
   if (args->convert_only && args->input_type == "ims") {
-      final_thread_count = 1;
+    final_thread_count = 1;
   }
   // limits number of threads for all oneTBB parallel interfaces
   tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism,
@@ -2662,45 +2608,12 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
   cout << "Initialized globals " << timer.elapsed() << '\n';
 #endif
 
-  if (this->args->force_regenerate_image) {
-    // This is where we set image to our desired values
-    this->generated_image = new image_t[this->image_size];
-
-    assertm(this->args->tcase > -1, "Mismatched tcase for generate image");
-    assertm(this->args->slt_pct > -1, "Mismatched slt_pct for generate image");
-    assertm(this->args->selected > 0, "Mismatched selected for generate image");
-    assertm(this->args->root_vid != numeric_limits<uint64_t>::max(),
-            "Root vid uninitialized");
-
-    // create_image take the length of one dimension
-    // of the image, currently assuming all test images
-    // are cubes
-    // sets all to 0 for tcase 4 and 5
-    assertm(this->image_lengths[1] == this->image_lengths[2],
-            "change create_image implementation to support non-cube images");
-    assertm(this->image_lengths[0] == this->image_lengths[1],
-            "change create_image implementation to support non-cube images");
-    auto selected = create_image(this->args->tcase, this->generated_image,
-                                 this->image_lengths[0], this->args->selected,
-                                 this->args->root_vid);
-    if (this->args->tcase == 3 || this->args->tcase == 5) {
-      // only tcase 3 and 5 doens't have a total select count not known
-      // ahead of time
-      this->args->selected = selected;
-    }
-
-    // add the single root vid to the roots
-    return {
-        std::pair{id_to_coord(this->args->root_vid, this->image_lengths), 1}};
-
-  } else {
     if (args->convert_only) {
       return {};
     } else {
       // adds all valid markers to roots vector and returns
       return process_marker_dir(this->image_offsets, this->image_lengths);
     }
-  }
 }
 
 // reject unvisited vertices

@@ -21,9 +21,6 @@
 #define EXP_DEV_LOW .05
 #define NUMERICAL_ERROR .00001
 
-// If input is not vdb, force regeneration of the image
-#define GEN_IMAGE true
-
 // This source file is for functions or tests that include test macros only
 // note defining a function that contains test function MACROS
 // that returns a value will give strange: "void value not ignored as it ought
@@ -266,7 +263,6 @@ TEST(VDB, InitializeGlobals) {
   bool print_all = false;
 
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-                       /*force_regenerate_image=*/false,
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   auto root_coords = recut.initialize();
@@ -414,7 +410,6 @@ TEST(VDB, IntegrateUpdateGrid) {
   // generate an image buffer on the fly
   // then convert to vdb
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-                       /*force_regenerate_image=*/false,
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   auto root_coords = recut.initialize();
@@ -554,7 +549,6 @@ TEST(VDB, ActivateVids) {
   double slt_pct = 100;
   bool print_all = false;
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-                       /*force_regenerate_image=*/false,
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   auto root_coords = recut.initialize();
@@ -604,7 +598,6 @@ TEST(VDB, PriorityQueue) {
 
   auto args =
       get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-               /*force_regenerate_image=*/false,
                /*input_is_vdb=*/true,
                /* type =*/"float"); // priority queue must have type float
   auto recut = Recut<uint16_t>(args);
@@ -614,7 +607,6 @@ TEST(VDB, PriorityQueue) {
   // set the topology_grid mainly from file for this test
   // overwrite the attempt to convert float to pointgrid
   auto point_args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-                             /*force_regenerate_image=*/true,
                              /*input_is_vdb=*/true,
                              /* type =*/"point");
   auto base_grid = read_vdb_file(point_args.input_path);
@@ -672,7 +664,6 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
   // generate an image buffer on the fly
   // then convert to vdb
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-                       /*force_regenerate_image=*/false,
                        /*input_is_vdb=*/true,
                        /* type =*/"point");
   auto recut = Recut<uint16_t>(args);
@@ -683,7 +674,6 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
   // set the topology_grid mainly from file for this test
   // overwrite the attempt to convert float to pointgrid
   auto float_args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-                             /*force_regenerate_image=*/false,
                              /*input_is_vdb=*/true,
                              /*type=*/"float");
   auto base_grid = read_vdb_file(float_args.input_path);
@@ -762,7 +752,6 @@ TEST(Utils, AdjustSomaRadii) {
   // then convert to vdb
   auto args =
       get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-               /*force_regenerate_image=*/GEN_IMAGE,
                /*input_is_vdb=*/true,
                /* type =*/"float"); // priority queue must have type float
   auto recut = Recut<uint16_t>(args);
@@ -772,7 +761,6 @@ TEST(Utils, AdjustSomaRadii) {
   // set the topology_grid mainly from file for this test
   // overwrite the attempt to convert float to pointgrid
   auto point_args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-                             /*force_regenerate_image=*/GEN_IMAGE,
                              /*input_is_vdb=*/true,
                              /* type =*/"point");
   auto base_grid = read_vdb_file(point_args.input_path);
@@ -873,7 +861,6 @@ TEST(VDB, Connected) {
   // generate an image buffer on the fly
   // then convert to vdb
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-                       /*force_regenerate_image=*/false,
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   auto root_coords = recut.initialize();
@@ -935,7 +922,6 @@ TEST(VDB, Connected) {
 //// generate an image buffer on the fly
 //// then convert to vdb
 // auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-//[>force_regenerate_image=<]true);
 // auto recut = Recut<uint16_t>(args);
 // recut.args->convert_only = true;
 // recut.args->out_vdb_ = fn;
@@ -967,7 +953,6 @@ TEST(VDB, ConvertTiffToPoint) {
   // recut.generated_image as long as tcase != 4
   // read from file and convert
   auto args = get_args(grid_size, interval_size, interval_size, slt_pct, tcase,
-                       /*force_regenerate_image=*/false,
                        /*input_is_vdb=*/false, "tiff", "point");
   auto recut = Recut<uint16_t>(args);
   recut.args->convert_only = true;
@@ -1364,7 +1349,7 @@ TEST(VDB, ConvertFloatToPointGrid) {
   auto grid_extents = GridCoord(grid_size);
 
   auto args =
-      get_args(grid_size, grid_size, grid_size, 100, 7, false, true, "float");
+      get_args(grid_size, grid_size, grid_size, 100, 7, true, "float");
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
   auto float_grid = recut.input_grid;
@@ -1540,7 +1525,7 @@ TEST(CompareTree, All) {
   VID_t block_size = 2;
 
   auto args =
-      get_args(grid_size, interval_size, block_size, 100, 1, false, true);
+      get_args(grid_size, interval_size, block_size, 100, 1, true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
 
@@ -1776,7 +1761,6 @@ TEST(CheckGlobals, DISABLED_AllFifo) {
 // auto grid_size = 8;
 // GridCoord lengths(grid_size);
 // auto args = get_args(grid_size, grid_size, grid_size, 100, 7,
-//[>force_regenerate_image=<]false,
 //[>input_is_vdb=<]true,
 //[>type<] "float");
 // auto recut = Recut<uint16_t>(args);
@@ -1915,7 +1899,7 @@ TEST(Update, EachStageIteratively) {
             // image generated on the fly above
             auto args =
                 get_args(grid_size, interval_size, block_size, slt_pct, tcase,
-                         /*force_regenerate_image=*/false, input_is_vdb);
+                         input_is_vdb);
 
             auto recut = Recut<uint16_t>(args);
             auto root_coords = recut.initialize();

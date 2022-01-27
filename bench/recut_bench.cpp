@@ -83,13 +83,11 @@ static void recut_radius_real_data(benchmark::State &state) {
   auto interval_size = state.range(1);
   auto block_size = state.range(2);
   TileThresholds<uint16_t> *tile_thresholds;
-  auto force_regenerate_image = false;
 
   for (auto &tcase : tcases) {
     // the total number of blocks allows more parallelism
     // ideally intervals >> thread count
-    auto args = get_args(grid_size, interval_size, block_size, slt_pct, tcase,
-                         force_regenerate_image);
+    auto args = get_args(grid_size, interval_size, block_size, slt_pct, tcase);
 
     // establish the tile thresholds for the entire test run (recut and
     // sequential) to prevent unnecessary recalculations of theshodls
