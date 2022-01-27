@@ -105,7 +105,6 @@ public:
 
   std::ofstream out;
   image_t *generated_image = nullptr;
-  atomic<VID_t> global_revisits;
   RecutCommandLineArgs *args;
   std::map<GridCoord, std::deque<VertexAttr>> map_fifo;
   std::map<GridCoord, local_heap> heap_map;
@@ -140,8 +139,6 @@ public:
                             const VID_t neighbor,
                             const VID_t interval_block_size,
                             const VID_t pad_block_size);
-  int get_bkg_threshold(const image_t *tile, VID_t interval_vertex_size,
-                        const double foreground_percent);
   template <typename T>
   void place_vertex(const VID_t nb_interval_id, VID_t block_id, VID_t nb,
                     struct VertexAttr *dst, GridCoord dst_coord,
@@ -244,10 +241,12 @@ public:
   process_interval(VID_t interval_id, const image_t *tile, std::string stage,
                    const TileThresholds<image_t> *tile_thresholds,
                    T2 vdb_accessor);
+  template <typename T1, typename T2, typename T3, typename T4>
+  void io_interval(int interval_id, T1 &grids, T2 &uint8_grids, T3 &float_grids,
+                   T4 &mask_grids, std::string stage,
+                   Histogram<image_t> &histogram);
   template <class Container>
-  std::unique_ptr<InstrumentedUpdateStatistics>
-  update(std::string stage, Container &fifo = nullptr,
-         TileThresholds<image_t> *tile_thresholds = nullptr);
+  void update(std::string stage, Container &fifo = nullptr);
   GridCoord get_input_image_lengths(RecutCommandLineArgs *args);
   std::vector<std::pair<GridCoord, uint8_t>> initialize();
   inline VID_t sub_block_to_block_id(VID_t iblock, VID_t jblock, VID_t kblock);
@@ -1909,82 +1908,6 @@ void Recut<image_t>::march_narrow_band(
 
 } // end march_narrow_band
 
-// return the nearest background threshold value that is closest to the
-// arg foreground_percent for the given image region
-// this function starts with a bkg_thresh of 0 and increments until it
-// finds a bkg_thresh value which yields a foreground_percent equal to
-// or above the requested
-// if the absdiff of the final above threshold is greater than the last
-// bkg_thresh below, the last bkg_thresh that is slightly below will
-// be returned instead in effort of accuracy
-template <class image_t>
-int Recut<image_t>::get_bkg_threshold(const image_t *tile,
-                                      VID_t interval_vertex_size,
-                                      const double foreground_percent) {
-#ifdef LOG
-  cout << "Determine thresholding value on fg %: " << foreground_percent
-       << '\n';
-#endif
-  auto timer = high_resolution_timer();
-  assertm(foreground_percent >= 0., "foreground_percent must be 0 or positive");
-  assertm(foreground_percent <= 100., "foreground_percent must be 100 or less");
-  const double foreground_ratio = foreground_percent / 100;
-  const double desired_bkg_pct = 1. - foreground_ratio;
-
-  image_t above; // store next bkg_thresh value above desired bkg pct
-  image_t below = 0;
-  double above_diff_pct = 0.0; // pct bkg at next above value
-  double below_diff_pct = 1.;  // last below percentage
-  // test different background threshold values until finding
-  // percentage above desired_bkg_pct or when all pixels set to background
-  VID_t bkg_count;
-  for (image_t local_bkg_thresh = 0;
-       local_bkg_thresh <= std::numeric_limits<image_t>::max();
-       ++local_bkg_thresh) {
-
-    // Count total # of pixels under current thresh
-    bkg_count = 0;
-#if defined USE_OMP_BLOCK
-#pragma omp parallel for reduction(+ : bkg_count)
-#endif
-    for (VID_t i = 0; i < (VID_t)interval_vertex_size; i++) {
-      if (tile[i] <= local_bkg_thresh) {
-        ++bkg_count;
-      }
-    }
-
-    // Check if above desired percent background
-    double test_pct = bkg_count / static_cast<double>(interval_vertex_size);
-    auto foreground_count = interval_vertex_size - bkg_count;
-
-#ifdef FULL_PRINT
-    cout << "bkg_thresh=" << local_bkg_thresh << " (" << test_pct
-         << "%) background, total foreground count: " << foreground_count
-         << '\n';
-#endif
-    double test_diff = abs(test_pct - desired_bkg_pct);
-
-    // check whether we overshot, if above
-    // then return this local_bkg_thresh
-    // or the last if it was closer
-    if (test_pct >= desired_bkg_pct) {
-
-#ifdef LOG
-      cout << "Calculated bkg thresh in " << timer.elapsed() << '\n';
-#endif
-      if (test_diff < below_diff_pct)
-        return local_bkg_thresh;
-      else
-        return below;
-    }
-
-    // set the below for next iteration
-    below = local_bkg_thresh;
-    below_diff_pct = test_diff;
-  }
-  return std::numeric_limits<image_t>::max();
-}
-
 template <class image_t>
 template <typename T2>
 std::atomic<double> Recut<image_t>::process_interval(
@@ -2142,37 +2065,166 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
   return tile_thresholds;
 }
 
-// returns the execution time for updating the entire
-// stage excluding I/O
-// note that tile_thresholds has a default value
-// of nullptr, see update declaration
+template <class image_t>
+template <typename T1, typename T2, typename T3, typename T4>
+void Recut<image_t>::io_interval(int interval_id, T1 &grids, T2 &uint8_grids,
+                                 T3 &float_grids, T4 &mask_grids,
+                                 std::string stage,
+                                 Histogram<image_t> &histogram) {
+
+  // only start intervals that have active processing to do
+  if (!active_intervals[interval_id]) {
+    return;
+  }
+
+  auto interval_timer = high_resolution_timer();
+
+  image_t *tile;
+  TileThresholds<image_t> *tile_thresholds;
+
+  // pre-generated images are for testing, or when an outside
+  // library wants to pass input images instead
+  if (this->args->force_regenerate_image) {
+    assertm(this->generated_image, "Image not generated or set by intialize");
+    tile = this->generated_image;
+    // note these default thresholds apply to any generated image
+    // thus they will only be replaced if we're reading a real image
+    tile_thresholds = new TileThresholds<image_t>(
+        /*max*/ 2,
+        /*min*/ 0,
+        /*bkg_thresh*/ 0);
+  }
+
+  if (stage == "convert") {
+    auto tile_offsets = id_interval_to_img_offsets(interval_id);
+    // bbox is inclusive, therefore substract 1
+    auto interval_max = (tile_offsets + this->interval_lengths).offsetBy(-1);
+    const auto tile_bbox = CoordBBox(tile_offsets, interval_max);
+    std::unique_ptr<vto::Dense<image_t, vto::LayoutXYZ>> dense_tile;
+
+    if (args->input_type == "ims") {
+#ifdef USE_HDF5
+      dense_tile = load_imaris_tile(args->input_path, tile_bbox,
+                                    args->resolution_level, args->channel);
+#else
+      throw std::runtime_error("HDF5 dependency required for input type ims");
+#endif
+    }
+
+    if (args->input_type == "tiff") {
+      dense_tile = load_tile<image_t>(tile_bbox, args->input_path);
+    }
+
+    if (!tile_thresholds) {
+      tile_thresholds = get_tile_thresholds(dense_tile);
+    }
+    tile = dense_tile->data();
+
+    assertm(!this->input_is_vdb, "input can't be vdb during convert stage");
+
+    GridCoord no_offsets = {0, 0, 0};
+
+    GridCoord buffer_offsets =
+        this->args->force_regenerate_image ? tile_bbox.min() : no_offsets;
+    GridCoord buffer_extents = this->args->force_regenerate_image
+                                   ? this->image_lengths
+                                   : this->interval_lengths;
+
+    auto convert_start = interval_timer.elapsed();
+
+#ifdef FULL_PRINT
+    cout << "print_image\n";
+    print_image_3D(tile, buffer_extents);
+#endif
+
+    if (this->args->output_type == "uint8") {
+      uint8_grids[interval_id] = ImgGrid::create();
+      convert_buffer_to_vdb_acc(
+          tile, buffer_extents,
+          /*buffer_offsets=*/buffer_offsets,
+          /*image_offsets=*/tile_bbox.min(),
+          uint8_grids[interval_id]->getAccessor(), this->args->output_type,
+          tile_thresholds->bkg_thresh, this->args->upsample_z);
+      if (args->histogram) {
+        histogram += hist(tile, buffer_extents, buffer_offsets);
+      }
+    } else if (this->args->output_type == "float") {
+      float_grids[interval_id] = openvdb::FloatGrid::create();
+      convert_buffer_to_vdb_acc(
+          tile, buffer_extents,
+          /*buffer_offsets=*/buffer_offsets,
+          /*image_offsets=*/tile_bbox.min(),
+          float_grids[interval_id]->getAccessor(), this->args->output_type,
+          tile_thresholds->bkg_thresh, this->args->upsample_z);
+      if (args->histogram) {
+        histogram += hist(tile, buffer_extents, buffer_offsets);
+      }
+    } else if (this->args->output_type == "mask") {
+      mask_grids[interval_id] = openvdb::MaskGrid::create();
+      convert_buffer_to_vdb_acc(
+          tile, buffer_extents,
+          /*buffer_offsets=*/buffer_offsets,
+          /*image_offsets=*/tile_bbox.min(),
+          mask_grids[interval_id]->getAccessor(), this->args->output_type,
+          tile_thresholds->bkg_thresh, this->args->upsample_z);
+      if (args->histogram) {
+        histogram += hist(tile, buffer_extents, buffer_offsets);
+      }
+    } else { // point
+
+      std::vector<PositionT> positions;
+      // use the last bkg_thresh calculated for metadata,
+      // bkg_thresh is constant for each interval unless a specific % is
+      // input by command line user
+      convert_buffer_to_vdb(tile, buffer_extents,
+                            /*buffer_offsets=*/buffer_offsets,
+                            /*image_offsets=*/tile_bbox.min(), positions,
+                            tile_thresholds->bkg_thresh,
+                            this->args->upsample_z);
+
+      grids[interval_id] =
+          create_point_grid(positions, this->image_lengths, get_transform(),
+                            this->args->foreground_percent);
+
+#ifdef FULL_PRINT
+      print_vdb_mask(grids[interval_id]->getConstAccessor(),
+                     this->image_lengths);
+#endif
+    }
+
+    active_intervals[interval_id] = false;
+#ifdef LOG
+    cout << "Completed interval " << interval_id + 1 << " of "
+         << grid_interval_size << " in " << interval_timer.elapsed() << " s\n";
+#endif
+  } else {
+    // note openvdb::initialize() must have been called before this point
+    // otherwise seg faults will occur
+    auto update_accessor = this->update_grid->getAccessor();
+
+    if (this->input_is_vdb) {
+      tile_thresholds = new TileThresholds<image_t>(
+          /*max*/ 2,
+          /*min*/ 0,
+          /*bkg_thresh*/ 0);
+    } else {
+      throw std::runtime_error(
+          "Unimplemented: need to generate tile_threshold for raw images");
+    }
+
+    process_interval(interval_id, tile, stage, tile_thresholds,
+                     update_accessor);
+  }
+} // if the interval is active
+
 template <class image_t>
 template <class Container>
-std::unique_ptr<InstrumentedUpdateStatistics>
-Recut<image_t>::update(std::string stage, Container &fifo,
-                       TileThresholds<image_t> *tile_thresholds) {
-  atomic<double> computation_time;
-  computation_time = 0.0;
-  global_revisits = 0;
-  auto interval_open_count = std::vector<uint16_t>(grid_interval_size, 0);
-  TileThresholds<image_t> *local_tile_thresholds;
-#ifdef NO_INTERVAL_RV
-  auto visited_intervals = std::make_unique<bool[]>(grid_interval_size, false);
-#endif
-#ifdef SCHEDULE_INTERVAL_RV
-  auto visited_intervals = std::make_unique<bool[]>(grid_interval_size, false);
-  auto locked_intervals = std::make_unique<bool[]>(grid_interval_size, false);
-  auto schedule_intervals = std::make_unique<int[]>(grid_interval_size, 0);
-#endif
+void Recut<image_t>::update(std::string stage, Container &fifo) {
 
 #ifdef LOG
   cout << "Start updating stage " << stage << '\n';
 #endif
   auto timer = high_resolution_timer();
-
-  // note openvdb::initialize() must have been called before this point
-  // otherwise seg faults will occur
-  auto update_accessor = this->update_grid->getAccessor();
 
   // multi-grids for convert stage
   // assertm(this->topology_grid, "topology grid not initialized");
@@ -2192,217 +2244,13 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
     // loop through all possible intervals
     // only safe for conversion stages with more than 1 thread
-#ifdef USE_OMP_INTERVAL
-#pragma omp parallel for
-#endif
-    for (int interval_id = 0; interval_id < grid_interval_size; interval_id++) {
-      // only start intervals that have active processing to do
-      if (active_intervals[interval_id]) {
-
-#ifdef NO_INTERVAL_RV
-        // forbid all re-opening tile/interval to check performance
-        if (visited_intervals[interval_id]) {
-          active_intervals[interval_id] = false;
-          continue;
-        } else {
-          visited_intervals[interval_id] = true;
-        }
-#endif
-        auto interval_timer = high_resolution_timer();
-
-#ifdef SCHEDULE_INTERVAL_RV
-        // number of iterations to wait before a visited
-        // interval can do a final set of processing
-        auto scheduling_iteration_delay = 2;
-        if (locked_intervals[interval_id]) {
-          active_intervals[interval_id] = false;
-          continue;
-        }
-        // only visited_intervals need to be explicitly
-        // scheduled
-        if (visited_intervals[interval_id] &&
-            schedule_intervals[interval_id] != outer_iteration_idx) {
-          // keep it active so that it is processed when it
-          // is scheduled
-          continue;
-        }
-
-        // otherwise process this interval
-        // TODO still need to schedule_intervals initialize
-        if (visited_intervals[interval_id]) {
-          // this interval_id will not be processed again
-          // so ignore it's scheduling
-          locked_intervals[interval_id] = true;
-        } else {
-          visited_intervals[interval_id] = true;
-          // in 2 iterations, all of the intervals that it
-          // activated will have been processed
-          // this is an approximation of scheduling once
-          // all neighbors have been processed
-          // in reality it's not clear when all neighbors
-          // of this interval_id will have been processed
-          schedule_intervals[interval_id] =
-              outer_iteration_idx + scheduling_iteration_delay;
-        }
-#endif
-        interval_open_count[interval_id] += 1;
-
-        image_t *tile;
-        // tile_thresholds defaults to nullptr
-        // local_tile_thresholds will be set explicitly
-        // if user did not pass in valid tile_thresholds value
-        local_tile_thresholds = tile_thresholds;
-
-        if (this->input_is_vdb && !local_tile_thresholds) {
-          local_tile_thresholds = new TileThresholds<image_t>(
-              /*max*/ 2,
-              /*min*/ 0,
-              /*bkg_thresh*/ 0);
-        }
-
-        // pre-generated images are for testing, or when an outside
-        // library wants to pass input images instead
-        if (this->args->force_regenerate_image) {
-          assertm(this->generated_image,
-                  "Image not generated or set by intialize");
-          tile = this->generated_image;
-          // allows users to input a tile thresholds object when
-          // calling to update
-          if (!local_tile_thresholds) {
-            // note these default thresholds apply to any generated image
-            // thus they will only be replaced if we're reading a real image
-            local_tile_thresholds = new TileThresholds<image_t>(
-                /*max*/ 2,
-                /*min*/ 0,
-                /*bkg_thresh*/ 0);
-          }
-        }
-
-        if (stage == "convert") {
-          auto tile_offsets = id_interval_to_img_offsets(interval_id);
-          // bbox is inclusive, therefore substract 1
-          auto interval_max =
-              (tile_offsets + this->interval_lengths).offsetBy(-1);
-          const auto tile_bbox = CoordBBox(tile_offsets, interval_max);
-          std::unique_ptr<vto::Dense<image_t, vto::LayoutXYZ>> dense_tile;
-
-          if (args->input_type == "ims") {
-#ifdef USE_HDF5
-            dense_tile =
-                load_imaris_tile(args->input_path, tile_bbox,
-                                 args->resolution_level, args->channel);
-#else
-            throw std::runtime_error(
-                "HDF5 dependency required for input type ims");
-#endif
-          }
-
-          if (args->input_type == "tiff") {
-            dense_tile = load_tile<image_t>(tile_bbox, args->input_path);
-          }
-
-          if (!local_tile_thresholds) {
-            auto thresh_start = timer.elapsed();
-            local_tile_thresholds = get_tile_thresholds(dense_tile);
-            computation_time =
-                computation_time + (timer.elapsed() - thresh_start);
-          }
-          tile = dense_tile->data();
-
-          assertm(!this->input_is_vdb,
-                  "input can't be vdb during convert stage");
-
-          GridCoord no_offsets = {0, 0, 0};
-
-          GridCoord buffer_offsets =
-              this->args->force_regenerate_image ? tile_bbox.min() : no_offsets;
-          GridCoord buffer_extents = this->args->force_regenerate_image
-                                         ? this->image_lengths
-                                         : this->interval_lengths;
-
-          auto convert_start = timer.elapsed();
-
-#ifdef FULL_PRINT
-          cout << "print_image\n";
-          print_image_3D(tile, buffer_extents);
-#endif
-
-          if (this->args->output_type == "uint8") {
-            uint8_grids[interval_id] = ImgGrid::create();
-            convert_buffer_to_vdb_acc(tile, buffer_extents,
-                                      /*buffer_offsets=*/buffer_offsets,
-                                      /*image_offsets=*/tile_bbox.min(),
-                                      uint8_grids[interval_id]->getAccessor(),
-                                      this->args->output_type,
-                                      local_tile_thresholds->bkg_thresh,
-                                      this->args->upsample_z);
-            if (this->args->histogram) {
-              histogram += hist(tile, buffer_extents, buffer_offsets);
-            }
-          } else if (this->args->output_type == "float") {
-            float_grids[interval_id] = openvdb::FloatGrid::create();
-            convert_buffer_to_vdb_acc(tile, buffer_extents,
-                                      /*buffer_offsets=*/buffer_offsets,
-                                      /*image_offsets=*/tile_bbox.min(),
-                                      float_grids[interval_id]->getAccessor(),
-                                      this->args->output_type,
-                                      local_tile_thresholds->bkg_thresh,
-                                      this->args->upsample_z);
-            if (args->histogram) {
-              histogram += hist(tile, buffer_extents, buffer_offsets);
-            }
-          } else if (this->args->output_type == "mask") {
-            mask_grids[interval_id] = openvdb::MaskGrid::create();
-            convert_buffer_to_vdb_acc(
-                tile, buffer_extents,
-                /*buffer_offsets=*/buffer_offsets,
-                /*image_offsets=*/tile_bbox.min(),
-                mask_grids[interval_id]->getAccessor(), this->args->output_type,
-                local_tile_thresholds->bkg_thresh, this->args->upsample_z);
-            if (args->histogram) {
-              histogram += hist(tile, buffer_extents, buffer_offsets);
-            }
-          } else { // point
-
-            std::vector<PositionT> positions;
-            // use the last bkg_thresh calculated for metadata,
-            // bkg_thresh is constant for each interval unless a specific % is
-            // input by command line user
-            convert_buffer_to_vdb(tile, buffer_extents,
-                                  /*buffer_offsets=*/buffer_offsets,
-                                  /*image_offsets=*/tile_bbox.min(), positions,
-                                  local_tile_thresholds->bkg_thresh,
-                                  this->args->upsample_z);
-
-            grids[interval_id] = create_point_grid(
-                positions, this->image_lengths, get_transform(),
-                this->args->foreground_percent);
-
-#ifdef FULL_PRINT
-            print_vdb_mask(grids[interval_id]->getConstAccessor(),
-                           this->image_lengths);
-#endif
-          }
-          computation_time =
-              computation_time + (timer.elapsed() - convert_start);
-
-          active_intervals[interval_id] = false;
-#ifdef LOG
-          // auto traveral_time = timer.elapsed() - convert_start;
-          cout << "Completed interval " << interval_id + 1 << " of "
-               << grid_interval_size << " in " << interval_timer.elapsed()
-               << " s\n";
-#endif
-        } else {
-          computation_time =
-              computation_time + process_interval(interval_id, tile, stage,
-                                                  local_tile_thresholds,
-                                                  update_accessor);
-        }
-      } // if the interval is active
-
-    } // end one interval traversal
-  }   // finished all intervals
+    tbb::parallel_for_each(
+        rng::views::indices(grid_interval_size) | rng::to_vector,
+        [&](const auto interval_id) {
+          io_interval(interval_id, grids, uint8_grids, float_grids, mask_grids,
+                      stage, histogram);
+        }); // end one interval traversal
+  }         // finished all intervals
 
   if (stage == "convert") {
     auto finalize_start = timer.elapsed();
@@ -2448,29 +2296,14 @@ Recut<image_t>::update(std::string stage, Container &fifo,
     }
 
     auto finalize_time = timer.elapsed() - finalize_start;
-    computation_time = computation_time + finalize_time;
 #ifdef LOG
     cout << "Grid finalize time: " << finalize_time << " s\n";
 #endif
-  } else {
-#ifdef RV
-    cout << "Total ";
-#ifdef NO_RV
-    cout << "rejected";
-#endif
-    cout << " revisits: " << global_revisits << " vertices" << '\n';
-#endif
   }
 
-  auto total_update_time = timer.elapsed();
-  auto io_time = total_update_time - computation_time;
 #ifdef LOG
   cout << "Finished stage: " << stage << '\n';
-  cout << "Finished total updating within " << total_update_time << " sec \n";
-  // cout << "Finished computation (no I/O) within " << computation_time
-  //<< " sec \n";
-  // cout << "Finished I/O within " << io_time << " sec \n";
-  // cout << "Total interval iterations: " << outer_iteration_idx << '\n';
+  cout << "Finished total updating within " << timer.elapsed() << " sec \n";
 
   {
     auto stage_acr = stage; // line up with paper
@@ -2483,13 +2316,10 @@ Recut<image_t>::update(std::string stage, Container &fifo,
 
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
-    run_log << stage_acr << ", " << total_update_time << '\n';
+    run_log << stage_acr << ", " << timer.elapsed() << '\n';
   }
 #endif
 
-  return std::make_unique<InstrumentedUpdateStatistics>(
-      outer_iteration_idx, total_update_time,
-      static_cast<double>(computation_time), io_time, interval_open_count);
 } // end update()
 
 /*
@@ -2688,26 +2518,16 @@ template <class image_t>
 std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
   auto final_thread_count = args->user_thread_count;
-#if defined USE_OMP_BLOCK || defined USE_OMP_INTERVAL
-  if (args->convert_only) {
-    omp_set_num_threads(args->user_thread_count);
-    if (args->input_type == "ims") {
+  if (args->convert_only && args->input_type == "ims") {
       final_thread_count = 1;
-      omp_set_num_threads(final_thread_count);
-    } else {
-      omp_set_num_threads(args->user_thread_count);
-    }
-  } else {
-    // omp num threads is only valid for the convert stage
-    omp_set_num_threads(1);
-    // limit the number of threads for all oneTBB parallel interfaces
-    tbb::global_control global_limit(
-        tbb::global_control::max_allowed_parallelism, args->user_thread_count);
   }
+  // limits number of threads for all oneTBB parallel interfaces
+  tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism,
+                                   final_thread_count);
+
 #ifdef LOG
   cout << "Thread count " << final_thread_count << '\n';
   cout << "User specified image " << args->input_path << '\n';
-#endif
 #endif
 
   // input type

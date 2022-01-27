@@ -1,4 +1,3 @@
-enable_testing()
 # at least 3.9 for full cpp 17 features
 # 3.14 for FetchContent
 cmake_minimum_required(VERSION 3.14)
@@ -7,6 +6,7 @@ project("Recut" VERSION 0.9.0
   DESCRIPTION "A c++ library for parallel graph kernels"
   HOMEPAGE_URL "https://github.com/UCLA-VAST/recut-pipeline")
 
+enable_testing()
 # if not user defined, set to sane default for unix
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
   set(CMAKE_INSTALL_PREFIX "/usr/local" CACHE PATH "..." FORCE)
@@ -29,26 +29,6 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
 set(CMAKE_INSTALL_DATADIR ${CMAKE_INSTALL_PREFIX}/data)
 message(STATUS "CMAKE_INSTALL_DATADIR: ${CMAKE_INSTALL_DATADIR}")
-
-# works for cmake 3.9+
-# https://stackoverflow.com/questions/48825416/missing-openmp-c-flags-openmp-c-lib-names
-if(CMAKE_C_COMPILER_ID MATCHES "Clang")
-  set(OpenMP_C "${CMAKE_C_COMPILER}" CACHE STRING "" FORCE)
-  set(OpenMP_C_FLAGS "-fopenmp=libomp -Wno-unused-command-line-argument" CACHE STRING "" FORCE)
-  set(OpenMP_C_LIB_NAMES "libomp" "libgomp" "libiomp5" CACHE STRING "" FORCE)
-  set(OpenMP_libomp_LIBRARY ${OpenMP_C_LIB_NAMES} CACHE STRING "" FORCE)
-  set(OpenMP_libgomp_LIBRARY ${OpenMP_C_LIB_NAMES} CACHE STRING "" FORCE)
-  set(OpenMP_libiomp5_LIBRARY ${OpenMP_C_LIB_NAMES} CACHE STRING "" FORCE)
-endif()
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  message(STATUS "Using Clang compiler...")
-  set(OpenMP_CXX "${CMAKE_CXX_COMPILER}" CACHE STRING "" FORCE)
-  set(OpenMP_CXX_FLAGS "-fopenmp=libomp -Wno-unused-command-line-argument" CACHE STRING "" FORCE)
-  set(OpenMP_CXX_LIB_NAMES "libomp" "libgomp" "libiomp5" CACHE STRING "" FORCE)
-  set(OpenMP_libomp_LIBRARY ${OpenMP_CXX_LIB_NAMES} CACHE STRING "" FORCE)
-  set(OpenMP_libgomp_LIBRARY ${OpenMP_CXX_LIB_NAMES} CACHE STRING "" FORCE)
-  set(OpenMP_libiomp5_LIBRARY ${OpenMP_CXX_LIB_NAMES} CACHE STRING "" FORCE)
-endif()
 
 # CMake Preprocessor Defines:
 # determine which targets to build
@@ -141,9 +121,6 @@ set( GIT_HASH OFF CACHE STRING "Hash of the latest git commit")
 #  Scheduling
 option( NO_INTERVAL_RV OFF)
 option( SCHEDULE_INTERVAL_RV OFF)
-# Note you can't have both OMP_BLOCK and OMP_INTERVAL defined
-option( USE_OMP_INTERVAL OFF)
-option( USE_OMP_BLOCK OFF)
 # Define how revisits/reupdates to previous seen vertices is handled
 option( RV "Count the number of revisits or attempted revisits of vertices" OFF)
 option(NO_RV "Reject any vertices from having new updated values after they have already been visited" OFF)
@@ -224,9 +201,6 @@ endif()
 
 # required dependencies
 find_package(range-v3)
-find_package(OpenMP REQUIRED)
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-find_package(Threads REQUIRED)
 
 find_package(TIFF REQUIRED)
 
@@ -250,24 +224,6 @@ foreach(I ${ALL_TARGETS})
   if (FULL_PRINT)
     target_compile_definitions(${I} PRIVATE FULL_PRINT)
   endif()
-  if (RV)
-    target_compile_definitions(${I} PRIVATE RV)
-  endif()
-  if (NO_RV)
-    target_compile_definitions(${I} PRIVATE NO_RV)
-  endif()
-  if (USE_OMP_BLOCK)
-    target_compile_definitions(${I} PRIVATE USE_OMP_BLOCK)
-  endif()
-  if (USE_OMP_INTERVAL)
-    target_compile_definitions(${I} PRIVATE USE_OMP_INTERVAL)
-  endif()
-  if (NO_INTERVAL_RV)
-    target_compile_definitions(${I} PRIVATE NO_INTERVAL_RV)
-  endif()
-  if (SCHEDULE_INTERVAL_RV)
-    target_compile_definitions(${I} PRIVATE SCHEDULE_INTERVAL_RV)
-  endif()
   if (GIT_HASH)
     target_compile_definitions(${I} PRIVATE GIT_HASH)
   endif()
@@ -284,15 +240,9 @@ foreach(I ${ALL_TARGETS})
 
   target_link_libraries(${I} PRIVATE range-v3::range-v3)
 
-  if (USE_OMP_INTERVAL OR USE_OMP_BLOCK)
-    target_link_libraries(${I} PRIVATE OpenMP::OpenMP_CXX)
-  endif()
-
   if (TEST_ALL_BENCHMARKS)
     target_compile_definitions(${I} PRIVATE TEST_ALL_BENCHMARKS)
   endif()
-
-  target_link_libraries(${I} PRIVATE Threads::Threads)
 
   target_link_libraries(${I} PRIVATE ${TIFF_LIBRARIES})
 

@@ -1840,28 +1840,6 @@ auto read_tiff_dir(const std::string &dir) {
   return read_tiff_planes<image_t>(tif_filenames, bbox);
 }
 
-// stamp the compile time config
-// so that past logs are explicit about
-// their flags
-void print_macros() {
-
-#ifdef RV
-  cout << "RV" << '\n';
-#endif
-
-#ifdef NO_RV
-  cout << "NO_RV" << '\n';
-#endif
-
-#ifdef USE_OMP_BLOCK
-  cout << "USE_OMP_BLOCK" << '\n';
-#endif
-
-#ifdef USE_OMP_INTERVAL
-  cout << "USE_OMP_INTERVAL" << '\n';
-#endif
-}
-
 // this is not thread safe if concurrent threads
 // add or subtract elements from vector.
 // added such that vectors of atomics can

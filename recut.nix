@@ -19,7 +19,7 @@ in
 
   enableParallelBuilding = true;
 
-  cmakeFlags = ["-DLOG=ON -DUSE_OMP_BLOCK=ON -DUSE_OMP_INTERVAL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MODULE_PATH=${openvdb.defaultPackage.x86_64-linux}/lib/cmake/OpenVDB"];
+  cmakeFlags = ["-DLOG=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MODULE_PATH=${openvdb.defaultPackage.x86_64-linux}/lib/cmake/OpenVDB"];
 
   nativeBuildInputs = [ cmake gcc11 ];
 

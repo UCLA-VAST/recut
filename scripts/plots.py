@@ -167,7 +167,7 @@ def stages(args):
 def value(args):
     ''' Fastmarching Performance '''
     cross_compile_flags=['NO_SCHEDULE', 'NO_INTERVAL_RV', 'SCHEDULE_INTERVAL_RV']
-    baseline_flags = ['TEST_ALL_BENCHMARKS', 'USE_OMP_BLOCK']
+    baseline_flags = ['TEST_ALL_BENCHMARKS']
     # desired_test_runs = [11, 12, 18, 19, 25, 26, 32, 33]
     desired_test_runs = [32, 33, 34, 35, 36, 37, 38]
     # desired_test_runs = range(11, 32)
@@ -284,7 +284,7 @@ def scalability(args):
     benchmark_fn = args.output + f'{name}_bench'
     test_fn = args.output + f'{name}_test'
     desired_test_runs = range(39,46)
-    baseline_flags = ['TEST_ALL_BENCHMARKS', 'USE_OMP_BLOCK']
+    baseline_flags = ['TEST_ALL_BENCHMARKS']
     cross_compile_flags = ['NO_SCHEDULE']
 
     if test:
@@ -365,7 +365,7 @@ def read(args):
     benchmark_fn = args.output + 'read_bench'
     test_fn = args.output + 'read_test'
     desired_test_runs= range(32,39)
-    baseline_flags = ['TEST_ALL_BENCHMARKS', 'USE_OMP_BLOCK']
+    baseline_flags = ['TEST_ALL_BENCHMARKS']
     cross_compile_flags = ['ALL']
 
     if test:
