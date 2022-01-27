@@ -1783,6 +1783,7 @@ auto read_tiff_planes = [](const std::vector<std::string> &fns,
                                              strip_size_bytes);
       strip_offset += (strip_size_bytes / (bits_per_sample / 8));
     }
+    TIFFClose(tiff);
   }
 
   return dense;
@@ -1825,6 +1826,7 @@ auto get_tif_dims = [](const std::vector<std::string> &tif_filenames) {
   uint32_t image_width, image_height;
   TIFFGetField(tiff, TIFFTAG_IMAGEWIDTH, &image_width);
   TIFFGetField(tiff, TIFFTAG_IMAGELENGTH, &image_height);
+  TIFFClose(tiff);
   return GridCoord(image_width, image_height, tif_filenames.size());
 };
 
