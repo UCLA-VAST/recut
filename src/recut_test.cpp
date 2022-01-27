@@ -2493,7 +2493,7 @@ TEST_P(RecutPipelineParameterTests, DISABLED_ChecksIfFinalVerticesCorrect) {
 
     recut.adjust_parent();
 
-    recut.print_to_swc("out.swc");
+    //recut.print_to_swc("out.swc");
 
     recut_output_tree_prune = convert_to_markers(
         recut.topology_grid,

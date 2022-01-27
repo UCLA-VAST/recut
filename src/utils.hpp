@@ -2153,6 +2153,9 @@ auto print_swc_line =
         auto val = coord_to_swc_id.find(swc_coord);
         if (val == coord_to_swc_id.end()) {
           auto new_val = coord_to_swc_id.size();
+          if (new_val >= std::numeric_limits<int32_t>::max())
+            throw std::runtime_error("Total swc line count overflows 32-bit "
+                                     "integer used in some swc programs");
           coord_to_swc_id[swc_coord] = new_val;
           assertm(new_val == (coord_to_swc_id.size() - 1),
                   "map must now be 1 size larger");
@@ -2162,21 +2165,14 @@ auto print_swc_line =
       };
 
       // n
-      uint32_t id;
-      if (coord_to_swc_id.empty()) {
-        id = coord_to_id(swc_coord, swc_lengths);
-      } else {
-        id = find_or_assign(swc_coord);
-      }
-      assertm(id < std::numeric_limits<int32_t>::max(),
-              "id overflows int32_t limit");
-      line << id << ' ';
+      uint32_t current_id = find_or_assign(swc_coord);
+      line << std::to_string(current_id) << ' ';
 
       // type_id
       if (is_root) {
-        line << "1" << ' ';
+        line << "1 ";
       } else {
-        line << '3' << ' ';
+        line << "3 ";
       }
 
       // coordinates
@@ -2187,18 +2183,12 @@ auto print_swc_line =
 
       // parent
       if (is_root) {
-        line << "-1";
+        // only the first line of the file can have a parent of -1
+        // any other should connect to themselves
+        line << (current_id == 1) ? std::to_string(current_id) : "-1";
       } else {
         auto parent_coord = coord_add(swc_coord, parent_offset_coord);
-        uint32_t parent_vid;
-        if (coord_to_swc_id.empty()) {
-          parent_vid = coord_to_id(parent_coord, swc_lengths);
-        } else {
-          parent_vid = find_or_assign(parent_coord);
-        }
-        assertm(parent_vid < std::numeric_limits<int32_t>::max(),
-                "id overflows int32_t limit");
-        line << parent_vid;
+        line << find_or_assign(parent_coord);
       }
 
       line << '\n';
@@ -2232,16 +2222,16 @@ auto write_swc = [](std::vector<MyMarker *> tree, CoordBBox bbox,
   // start a new blank map for coord to a unique swc id
   auto coord_to_swc_id = get_id_map();
   // iter those marker*
-  rng::for_each(tree, [&swc_file, &coord_to_swc_id, &bbox,
-                       bbox_adjust](const auto marker) {
+  rng::for_each(tree, [&swc_file, &coord_to_swc_id,
+                                               &bbox, bbox_adjust](
+                                                  const auto marker) {
     auto coord = GridCoord(marker->x, marker->y, marker->z);
 
     auto parent_coord =
         GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
     auto parent_offset = coord_sub(parent_coord, coord);
     // print_swc_line() expects an offset to a parent
-    print_swc_line(coord,
-                   /*is_root*/ marker->type == 0, marker->radius, parent_offset,
+    print_swc_line(coord, /*is_root*/ marker->type == 0, marker->radius, parent_offset,
                    bbox, swc_file, coord_to_swc_id, bbox_adjust);
   });
 };
