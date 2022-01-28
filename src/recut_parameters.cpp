@@ -63,7 +63,7 @@ void RecutCommandLineArgs::PrintUsage() {
                "order to create "
                "image windows for each neuron cluster/component\n";
   std::cout
-      << "--chunk-lengths   dimensions for fg percentages and conversion, "
+      << "--tile-lengths      dimensions for fg percentages and conversion, "
          "defaults to image sizes\n";
   std::cout
       << "--downsample-factor  for images scaled down in x and z dimension "
@@ -181,7 +181,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--min-branch-length") == 0) {
         args.min_branch_length = atoi(argv[i + 1]);
         ++i;
-      } else if (strcmp(argv[i], "--chunk-lengths") == 0) {
+      } else if (strcmp(argv[i], "--tile-lengths") == 0) {
         for (int j = 0; j < 3; ++j) {
           args.interval_lengths[j] = atoi(argv[i + 1]);
           ++i;

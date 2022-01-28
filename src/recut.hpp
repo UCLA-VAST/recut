@@ -1989,7 +1989,7 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
     // cout << "Requested foreground percent: " <<
     // this->args->foreground_percent
     //<< " yielded background threshold: " << tile_thresholds->bkg_thresh
-    //<< " in " << timer.elapsed() << " s\n";
+    std::cout << "bkg_thresh in " << timer.elapsed() << " s\n";
 #endif
   } else { // if bkg set explicitly and foreground wasn't
     if (this->args->background_thresh >= 0) {
@@ -1998,11 +1998,26 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
   }
   // otherwise: tile_thresholds->bkg_thresh default inits to 0
 
+  if (this->args->convert_only) {
+    tile_thresholds->max_int = std::numeric_limits<image_t>::max();
+    tile_thresholds->min_int = std::numeric_limits<image_t>::min();
+    return tile_thresholds;
+  }
+
   // assign max and min ints for this tile
   if (this->args->max_intensity < 0) {
-    if (this->args->convert_only) {
-      tile_thresholds->max_int = std::numeric_limits<image_t>::max();
-      tile_thresholds->min_int = std::numeric_limits<image_t>::min();
+    // max and min members will be set
+    tile_thresholds->get_max_min(tile->data(), interval_vertex_size);
+#ifdef LOG_FULL
+    cout << "max_int: " << +(tile_thresholds->max_int)
+         << " min_int: " << +(tile_thresholds->min_int) << '\n';
+    cout << "bkg_thresh value = " << +(tile_thresholds->bkg_thresh) << '\n';
+    cout << "interval dims " << interval_dims << '\n';
+#endif
+  } else if (this->args->min_intensity < 0) {
+    // if max intensity was set but not a min, just use the bkg_thresh value
+    if (tile_thresholds->bkg_thresh >= 0) {
+      tile_thresholds->min_int = tile_thresholds->bkg_thresh;
     } else {
       // max and min members will be set
       tile_thresholds->get_max_min(tile->data(), interval_vertex_size);
@@ -2012,25 +2027,6 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
       cout << "bkg_thresh value = " << +(tile_thresholds->bkg_thresh) << '\n';
       cout << "interval dims " << interval_dims << '\n';
 #endif
-    }
-  } else if (this->args->min_intensity < 0) {
-    // if max intensity was set but not a min, just use the bkg_thresh value
-    if (tile_thresholds->bkg_thresh >= 0) {
-      tile_thresholds->min_int = tile_thresholds->bkg_thresh;
-    } else {
-      if (this->args->convert_only) {
-        tile_thresholds->max_int = std::numeric_limits<image_t>::max();
-        tile_thresholds->min_int = std::numeric_limits<image_t>::min();
-      } else {
-        // max and min members will be set
-        tile_thresholds->get_max_min(tile->data(), interval_vertex_size);
-#ifdef LOG_FULL
-        cout << "max_int: " << +(tile_thresholds->max_int)
-             << " min_int: " << +(tile_thresholds->min_int) << '\n';
-        cout << "bkg_thresh value = " << +(tile_thresholds->bkg_thresh) << '\n';
-        cout << "interval dims " << interval_dims << '\n';
-#endif
-      }
     }
   } else { // both values were set
     // either of these values are signed and default inited -1, casting
@@ -2152,8 +2148,8 @@ void Recut<image_t>::io_interval(int interval_id, T1 &grids, T2 &uint8_grids,
 
     active_intervals[interval_id] = false;
 #ifdef LOG
-    cout << "Completed interval " << interval_id + 1 << " of "
-         << grid_interval_size << " in " << interval_timer.elapsed() << " s\n";
+    std::cout << "Completed interval " << interval_id + 1 << " of "
+         << grid_interval_size << " in " << interval_timer.elapsed() << " converted in " << (interval_timer.elapsed() - convert_start) << " s\n";
 #endif
   } else {
     // note openvdb::initialize() must have been called before this point
@@ -2453,8 +2449,8 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
       throw std::runtime_error("HDF5 dependency required for input type ims");
 #endif
     } else {
-        throw std::runtime_error(
-            "If input is not vdb, must pass type of tiff or ims");
+      throw std::runtime_error(
+          "If input is not vdb, must pass type of tiff or ims");
     }
   }
   return input_image_lengths;
@@ -2608,12 +2604,12 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
   cout << "Initialized globals " << timer.elapsed() << '\n';
 #endif
 
-    if (args->convert_only) {
-      return {};
-    } else {
-      // adds all valid markers to roots vector and returns
-      return process_marker_dir(this->image_offsets, this->image_lengths);
-    }
+  if (args->convert_only) {
+    return {};
+  } else {
+    // adds all valid markers to roots vector and returns
+    return process_marker_dir(this->image_offsets, this->image_lengths);
+  }
 }
 
 // reject unvisited vertices
@@ -2943,7 +2939,11 @@ template <class image_t> void Recut<image_t>::init_run() {
                         rng::to<std::string>();
         stripped += "-ch" + std::to_string(this->args->channel);
         stripped += "-" + this->args->output_type;
-        stripped += "-fg" + std::to_string(this->args->foreground_percent);
+        std::ostringstream out;
+        out.precision(3);
+        out << std::fixed << this->args->foreground_percent;
+        stripped += "-fgpct" + out.str();
+        stripped += "-zoff" + std::to_string(args->image_offsets.z());
         return stripped + ".vdb";
       };
 
