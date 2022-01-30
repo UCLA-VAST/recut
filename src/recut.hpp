@@ -2149,7 +2149,9 @@ void Recut<image_t>::io_interval(int interval_id, T1 &grids, T2 &uint8_grids,
     active_intervals[interval_id] = false;
 #ifdef LOG
     std::cout << "Completed interval " << interval_id + 1 << " of "
-         << grid_interval_size << " in " << interval_timer.elapsed() << " converted in " << (interval_timer.elapsed() - convert_start) << " s\n";
+              << grid_interval_size << " in " << interval_timer.elapsed()
+              << " converted in " << (interval_timer.elapsed() - convert_start)
+              << " s\n";
 #endif
   } else {
     // note openvdb::initialize() must have been called before this point
@@ -2792,10 +2794,17 @@ void Recut<image_t>::partition_components(
     auto timer = high_resolution_timer();
     auto [markers, coord_to_idx] =
         convert_float_to_markers(component, this->topology_grid);
-    // auto markers = convert_to_markers(this->topology_grid, false);
 #ifdef LOG
     // cout << "Convert to markers in " << timer.elapsed() << '\n';
 #endif
+
+    auto root_indices =
+        component_roots |
+        rng::views::transform([&coord_to_idx](const auto &root_pair) {
+            assert in
+          return coord_to_idx[root_pair.first];
+        }) |
+        rng::to_vector;
 
     timer.restart();
     auto pruned_markers =
@@ -2818,17 +2827,20 @@ void Recut<image_t>::partition_components(
 
     timer.restart();
     // extract a new tree via bfs
-    auto tree = advantra_extract_trees(pruned_markers, true);
+    auto trees = advantra_extract_trees(pruned_markers, root_indices);
 #ifdef LOG
     component_log << "ET, " << timer.elapsed() << '\n';
 #endif
 
     timer.restart();
-    auto filtered_tree =
-        prune_short_branches(tree, this->args->min_branch_length);
+    auto filtered_trees =
+        trees | rng::views::transform([this](auto tree) {
+          return prune_short_branches(tree, this->args->min_branch_length);
+        });
+
 #ifdef LOG
     component_log << "TP, " << timer.elapsed() << '\n';
-    component_log << "TP count, " << filtered_tree.size() << '\n';
+    // component_log << "TP count, " << filtered_tree.size() << '\n';
     component_log << "Volume, " << bbox.volume() << '\n';
     component_log << "Bounding box, " << bbox << '\n';
 #endif
@@ -2871,8 +2883,11 @@ void Recut<image_t>::partition_components(
       }
     } // end window created if any
 
-    write_swc(filtered_tree, bbox, component_dir_fn, index,
-              /*bbox_adjust*/ !args->window_grid_paths.empty());
+    // must be done after checking for window grids due to offset adjustments
+    rng::for_each(filtered_trees, [&, this](auto filtered_tree) {
+      write_swc(filtered_tree, bbox, component_dir_fn, index,
+                /*bbox_adjust*/ !args->window_grid_paths.empty());
+    });
 
     cout << "Component " << index << " complete and safe to open\n";
   }; // for each component

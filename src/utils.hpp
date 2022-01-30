@@ -2189,9 +2189,11 @@ auto get_id_map = []() {
 auto write_swc = [](std::vector<MyMarker *> tree, CoordBBox bbox,
                     std::string component_dir_fn, int index,
                     bool bbox_adjust = false) {
+  auto soma = tree.front();
   // start swc and add header metadata
-  auto swc_name =
-      component_dir_fn + "/component-" + std::to_string(index) + ".swc";
+  auto swc_name = component_dir_fn + "/tree-with-soma-xyz-" +
+                  std::to_string(soma->x) + '-' + std::to_string(soma->y) +
+                  '-' + std::to_string(soma->z) + ".swc";
   std::ofstream swc_file;
   swc_file.open(swc_name);
   swc_file << "# Crop windows bounding volume: " << bbox << '\n';
@@ -2556,16 +2558,13 @@ public:
 };
 
 // advantra based re-extraction of tree based on bfs
-std::vector<MyMarker *>
+std::vector<std::vector<MyMarker *>>
 advantra_extract_trees(std::vector<MyMarker *> nlist,
-                       bool remove_isolated_tree_with_one_node = false) {
+                       std::vector<VID_t> root_indices) {
 
-  BfsQueue<int> q;
-  std::vector<MyMarker *> tree;
-
-  vector<int> dist(nlist.size());
-  vector<int> nmap(nlist.size());
-  vector<int> parent(nlist.size());
+  std::vector<int> dist(nlist.size());
+  std::vector<int> nmap(nlist.size());
+  std::vector<int> parent(nlist.size());
 
   for (int i = 0; i < nlist.size(); ++i) {
     dist[i] = INT_MAX;
@@ -2573,31 +2572,18 @@ advantra_extract_trees(std::vector<MyMarker *> nlist,
     parent[i] = -1; // parent index in current tree
   }
 
-  dist[0] = -1;
-
   // Node tree0(nlist[0]); // first element of the nodelist is dummy both in
   // input and output tree.clear(); tree.push_back(tree0);
-  int treecnt = 0; // independent tree counter, will be obsolete
+  dist[0] = -1;
 
-  int seed;
+  auto extract_tree = [&](auto root_idx) {
+    auto tree = std::vector<MyMarker *>();
 
-  auto get_undiscovered2 = [](std::vector<int> dist) -> int {
-    for (int i = 1; i < dist.size(); i++) {
-      if (dist[i] == INT_MAX) {
-        return i;
-      }
-    }
-    return -1;
-  };
-
-  while ((seed = get_undiscovered2(dist)) > 0) {
-
-    treecnt++;
-
-    dist[seed] = 0;
-    nmap[seed] = -1;
-    parent[seed] = -1;
-    q.enqueue(seed);
+    dist[root_idx] = 0;
+    nmap[root_idx] = -1;
+    parent[root_idx] = -1;
+    BfsQueue<int> q;
+    q.enqueue(root_idx);
 
     int nodesInTree = 0;
 
@@ -2607,16 +2593,16 @@ advantra_extract_trees(std::vector<MyMarker *> nlist,
       // http://en.wikipedia.org/wiki/Queue_%28abstract_data_type%29
       int curr = q.dequeue();
 
-      auto n = new MyMarker(*nlist[curr]);
-      n->nbr.clear();
-      if (n->type == 0) {
-        n->parent = n;
+      auto current_marker = new MyMarker(*nlist[curr]);
+      current_marker->nbr.clear();
+      if (current_marker->type == 0) { // root has parent of itself
+        current_marker->parent = current_marker;
 
-        // otherwise choose the best single parent of the possible neighbors
-      } else if (parent[curr] > 0) {
-        n->nbr.push_back(nmap[parent[curr]]);
+        // ...otherwise choose the best single parent of the possible neighbors
+      } else if (parent[curr] > 0) { // already been assigned
+        current_marker->nbr.push_back(nmap[parent[curr]]);
         // get the ptr to the marker from the id of the parent of the current
-        n->parent = nlist[parent[curr]];
+        current_marker->parent = nlist[parent[curr]];
       } else if (nlist[curr]->nbr.size() != 0) {
         // get the ptr to the marker from the id of the min element of nbr
         // the smaller the id of an element, the higher precedence it has
@@ -2628,13 +2614,13 @@ advantra_extract_trees(std::vector<MyMarker *> nlist,
             min_element = nbrs[i];
           }
         }
-        n->parent = nlist[min_element];
+        current_marker->parent = nlist[min_element];
       } else {
         throw std::runtime_error("node can't have 0 nbrs");
       }
 
       nmap[curr] = tree.size();
-      tree.push_back(n);
+      tree.push_back(current_marker);
       ++nodesInTree;
 
       // for each node adjacent to current
@@ -2650,18 +2636,26 @@ advantra_extract_trees(std::vector<MyMarker *> nlist,
           q.enqueue(adj);
         }
       }
-
-      // check if there were any neighbours
-      if (nodesInTree == 1 && !q.hasItems() &&
-          remove_isolated_tree_with_one_node) {
-        tree.pop_back(); // remove the one that was just added
-        nmap[curr] = -1; // cancel the last entry
-      }
     }
-  }
+    return tree;
+  };
 
-  // cout << treecnt << " trees\n";
-  return tree;
+  return root_indices | rng::views::transform(extract_tree) | rng::to_vector;
+
+  //auto get_undiscovered2 = [](std::vector<int> dist) -> int {
+    //for (int i = 1; i < dist.size(); i++) {
+      //if (dist[i] == INT_MAX) {
+        //return i;
+      //}
+    //}
+    //return -1;
+  //};
+
+  // while ((seed = get_undiscovered2(dist)) > 0) {
+  // trees.push_back(tree);
+  //}
+
+  // return trees;
 }
 
 // accept_tombstone is a way to see pruned vertices still in active_vertex
@@ -2988,10 +2982,6 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
   };
 
   visit_float(component, point_grid, keep_if, assign_parent);
-
-#ifdef LOG
-  // cout << "Total marker count: " << outtree.size() << " nodes" << '\n';
-#endif
 
 #ifdef FULL_PRINT
   cout << "Finished generating results within " << timer.elapsed() << " sec."
