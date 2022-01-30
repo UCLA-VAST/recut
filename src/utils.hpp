@@ -2576,6 +2576,70 @@ advantra_extract_trees(std::vector<MyMarker *> nlist,
   // input and output tree.clear(); tree.push_back(tree0);
   dist[0] = -1;
 
+  // auto extract_tree_from_leaves = [&](auto root_idx) {
+  // auto tree = std::vector<MyMarker *>();
+
+  // dist[root_idx] = 0;
+  // nmap[root_idx] = -1;
+  // parent[root_idx] = -1;
+  // BfsQueue<int> q;
+  // q.enqueue(root_idx);
+
+  // int nodesInTree = 0;
+
+  // while (q.hasItems()) {
+
+  //// dequeue(), take from FIFO structure,
+  //// http://en.wikipedia.org/wiki/Queue_%28abstract_data_type%29
+  // int curr = q.dequeue();
+
+  // auto current_marker = new MyMarker(*nlist[curr]);
+  // current_marker->nbr.clear();
+  // if (current_marker->type == 0) { // root has parent of itself
+  // current_marker->parent = current_marker;
+
+  //// ...otherwise choose the best single parent of the possible neighbors
+  //} else if (parent[curr] > 0) { // already been assigned
+  // current_marker->nbr.push_back(nmap[parent[curr]]);
+  //// get the ptr to the marker from the id of the parent of the current
+  // current_marker->parent = nlist[parent[curr]];
+  //} else if (nlist[curr]->nbr.size() != 0) {
+  //// get the ptr to the marker from the id of the min element of nbr
+  //// the smaller the id of an element, the higher precedence it has
+  // auto nbrs = nlist[curr]->nbr;
+  // auto min_idx = 0;
+  // auto min_element = nbrs[min_idx];
+  // for (int i = 0; i < nbrs.size(); ++i) {
+  // if (nbrs[i] < min_element) {
+  // min_element = nbrs[i];
+  //}
+  //}
+  // current_marker->parent = nlist[min_element];
+  //} else {
+  // throw std::runtime_error("node can't have 0 nbrs");
+  //}
+
+  // nmap[curr] = tree.size();
+  // tree.push_back(current_marker);
+  //++nodesInTree;
+
+  //// for each node adjacent to current
+  // for (int nbr_idx = 0; nbr_idx < nlist[curr]->nbr.size(); nbr_idx++) {
+
+  // int adj = nlist[curr]->nbr[nbr_idx];
+
+  // if (dist[adj] == INT_MAX) {
+  // dist[adj] = dist[curr] + 1;
+  // parent[adj] = curr;
+  //// enqueue(), add to FIFO structure,
+  //// http://en.wikipedia.org/wiki/Queue_%28abstract_data_type%29
+  // q.enqueue(adj);
+  //}
+  //}
+  //}
+  // return tree;
+  //};
+
   auto extract_tree = [&](auto root_idx) {
     auto tree = std::vector<MyMarker *>();
 
@@ -2585,10 +2649,7 @@ advantra_extract_trees(std::vector<MyMarker *> nlist,
     BfsQueue<int> q;
     q.enqueue(root_idx);
 
-    int nodesInTree = 0;
-
     while (q.hasItems()) {
-
       // dequeue(), take from FIFO structure,
       // http://en.wikipedia.org/wiki/Queue_%28abstract_data_type%29
       int curr = q.dequeue();
@@ -2604,16 +2665,15 @@ advantra_extract_trees(std::vector<MyMarker *> nlist,
         // get the ptr to the marker from the id of the parent of the current
         current_marker->parent = nlist[parent[curr]];
       } else if (nlist[curr]->nbr.size() != 0) {
-        // get the ptr to the marker from the id of the min element of nbr
-        // the smaller the id of an element, the higher precedence it has
-        auto nbrs = nlist[curr]->nbr;
+        throw std::runtime_error("Unimplemented");
+        // sort nbrs by dist to current
+        // remove nbrs that already have >1 daughter
+        // take the smallest dist as parent
+        // FIXME can this cause breaks?
+        // rng::for_each(nlist[curr]->nbr, [](auto nbr_idx) {
+        //});
         auto min_idx = 0;
         auto min_element = nbrs[min_idx];
-        for (int i = 0; i < nbrs.size(); ++i) {
-          if (nbrs[i] < min_element) {
-            min_element = nbrs[i];
-          }
-        }
         current_marker->parent = nlist[min_element];
       } else {
         throw std::runtime_error("node can't have 0 nbrs");
@@ -2621,34 +2681,33 @@ advantra_extract_trees(std::vector<MyMarker *> nlist,
 
       nmap[curr] = tree.size();
       tree.push_back(current_marker);
-      ++nodesInTree;
 
-      // for each node adjacent to current
-      for (int nbr_idx = 0; nbr_idx < nlist[curr]->nbr.size(); nbr_idx++) {
-
-        int adj = nlist[curr]->nbr[nbr_idx];
-
-        if (dist[adj] == INT_MAX) {
-          dist[adj] = dist[curr] + 1;
-          parent[adj] = curr;
+      // for each possible neighbor
+      rng::for_each(nlist[curr]->nbr, [&](auto nbr_idx) {
+        if (dist[nbr_idx] == INT_MAX &&
+            rng::none_of(root_indices, [nbr_idx](auto elem) {
+              return nbr_idx == root_idx;
+            })) {
+          dist[nbr_idx] = dist[curr] + 1;
+          parent[nbr_idx] = curr;
           // enqueue(), add to FIFO structure,
           // http://en.wikipedia.org/wiki/Queue_%28abstract_data_type%29
-          q.enqueue(adj);
+          q.enqueue(nbr_idx);
         }
-      }
+      });
     }
     return tree;
   };
 
   return root_indices | rng::views::transform(extract_tree) | rng::to_vector;
 
-  //auto get_undiscovered2 = [](std::vector<int> dist) -> int {
-    //for (int i = 1; i < dist.size(); i++) {
-      //if (dist[i] == INT_MAX) {
-        //return i;
-      //}
-    //}
-    //return -1;
+  // auto get_undiscovered2 = [](std::vector<int> dist) -> int {
+  // for (int i = 1; i < dist.size(); i++) {
+  // if (dist[i] == INT_MAX) {
+  // return i;
+  //}
+  //}
+  // return -1;
   //};
 
   // while ((seed = get_undiscovered2(dist)) > 0) {
