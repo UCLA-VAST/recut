@@ -2149,7 +2149,9 @@ void Recut<image_t>::io_interval(int interval_id, T1 &grids, T2 &uint8_grids,
     active_intervals[interval_id] = false;
 #ifdef LOG
     std::cout << "Completed interval " << interval_id + 1 << " of "
-         << grid_interval_size << " in " << interval_timer.elapsed() << " converted in " << (interval_timer.elapsed() - convert_start) << " s\n";
+              << grid_interval_size << " in " << interval_timer.elapsed()
+              << " converted in " << (interval_timer.elapsed() - convert_start)
+              << " s\n";
 #endif
   } else {
     // note openvdb::initialize() must have been called before this point
@@ -2755,8 +2757,8 @@ void Recut<image_t>::partition_components(
   auto process_component = [this, &root_pairs,
                             &window_grids](const auto component_pair) {
     auto [index, component] = component_pair;
-    // all grid transforms across are consistent across recut, so enforce the
-    // same interpretation for any new grid
+    // all grid transforms across are consistent across recut, so enforce
+    // the same interpretation for any new grid
     component->setTransform(get_transform());
     auto bbox = component->evalActiveVoxelBoundingBox();
 
@@ -2800,11 +2802,13 @@ void Recut<image_t>::partition_components(
     timer.restart();
     auto pruned_markers =
         advantra_prune(markers, this->args->prune_radius, coord_to_idx);
-#ifdef LOG
+
     // is a fresh run_dir
     auto component_dir_fn =
         this->run_dir + "/" + prefix + "component-" + std::to_string(index);
     fs::create_directories(component_dir_fn);
+
+#ifdef LOG
     auto component_log_fn =
         component_dir_fn + "/component-" + std::to_string(index) + "-log.txt";
     std::ofstream component_log;
@@ -2826,11 +2830,10 @@ void Recut<image_t>::partition_components(
     timer.restart();
     auto filtered_tree =
         prune_short_branches(tree, this->args->min_branch_length);
+
 #ifdef LOG
     component_log << "TP, " << timer.elapsed() << '\n';
     component_log << "TP count, " << filtered_tree.size() << '\n';
-    component_log << "Volume, " << bbox.volume() << '\n';
-    component_log << "Bounding box, " << bbox << '\n';
 #endif
 
     // is output window needed?
@@ -2871,10 +2874,29 @@ void Recut<image_t>::partition_components(
       }
     } // end window created if any
 
+#ifdef LOG
+    component_log << "Volume, " << bbox.volume() << '\n';
+    component_log << "Bounding box, " << bbox << '\n';
+#endif
+
     write_swc(filtered_tree, bbox, component_dir_fn, index,
               /*bbox_adjust*/ !args->window_grid_paths.empty());
 
-    cout << "Component " << index << " complete and safe to open\n";
+    auto write_soma_locs = [](auto component_roots,
+                              std::string component_dir_fn) {
+      auto fn = component_dir_fn + "/soma-coords.txt";
+      std::ofstream soma_of;
+      soma_of.open(fn);
+      rng::for_each(component_roots, [&soma_of](auto coordp) {
+        auto [coord, radius] = coordp;
+        soma_of << coord.x() << ' ' << coord.y() << ' ' << coord.z() << '\n';
+      });
+      soma_of.close();
+    };
+
+    write_soma_locs(component_roots, component_dir_fn);
+
+    std::cout << "Component " << index << " complete and safe to open\n";
   }; // for each component
 
   auto enum_components = components | rng::views::enumerate | rng::to_vector;
