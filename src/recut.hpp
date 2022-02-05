@@ -4,6 +4,7 @@
 #include "recut_parameters.hpp"
 #include "tile_thresholds.hpp"
 #include "utils.hpp"
+#include "tree_ops.hpp"
 #include <algorithm>
 #include <bits/stdc++.h>
 #include <bitset>
@@ -2831,6 +2832,15 @@ void Recut<image_t>::partition_components(
     auto filtered_tree =
         prune_short_branches(tree, this->args->min_branch_length);
 
+    filtered_tree = fix_trifurcations(filtered_tree);
+
+    auto mismatches = tree_is_valid(filtered_tree);
+    if (!mismatches.empty()) {
+      rng::for_each(mismatches, [](auto mismatch) {
+          std::cout << mismatch << '\n';
+          });
+    }
+
 #ifdef LOG
     component_log << "TP, " << timer.elapsed() << '\n';
     component_log << "TP count, " << filtered_tree.size() << '\n';
@@ -2879,7 +2889,7 @@ void Recut<image_t>::partition_components(
     component_log << "Bounding box, " << bbox << '\n';
 #endif
 
-    write_swc(filtered_tree, bbox, component_dir_fn, index,
+    write_swc(filtered_tree, index, component_dir_fn, bbox, 
               /*bbox_adjust*/ !args->window_grid_paths.empty());
 
     auto write_soma_locs = [](auto component_roots,

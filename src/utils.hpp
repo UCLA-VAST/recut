@@ -2186,8 +2186,8 @@ auto get_id_map = []() {
   return coord_to_swc_id;
 };
 
-auto write_swc = [](std::vector<MyMarker *> tree, CoordBBox bbox,
-                    std::string component_dir_fn, int index,
+auto write_swc = [](std::vector<MyMarker *> tree, int index = 0,
+                    std::string component_dir_fn = ".", CoordBBox bbox = {},
                     bool bbox_adjust = false) {
   // start swc and add header metadata
   auto swc_name =
@@ -2203,13 +2203,17 @@ auto write_swc = [](std::vector<MyMarker *> tree, CoordBBox bbox,
   rng::for_each(tree, [&swc_file, &coord_to_swc_id, &bbox,
                        bbox_adjust](const auto marker) {
     auto coord = GridCoord(marker->x, marker->y, marker->z);
+    auto is_root = marker->type == 0;
+    auto parent_offset = zeros();
 
-    auto parent_coord =
-        GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
-    auto parent_offset = coord_sub(parent_coord, coord);
+    if (!is_root) {
+      auto parent_coord =
+          GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
+      parent_offset = coord_sub(parent_coord, coord);
+    }
     // print_swc_line() expects an offset to a parent
-    print_swc_line(coord, /*is_root*/ marker->type == 0, marker->radius,
-                   parent_offset, bbox, swc_file, coord_to_swc_id, bbox_adjust);
+    print_swc_line(coord, is_root, marker->radius, parent_offset, bbox,
+                   swc_file, coord_to_swc_id, bbox_adjust);
   });
 };
 
@@ -3204,93 +3208,6 @@ auto adjust_marker = [](MyMarker *marker, GridCoord offsets) {
   marker->y += offsets[1];
   marker->z += offsets[2];
 };
-
-// returns a new set of valid markers
-std::vector<MyMarker *>
-prune_short_branches(std::vector<MyMarker *> &tree,
-                     int min_branch_length = MIN_BRANCH_LENGTH) {
-  // build a map to save coords with 1 or 2 children
-  // coords not in this map are therefore leafs
-  auto child_count = std::unordered_map<GridCoord, uint8_t>();
-  rng::for_each(tree, [&child_count](auto marker) {
-    if (marker->parent) {
-      assertm(marker->parent, "Parent missing");
-      const auto parent_coord =
-          GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
-      const auto val_count = child_count.find(parent_coord);
-      // cout << parent_coord << " <- "
-      //<< GridCoord(marker->x, marker->y, marker->z) << '\n';
-      if (val_count == child_count.end()) // not found
-        child_count.insert_or_assign(parent_coord, 1);
-      else
-        child_count.insert_or_assign(parent_coord, val_count->second + 1);
-    } // ignore those without parents
-  });
-
-  // for (auto m : child_count) {
-  // cout << m.first << ' ' << +(m.second) << '\n';
-  //}
-
-  auto is_a_bifurcation = [&child_count](auto const marker) {
-    const auto val_count =
-        child_count.find(GridCoord(marker->x, marker->y, marker->z));
-    return val_count != child_count.end() ? (val_count->second > 1) : false;
-  };
-
-  auto is_a_leaf = [&child_count](auto const marker) {
-    return child_count.find(GridCoord(marker->x, marker->y, marker->z)) ==
-           child_count.end();
-  };
-
-  // filter leafs with a parent that is a bifurcation
-  // otherwise persistence homology in TMD (Kanari et al.) has difficult to
-  // diagnose bug
-  auto filtered_tree =
-      tree |
-      rng::views::remove_if([&min_branch_length, &is_a_leaf,
-                             &is_a_bifurcation](auto marker) {
-        // only check non roots
-        if (marker->parent) {
-          // only check from leafs, since they define the beginning of a branch
-          if (!is_a_leaf(marker))
-            return false;
-
-          // prune if immediate parent is bifurcation
-          // marker passed must be valid
-          if (is_a_bifurcation(marker->parent))
-            return true;
-
-          // filter short branches below min_branch_length
-          if (min_branch_length > 0) {
-            auto accum_euc_dist = 0.;
-            do {
-              accum_euc_dist += marker_dist(marker, marker->parent);
-              // recurse upwards until finding bifurcation or root
-              marker = marker->parent; // known to exist already
-              // stop recursing when you find a soma or bifurcation
-              // since that defines the end of the branch
-            } while (
-                marker->parent &&
-                !is_a_bifurcation(marker)); // not a root and not a bifurcation
-
-            return accum_euc_dist < min_branch_length; // remove if true
-
-          } else {
-            return false; // keep
-          }
-        }
-        return false; // keep somas -- soma parent can be undefined
-      }) |
-      rng::to_vector;
-
-  const auto pruned_count = tree.size() - filtered_tree.size();
-
-  // must be called repeatedly until convergence
-  if (pruned_count)
-    return prune_short_branches(filtered_tree, min_branch_length);
-  else
-    return filtered_tree;
-}
 
 template <typename VType>
 long quick_sort_partition(void *data, long low, long high) {

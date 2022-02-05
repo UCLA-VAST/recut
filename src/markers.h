@@ -37,6 +37,8 @@ struct MyMarker
 #endif
 		double radius;
 	};
+    // type 3 is dendrite
+    // type 0 is soma
 	int type;
 	MyMarker* parent;
     // temporary solution for Advantra prune
@@ -79,6 +81,11 @@ struct MyMarker
 	{
 		return static_cast<VID_t>( x ) + static_cast<VID_t>( y ) * xdim + static_cast<VID_t>( z ) * xdim * ydim;
 	}
+
+  friend std::ostream &operator<<(std::ostream &os, const MyMarker &m) {
+    os << std::to_string(static_cast<int>(m.x)) + ", " + std::to_string(static_cast<int>(m.y)) + ", " + std::to_string(static_cast<int>(m.z)) + " type: " + std::to_string(m.type);
+    return os;
+  }
 
     // usage: std::cout << marker->description << '\n';
     std::string description(VID_t xdim, VID_t ydim) const {

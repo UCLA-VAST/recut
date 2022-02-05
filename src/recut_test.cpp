@@ -802,7 +802,68 @@ TEST(Utils, AdjustSomaRadii) {
   });
 }
 
-TEST(Utils, PruneShortBranches) {
+TEST(TreeOps, FixTrifurcations) {
+  std::vector<MyMarker *> tree;
+
+  auto soma = new MyMarker(0, 0, 0);
+  soma->parent = 0;
+  soma->type = 0;
+  soma->radius = 20;
+  tree.push_back(soma);
+
+  auto a = new MyMarker(0, -30, 0);
+  a->parent = soma;
+  a->radius = 10;
+  tree.push_back(a);
+
+  auto b = new MyMarker(0, -50, 0);
+  b->parent = a;
+  b->radius = 4;
+  tree.push_back(b);
+
+  auto c = new MyMarker(-20, -70, 0);
+  c->parent = b;
+  c->radius = 4;
+  tree.push_back(c);
+
+  auto d = new MyMarker(0, -70, 0);
+  d->parent = b;
+  d->radius = 4;
+  tree.push_back(d);
+
+  auto e = new MyMarker(20, -70, 0);
+  e->parent = b;
+  e->radius = 4;
+  tree.push_back(e);
+
+  auto f = new MyMarker(40, -70, 0);
+  f->parent = b;
+  f->radius = 4;
+  tree.push_back(f);
+
+  auto fixed_tree = fix_trifurcations(tree);
+
+  auto mismatches = tree_is_valid(fixed_tree);
+  if (!mismatches.empty()) {
+    std::cout << "Mismatches\n";
+    rng::for_each(mismatches,
+                  [](auto mismatch) { std::cout << mismatch << '\n'; });
+  }
+  ASSERT_TRUE(mismatches.empty());
+
+  rng::for_each(fixed_tree, [](auto marker) {
+    if (marker->type) {
+      ASSERT_TRUE(marker->parent) << marker << '\n';
+    } 
+  });
+
+  if (true) {
+    write_swc(tree);
+    write_swc(fixed_tree,1);
+  }
+}
+
+TEST(TreeOps, PruneShortBranches) {
   auto soma = new MyMarker(0, 0, 0);
   soma->parent = 0;
 
@@ -958,7 +1019,8 @@ TEST(VDB, ConvertTiffToPoint) {
   recut.args->convert_only = true;
 
   auto tiff_dense = read_tiff_dir(args.input_path);
-  auto selected = std::accumulate(tiff_dense->data(), tiff_dense->data() + tiff_dense->valueCount(), 0);
+  auto selected = std::accumulate(
+      tiff_dense->data(), tiff_dense->data() + tiff_dense->valueCount(), 0);
   if (print_all) {
     std::cout << "tiff_dense\n";
     print_image_3D(tiff_dense->data(), grid_extents);
@@ -971,16 +1033,14 @@ TEST(VDB, ConvertTiffToPoint) {
   recut.update(stage, recut.map_fifo);
 
   if (print_all)
-    print_vdb_mask(recut.topology_grid->getConstAccessor(),
-                   grid_extents);
+    print_vdb_mask(recut.topology_grid->getConstAccessor(), grid_extents);
 
   // assert equals original grid above
   double read_from_file_error_rate = 100;
   EXPECT_NO_FATAL_FAILURE(
       check_recut_error(recut,
-                        /*ground_truth*/ tiff_dense->data(), grid_size,
-                        stage, read_from_file_error_rate,
-                        recut.map_fifo, selected,
+                        /*ground_truth*/ tiff_dense->data(), grid_size, stage,
+                        read_from_file_error_rate, recut.map_fifo, selected,
                         /*strict_match=*/true));
 
   ASSERT_NEAR(read_from_file_error_rate, 0., NUMERICAL_ERROR);
@@ -1348,8 +1408,7 @@ TEST(VDB, ConvertFloatToPointGrid) {
   VID_t grid_size = 8;
   auto grid_extents = GridCoord(grid_size);
 
-  auto args =
-      get_args(grid_size, grid_size, grid_size, 100, 7, true, "float");
+  auto args = get_args(grid_size, grid_size, grid_size, 100, 7, true, "float");
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
   auto float_grid = recut.input_grid;
@@ -1524,8 +1583,7 @@ TEST(CompareTree, All) {
   auto interval_size = grid_size;
   VID_t block_size = 2;
 
-  auto args =
-      get_args(grid_size, interval_size, block_size, 100, 1, true);
+  auto args = get_args(grid_size, interval_size, block_size, 100, 1, true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
 
@@ -1897,9 +1955,8 @@ TEST(Update, EachStageIteratively) {
             // Initialize Recut for this loop iteration args
             // always read from file and make sure it matches the ground truth
             // image generated on the fly above
-            auto args =
-                get_args(grid_size, interval_size, block_size, slt_pct, tcase,
-                         input_is_vdb);
+            auto args = get_args(grid_size, interval_size, block_size, slt_pct,
+                                 tcase, input_is_vdb);
 
             auto recut = Recut<uint16_t>(args);
             auto root_coords = recut.initialize();

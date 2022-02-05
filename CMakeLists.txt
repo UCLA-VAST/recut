@@ -151,6 +151,7 @@ set(HEADER
   ${PROJECT_SOURCE_DIR}/src/recut_parameters.hpp
   ${PROJECT_SOURCE_DIR}/src/vertex_attr.hpp
   ${PROJECT_SOURCE_DIR}/src/utils.hpp
+  ${PROJECT_SOURCE_DIR}/src/tree_ops.hpp
   ${PROJECT_SOURCE_DIR}/src/config.hpp
   ${PROJECT_SOURCE_DIR}/src/tile_thresholds.hpp
   ${PROJECT_SOURCE_DIR}/src/markers.h # TODO remove this
