@@ -803,6 +803,7 @@ TEST(Utils, AdjustSomaRadii) {
 }
 
 TEST(TreeOps, FixTrifurcations) {
+  auto write_swc_disk = true;
   std::vector<MyMarker *> tree;
 
   auto soma = new MyMarker(0, 0, 0);
@@ -841,6 +842,9 @@ TEST(TreeOps, FixTrifurcations) {
   f->radius = 4;
   tree.push_back(f);
 
+  if (write_swc_disk) 
+    write_swc(tree);
+
   auto fixed_tree = fix_trifurcations(tree);
 
   auto mismatches = tree_is_valid(fixed_tree);
@@ -857,10 +861,8 @@ TEST(TreeOps, FixTrifurcations) {
     } 
   });
 
-  if (true) {
-    write_swc(tree);
+  if (write_swc_disk) 
     write_swc(fixed_tree,1);
-  }
 }
 
 TEST(TreeOps, PruneShortBranches) {

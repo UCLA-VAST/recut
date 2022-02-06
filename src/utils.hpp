@@ -2107,6 +2107,22 @@ auto covered_by_bboxs = [](const auto coord, const auto bboxs) {
   return false;
 };
 
+auto find_or_assign = [](GridCoord swc_coord,
+                         auto &coord_to_swc_id) -> uint32_t {
+  auto val = coord_to_swc_id.find(swc_coord);
+  if (val == coord_to_swc_id.end()) {
+    auto new_val = coord_to_swc_id.size();
+    if (new_val >= std::numeric_limits<int32_t>::max())
+      throw std::runtime_error("Total swc line count overflows 32-bit "
+                               "integer used in some swc programs");
+    coord_to_swc_id[swc_coord] = new_val;
+    assertm(new_val == (coord_to_swc_id.size() - 1),
+            "map must now be 1 size larger");
+    return new_val;
+  }
+  return coord_to_swc_id[swc_coord];
+};
+
 // n,type,x,y,z,radius,parent
 // for more info see:
 // http://www.neuronland.org/NLMorphologyConverter/MorphologyFormats/SWC/Spec.html
@@ -2126,24 +2142,8 @@ auto print_swc_line =
       // CoordBBox uses extents inclusively, but we want exclusive bbox
       GridCoord swc_lengths = bbox.extents().offsetBy(-1);
 
-      auto find_or_assign =
-          [&coord_to_swc_id](GridCoord swc_coord) -> uint32_t {
-        auto val = coord_to_swc_id.find(swc_coord);
-        if (val == coord_to_swc_id.end()) {
-          auto new_val = coord_to_swc_id.size();
-          if (new_val >= std::numeric_limits<int32_t>::max())
-            throw std::runtime_error("Total swc line count overflows 32-bit "
-                                     "integer used in some swc programs");
-          coord_to_swc_id[swc_coord] = new_val;
-          assertm(new_val == (coord_to_swc_id.size() - 1),
-                  "map must now be 1 size larger");
-          return new_val;
-        }
-        return coord_to_swc_id[swc_coord];
-      };
-
       // n
-      uint32_t current_id = find_or_assign(swc_coord);
+      uint32_t current_id = find_or_assign(swc_coord, coord_to_swc_id);
       line << std::to_string(current_id) << ' ';
 
       // type_id
@@ -2166,7 +2166,7 @@ auto print_swc_line =
         line << (current_id == 1) ? std::to_string(current_id) : "-1";
       } else {
         auto parent_coord = coord_add(swc_coord, parent_offset_coord);
-        line << find_or_assign(parent_coord);
+        line << find_or_assign(parent_coord, coord_to_swc_id);
       }
 
       line << '\n';
@@ -2186,7 +2186,35 @@ auto get_id_map = []() {
   return coord_to_swc_id;
 };
 
-auto write_swc = [](std::vector<MyMarker *> tree, int index = 0,
+// also return a mapping from coord to id
+auto sort_tree_in_place = [](std::vector<MyMarker *> &tree) {
+  // start a new blank map for coord to a unique swc id
+  auto coord_to_swc_id = get_id_map();
+
+  // iter those marker*
+  auto indices =
+      tree | rng::views::transform([&coord_to_swc_id](const auto marker) {
+        auto coord = GridCoord(marker->x, marker->y, marker->z);
+        // roots have parents of themselves
+        auto parent_coord =
+            marker->type ? GridCoord(marker->parent->x, marker->parent->y,
+                                     marker->parent->z)
+                         : coord;
+
+        // also accumulate the mapping
+        find_or_assign(parent_coord, coord_to_swc_id);
+        auto id = find_or_assign(coord, coord_to_swc_id);
+
+        // build the indices
+        return id;
+      }) |
+      rng::to_vector;
+
+  rng::sort(rng::views::zip(indices, tree));
+  return coord_to_swc_id;
+};
+
+auto write_swc = [](std::vector<MyMarker *> &tree, int index = 0,
                     std::string component_dir_fn = ".", CoordBBox bbox = {},
                     bool bbox_adjust = false) {
   // start swc and add header metadata
@@ -2197,8 +2225,8 @@ auto write_swc = [](std::vector<MyMarker *> tree, int index = 0,
   swc_file << "# Crop windows bounding volume: " << bbox << '\n';
   swc_file << "# id type_id x y z radius parent_id\n";
 
-  // start a new blank map for coord to a unique swc id
-  auto coord_to_swc_id = get_id_map();
+  auto coord_to_swc_id = sort_tree_in_place(tree);
+
   // iter those marker*
   rng::for_each(tree, [&swc_file, &coord_to_swc_id, &bbox,
                        bbox_adjust](const auto marker) {
