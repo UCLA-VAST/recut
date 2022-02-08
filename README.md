@@ -41,7 +41,7 @@ Convert the folder again, but this time only take z-planes of 30 through 45 and 
 recut ch0 --convert subset.vdb --input-type tiff --output-type point --image-offsets 0 0 30 --image-lengths -1 -1 16
 ```
 
-.vdbs are a binary format, you can only view information or visualize them with softare that explicitly supports them. However for quick info, Recut installs some of the VDB libraries command line tools.
+.vdbs are a binary format, you can only view information or visualize them with software that explicitly supports them. However for quick info, Recut installs some of the VDB libraries command line tools.
 
 List the exhausitive info and metatdata about the VDB grid:
 ```
@@ -67,15 +67,17 @@ Note that is only necessary if you want to output windows while doing a reconstr
 
 ### Reconstruct
 
-If you've created a point grid for an image named `point.vdb`, the following would reconstruct the image based off of a directory of files which note the coordinates of starting locations (somas). This directory in the following example is shown as `marker_files`:
+If you've created a point grid for an image, for example named `point.vdb`, the following would reconstruct the image based off of a directory of files which note the coordinates of starting locations (somas). This directory in the following example is shown as `marker_files`:
 ```
 recut point.vdb --seeds marker_files
 ```
+This will create a folder in your current directory `run-1` which has folder for each component of neurons and their respective SWC outputs.
 
 If you created a corresponding VDB grid of type uint8 for channel 0 and type mask for channel 1 you can also output a window for each swc used by:
 ```
 recut point.vdb --seeds marker_files --output-windows uint8.vdb mask.vdb
 ```
+This will create a folder in your current directory `run-2` which has a folder for each component of neurons along with its compressed TIFF file for the bounding volume of the component for the uint8.vdb and mask.vdb grid passed to be used in a SWC viewing software.
 
 ### Combine
 Not finished.
