@@ -2,27 +2,92 @@
 nix](https://builtwithnix.org/badge.svg)](https://builtwithnix.org)
 ![Nix](https://github.com/UCLA-VAST/recut-pipeline/workflows/build/badge.svg)
 
-## Quick Install (strongly recommended)
-On linux command line run:
+## Quick Install With Nix (strongly recommended)
+Make sure `git` is installed and follow the directions to install the Nix package manager for your OS [here](https://nixos.org/download.html).
+Next, on your command line run:
 ```
-# install nix package manager, <10 minutes
-curl -L https://nixos.org/nix/install | sh
-git clone https://github.com/UCLA-VAST/recut-pipeline.git
-cd recut-pipeline
-# build and install recut and its dependencies 
-# takes up to 2 hours, no other input required
+git clone git@github.com:UCLA-VAST/recut
+cd recut
+# build and install recut and its dependencies globally
+# takes up to 15 minutes, no other input required
 nix-env -f . -i
 ```
 test your installation by running:
 ```
-recut --help
+recut
 ```
 
-## CMake Only Installation
-The following are the commands are required for a CMake and git based installation
+## Usage
+Once recut is installed globally you can see the example usage by running on the command line:
+```
+recut
+```
+Recut has several main functions 1) compressing image volumes to a sparse format (VDB grids) 2) using VDB grids to reconstruct neurons into a set of SWC trees and 3) creating volumetric image windows centered around points or neurons of interest by reflating from the sparse VDB format.
+
+The second first argument to recut is the path to the input which can either be a directory for TIFF files or a distinct file in the case of .ims or .vdb files. The ordering of all other arguments is arbitrary. Generally you want to specify an action on the input for example `--convert` or `--combine`. If no action is described the default behavior is to do an end-to-end reconstruction from input to swcs. Where possible, arguments have assumed default values for the most common behavior. The following are some use cases.
+
+### Conversion
+Convert the folder `ch0` into a VDB point grid:
+```
+recut ch0 --convert --input-type tiff --output-type point
+```
+This creates a vdb in the ch0 folder. The name is tagged with information about the conversion process for example the argument values used. This is done to preserve info about the source image and to lower the likelihood of overwriting a costly previous conversion of a generic name. Explicit names are helpful humans but if you want to pass a simpler name you can do so.
+
+Convert the folder again, but this time only take z-planes of 30 through 45 and name it `subset.vdb`
+```
+recut ch0 --convert subset.vdb --input-type tiff --output-type point --image-offsets 0 0 30 --image-lengths -1 -1 16
+```
+
+List the exhausitive info and metatdata about the VDB grid:
+```
+vdb_print -l -m subset.vdb
+```
+You'll notice that vdb grid's metadata has been stamped with information about the arguments used during conversion to help distinguish files with different characteristics. If you have no other way to match the identity of VDB with an original image, refer to the original bounding extents which can often uniquely identify an image. The original bounding extents of the image used are preserved as the coordinate frame of all points and voxels regardless of any offset or length arguments passed.
+
+### Reconstruct
+
+If you've created a point grid for an image named `point.vdb`, the following would reconstruct the image based off of a directory of files which note the coordinates of starting locations (somas). This directory in the following example is shown as `marker_files`:
+```
+recut point.vdb --seeds marker_files
+```
+
+If you created a corresponding VDB grid of type uint8 for channel 0 and type mask for channel 1 you can also output a window for each swc used by:
+```
+recut point.vdb --seeds marker_files --output-windows uint8.vdb mask.vdb
+```
+
+### Combine
+TODO
+
+## Developer Usage
+If you'd like a virtual environment with all of Recut's dependencies and python provided for you can run:
+`
+nix-shell
+`
+
+from Recut's base directory. This enters an isolated development environment where tools are downloaded and loaded for you, which includes cmake and all other headers/libraries needed for development.
+
+To run the tests:
+```
+recut_test 
+```
+If you have nix installed (recommended) you can also run the same CI tests with:
+`nix-build`
+
+All pushes will run `nix-build` via github-actions, so you should run this anyway locally before pushing
+to make sure the regression tests and CI system won't fail.
+
+## Scientific Motivation
+This repository began as a fork of the out-of-memory graph processing framework detailed [here](https://vast.cs.ucla.edu/~chiyuze/pub/icde16.pdf)
+
+The execution pattern and partitioning strategy much more strongly resembles this [paper]( https://arxiv.org/abs/1811.00009), however no public implementation for it was provided.
+Reading this second paper is a fast way to understand the overall design and execution pattern of Recut.
+
+## CMake Only Installation (Deprecated)
+The following are the commands are required for a CMake and git based installation. If taking this route, the OpenVDB c++ library may need to be installed with CMake first.
 ```
 git clone git@github.com:UCLA-VAST/recut-pipeline
-cd recut-pipeline
+cd recut
 mkdir build
 cd build
 cmake ..
@@ -41,6 +106,8 @@ If all test passed the installation is successful. If you have *any* errors in t
 This program relies on: 
 - Cmake (version 3.17 or newer)
   for proper gcc support of all necessary c++17 features
+- Libtiff for reading and writing TIFF images
+- OpenVDB for holding sparse data structures in-memory
 - Optionally: google-test and google-benchmark library submodules ( auto built/linked through cmake, see
   `recut/CMakeLists.txt` for details)
 - Optionally: HDF5 an image reading library for Imaris/HDF5 file types
@@ -53,50 +120,5 @@ installed on your system, for example CMake. In these scenarios, or if you're
 running into compile time issues we recommend running a pinned version of
 all software via the Nix package manager. To our knowledge, Nix is the state of the art 
 in terms of software reproducibility, package and dependency management, and solving
-versioning issues in multi-language repositories.
-
-You can install Nix on any Linux
-distribution, MacOS and Windows (via WSL) with:
-
-```
-# just for your user 
-curl -L https://nixos.org/nix/install | sh
-# if you need to share packages between users on a system via a multi-user installation, instead run
-sh <(curl -L https://nixos.org/nix/install) --daemon
-
-# check installation
-nix-shell --version
-```
-
-The library employs some system features that have not been fully tested in containers / Docker. As such we recommend installing with the Nix package manager on a bear bones linux, MacOS, WSL machine or similar container / VM for now.
-
-Now if you run:
-`
-nix-shell
-`
-
-from Recut's base directory you should enter the nix-shell where an isolated development environment is downloaded and loaded for you which includes cmake and all other dependencies needed for development.
-
-## Usage
-Once recut is installed you can see example usage by running:
-```
-recut
-```
-If you installed globally via CMake you can run the executables by:
-```
-recut
-# or for tests
-recut_test 
-```
-
-If you have nix installed (recommended) you can also run the same CI tests with:
-`nix-build`
-
-All pushes will run `nix-build` via github-actions, so you should run this anyway locally before pushing
-to make sure the CI system won't fail.
-
-## Documentation
-This repository began as a fork of the out-of-memory graph processing framework detailed [here](https://vast.cs.ucla.edu/~chiyuze/pub/icde16.pdf)
-
-The execution pattern and partitioning strategy much more strongly resembles this [paper]( https://arxiv.org/abs/1811.00009), however no public implementation for it was provided.
-Reading this second paper is a fast way to understand the overall design and execution pattern of Recut.
+versioning issues in multi-language repositories.  You can install Nix on any Linux
+distribution, MacOS and Windows (via WSL).
