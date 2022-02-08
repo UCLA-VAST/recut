@@ -2672,9 +2672,9 @@ advantra_extract_trees(std::vector<MyMarker *> nlist,
         // FIXME can this cause breaks?
         // rng::for_each(nlist[curr]->nbr, [](auto nbr_idx) {
         //});
-        auto min_idx = 0;
-        auto min_element = nbrs[min_idx];
-        current_marker->parent = nlist[min_element];
+        //auto min_idx = -1;
+        //auto min_element = nbrs[min_idx];
+        //current_marker->parent = nlist[min_element];
       } else {
         throw std::runtime_error("node can't have 0 nbrs");
       }
