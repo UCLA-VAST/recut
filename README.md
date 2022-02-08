@@ -3,7 +3,8 @@ nix](https://builtwithnix.org/badge.svg)](https://builtwithnix.org)
 ![Nix](https://github.com/UCLA-VAST/recut-pipeline/workflows/build/badge.svg)
 
 ## Quick Install With Nix (strongly recommended)
-Make sure `git` is installed and follow the directions to install the Nix package manager for your OS [here](https://nixos.org/download.html).
+Make sure `git` and `curl` is installed and available from your command line and copy and paste the single command to install the Nix package manager for your operating system found [here](https://nixos.org/download.html).
+
 Next, on your command line run:
 ```
 git clone git@github.com:UCLA-VAST/recut
@@ -57,7 +58,7 @@ recut ch0 --convert point.vdb --input-type tiff --output-type point
 will automatically use the background threshold of 0 and place foreground everywhere else. This is quite efficient the inference outputs tends to have only .05% of voxels labeled as foreground.
 
 #### Image Raw Conversions
-While the process above produces the highest quality *reconstructions* with smaller likelihoods of path breaks, we often want to view the original image or a separate channel of the original image for proofreading and outputting of windows. The highest fidelity way of doing this currently is to convert using a guessed foreground percentage of the image.
+While the process above produces the highest quality *reconstructions* with smaller likelihoods of path breaks, we often want to view the original image or a separate channel of the original image for proofreading via the `--output-windows` flag during reconstruction. The high fidelity way of doing this is to convert using a guessed foreground percentage of the image.
 
 ```
 recut test.ims --convert uint8.vdb --input-type ims --output-type uint8 --channel 0 --fg-percent .05
@@ -73,11 +74,17 @@ recut point.vdb --seeds marker_files
 ```
 This will create a folder in your current directory `run-1` which has folder for each component of neurons and their respective SWC outputs.
 
-If you created a corresponding VDB grid of type uint8 for channel 0 and type mask for channel 1 you can also output a window for each swc used by:
+If you created a corresponding VDB grid of type uint8 for channel 0 and type mask for channel 1 you can also output a window for the bounding box each individual swc for proofreading by:
 ```
 recut point.vdb --seeds marker_files --output-windows uint8.vdb mask.vdb
 ```
 This will create a folder in your current directory `run-2` which has a folder for each component of neurons along with its compressed TIFF file for the bounding volume of the component for the uint8.vdb and mask.vdb grid passed to be used in a SWC viewing software.
+
+Instead of outputting windows from the original image as demonstrated above, it's also possible to use the binarized inference image which Recut uses for reconstruction. To create bounding box windows around each swc first convert the inferenced image into a VDB grid of type mask named for example `inference-mask` then pass it as an argument like so:
+```
+recut point.vdb --seeds marker_files --output-windows uint8.vdb mask.vdb inference-mask.vdb
+```
+Now each component folder will have a TIFF window from the original image, the 1-bit channel 1, and the binarized inference of the original inference. Having different image windows (labels) with corresponding SWCs can be a very efficient way to retrain or build better neural network models since it removes much of the manual human annotation steps.
 
 ### Combine
 Not finished.
