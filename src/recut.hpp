@@ -3,8 +3,8 @@
 #include "app2_helpers.hpp"
 #include "recut_parameters.hpp"
 #include "tile_thresholds.hpp"
-#include "utils.hpp"
 #include "tree_ops.hpp"
+#include "utils.hpp"
 #include <algorithm>
 #include <bits/stdc++.h>
 #include <bitset>
@@ -2199,15 +2199,19 @@ void Recut<image_t>::update(std::string stage, Container &fifo) {
   for (outer_iteration_idx = 0; !are_intervals_finished();
        outer_iteration_idx++) {
 
+    // Create the custom task_arena with specified threads
+    tbb::task_arena arena(args->user_thread_count);
     // loop through all possible intervals
     // only safe for conversion stages with more than 1 thread
-    tbb::parallel_for_each(
-        rng::views::indices(grid_interval_size) | rng::to_vector,
-        [&](const auto interval_id) {
-          io_interval(interval_id, grids, uint8_grids, float_grids, mask_grids,
-                      stage, histogram);
-        }); // end one interval traversal
-  }         // finished all intervals
+    arena.execute([&] {
+      tbb::parallel_for_each(
+          rng::views::indices(grid_interval_size) | rng::to_vector,
+          [&](const auto interval_id) {
+            io_interval(interval_id, grids, uint8_grids, float_grids,
+                        mask_grids, stage, histogram);
+          }); // end one interval traversal
+    });
+  } // finished all intervals
 
   if (stage == "convert") {
     auto finalize_start = timer.elapsed();
@@ -2462,16 +2466,12 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
 template <class image_t>
 std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
-  auto final_thread_count = args->user_thread_count;
   if (args->convert_only && args->input_type == "ims") {
-    final_thread_count = 1;
+    args->user_thread_count = 1;
   }
-  // limits number of threads for all oneTBB parallel interfaces
-  tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism,
-                                   final_thread_count);
 
 #ifdef LOG
-  cout << "Thread count " << final_thread_count << '\n';
+  cout << "Thread count " << args->user_thread_count << '\n';
   cout << "User specified image " << args->input_path << '\n';
 #endif
 
@@ -2836,9 +2836,8 @@ void Recut<image_t>::partition_components(
 
     auto mismatches = tree_is_valid(filtered_tree);
     if (!mismatches.empty()) {
-      rng::for_each(mismatches, [](auto mismatch) {
-          std::cout << mismatch << '\n';
-          });
+      rng::for_each(mismatches,
+                    [](auto mismatch) { std::cout << mismatch << '\n'; });
     }
 
 #ifdef LOG
@@ -2889,7 +2888,7 @@ void Recut<image_t>::partition_components(
     component_log << "Bounding box, " << bbox << '\n';
 #endif
 
-    write_swc(filtered_tree, index, component_dir_fn, bbox, 
+    write_swc(filtered_tree, index, component_dir_fn, bbox,
               /*bbox_adjust*/ !args->window_grid_paths.empty());
 
     auto write_soma_locs = [](auto component_roots,
@@ -2910,13 +2909,9 @@ void Recut<image_t>::partition_components(
   }; // for each component
 
   auto enum_components = components | rng::views::enumerate | rng::to_vector;
-  if (window_grids.empty()) {
-    tbb::parallel_for_each(enum_components, process_component);
-  } else {
-    std::cout << "Outputting windows / partitioning sequentially due to "
-                 "limited RAM\n";
-    rng::for_each(enum_components, process_component);
-  }
+  tbb::task_arena arena(args->user_thread_count);
+  arena.execute(
+      [&] { tbb::parallel_for_each(enum_components, process_component); });
 
   if (output_topology) {
     grids.push_back(this->topology_grid);
