@@ -30,6 +30,9 @@ Recut has several main functions:
 
 The first argument passed to recut is the path to the input which can either be a directory for .tiff files or a distinct file in the case of .ims or .vdb files. The ordering of all other arguments is arbitrary. You call recut to process the inputs using an action, for example `--convert` or `--combine`. If no action is described, the default behavior is to do an end-to-end reconstruction from input to reconstructed cell swcs. Where possible, arguments have assumed default values for the most common expected behavior. The following are some use cases.
 
+## Warning
+Where possible Recut attempts to use the maximum threads available to your system by default. This can be a problem when converting large images or when using the `--output-windows` with multiple large grids since each thread is grabbing large chunks of images and operating on them in DRAM. Meanwhile reconstruction alone consumes very little memory since it operates on images pre-converted to grids. In general you should use the system with the maximum amount of DRAM that you can. When you are still limited on DRAM you should lower the thread count used by recut by specifying the threads like `--parallel 2`. When recut consumes too much memory you will see erros like `Segmentation fault` or `SIGKIL`. Lower the thread count until the process can complete, you can monitor the dynamic usage of your DRAM during execution by running the command `htop` in a separate terminal. This can be helpful to guage what parallel factor you want to use.
+
 ### Conversion
 Convert the folder `ch0` into a VDB point grid:
 ```
