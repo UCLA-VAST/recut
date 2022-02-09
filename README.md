@@ -23,15 +23,17 @@ Once recut is installed globally you can see the example usage by running on the
 ```
 recut
 ```
-Recut has several main functions: 
-1. Compressing image volumes to a sparse format (VDB grids) 
-2. Using VDB grids to reconstruct neurons into a set of SWC trees
-3. Creating volumetric image windows centered around points or neurons of interest by reflating from the sparse VDB format.
+Recut has several principle usages: 
+1. Compressing image volumes to a sparse format [VDB grids](https://www.openvdb.org/documentation/doxygen/faq.html) 
+2. Using VDB grids to reconstruct neurons into a set of SWC trees.
+3. Creating volumetric image windows for bounding boxes of interest, for example around neurons for proofreading. This is accomplished efficiently and in parallel by uncompressing from the sparse VDB format into .tiff which can be more widely consumed by visualization or machine learning software.
+4. Filtration and quality control of neurons based on domain specific features. Since recut takes a batch process approach where large volumes of neuron tissue are reconstructed concurrently, methods that filter and discard neurons based on tuned features automatically are critical.
+5. Converting .ims or .vdb files to .tiff and other image to image conversions.
 
 The first argument passed to recut is the path to the input which can either be a directory for .tiff files or a distinct file in the case of .ims or .vdb files. The ordering of all other arguments is arbitrary. You call recut to process the inputs using an action, for example `--convert` or `--combine`. If no action is described, the default behavior is to do an end-to-end reconstruction from input to reconstructed cell swcs. Where possible, arguments have assumed default values for the most common expected behavior. The following are some use cases.
 
 ## Warning
-Where possible Recut attempts to use the maximum threads available to your system by default. This can be a problem when converting large images or when using the `--output-windows` with multiple large grids since each thread is grabbing large chunks of images and operating on them in DRAM. Meanwhile reconstruction alone consumes very little memory since it operates on images pre-converted to grids. In general you should use the system with the maximum amount of DRAM that you can. When you are still limited on DRAM you should lower the thread count used by recut by specifying the threads like `--parallel 2`. When recut consumes too much memory you will see erros like `Segmentation fault` or `SIGKIL`. Lower the thread count until the process can complete, you can monitor the dynamic usage of your DRAM during execution by running the command `htop` in a separate terminal. This can be helpful to guage what parallel factor you want to use.
+Where possible Recut attempts to use the maximum threads available to your system by default. This can be a problem when converting large images or when using the `--output-windows` with multiple large grids since each thread is grabbing large chunks of images and operating on them in DRAM. Meanwhile reconstruction alone consumes very little memory since it operates on images that have already been compressed to VDB grids. In general you should use the system with the maximum amount of DRAM that you can. When you are still limited on DRAM you should lower the thread count used by recut by specifying the threads like `--parallel 2`. When recut consumes too much memory you will see erros like `Segmentation fault` or `SIGKILL`. Lower the thread count until the process can complete, you can monitor the dynamic usage of your DRAM during execution by running the command `htop` in a separate terminal. This can be helpful to guage what parallel factor you want to use.
 
 ### Conversion
 Convert the folder `ch0` into a VDB point grid:
