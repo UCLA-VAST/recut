@@ -38,37 +38,49 @@ auto sort_tree_in_place = [](std::vector<MyMarker *> &tree) {
 // index into cluster vector -> list of children indices
 // index is the index into the cluster vector
 // leaves will have no children, roots will not have a parent
-auto create_child_list = [](std::vector<MyMarker *> &cluster,
-                            auto coord_to_id) {
-  auto child_list = std::unordered_map<VID_t, std::vector<VID_t>>();
+auto create_child_list = [](const std::vector<MyMarker *> &cluster) {
+  // build to coord_to_idx
+  std::unordered_map<GridCoord, VID_t> coord_to_idx;
   rng::for_each(cluster | rv::enumerate, [&](auto imarker) {
     auto [id, marker] = imarker;
-    // get parent
-    if (!marker->parent)
-      throw std::runtime_error("Parent missing");
-    const auto parent_coord =
-        GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
-    const auto parent_id = coord_to_id.find(parent_coord);
-    if (parent_id == coord_to_id.end())
-      throw std::runtime_error("Parent coord not found");
-    auto children = child_list.find(parent_id);
-
-    // update value of map
-    if (children == child_list.end()) // not found yet
-      child_list.insert_or_assign(parent_coord, {id});
-    else
-      child_list.insert_or_assign(parent_coord, children.push_back(id));
+    coord_to_idx[GridCoord(marker->x, marker->y, marker->z)] = id;
   });
+
+  // build child_list
+  auto child_list = std::unordered_map<VID_t, std::vector<VID_t>>();
+  rng::for_each(
+      cluster | rv::enumerate, [&](std::pair<VID_t, MyMarker *> imarker) {
+        auto [id, marker] = imarker;
+        // get parent
+        if (!marker->parent)
+          throw std::runtime_error("Parent missing");
+        const auto parent_coord =
+            GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
+        const auto parent_id = coord_to_idx.find(parent_coord);
+        if (parent_id == coord_to_idx.end())
+          throw std::runtime_error("Parent coord not found");
+        auto children = child_list.find(parent_id->second);
+
+        // update value of map
+        if (children == child_list.end()) { // not found yet
+          std::vector<VID_t> new_list = {id};
+          child_list.emplace(parent_id, new_list);
+        } else {
+          std::vector<VID_t> new_list = children->second;
+          new_list.push_back(id);
+          child_list.emplace(parent_id, new_list);
+        }
+      });
+
   return child_list;
 };
 
 // switch this to a while loop if ever encountering a stack overflow
 // do a depth first search to create an ordered tree from a cluster
 // leaves will have no children, roots do not have a parent
-std::vector<MyMarker*> recurse_tree(VID_t id,
-                  std::unordered_map<VID_t, std::vector<VID_t>> &child_list,
-                  std::vector<MyMarker *> &tree,
-                  std::vector<MyMarker *> &cluster) {
+std::vector<MyMarker *> recurse_tree(
+    VID_t id, std::unordered_map<VID_t, std::vector<VID_t>> &child_list,
+    std::vector<MyMarker *> &tree, const std::vector<MyMarker *> &cluster) {
   auto marker = cluster[id];
   tree.push_back(marker);
   auto children = child_list.find(id);
@@ -80,20 +92,20 @@ std::vector<MyMarker*> recurse_tree(VID_t id,
   return tree;
 }
 
-auto partition_cluster = [](std::vector<MyMarker *> &cluster,
-                            auto coord_to_id) {
-  auto child_list = create_child_list(cluster, coord_to_id);
+auto partition_cluster = [](const std::vector<MyMarker *> &cluster) {
+  auto child_list = create_child_list(cluster);
 
   auto root_ids =
       cluster | rv::enumerate |
-      rv::filter([type = 0](auto marker) { return marker->type == type; }) |
+      rv::remove_if([](auto imarker) { return imarker.second->type; }) |
       rv::transform([](auto imarker) { return imarker.first; });
 
-  std::vector<std::vector<MyMarker*>> trees = root_ids | rv::transform([&](VID_t id) {
-                 auto tree = std::vector<MyMarker *>();
-                 return recurse_tree(id, child_list, tree, cluster);
-               }) |
-               rng::to_vector;
+  std::vector<std::vector<MyMarker *>> trees =
+      root_ids | rv::transform([&](VID_t id) {
+        auto tree = std::vector<MyMarker *>();
+        return recurse_tree(id, child_list, tree, cluster);
+      }) |
+      rng::to_vector;
   return trees;
 };
 
@@ -108,7 +120,7 @@ auto write_swc = [](std::vector<MyMarker *> &tree, int index = 0,
   swc_file << "# Crop windows bounding volume: " << bbox << '\n';
   swc_file << "# id type_id x y z radius parent_id\n";
 
-  auto coord_to_swc_id = sort_tree_in_place(tree);
+  auto coord_to_swc_id = get_id_map();
 
   // iter those marker*
   rng::for_each(tree, [&swc_file, &coord_to_swc_id, &bbox,
@@ -281,6 +293,7 @@ std::vector<MyMarker *> fix_trifurcations(std::vector<MyMarker *> &tree) {
   return tree;
 }
 
+// returns vector of trifurcation points
 auto tree_is_valid = [](auto tree) {
   auto child_count = create_child_count(tree);
   auto mismatchs =

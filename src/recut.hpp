@@ -495,13 +495,13 @@ void Recut<image_t>::activate_vids(
     // std::cout << "Leaf BBox: " << leaf_bbox << '\n';
 
     // FILTER for those in this leaf
-    auto leaf_roots = roots | rv::transform([](auto coord_radius) {
-                        return coord_radius.first;
-                      }) |
-                      rv::remove_if([&leaf_bbox](GridCoord coord) {
-                        return !leaf_bbox.isInside(coord);
-                      }) |
-                      rng::to_vector;
+    auto leaf_roots =
+        roots |
+        rv::transform([](auto coord_radius) { return coord_radius.first; }) |
+        rv::remove_if([&leaf_bbox](GridCoord coord) {
+          return !leaf_bbox.isInside(coord);
+        }) |
+        rng::to_vector;
 
     if (leaf_roots.empty())
       continue;
@@ -1185,8 +1185,7 @@ void integrate_adj_leafs(GridCoord start_coord,
   // force evaluation by saving to vector to get desired side effects
   // from integrate_point
   auto _ = // from one corner find 3 adj leafs via 1 vox offset
-      stencil_offsets |
-      rv::transform([&start_coord](auto stencil_offset) {
+      stencil_offsets | rv::transform([&start_coord](auto stencil_offset) {
         return std::pair{/*rel. offset*/ stencil_offset,
                          coord_add(start_coord, stencil_offset)};
       }) |
@@ -1510,8 +1509,7 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
     auto found_adjacent_invalid = false;
     auto valids =
         // star stencil offsets to img coords
-        this->stencil |
-        rv::transform([&msg_coord](auto stencil_offset) {
+        this->stencil | rv::transform([&msg_coord](auto stencil_offset) {
           return coord_add(msg_coord, stencil_offset);
         }) |
         // within image?
@@ -1628,8 +1626,7 @@ void Recut<image_t>::connected_tile(
     auto found_adjacent_invalid = false;
     auto valids =
         // star stencil offsets to img coords
-        this->stencil |
-        rv::transform([&msg_coord](auto stencil_offset) {
+        this->stencil | rv::transform([&msg_coord](auto stencil_offset) {
           return coord_add(msg_coord, stencil_offset);
         }) |
         // within image?
@@ -1752,8 +1749,7 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
 
     auto updated_inds =
         // star stencil offsets to img coords
-        this->stencil |
-        rv::transform([&msg_coord](auto stencil_offset) {
+        this->stencil | rv::transform([&msg_coord](auto stencil_offset) {
           return coord_add(msg_coord, stencil_offset);
         }) |
         // within image?
@@ -1825,8 +1821,7 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
     // force full evaluation by saving to vector
     auto updated_inds =
         // star stencil offsets to img coords
-        this->stencil |
-        rv::transform([&msg_coord](auto stencil_offset) {
+        this->stencil | rv::transform([&msg_coord](auto stencil_offset) {
           return coord_add(msg_coord, stencil_offset);
         }) |
         // within image?
@@ -2204,12 +2199,12 @@ void Recut<image_t>::update(std::string stage, Container &fifo) {
     // loop through all possible intervals
     // only safe for conversion stages with more than 1 thread
     arena.execute([&] {
-      tbb::parallel_for_each(
-          rv::indices(grid_interval_size) | rng::to_vector,
-          [&](const auto interval_id) {
-            io_interval(interval_id, grids, uint8_grids, float_grids,
-                        mask_grids, stage, histogram);
-          }); // end one interval traversal
+      tbb::parallel_for_each(rv::indices(grid_interval_size) | rng::to_vector,
+                             [&](const auto interval_id) {
+                               io_interval(interval_id, grids, uint8_grids,
+                                           float_grids, mask_grids, stage,
+                                           histogram);
+                             }); // end one interval traversal
     });
   } // finished all intervals
 
@@ -2745,11 +2740,10 @@ void Recut<image_t>::partition_components(
   auto output_topology = false;
 
   // you need to load the passed image grids if you are outputing windows
-  auto window_grids = args->window_grid_paths |
-                      rv::transform([](const auto &gpath) {
-                        return read_vdb_file(gpath);
-                      }) |
-                      rng::to_vector; // force reading once now
+  auto window_grids =
+      args->window_grid_paths |
+      rv::transform([](const auto &gpath) { return read_vdb_file(gpath); }) |
+      rng::to_vector; // force reading once now
 
 #ifdef LOG
   cout << "Finished grid reads\n";
@@ -2765,8 +2759,7 @@ void Recut<image_t>::partition_components(
 
     // filter all roots within this component
     auto component_roots =
-        root_pairs |
-        rv::remove_if([&component](const auto &coord_radius) {
+        root_pairs | rv::remove_if([&component](const auto &coord_radius) {
           auto [coord, radius] = coord_radius;
           return !component->tree().isValueOn(coord);
         }) |
@@ -2823,29 +2816,31 @@ void Recut<image_t>::partition_components(
 
     timer.restart();
     // extract a new tree via bfs
-    auto tree = advantra_extract_trees(pruned_markers, true);
+    auto cluster = extract_trees(pruned_markers, true);
 #ifdef LOG
     component_log << "ET, " << timer.elapsed() << '\n';
 #endif
 
     timer.restart();
-    auto filtered_tree =
-        prune_short_branches(tree, this->args->min_branch_length);
+    auto pruned_cluster =
+        prune_short_branches(cluster, this->args->min_branch_length);
 
-    filtered_tree = fix_trifurcations(filtered_tree);
-
-    auto mismatches = tree_is_valid(filtered_tree);
-    if (!mismatches.empty()) {
-      rng::for_each(mismatches,
-                    [](auto mismatch) { std::cout << mismatch << '\n'; });
+    pruned_cluster = fix_trifurcations(pruned_cluster);
+    { // check
+      auto trifurcations = tree_is_valid(pruned_cluster);
+      if (!trifurcations.empty()) {
+        rng::for_each(trifurcations,
+                      [](auto mismatch) { std::cout << mismatch << '\n'; });
+        throw std::runtime_error("Tree has trifurcations");
+      }
     }
+    auto trees = partition_cluster(pruned_cluster);
 
 #ifdef LOG
     component_log << "TP, " << timer.elapsed() << '\n';
-    component_log << "TP count, " << filtered_tree.size() << '\n';
+    component_log << "TP count, " << pruned_cluster.size() << '\n';
 #endif
 
-    // is output window needed?
     if (!window_grids.empty()) {
       // the first grid passed from CL sets the bbox for the
       // rest of the output grids
@@ -2888,8 +2883,10 @@ void Recut<image_t>::partition_components(
     component_log << "Bounding box, " << bbox << '\n';
 #endif
 
-    write_swc(filtered_tree, index, component_dir_fn, bbox,
-              /*bbox_adjust*/ !args->window_grid_paths.empty());
+    for (auto tree : trees) {
+      write_swc(tree, index, component_dir_fn, bbox,
+                /*bbox_adjust*/ !args->window_grid_paths.empty());
+    }
 
     auto write_soma_locs = [](auto component_roots,
                               std::string component_dir_fn) {
@@ -2961,9 +2958,8 @@ template <class image_t> void Recut<image_t>::init_run() {
     // reassign output_name from the default
     if (this->args->output_name == "out.vdb") {
       auto convert_fn_vdb = [this](const std::string &name, auto split_char) {
-        auto stripped = name | rv::split(split_char) |
-                        rv::drop_last(1) | rv::join |
-                        rng::to<std::string>();
+        auto stripped = name | rv::split(split_char) | rv::drop_last(1) |
+                        rv::join | rng::to<std::string>();
         stripped += "-ch" + std::to_string(this->args->channel);
         stripped += "-" + this->args->output_type;
         std::ostringstream out;
@@ -2994,8 +2990,8 @@ template <class image_t> void Recut<image_t>::init_run() {
                             static_cast<std::string>("./run-1")]() mutable {
       // make sure its a clean write
       while (fs::exists(probe_dir)) {
-        auto l = probe_dir | rv::split('-') |
-                 rng::to<std::vector<std::string>>();
+        auto l =
+            probe_dir | rv::split('-') | rng::to<std::vector<std::string>>();
         l.back() = std::to_string(std::stoi(l.back()) + 1);
         probe_dir = l | rv::join('-') | rng::to<std::string>();
       }

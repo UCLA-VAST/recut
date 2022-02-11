@@ -2523,7 +2523,7 @@ public:
 
 // advantra based re-extraction of tree based on bfs
 std::vector<MyMarker *>
-advantra_extract_trees(std::vector<MyMarker *> nlist,
+extract_trees(std::vector<MyMarker *> nlist,
                        bool remove_isolated_tree_with_one_node = false) {
 
   BfsQueue<int> q;

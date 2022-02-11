@@ -861,6 +861,8 @@ TEST(TreeOps, FixTrifurcations) {
     } 
   });
 
+  partition_cluster(fixed_tree);
+
   if (write_swc_disk) 
     write_swc(fixed_tree,1);
 }
