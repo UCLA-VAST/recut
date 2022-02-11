@@ -22,6 +22,7 @@
 
 namespace fs = std::filesystem;
 namespace rng = ranges;
+namespace rv = ranges::views;
 
 #define PI 3.14159265
 // be able to change pp values into std::string
@@ -256,7 +257,7 @@ void get_img_coord(VID_t id, VID_t &i, VID_t &j, VID_t &k, VID_t grid_size) {
 }
 
 std::vector<MyMarker *> coords_to_markers(std::vector<GridCoord> coords) {
-  return coords | rng::views::transform([](GridCoord coord) {
+  return coords | rv::transform([](GridCoord coord) {
            return new MyMarker(static_cast<double>(coord.x()),
                                static_cast<double>(coord.y()),
                                static_cast<double>(coord.z()));
@@ -399,7 +400,7 @@ void print_vdb_mask(T vdb_accessor, const GridCoord &lengths,
 }
 
 auto ids_to_coords = [](auto ids, auto lengths) {
-  return ids | rng::views::transform([&](auto v) {
+  return ids | rv::transform([&](auto v) {
            return id_to_coord(v, lengths);
          }) |
          rng::to_vector;
@@ -1510,11 +1511,11 @@ template <typename image_t> struct Histogram {
 
     auto merged_histogram = Histogram<image_t>(this->granularity);
 
-    auto these_keys = this->bin_counts | rng::views::keys | rng::to_vector;
-    auto rhs_keys = rhistogram.bin_counts | rng::views::keys | rng::to_vector;
+    auto these_keys = this->bin_counts | rv::keys | rng::to_vector;
+    auto rhs_keys = rhistogram.bin_counts | rv::keys | rng::to_vector;
 
     auto matches =
-        rng::views::set_intersection(these_keys, rhs_keys) | rng::to_vector;
+        rv::set_intersection(these_keys, rhs_keys) | rng::to_vector;
 
     // overwrite all shared keys with summed values
     for (auto key : matches) {
@@ -1527,7 +1528,7 @@ template <typename image_t> struct Histogram {
 
     auto add_difference = [&matches, &merged_histogram](
                               const auto reference_histogram, const auto keys) {
-      for (const auto key : rng::views::set_difference(keys, matches)) {
+      for (const auto key : rv::set_difference(keys, matches)) {
         merged_histogram.bin_counts[key] =
             reference_histogram.bin_counts.at(key);
       }
@@ -1550,9 +1551,9 @@ template <typename image_t>
 Histogram<image_t> hist(image_t *buffer, GridCoord buffer_lengths,
                         GridCoord buffer_offsets, int granularity = 2) {
   auto histogram = Histogram<image_t>(granularity);
-  for (auto z : rng::views::iota(0, buffer_lengths[2])) {
-    for (auto y : rng::views::iota(0, buffer_lengths[1])) {
-      for (auto x : rng::views::iota(0, buffer_lengths[0])) {
+  for (auto z : rv::iota(0, buffer_lengths[2])) {
+    for (auto y : rv::iota(0, buffer_lengths[1])) {
+      for (auto x : rv::iota(0, buffer_lengths[0])) {
         GridCoord xyz(x, y, z);
         GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
         auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
@@ -1568,16 +1569,16 @@ auto convert_buffer_to_vdb_acc =
     [](auto buffer, GridCoord buffer_lengths, GridCoord buffer_offsets,
        GridCoord image_offsets, auto accessor, std::string grid_type,
        auto bkg_thresh = 0, int upsample_z = 1) {
-      for (auto z : rng::views::iota(0, buffer_lengths[2])) {
-        for (auto y : rng::views::iota(0, buffer_lengths[1])) {
-          for (auto x : rng::views::iota(0, buffer_lengths[0])) {
+      for (auto z : rv::iota(0, buffer_lengths[2])) {
+        for (auto y : rv::iota(0, buffer_lengths[1])) {
+          for (auto x : rv::iota(0, buffer_lengths[0])) {
             GridCoord xyz(x, y, z);
             GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
             GridCoord grid_xyz = coord_add(xyz, image_offsets);
             auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
             // voxels equal to bkg_thresh are always discarded
             if (val > bkg_thresh) {
-              for (auto upsample_z_idx : rng::views::iota(0, upsample_z)) {
+              for (auto upsample_z_idx : rv::iota(0, upsample_z)) {
                 auto upsample_grid_xyz =
                     GridCoord(grid_xyz[0], grid_xyz[1],
                               (upsample_z * grid_xyz[2]) + upsample_z_idx);
@@ -1606,16 +1607,16 @@ auto convert_buffer_to_vdb = [](auto buffer, GridCoord buffer_lengths,
   // print_coord(buffer_lengths, "buffer_lengths");
   // print_coord(buffer_offsets, "buffer_offsets");
   // print_coord(image_offsets, "image_offsets");
-  for (auto z : rng::views::iota(0, buffer_lengths[2])) {
-    for (auto y : rng::views::iota(0, buffer_lengths[1])) {
-      for (auto x : rng::views::iota(0, buffer_lengths[0])) {
+  for (auto z : rv::iota(0, buffer_lengths[2])) {
+    for (auto y : rv::iota(0, buffer_lengths[1])) {
+      for (auto x : rv::iota(0, buffer_lengths[0])) {
         GridCoord xyz(x, y, z);
         GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
         GridCoord grid_xyz = coord_add(xyz, image_offsets);
         auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
         // voxels equal to bkg_thresh are always discarded
         if (val > bkg_thresh) {
-          for (auto upsample_z_idx : rng::views::iota(0, upsample_z)) {
+          for (auto upsample_z_idx : rv::iota(0, upsample_z)) {
             positions.push_back(
                 PositionT(grid_xyz[0], grid_xyz[1],
                           (upsample_z * grid_xyz[2]) + upsample_z_idx));
@@ -1641,9 +1642,9 @@ auto convert_buffer_to_vdb = [](auto buffer, GridCoord buffer_lengths,
 //// print_coord(buffer_lengths, "buffer_lengths");
 //// print_coord(buffer_offsets, "buffer_offsets");
 //// print_coord(image_offsets, "image_offsets");
-// for (auto z : rng::views::iota(0, buffer_lengths[2])) {
-// for (auto y : rng::views::iota(0, buffer_lengths[1])) {
-// for (auto x : rng::views::iota(0, buffer_lengths[0])) {
+// for (auto z : rv::iota(0, buffer_lengths[2])) {
+// for (auto y : rv::iota(0, buffer_lengths[1])) {
+// for (auto x : rv::iota(0, buffer_lengths[0])) {
 // GridCoord xyz(x, y, z);
 // GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
 // GridCoord grid_xyz = coord_add(xyz, image_offsets);
@@ -1880,7 +1881,7 @@ template <typename T> struct CompareResults {
 };
 
 auto get_vids = [](auto tree, auto lengths) {
-  return tree | rng::views::transform([&](auto v) {
+  return tree | rv::transform([&](auto v) {
            return v->vid(lengths[0], lengths[1]);
          }) |
          rng::to_vector;
@@ -1909,15 +1910,15 @@ auto compare_tree = [](auto truth_tree, auto check_tree, auto lengths) {
   // std::cout << "check_vids\n";
   // print_iter(check_vids);
 
-  auto matches = rng::views::set_intersection(truth_vids, check_vids);
+  auto matches = rv::set_intersection(truth_vids, check_vids);
 
   VID_t match_count = rng::distance(matches);
   if (print)
     std::cout << "match count: " << match_count << '\n';
 
   auto get_negatives = [&](auto &tree, auto &matches, auto specifier) {
-    return rng::views::set_difference(tree, matches) |
-           rng::views::transform([&](auto vid) {
+    return rv::set_difference(tree, matches) |
+           rv::transform([&](auto vid) {
              if (print)
                std::cout << "false " << specifier
                          << " at: " << coord_to_str(id_to_coord(vid, lengths))
@@ -2193,7 +2194,7 @@ auto sort_tree_in_place = [](std::vector<MyMarker *> &tree) {
 
   // iter those marker*
   auto indices =
-      tree | rng::views::transform([&coord_to_swc_id](const auto marker) {
+      tree | rv::transform([&coord_to_swc_id](const auto marker) {
         auto coord = GridCoord(marker->x, marker->y, marker->z);
         // roots have parents of themselves
         auto parent_coord =
@@ -2210,7 +2211,7 @@ auto sort_tree_in_place = [](std::vector<MyMarker *> &tree) {
       }) |
       rng::to_vector;
 
-  rng::sort(rng::views::zip(indices, tree));
+  rng::sort(rv::zip(indices, tree));
   return coord_to_swc_id;
 };
 
@@ -2420,12 +2421,12 @@ auto sphere_iterator = [](const GridCoord &center, const int radius) {
   int cx = center.x();
   int cy = center.y();
   int cz = center.z();
-  return rng::views::for_each(
-      rng::views::iota(cx - radius, 1 + cx + radius), [=](int x) {
-        return rng::views::for_each(
-            rng::views::iota(cy - radius, 1 + cy + radius), [=](int y) {
-              return rng::views::for_each(
-                  rng::views::iota(cz - radius, 1 + cz + radius), [=](int z) {
+  return rv::for_each(
+      rv::iota(cx - radius, 1 + cx + radius), [=](int x) {
+        return rv::for_each(
+            rv::iota(cy - radius, 1 + cy + radius), [=](int y) {
+              return rv::for_each(
+                  rv::iota(cz - radius, 1 + cz + radius), [=](int z) {
                     auto const new_coord = GridCoord(x, y, z);
                     return rng::yield_if(
                         coord_dist(new_coord, center) <= radius, new_coord);
@@ -3065,7 +3066,7 @@ void write_vdb_to_tiff_page(GridT grid, std::string base, CoordBBox bbox = {}) {
   auto maxz = bbox.max()[2];
 
   // inclusive range with index
-  auto zrng = rng::closed_iota_view(minz, maxz) | rng::views::enumerate;
+  auto zrng = rng::closed_iota_view(minz, maxz) | rv::enumerate;
 
   // output each plane to separate page within the same file
   rng::for_each(zrng, [grid, tiff, &bbox](const auto zpair) {
@@ -3124,7 +3125,7 @@ void write_vdb_to_tiff_planes(GridT grid, std::string base, CoordBBox bbox = {},
   fs::create_directories(base);
 
   auto zrng = rng::closed_iota_view(bbox.min()[2], bbox.max()[2]) |
-              rng::views::enumerate; // inclusive range
+              rv::enumerate; // inclusive range
 
   // output each plane to separate file
   rng::for_each(zrng, [&grid, &base, &bbox](const auto zpair) {
@@ -3579,7 +3580,7 @@ load_tile(const CoordBBox &bbox, const std::string &dir) {
   }
 
   auto tile_filenames = tif_filenames |
-                        rng::views::slice(bbox.min()[2], bbox.max()[2] + 1) |
+                        rv::slice(bbox.min()[2], bbox.max()[2] + 1) |
                         rng::to_vector;
 
   auto dense = read_tiff_planes<image_t>(tile_filenames, bbox);

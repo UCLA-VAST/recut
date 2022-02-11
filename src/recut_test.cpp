@@ -445,7 +445,7 @@ TEST(VDB, IntegrateUpdateGrid) {
 
     auto check_matches = [&](auto block_list, auto corner) {
       auto matches =
-          block_list | rng::views::transform([&](auto block_id) {
+          block_list | rv::transform([&](auto block_id) {
             auto block_img_offsets =
                 recut.id_interval_block_to_img_offsets(interval_id, block_id);
             if (print_all)
@@ -1650,10 +1650,10 @@ TEST(CompareTree, All) {
 
   auto get_mismatch = [&](auto false_negatives, auto check_false_negatives) {
     auto check = check_false_negatives |
-                 rng::views::transform([](auto pairi) { return pairi.first; }) |
+                 rv::transform([](auto pairi) { return pairi.first; }) |
                  rng::to_vector | rng::action::sort;
     auto truth = get_vids_sorted(false_negatives, grid_extents);
-    auto diff = rng::views::set_intersection(truth, check); // set_difference
+    auto diff = rv::set_intersection(truth, check); // set_difference
     return rng::distance(diff); // return range length
   };
 
@@ -2157,7 +2157,7 @@ TEST(Update, EachStageIteratively) {
                 std::vector<MyMarker *> root_markers;
                 if (tcase == 6) {
                   auto coords = root_coords |
-                                rng::views::transform([](auto coord_radius) {
+                                rv::transform([](auto coord_radius) {
                                   return coord_radius.first;
                                 }) |
                                 rng::to_vector;

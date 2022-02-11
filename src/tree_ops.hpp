@@ -44,7 +44,7 @@ prune_short_branches(std::vector<MyMarker *> &tree,
   // diagnose bug
   auto filtered_tree =
       tree |
-      rng::views::remove_if(
+      rv::remove_if(
           [&min_branch_length, &is_a_leaf, &is_a_branch](auto marker) {
             // only check non roots
             if (marker->parent) {
@@ -102,17 +102,17 @@ std::vector<MyMarker *> fix_trifurcations(std::vector<MyMarker *> &tree) {
   auto child_count = create_child_count(tree);
 
   auto new_nodes =
-      tree | rng::views::filter([](auto marker) {
+      tree | rv::filter([](auto marker) {
         return marker->type; // ignore roots (type of 0)
       }) |
-      rng::views::filter([](auto marker) {
+      rv::filter([](auto marker) {
         assertm(marker->parent, "Only roots can have invalid parents");
         return marker->parent->type; // ignore if parent is root
       }) |
-      rng::views::filter([&child_count](auto marker) {
+      rv::filter([&child_count](auto marker) {
         return is_illegal_branch(marker->parent, child_count);
       }) |
-      rng::views::transform([&child_count](auto marker) {
+      rv::transform([&child_count](auto marker) {
         const auto old_parent_coord =
             GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
 
@@ -154,14 +154,14 @@ std::vector<MyMarker *> fix_trifurcations(std::vector<MyMarker *> &tree) {
 auto tree_is_valid = [](auto tree) {
   auto child_count = create_child_count(tree);
   auto mismatchs =
-      tree | rng::views::filter([](auto marker) {
+      tree | rv::filter([](auto marker) {
         return marker->type; // ignore roots (type of 0)
       }) |
-      rng::views::filter([](auto marker) {
+      rv::filter([](auto marker) {
         assertm(marker->parent, "Only roots can have invalid parents");
         return marker->parent->type; // ignore if parent is root
       }) |
-      rng::views::filter([&child_count](auto marker) {
+      rv::filter([&child_count](auto marker) {
         return is_illegal_branch(marker, child_count);
       }) |
       rng::to_vector;

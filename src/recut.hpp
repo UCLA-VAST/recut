@@ -419,7 +419,7 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
 
   // transform to <coord, radius> of all somas/roots
   auto roots =
-      inmarkers | rng::views::transform([this](auto marker) {
+      inmarkers | rv::transform([this](auto marker) {
         return std::pair{
             ones() + GridCoord(marker.x / args->downsample_factor,
                                marker.y / args->downsample_factor,
@@ -429,7 +429,7 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
       rng::to_vector;
 
   auto filtered_roots =
-      roots | rng::views::remove_if([this, &local_bbox](auto coord_radius) {
+      roots | rv::remove_if([this, &local_bbox](auto coord_radius) {
         auto [coord, radius] = coord_radius;
         if (local_bbox.isInside(coord)) {
           if (this->topology_grid->tree().isValueOn(coord)) {
@@ -495,10 +495,10 @@ void Recut<image_t>::activate_vids(
     // std::cout << "Leaf BBox: " << leaf_bbox << '\n';
 
     // FILTER for those in this leaf
-    auto leaf_roots = roots | rng::views::transform([](auto coord_radius) {
+    auto leaf_roots = roots | rv::transform([](auto coord_radius) {
                         return coord_radius.first;
                       }) |
-                      rng::views::remove_if([&leaf_bbox](GridCoord coord) {
+                      rv::remove_if([&leaf_bbox](GridCoord coord) {
                         return !leaf_bbox.isInside(coord);
                       }) |
                       rng::to_vector;
@@ -1186,17 +1186,17 @@ void integrate_adj_leafs(GridCoord start_coord,
   // from integrate_point
   auto _ = // from one corner find 3 adj leafs via 1 vox offset
       stencil_offsets |
-      rng::views::transform([&start_coord](auto stencil_offset) {
+      rv::transform([&start_coord](auto stencil_offset) {
         return std::pair{/*rel. offset*/ stencil_offset,
                          coord_add(start_coord, stencil_offset)};
       }) |
       // get the corresponding leaf from update grid
-      rng::views::transform([update_grid](auto coord_pair) {
+      rv::transform([update_grid](auto coord_pair) {
         return std::pair{/*rel. offset*/ coord_pair.first,
                          update_grid->tree().probeConstLeaf(coord_pair.second)};
       }) |
       // does adj leaf have any border topology?
-      rng::views::remove_if([](auto leaf_pair) {
+      rv::remove_if([](auto leaf_pair) {
         if (leaf_pair.second) {
           return leaf_pair.second->isEmpty(); // any of values true
         } else {
@@ -1204,7 +1204,7 @@ void integrate_adj_leafs(GridCoord start_coord,
         }
       }) |
       // for each adjacent leaf with values on
-      rng::views::transform([&](auto leaf_pair) {
+      rv::transform([&](auto leaf_pair) {
         // cout << leaf_pair.first << '\n';
         // which dim is this leaf offset in, can only be in 1
         auto dim = -1;
@@ -1511,18 +1511,18 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
     auto valids =
         // star stencil offsets to img coords
         this->stencil |
-        rng::views::transform([&msg_coord](auto stencil_offset) {
+        rv::transform([&msg_coord](auto stencil_offset) {
           return coord_add(msg_coord, stencil_offset);
         }) |
         // within image?
-        rng::views::remove_if([this, &found_adjacent_invalid](auto coord_img) {
+        rv::remove_if([this, &found_adjacent_invalid](auto coord_img) {
           if (this->image_bbox.isInside(coord_img))
             return false;
           found_adjacent_invalid = true;
           return true;
         }) |
         // within leaf?
-        rng::views::remove_if([&](auto coord_img) {
+        rv::remove_if([&](auto coord_img) {
           auto mismatch = !bbox.isInside(coord_img);
           if (mismatch) {
             if (this->input_is_vdb) {
@@ -1539,7 +1539,7 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t interval_id,
           return mismatch;
         }) |
         // visit valid voxels
-        rng::views::remove_if([&](auto coord_img) {
+        rv::remove_if([&](auto coord_img) {
           auto offset_to_current = coord_sub(msg_coord, coord_img);
           auto ind = leaf_iter->beginIndexVoxel(coord_img);
           // is background?  ...has side-effects
@@ -1629,18 +1629,18 @@ void Recut<image_t>::connected_tile(
     auto valids =
         // star stencil offsets to img coords
         this->stencil |
-        rng::views::transform([&msg_coord](auto stencil_offset) {
+        rv::transform([&msg_coord](auto stencil_offset) {
           return coord_add(msg_coord, stencil_offset);
         }) |
         // within image?
-        rng::views::remove_if([this, &found_adjacent_invalid](auto coord_img) {
+        rv::remove_if([this, &found_adjacent_invalid](auto coord_img) {
           if (this->image_bbox.isInside(coord_img))
             return false;
           found_adjacent_invalid = true;
           return true;
         }) |
         // within leaf?
-        rng::views::remove_if([&](auto coord_img) {
+        rv::remove_if([&](auto coord_img) {
           auto mismatch = !bbox.isInside(coord_img);
           if (mismatch) {
             if (this->input_is_vdb) {
@@ -1657,7 +1657,7 @@ void Recut<image_t>::connected_tile(
           return mismatch;
         }) |
         // visit valid voxels
-        rng::views::remove_if([&](auto coord_img) {
+        rv::remove_if([&](auto coord_img) {
           auto offset_to_current = coord_sub(msg_coord, coord_img);
           auto ind = leaf_iter->beginIndexVoxel(coord_img);
           // is background?  ...has side-effects
@@ -1753,19 +1753,19 @@ void Recut<image_t>::radius_tile(const image_t *tile, VID_t interval_id,
     auto updated_inds =
         // star stencil offsets to img coords
         this->stencil |
-        rng::views::transform([&msg_coord](auto stencil_offset) {
+        rv::transform([&msg_coord](auto stencil_offset) {
           return coord_add(msg_coord, stencil_offset);
         }) |
         // within image?
-        rng::views::remove_if([this](auto coord_img) {
+        rv::remove_if([this](auto coord_img) {
           return !this->image_bbox.isInside(coord_img);
         }) |
         // within leaf?
-        rng::views::remove_if(
+        rv::remove_if(
             [&](auto coord_img) { return !bbox.isInside(coord_img); }) |
-        rng::views::transform([&](auto coord_img) { return coord_img; }) |
+        rv::transform([&](auto coord_img) { return coord_img; }) |
         // visit valid voxels
-        rng::views::transform([&](auto coord_img) {
+        rv::transform([&](auto coord_img) {
           auto ind = leaf_iter->beginIndexVoxel(coord_img);
           // ...has side-effects
           accumulate_radius(interval_id, block_id, coord_img, ind,
@@ -1826,18 +1826,18 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t interval_id,
     auto updated_inds =
         // star stencil offsets to img coords
         this->stencil |
-        rng::views::transform([&msg_coord](auto stencil_offset) {
+        rv::transform([&msg_coord](auto stencil_offset) {
           return coord_add(msg_coord, stencil_offset);
         }) |
         // within image?
-        rng::views::remove_if([this](auto coord_img) {
+        rv::remove_if([this](auto coord_img) {
           return !this->image_bbox.isInside(coord_img);
         }) |
         // within leaf?
-        rng::views::remove_if(
+        rv::remove_if(
             [&](auto coord_img) { return !bbox.isInside(coord_img); }) |
         // visit valid voxels
-        rng::views::transform([&](auto coord_img) {
+        rv::transform([&](auto coord_img) {
           auto ind = leaf_iter->beginIndexVoxel(coord_img);
           // ...has side-effects
           accumulate_prune(interval_id, block_id, coord_img, ind,
@@ -2205,7 +2205,7 @@ void Recut<image_t>::update(std::string stage, Container &fifo) {
     // only safe for conversion stages with more than 1 thread
     arena.execute([&] {
       tbb::parallel_for_each(
-          rng::views::indices(grid_interval_size) | rng::to_vector,
+          rv::indices(grid_interval_size) | rng::to_vector,
           [&](const auto interval_id) {
             io_interval(interval_id, grids, uint8_grids, float_grids,
                         mask_grids, stage, histogram);
@@ -2502,7 +2502,7 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
   // sanitize in each dimension
   // and protected from faulty offset values
-  rng::for_each(rng::views::indices(3), [this, &max_len_after_off](int i) {
+  rng::for_each(rv::indices(3), [this, &max_len_after_off](int i) {
     if (this->args->image_lengths[i] > 0) {
       // use the input length if possible, or maximum otherwise
       this->image_lengths[i] =
@@ -2532,7 +2532,7 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
   // Determine the size of each interval in each dim
   // the image size and offsets override the user inputted interval size
   // since an interval must be at least the size of the image
-  rng::for_each(rng::views::indices(3), [this](int i) {
+  rng::for_each(rv::indices(3), [this](int i) {
     this->interval_lengths[i] =
         (this->input_is_vdb || (this->args->interval_lengths[i] < 1))
             ? this->image_lengths[i]
@@ -2553,7 +2553,7 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
     // most likely due to the cost of seeking to the chunk
     // or some other hdf5 overhead
     // if (args->input_type == "ims") {
-    // rng::for_each(rng::views::indices(2), [this](int i) {
+    // rng::for_each(rv::indices(2), [this](int i) {
     //// if it wasn't set by user on command line, then set default
     // if (this->args->interval_lengths[i] < 1)
     // this->interval_lengths[i] = 256;
@@ -2563,7 +2563,7 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
   // determine the length of intervals in each dim
   // rounding up (ceil)
-  rng::for_each(rng::views::indices(3), [this](int i) {
+  rng::for_each(rv::indices(3), [this](int i) {
     this->grid_interval_lengths[i] =
         (this->image_lengths[i] + this->interval_lengths[i] - 1) /
         this->interval_lengths[i];
@@ -2582,7 +2582,7 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
   // determine length of blocks that span an interval for each dim
   // this rounds up
-  rng::for_each(rng::views::indices(3), [this](int i) {
+  rng::for_each(rv::indices(3), [this](int i) {
     this->interval_block_lengths[i] =
         (this->interval_lengths[i] + this->block_lengths[i] - 1) /
         this->block_lengths[i];
@@ -2746,7 +2746,7 @@ void Recut<image_t>::partition_components(
 
   // you need to load the passed image grids if you are outputing windows
   auto window_grids = args->window_grid_paths |
-                      rng::views::transform([](const auto &gpath) {
+                      rv::transform([](const auto &gpath) {
                         return read_vdb_file(gpath);
                       }) |
                       rng::to_vector; // force reading once now
@@ -2766,7 +2766,7 @@ void Recut<image_t>::partition_components(
     // filter all roots within this component
     auto component_roots =
         root_pairs |
-        rng::views::remove_if([&component](const auto &coord_radius) {
+        rv::remove_if([&component](const auto &coord_radius) {
           auto [coord, radius] = coord_radius;
           return !component->tree().isValueOn(coord);
         }) |
@@ -2861,7 +2861,7 @@ void Recut<image_t>::partition_components(
       bbox = window_bbox;
 
       // skips channel 0
-      rng::for_each(window_grids | rng::views::enumerate | rng::views::tail,
+      rng::for_each(window_grids | rv::enumerate | rv::tail,
                     [&](const auto window_gridp) {
                       auto [channel, window_grid] = window_gridp;
                       auto mask_grid =
@@ -2908,7 +2908,7 @@ void Recut<image_t>::partition_components(
     std::cout << "Component " << index << " complete and safe to open\n";
   }; // for each component
 
-  auto enum_components = components | rng::views::enumerate | rng::to_vector;
+  auto enum_components = components | rv::enumerate | rng::to_vector;
   tbb::task_arena arena(args->user_thread_count);
   arena.execute(
       [&] { tbb::parallel_for_each(enum_components, process_component); });
@@ -2961,8 +2961,8 @@ template <class image_t> void Recut<image_t>::init_run() {
     // reassign output_name from the default
     if (this->args->output_name == "out.vdb") {
       auto convert_fn_vdb = [this](const std::string &name, auto split_char) {
-        auto stripped = name | rng::views::split(split_char) |
-                        rng::views::drop_last(1) | rng::views::join |
+        auto stripped = name | rv::split(split_char) |
+                        rv::drop_last(1) | rv::join |
                         rng::to<std::string>();
         stripped += "-ch" + std::to_string(this->args->channel);
         stripped += "-" + this->args->output_type;
@@ -2994,10 +2994,10 @@ template <class image_t> void Recut<image_t>::init_run() {
                             static_cast<std::string>("./run-1")]() mutable {
       // make sure its a clean write
       while (fs::exists(probe_dir)) {
-        auto l = probe_dir | rng::views::split('-') |
+        auto l = probe_dir | rv::split('-') |
                  rng::to<std::vector<std::string>>();
         l.back() = std::to_string(std::stoi(l.back()) + 1);
-        probe_dir = l | rng::views::join('-') | rng::to<std::string>();
+        probe_dir = l | rv::join('-') | rng::to<std::string>();
       }
       return probe_dir;
     };

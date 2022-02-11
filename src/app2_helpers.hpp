@@ -1663,7 +1663,7 @@ void run_app2(ValuedGrid component_with_values,
   auto window = convert_vdb_to_dense(component_with_values);
 
   auto component_markers =
-      component_roots | rng::views::transform([](auto &coord_radius) {
+      component_roots | rv::transform([](auto &coord_radius) {
         auto [coord, radius] = coord_radius;
         auto marker = new MyMarker(static_cast<double>(coord.x()),
                                    static_cast<double>(coord.y()),
