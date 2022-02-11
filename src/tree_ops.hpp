@@ -1,3 +1,133 @@
+auto get_id_map = []() {
+  std::unordered_map<GridCoord, uint32_t> coord_to_swc_id;
+  // add a dummy value that will never be on to the map so that real indices
+  // start at 1
+  coord_to_swc_id[GridCoord(INT_MIN, INT_MIN, INT_MIN)] = 0;
+  return coord_to_swc_id;
+};
+
+// also return a mapping from coord to id
+auto sort_tree_in_place = [](std::vector<MyMarker *> &tree) {
+  // start a new blank map for coord to a unique swc id
+  auto coord_to_swc_id = get_id_map();
+
+  // iter those marker*
+  auto indices = tree | rv::transform([&coord_to_swc_id](const auto marker) {
+                   auto coord = GridCoord(marker->x, marker->y, marker->z);
+                   // roots have parents of themselves
+                   auto parent_coord =
+                       marker->type
+                           ? GridCoord(marker->parent->x, marker->parent->y,
+                                       marker->parent->z)
+                           : coord;
+
+                   // also accumulate the mapping
+                   find_or_assign(parent_coord, coord_to_swc_id);
+                   auto id = find_or_assign(coord, coord_to_swc_id);
+
+                   // build the indices
+                   return id;
+                 }) |
+                 rng::to_vector;
+
+  rng::sort(rv::zip(indices, tree));
+  return coord_to_swc_id;
+};
+
+// build a mapping from
+// index into cluster vector -> list of children indices
+// index is the index into the cluster vector
+// leaves will have no children, roots will not have a parent
+auto create_child_list = [](std::vector<MyMarker *> &cluster,
+                            auto coord_to_id) {
+  auto child_list = std::unordered_map<VID_t, std::vector<VID_t>>();
+  rng::for_each(cluster | rv::enumerate, [&](auto imarker) {
+    auto [id, marker] = imarker;
+    // get parent
+    if (!marker->parent)
+      throw std::runtime_error("Parent missing");
+    const auto parent_coord =
+        GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
+    const auto parent_id = coord_to_id.find(parent_coord);
+    if (parent_id == coord_to_id.end())
+      throw std::runtime_error("Parent coord not found");
+    auto children = child_list.find(parent_id);
+
+    // update value of map
+    if (children == child_list.end()) // not found yet
+      child_list.insert_or_assign(parent_coord, {id});
+    else
+      child_list.insert_or_assign(parent_coord, children.push_back(id));
+  });
+  return child_list;
+};
+
+// switch this to a while loop if ever encountering a stack overflow
+// do a depth first search to create an ordered tree from a cluster
+// leaves will have no children, roots do not have a parent
+std::vector<MyMarker*> recurse_tree(VID_t id,
+                  std::unordered_map<VID_t, std::vector<VID_t>> &child_list,
+                  std::vector<MyMarker *> &tree,
+                  std::vector<MyMarker *> &cluster) {
+  auto marker = cluster[id];
+  tree.push_back(marker);
+  auto children = child_list.find(id);
+  if (children != child_list.end()) {
+    for (VID_t child_id : children->second) {
+      recurse_tree(child_id, child_list, tree, cluster);
+    }
+  }
+  return tree;
+}
+
+auto partition_cluster = [](std::vector<MyMarker *> &cluster,
+                            auto coord_to_id) {
+  auto child_list = create_child_list(cluster, coord_to_id);
+
+  auto root_ids =
+      cluster | rv::enumerate |
+      rv::filter([type = 0](auto marker) { return marker->type == type; }) |
+      rv::transform([](auto imarker) { return imarker.first; });
+
+  std::vector<std::vector<MyMarker*>> trees = root_ids | rv::transform([&](VID_t id) {
+                 auto tree = std::vector<MyMarker *>();
+                 return recurse_tree(id, child_list, tree, cluster);
+               }) |
+               rng::to_vector;
+  return trees;
+};
+
+auto write_swc = [](std::vector<MyMarker *> &tree, int index = 0,
+                    std::string component_dir_fn = ".", CoordBBox bbox = {},
+                    bool bbox_adjust = false) {
+  // start swc and add header metadata
+  auto swc_name =
+      component_dir_fn + "/component-" + std::to_string(index) + ".swc";
+  std::ofstream swc_file;
+  swc_file.open(swc_name);
+  swc_file << "# Crop windows bounding volume: " << bbox << '\n';
+  swc_file << "# id type_id x y z radius parent_id\n";
+
+  auto coord_to_swc_id = sort_tree_in_place(tree);
+
+  // iter those marker*
+  rng::for_each(tree, [&swc_file, &coord_to_swc_id, &bbox,
+                       bbox_adjust](const auto marker) {
+    auto coord = GridCoord(marker->x, marker->y, marker->z);
+    auto is_root = marker->type == 0;
+    auto parent_offset = zeros();
+
+    if (!is_root) {
+      auto parent_coord =
+          GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
+      parent_offset = coord_sub(parent_coord, coord);
+    }
+    // print_swc_line() expects an offset to a parent
+    print_swc_line(coord, is_root, marker->radius, parent_offset, bbox,
+                   swc_file, coord_to_swc_id, bbox_adjust);
+  });
+};
+
 auto create_child_count = [](std::vector<MyMarker *> &tree) {
   // build a map to save coords with 1 or 2 children
   // coords not in this map are therefore leafs
