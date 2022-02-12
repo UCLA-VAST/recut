@@ -2164,7 +2164,7 @@ auto print_swc_line =
       if (is_root) {
         // only the first line of the file can have a parent of -1
         // any other should connect to themselves
-        line << (current_id == 1) ? std::to_string(current_id) : "-1";
+        line << (current_id == 1) ? "-1" : std::to_string(current_id);
       } else {
         auto parent_coord = coord_add(swc_coord, parent_offset_coord);
         line << find_or_assign(parent_coord, coord_to_swc_id);

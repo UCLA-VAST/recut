@@ -34,7 +34,7 @@ auto create_tree_indices = [](std::vector<MyMarker *> &tree) {
 };
 
 auto tree_is_sorted = [](std::vector<MyMarker *> &tree) {
-  auto [indices,_] = create_tree_indices(tree);
+  auto [indices, _] = create_tree_indices(tree);
   return std::is_sorted(indices.begin(), indices.end());
 };
 
@@ -46,17 +46,42 @@ auto sort_tree_in_place = [](std::vector<MyMarker *> &tree) {
   return coord_to_swc_id;
 };
 
-// build a mapping from
-// index into cluster vector -> list of children indices
-// index is the index into the cluster vector
-// leaves will have no children, roots will not have a parent
-auto create_child_list = [](const std::vector<MyMarker *> &cluster) {
+auto create_coord_to_idx = [](const std::vector<MyMarker *> &cluster) {
   // build to coord_to_idx
   std::unordered_map<GridCoord, VID_t> coord_to_idx;
   rng::for_each(cluster | rv::enumerate, [&](auto imarker) {
     auto [id, marker] = imarker;
     coord_to_idx[GridCoord(marker->x, marker->y, marker->z)] = id;
   });
+  return coord_to_idx;
+};
+
+auto is_cluster_self_contained = [](const std::vector<MyMarker *> &cluster) {
+  auto coord_to_idx = create_coord_to_idx(cluster);
+
+  auto has_out_cluster_parent =
+      cluster | rv::filter([](auto marker) {
+        return marker->type; // skip roots
+      }) |
+      rv::filter([&](auto marker) {
+        // get parent
+        if (!marker->parent)
+          throw std::runtime_error("Parent missing");
+        const auto parent_coord =
+            GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
+        const auto parent_pair = coord_to_idx.find(parent_coord);
+        return parent_pair == coord_to_idx.end();
+      });
+
+  return rng::distance(has_out_cluster_parent) == 0;
+};
+
+// build a mapping from
+// index into cluster vector -> list of children indices
+// index is the index into the cluster vector
+// leaves will have no children, roots will not have a parent
+auto create_child_list = [](const std::vector<MyMarker *> &cluster) {
+  auto coord_to_idx = create_coord_to_idx(cluster);
 
   // build child_list
   auto child_list = std::unordered_map<VID_t, std::vector<VID_t>>();
@@ -64,7 +89,7 @@ auto create_child_list = [](const std::vector<MyMarker *> &cluster) {
                   auto [i, marker] = imarker;
                   return marker->type; // skip roots
                 }),
-                [&](std::pair<VID_t, MyMarker *> imarker) {
+                [&](auto imarker) {
                   auto [id, marker] = imarker;
                   // get parent
                   if (!marker->parent)
@@ -107,6 +132,7 @@ std::vector<MyMarker *> recurse_tree(
   return tree;
 }
 
+// assumes all markers point to parents within the cluster
 auto partition_cluster = [](const std::vector<MyMarker *> &cluster) {
   auto child_list = create_child_list(cluster);
 
@@ -124,12 +150,19 @@ auto partition_cluster = [](const std::vector<MyMarker *> &cluster) {
   return trees;
 };
 
-auto write_swc = [](std::vector<MyMarker *> &tree, int index = 0,
+// assumes tree passed is sorted root at front of tree
+auto write_swc = [](std::vector<MyMarker *> &tree,
                     std::string component_dir_fn = ".", CoordBBox bbox = {},
                     bool bbox_adjust = false) {
+  auto root = tree.front();
+  if (root->type)
+    throw std::runtime_error("First marker of tree must be a root (type 0)");
+
   // start swc and add header metadata
-  auto swc_name =
-      component_dir_fn + "/component-" + std::to_string(index) + ".swc";
+  auto swc_name = component_dir_fn + "/tree-with-soma-xyz-" +
+                  std::to_string(static_cast<int>(root->x)) + '-' +
+                  std::to_string(static_cast<int>(root->y)) + '-' +
+                  std::to_string(static_cast<int>(root->z)) + ".swc";
   std::ofstream swc_file;
   swc_file.open(swc_name);
   swc_file << "# Crop windows bounding volume: " << bbox << '\n';

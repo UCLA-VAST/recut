@@ -2822,8 +2822,14 @@ void Recut<image_t>::partition_components(
 #endif
 
     timer.restart();
+    if (!is_cluster_self_contained(cluster))
+      throw std::runtime_error("Extracted cluster not self contained");
+
     auto pruned_cluster =
         prune_short_branches(cluster, this->args->min_branch_length);
+
+    if (!is_cluster_self_contained(pruned_cluster))
+      throw std::runtime_error("Pruend cluster not self contained");
 
     pruned_cluster = fix_trifurcations(pruned_cluster);
     { // check
@@ -2833,6 +2839,8 @@ void Recut<image_t>::partition_components(
                       [](auto mismatch) { std::cout << mismatch << '\n'; });
         throw std::runtime_error("Tree has trifurcations");
       }
+      if (!is_cluster_self_contained(pruned_cluster))
+        throw std::runtime_error("Trifurc cluster not self contained");
     }
     auto trees = partition_cluster(pruned_cluster);
 
@@ -2884,8 +2892,11 @@ void Recut<image_t>::partition_components(
 #endif
 
     for (auto tree : trees) {
-      write_swc(tree, index, component_dir_fn, bbox,
+      write_swc(tree, component_dir_fn, bbox,
                 /*bbox_adjust*/ !args->window_grid_paths.empty());
+      if (!tree_is_sorted(tree)) {
+        throw std::runtime_error("Tree is not properly sorted");
+      }
     }
 
     auto write_soma_locs = [](auto component_roots,
