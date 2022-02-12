@@ -842,29 +842,33 @@ TEST(TreeOps, FixTrifurcations) {
   f->radius = 4;
   tree.push_back(f);
 
-  if (write_swc_disk) 
+  if (write_swc_disk)
     write_swc(tree);
 
   auto fixed_tree = fix_trifurcations(tree);
 
-  auto mismatches = tree_is_valid(fixed_tree);
-  if (!mismatches.empty()) {
+  auto trifurcations = tree_is_valid(fixed_tree);
+  if (!trifurcations.empty()) {
     std::cout << "Mismatches\n";
-    rng::for_each(mismatches,
+    rng::for_each(trifurcations,
                   [](auto mismatch) { std::cout << mismatch << '\n'; });
   }
-  ASSERT_TRUE(mismatches.empty());
+  ASSERT_TRUE(trifurcations.empty());
 
   rng::for_each(fixed_tree, [](auto marker) {
     if (marker->type) {
       ASSERT_TRUE(marker->parent) << marker << '\n';
-    } 
+    }
   });
 
-  partition_cluster(fixed_tree);
+  auto fixed_trees = partition_cluster(fixed_tree);
 
-  if (write_swc_disk) 
-    write_swc(fixed_tree,1);
+  for (auto fixed_tree : fixed_trees) {
+    if (write_swc_disk) {
+      write_swc(fixed_tree, 1);
+    }
+    ASSERT_TRUE(tree_is_sorted(fixed_tree));
+  }
 }
 
 TEST(TreeOps, PruneShortBranches) {
@@ -1656,7 +1660,7 @@ TEST(CompareTree, All) {
                  rng::to_vector | rng::action::sort;
     auto truth = get_vids_sorted(false_negatives, grid_extents);
     auto diff = rv::set_intersection(truth, check); // set_difference
-    return rng::distance(diff); // return range length
+    return rng::distance(diff);                     // return range length
   };
 
   auto count_mismatch_negatives =

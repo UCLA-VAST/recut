@@ -7,7 +7,7 @@ auto get_id_map = []() {
 };
 
 // also return a mapping from coord to id
-auto sort_tree_in_place = [](std::vector<MyMarker *> &tree) {
+auto create_tree_indices = [](std::vector<MyMarker *> &tree) {
   // start a new blank map for coord to a unique swc id
   auto coord_to_swc_id = get_id_map();
 
@@ -30,6 +30,18 @@ auto sort_tree_in_place = [](std::vector<MyMarker *> &tree) {
                  }) |
                  rng::to_vector;
 
+  return std::make_pair(indices, coord_to_swc_id);
+};
+
+auto tree_is_sorted = [](std::vector<MyMarker *> &tree) {
+  auto [indices,_] = create_tree_indices(tree);
+  return std::is_sorted(indices.begin(), indices.end());
+};
+
+// also return a mapping from coord to id
+auto sort_tree_in_place = [](std::vector<MyMarker *> &tree) {
+  auto [indices, coord_to_swc_id] = create_tree_indices(tree);
+
   rng::sort(rv::zip(indices, tree));
   return coord_to_swc_id;
 };
@@ -48,29 +60,32 @@ auto create_child_list = [](const std::vector<MyMarker *> &cluster) {
 
   // build child_list
   auto child_list = std::unordered_map<VID_t, std::vector<VID_t>>();
-  rng::for_each(
-      cluster | rv::enumerate, [&](std::pair<VID_t, MyMarker *> imarker) {
-        auto [id, marker] = imarker;
-        // get parent
-        if (!marker->parent)
-          throw std::runtime_error("Parent missing");
-        const auto parent_coord =
-            GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
-        const auto parent_id = coord_to_idx.find(parent_coord);
-        if (parent_id == coord_to_idx.end())
-          throw std::runtime_error("Parent coord not found");
-        auto children = child_list.find(parent_id->second);
+  rng::for_each(cluster | rv::enumerate | rv::filter([](auto imarker) {
+                  auto [i, marker] = imarker;
+                  return marker->type; // skip roots
+                }),
+                [&](std::pair<VID_t, MyMarker *> imarker) {
+                  auto [id, marker] = imarker;
+                  // get parent
+                  if (!marker->parent)
+                    throw std::runtime_error("Parent missing");
+                  const auto parent_coord = GridCoord(
+                      marker->parent->x, marker->parent->y, marker->parent->z);
+                  const auto parent_pair = coord_to_idx.find(parent_coord);
+                  if (parent_pair == coord_to_idx.end())
+                    throw std::runtime_error("Parent coord not found");
+                  auto parent_id = parent_pair->second;
 
-        // update value of map
-        if (children == child_list.end()) { // not found yet
-          std::vector<VID_t> new_list = {id};
-          child_list.emplace(parent_id, new_list);
-        } else {
-          std::vector<VID_t> new_list = children->second;
-          new_list.push_back(id);
-          child_list.emplace(parent_id, new_list);
-        }
-      });
+                  // update children
+                  auto children = child_list.find(parent_id);
+                  // update value of map
+                  if (children == child_list.end()) { // not found yet
+                    std::vector<VID_t> new_list = {id};
+                    child_list[parent_id] = new_list;
+                  } else {
+                    child_list[parent_id].push_back(id);
+                  }
+                });
 
   return child_list;
 };
