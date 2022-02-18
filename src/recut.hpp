@@ -2831,17 +2831,18 @@ void Recut<image_t>::partition_components(
     if (!is_cluster_self_contained(pruned_cluster))
       throw std::runtime_error("Pruend cluster not self contained");
 
-    pruned_cluster = fix_trifurcations(pruned_cluster);
-    { // check
-      auto trifurcations = tree_is_valid(pruned_cluster);
-      if (!trifurcations.empty()) {
-        rng::for_each(trifurcations,
-                      [](auto mismatch) { std::cout << mismatch << '\n'; });
-        throw std::runtime_error("Tree has trifurcations");
-      }
-      if (!is_cluster_self_contained(pruned_cluster))
-        throw std::runtime_error("Trifurc cluster not self contained");
-    }
+    //pruned_cluster = fix_trifurcations(pruned_cluster);
+    //{ // check
+      //auto trifurcations = tree_is_valid(pruned_cluster);
+      //if (!trifurcations.empty()) {
+        //rng::for_each(trifurcations,
+                      //[](auto mismatch) { std::cout << mismatch << '\n'; });
+        //throw std::runtime_error("Tree has trifurcations");
+      //}
+      //if (!is_cluster_self_contained(pruned_cluster))
+        //throw std::runtime_error("Trifurc cluster not self contained");
+    //}
+
     auto trees = partition_cluster(pruned_cluster);
 
 #ifdef LOG
