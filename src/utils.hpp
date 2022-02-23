@@ -400,9 +400,7 @@ void print_vdb_mask(T vdb_accessor, const GridCoord &lengths,
 }
 
 auto ids_to_coords = [](auto ids, auto lengths) {
-  return ids | rv::transform([&](auto v) {
-           return id_to_coord(v, lengths);
-         }) |
+  return ids | rv::transform([&](auto v) { return id_to_coord(v, lengths); }) |
          rng::to_vector;
 };
 
@@ -1514,8 +1512,7 @@ template <typename image_t> struct Histogram {
     auto these_keys = this->bin_counts | rv::keys | rng::to_vector;
     auto rhs_keys = rhistogram.bin_counts | rv::keys | rng::to_vector;
 
-    auto matches =
-        rv::set_intersection(these_keys, rhs_keys) | rng::to_vector;
+    auto matches = rv::set_intersection(these_keys, rhs_keys) | rng::to_vector;
 
     // overwrite all shared keys with summed values
     for (auto key : matches) {
@@ -1729,10 +1726,20 @@ auto read_tiff_planes = [](const std::vector<std::string> &fns,
   for (auto z = 0; z < fns.size(); ++z) {
     const auto fn = fns[z];
 
-    TIFF *tiff = TIFFOpen(&fn[0], "r");
+    // try reading file
+    if (!fs::exists(fn)) {
+      throw std::runtime_error("ERROR non existent TIFF file " + fn);
+    }
+    TIFF* tiff;
+    try {
+      tiff = TIFFOpen(&fn[0], "r");
+    } catch (const std::exception &e) {
+      std::cout << " a standard exception was caught, with message " << e.what()
+                << '\n';
+      throw std::runtime_error("libtiff threw while reading TIFF file " + fn);
+    }
     if (!tiff) {
-      throw std::runtime_error(
-          "ERROR reading (not existent, not accessible or no TIFF file)");
+      throw std::runtime_error("ERROR reading TIFF file " + fn);
     }
 
     if (TIFFIsTiled(tiff)) {
@@ -1881,9 +1888,8 @@ template <typename T> struct CompareResults {
 };
 
 auto get_vids = [](auto tree, auto lengths) {
-  return tree | rv::transform([&](auto v) {
-           return v->vid(lengths[0], lengths[1]);
-         }) |
+  return tree |
+         rv::transform([&](auto v) { return v->vid(lengths[0], lengths[1]); }) |
          rng::to_vector;
 };
 
@@ -1917,8 +1923,7 @@ auto compare_tree = [](auto truth_tree, auto check_tree, auto lengths) {
     std::cout << "match count: " << match_count << '\n';
 
   auto get_negatives = [&](auto &tree, auto &matches, auto specifier) {
-    return rv::set_difference(tree, matches) |
-           rv::transform([&](auto vid) {
+    return rv::set_difference(tree, matches) | rv::transform([&](auto vid) {
              if (print)
                std::cout << "false " << specifier
                          << " at: " << coord_to_str(id_to_coord(vid, lengths))
@@ -2354,18 +2359,15 @@ auto sphere_iterator = [](const GridCoord &center, const int radius) {
   int cx = center.x();
   int cy = center.y();
   int cz = center.z();
-  return rv::for_each(
-      rv::iota(cx - radius, 1 + cx + radius), [=](int x) {
-        return rv::for_each(
-            rv::iota(cy - radius, 1 + cy + radius), [=](int y) {
-              return rv::for_each(
-                  rv::iota(cz - radius, 1 + cz + radius), [=](int z) {
-                    auto const new_coord = GridCoord(x, y, z);
-                    return rng::yield_if(
-                        coord_dist(new_coord, center) <= radius, new_coord);
-                  });
-            });
+  return rv::for_each(rv::iota(cx - radius, 1 + cx + radius), [=](int x) {
+    return rv::for_each(rv::iota(cy - radius, 1 + cy + radius), [=](int y) {
+      return rv::for_each(rv::iota(cz - radius, 1 + cz + radius), [=](int z) {
+        auto const new_coord = GridCoord(x, y, z);
+        return rng::yield_if(coord_dist(new_coord, center) <= radius,
+                             new_coord);
       });
+    });
+  });
 };
 
 // sphere grouping compaction/pruning strategy inspired by Advantra's code
@@ -2524,7 +2526,7 @@ public:
 // advantra based re-extraction of tree based on bfs
 std::vector<MyMarker *>
 extract_trees(std::vector<MyMarker *> nlist,
-                       bool remove_isolated_tree_with_one_node = false) {
+              bool remove_isolated_tree_with_one_node = false) {
 
   BfsQueue<int> q;
   std::vector<MyMarker *> tree;
