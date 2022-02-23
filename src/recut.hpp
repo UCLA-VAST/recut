@@ -2822,8 +2822,11 @@ void Recut<image_t>::partition_components(
 #endif
 
     timer.restart();
-    if (!is_cluster_self_contained(cluster))
-      throw std::runtime_error("Extracted cluster not self contained");
+    if (!is_cluster_self_contained(cluster)) {
+      //throw std::runtime_error("Extracted cluster not self contained");
+      std::cout << "Warning: extracted cluster not self contained, skipping " + std::to_string(index) << '\n';
+      return; // skip this component
+    }
 
     auto pruned_cluster =
         prune_short_branches(cluster, this->args->min_branch_length);
