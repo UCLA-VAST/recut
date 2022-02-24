@@ -2882,9 +2882,8 @@ void Recut<image_t>::partition_components(
                     });
 
       // skip components that are 0s in the original image
-      unsigned int minv = 0, maxv = 0;
-      valued_window_grid->tree().evalMinMax(minv, maxv);
-      if (args->run_app2 && (maxv > 0)) {
+      auto mm = vto::minMax(valued_window_grid->tree());
+      if (args->run_app2 && (mm.max() > 0)) {
         // for comparison/benchmark/testing purposes
         run_app2(valued_window_grid, component_roots, component_dir_fn, index,
                  this->args->min_branch_length, component_log,
