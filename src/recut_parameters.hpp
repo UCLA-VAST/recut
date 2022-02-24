@@ -16,7 +16,7 @@ public:
         image_offsets(0, 0, 0), image_lengths(-1, -1, -1), input_type("point"),
         output_type("uint8"), prune_radius(ANISOTROPIC_FACTOR), run_app2(false),
         user_thread_count(tbb::info::default_concurrency()),
-        interval_lengths({-1, -1, -1}), min_branch_length(MIN_BRANCH_LENGTH),
+        tile_lengths({-1, -1, -1}), min_branch_length(MIN_BRANCH_LENGTH),
         convert_only(false), output_name("out.vdb"), background_thresh(-1),
         foreground_percent(-0.01), combine(false), histogram(false),
         window_grid_paths(std::vector<std::string>()), second_grid(std::string()),
@@ -52,7 +52,7 @@ public:
   double foreground_percent, slt_pct;
   VID_t selected, root_vid;
   bool run_app2, convert_only, combine, histogram;
-  std::array<int, 3> interval_lengths;
+  std::array<int, 3> tile_lengths;
 };
 
 RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]);

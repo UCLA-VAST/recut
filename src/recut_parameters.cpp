@@ -183,7 +183,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         ++i;
       } else if (strcmp(argv[i], "--tile-lengths") == 0) {
         for (int j = 0; j < 3; ++j) {
-          args.interval_lengths[j] = atoi(argv[i + 1]);
+          args.tile_lengths[j] = atoi(argv[i + 1]);
           ++i;
         }
       } else if (strcmp(argv[i], "--parallel") == 0 ||

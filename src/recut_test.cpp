@@ -49,7 +49,7 @@ void check_recut_error(Recut<uint16_t> &recut, DataType *ground_truth,
 
         auto coord_offset = coord - leaf_iter->origin();
         VID_t vid = coord_to_id(coord, recut.image_lengths);
-        // auto interval_id = recut.id_img_to_interval_id(vid);
+        // auto tile_id = recut.id_img_to_tile_id(vid);
 
         auto find_vid = [&]() {
           for (const auto &local_vertex : fifo[leaf_iter->origin()]) {
@@ -422,7 +422,7 @@ TEST(VDB, IntegrateUpdateGrid) {
     print_vdb_mask(update_accessor, grid_extents);
   }
 
-  VID_t interval_id = 0;
+  VID_t tile_id = 0;
   auto lower_corner = new_grid_coord(8, 8, 8);
   auto upper_corner = new_grid_coord(15, 15, 15);
   // both are in the same block
@@ -439,7 +439,7 @@ TEST(VDB, IntegrateUpdateGrid) {
     vt::LeafManager<PointTree> grid_leaf_manager(recut.topology_grid->tree());
     recut.integrate_update_grid(recut.topology_grid, grid_leaf_manager, stage,
                                 recut.map_fifo, recut.connected_map,
-                                recut.update_grid, interval_id);
+                                recut.update_grid, tile_id);
 
     cout << "Finished integrate\n";
 
@@ -447,7 +447,7 @@ TEST(VDB, IntegrateUpdateGrid) {
       auto matches =
           block_list | rv::transform([&](auto block_id) {
             auto block_img_offsets =
-                recut.id_interval_block_to_img_offsets(interval_id, block_id);
+                recut.id_tile_block_to_img_offsets(tile_id, block_id);
             if (print_all)
               cout << recut.connected_map[block_img_offsets][0].offsets << '\n';
             return coord_all_eq(
@@ -560,8 +560,8 @@ TEST(VDB, ActivateVids) {
     print_all_points(recut.topology_grid, recut.image_bbox);
   }
 
-  auto interval_id = 0;
-  ASSERT_TRUE(recut.active_intervals[interval_id]);
+  auto tile_id = 0;
+  ASSERT_TRUE(recut.active_tiles[tile_id]);
   ASSERT_FALSE(recut.connected_map[GridCoord(0)].empty());
 
   GridCoord root(3, 3, 3);
@@ -1011,7 +1011,7 @@ TEST(VDB, Connected) {
 
 TEST(VDB, ConvertTiffToPoint) {
   VID_t grid_size = 8;
-  VID_t interval_size = 8;
+  VID_t tile_size = 8;
   GridCoord grid_extents(grid_size);
   // do no use tcase 4 since it is randomized and will not match
   // for the second read test
@@ -1022,7 +1022,7 @@ TEST(VDB, ConvertTiffToPoint) {
   // test reading from a pre-generated image file of exact same as
   // recut.generated_image as long as tcase != 4
   // read from file and convert
-  auto args = get_args(grid_size, interval_size, interval_size, slt_pct, tcase,
+  auto args = get_args(grid_size, tile_size, tile_size, slt_pct, tcase,
                        /*input_is_vdb=*/false, "tiff", "point");
   auto recut = Recut<uint16_t>(args);
   recut.args->convert_only = true;
@@ -1036,7 +1036,7 @@ TEST(VDB, ConvertTiffToPoint) {
   }
 
   recut.initialize();
-  recut.activate_all_intervals();
+  recut.activate_all_tiles();
   // mutates topology_grid since point
   auto stage = "convert";
   recut.update(stage, recut.map_fifo);
@@ -1589,10 +1589,10 @@ TEST(CompareTree, All) {
   std::vector<MyMarker *> check;
   VID_t grid_size = 4;
   auto grid_extents = GridCoord(grid_size);
-  auto interval_size = grid_size;
+  auto tile_size = grid_size;
   VID_t block_size = 2;
 
-  auto args = get_args(grid_size, interval_size, block_size, 100, 1, true);
+  auto args = get_args(grid_size, tile_size, block_size, 100, 1, true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
 
@@ -1803,12 +1803,12 @@ TEST(CheckGlobals, DISABLED_AllFifo) {
 // auto recut = Recut<uint16_t>(args);
 // auto block_lengths =
 // new_grid_coord(block_length, block_length, block_length);
-// auto interval_block_lengths = coord_div(image_dims, block_lengths);
-// print_coord(interval_block_lengths, "\tinterval_block_lengths");
-// auto interval_block_size = coord_prod_accum(interval_block_lengths);
+// auto tile_block_lengths = coord_div(image_dims, block_lengths);
+// print_coord(tile_block_lengths, "\ttile_block_lengths");
+// auto tile_block_size = coord_prod_accum(tile_block_lengths);
 // cout << "\tblock_length: " << block_length
-//<< " interval_block_size: " << interval_block_size << '\n';
-// recut.initialize_globals(1, interval_block_size);
+//<< " tile_block_size: " << tile_block_size << '\n';
+// recut.initialize_globals(1, tile_block_size);
 //// delete recut;
 //}
 //};
@@ -1892,7 +1892,7 @@ TEST(Update, EachStageIteratively) {
   // std::vector<int> grid_sizes = {max_size / 16, max_size / 8, max_size / 4,
   // max_size / 2, max_size};
   std::vector<int> grid_sizes = {max_size};
-  std::vector<int> interval_sizes = {max_size};
+  std::vector<int> tile_sizes = {max_size};
   std::vector<int> block_sizes = {8}; //, max_size / 2, max_size / 4};
   std::vector<bool> input_is_vdbs = {true};
   // tcase 5 is a sphere of radius grid_size / 4 centered
@@ -1919,23 +1919,23 @@ TEST(Update, EachStageIteratively) {
       if (check_xy) {
         app2_xy_radii_grid = std::make_unique<uint16_t[]>(tol_sz);
       }
-      for (auto &interval_size : interval_sizes) {
-        if (interval_size > grid_size)
+      for (auto &tile_size : tile_sizes) {
+        if (tile_size > grid_size)
           continue;
         for (auto &block_size : block_sizes) {
-          if (block_size > interval_size)
+          if (block_size > tile_size)
             continue;
           auto is_sequential_run =
-              (grid_size == interval_size) && (grid_size == block_size) ? true
+              (grid_size == tile_size) && (grid_size == block_size) ? true
                                                                         : false;
           for (auto &tcase : tcases) {
             GridCoord grid_extents(grid_size);
-            GridCoord interval_extents(interval_size);
+            GridCoord tile_extents(tile_size);
             GridCoord block_extents(block_size);
 
             // Create ground truth refence for the rest of the loop body
             auto ground_truth_args =
-                get_args(grid_size, interval_size, block_size, slt_pct, tcase);
+                get_args(grid_size, tile_size, block_size, slt_pct, tcase);
             auto ground_truth_image = std::make_unique<uint16_t[]>(tol_sz);
             ASSERT_NE(tcase, 4)
                 << "tcase 4 will fail this test since a new random ground "
@@ -1945,17 +1945,17 @@ TEST(Update, EachStageIteratively) {
                 ground_truth_args.selected, ground_truth_args.root_vid);
 
             // the total number of blocks allows more parallelism
-            // ideally intervals >> thread count
-            auto final_interval_size =
-                interval_size > grid_size ? grid_size : interval_size;
-            auto final_block_size = block_size > final_interval_size
-                                        ? final_interval_size
+            // ideally tiles >> thread count
+            auto final_tile_size =
+                tile_size > grid_size ? grid_size : tile_size;
+            auto final_block_size = block_size > final_tile_size
+                                        ? final_tile_size
                                         : block_size;
 
             std::ostringstream iteration_trace;
             // use this to tag and reconstruct data from json file
-            iteration_trace << "grid_size " << grid_size << " interval_size "
-                            << final_interval_size << " block_size "
+            iteration_trace << "grid_size " << grid_size << " tile_size "
+                            << final_tile_size << " block_size "
                             << final_block_size
                             << " input_is_vdb: " << input_is_vdb << '\n';
             SCOPED_TRACE(iteration_trace.str());
@@ -1964,7 +1964,7 @@ TEST(Update, EachStageIteratively) {
             // Initialize Recut for this loop iteration args
             // always read from file and make sure it matches the ground truth
             // image generated on the fly above
-            auto args = get_args(grid_size, interval_size, block_size, slt_pct,
+            auto args = get_args(grid_size, tile_size, block_size, slt_pct,
                                  tcase, input_is_vdb);
 
             auto recut = Recut<uint16_t>(args);
@@ -1975,7 +1975,7 @@ TEST(Update, EachStageIteratively) {
               print_image_3D(ground_truth_image.get(), grid_extents);
               if (input_is_vdb) {
                 auto vdb_accessor = recut.topology_grid->getConstAccessor();
-                print_vdb_mask(vdb_accessor, interval_extents);
+                print_vdb_mask(vdb_accessor, tile_extents);
               }
             }
 
@@ -2075,7 +2075,7 @@ TEST(Update, EachStageIteratively) {
                                  "radius");
               }
 
-              VID_t interval_num = 0;
+              VID_t tile_num = 0;
 
               if (check_xy) {
                 double xy_err;
@@ -2187,12 +2187,12 @@ TEST(Update, EachStageIteratively) {
                 if (print_all) {
                   std::cout << "APP2 prune\n";
                   std::cout << iteration_trace.str();
-                  print_marker_3D(app2_output_tree_prune, interval_extents,
+                  print_marker_3D(app2_output_tree_prune, tile_extents,
                                   "label");
 
                   std::cout << "APP2 radius\n";
                   std::cout << iteration_trace.str();
-                  print_marker_3D(app2_output_tree_prune, interval_extents,
+                  print_marker_3D(app2_output_tree_prune, tile_extents,
                                   "radius");
                 }
               }
@@ -2263,15 +2263,15 @@ TEST(Update, EachStageIteratively) {
               if (print_all) {
                 std::cout << "Recut coverage mask\n";
                 std::cout << iteration_trace.str();
-                print_image_3D(mask.get(), interval_extents);
+                print_image_3D(mask.get(), tile_extents);
 
                 std::cout << "APP2 coverage mask\n";
                 std::cout << iteration_trace.str();
-                print_image_3D(app2_mask.get(), interval_extents);
+                print_image_3D(app2_mask.get(), tile_extents);
 
                 std::cout << "Ground truth image";
                 std::cout << iteration_trace.str();
-                print_image_3D(ground_truth_image.get(), interval_extents);
+                print_image_3D(ground_truth_image.get(), tile_extents);
               }
 
               //// compare_tree will print to log matches, false positive and

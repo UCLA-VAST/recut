@@ -118,9 +118,6 @@ option(TEST_ALL_BENCHMARKS
   OFF)
 
 set( GIT_HASH OFF CACHE STRING "Hash of the latest git commit")
-#  Scheduling
-option( NO_INTERVAL_RV OFF)
-option( SCHEDULE_INTERVAL_RV OFF)
 # Define how revisits/reupdates to previous seen vertices is handled
 option( RV "Count the number of revisits or attempted revisits of vertices" OFF)
 option(NO_RV "Reject any vertices from having new updated values after they have already been visited" OFF)

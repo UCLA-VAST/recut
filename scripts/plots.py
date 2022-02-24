@@ -166,7 +166,7 @@ def stages(args):
 
 def value(args):
     ''' Fastmarching Performance '''
-    cross_compile_flags=['NO_SCHEDULE', 'NO_INTERVAL_RV', 'SCHEDULE_INTERVAL_RV']
+    cross_compile_flags=[]
     baseline_flags = ['TEST_ALL_BENCHMARKS']
     # desired_test_runs = [11, 12, 18, 19, 25, 26, 32, 33]
     desired_test_runs = [32, 33, 34, 35, 36, 37, 38]

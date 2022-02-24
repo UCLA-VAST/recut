@@ -265,7 +265,7 @@ std::vector<MyMarker *> coords_to_markers(std::vector<GridCoord> coords) {
          rng::to_vector;
 }
 
-/* interval_length parameter is actually irrelevant due to
+/* tile_length parameter is actually irrelevant due to
  * copy on write, the chunk requested during reading
  * or mmapping is
  */
@@ -275,26 +275,26 @@ VID_t get_used_vertex_size(VID_t grid_size, VID_t block_size) {
   auto pad_block_size = block_size + 2;
   auto pad_block_num = pad_block_size * pad_block_size * pad_block_size;
   // this is the total vertices that will be used including ghost cells
-  auto interval_vert_num = pad_block_num * total_blocks;
-  return interval_vert_num;
+  auto tile_vert_num = pad_block_num * total_blocks;
+  return tile_vert_num;
 }
 
-auto print_marker_3D = [](auto markers, auto interval_lengths,
+auto print_marker_3D = [](auto markers, auto tile_lengths,
                           std::string stage) {
-  for (int zi = 0; zi < interval_lengths[2]; zi++) {
+  for (int zi = 0; zi < tile_lengths[2]; zi++) {
     cout << "y | Z=" << zi << '\n';
-    for (int xi = 0; xi < 2 * interval_lengths[0] + 4; xi++) {
+    for (int xi = 0; xi < 2 * tile_lengths[0] + 4; xi++) {
       cout << "-";
     }
     cout << '\n';
-    for (int yi = 0; yi < interval_lengths[1]; yi++) {
+    for (int yi = 0; yi < tile_lengths[1]; yi++) {
       cout << yi << " | ";
-      for (int xi = 0; xi < interval_lengths[0]; xi++) {
-        VID_t index = ((VID_t)xi) + yi * interval_lengths[0] +
-                      zi * interval_lengths[1] * interval_lengths[0];
+      for (int xi = 0; xi < tile_lengths[0]; xi++) {
+        VID_t index = ((VID_t)xi) + yi * tile_lengths[0] +
+                      zi * tile_lengths[1] * tile_lengths[0];
         auto value = std::string{"-"};
         for (const auto &m : markers) {
-          if (m->vid(interval_lengths[0], interval_lengths[1]) == index) {
+          if (m->vid(tile_lengths[0], tile_lengths[1]) == index) {
             if (stage == "label") {
               value = "B";
             } else if (stage == "radius") {
@@ -533,7 +533,7 @@ auto print_point_count = [](auto grid) {
 };
 
 auto get_transform = []() {
-  // grid_transform must use the same voxel size for all intervals
+  // grid_transform must use the same voxel size for all tiles
   // and be identical
   auto grid_transform =
       openvdb::math::Transform::createLinearTransform(VOXEL_SIZE);
@@ -1280,7 +1280,7 @@ VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
  */
 VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
                    int grid_size) {
-  int interval = grid_size / line_per_dim; // roughly equiv
+  int tile = grid_size / line_per_dim; // roughly equiv
   std::vector<VID_t> x(line_per_dim + 1);
   std::vector<VID_t> y(line_per_dim + 1);
   std::vector<VID_t> z(line_per_dim + 1);
@@ -1288,7 +1288,7 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
   i = j = k = 0;
   count = 0;
   VID_t selected = 0;
-  for (int count = 0; count < grid_size; count += interval) {
+  for (int count = 0; count < grid_size; count += tile) {
     x.push_back(count);
     y.push_back(count);
     z.push_back(count);
@@ -1338,7 +1338,7 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
 }
 
 RecutCommandLineArgs
-get_args(int grid_size, int interval_length, int block_size, int slt_pct,
+get_args(int grid_size, int tile_length, int block_size, int slt_pct,
          int tcase, bool input_is_vdb = false, std::string input_type = "point",
          std::string output_type = "point", int downsample_factor = 1) {
 
@@ -3500,12 +3500,12 @@ auto get_hdf5_data = [](std::string file_name, int channel = 0) {
 #endif // USE_HDF5
 
 /*
- * The interval size and shape define the requested "view" of the image
+ * The tile size and shape define the requested "view" of the image
  * an image view is referred to as a tile
  * that we will load at one time. There is a one to one mapping
- * of an image view and an interval. There is also a one to
+ * of an image view and an tile. There is also a one to
  * one mapping between each voxel of the image view and the
- * vertex of the interval. Note the interval is an array of
+ * vertex of the tile. Note the tile is an array of
  * initialized unvisited structs so they start off at arbitrary
  * location but are defined as they are visited.
  */
