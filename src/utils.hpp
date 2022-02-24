@@ -989,7 +989,7 @@ auto create_point_grid = [](auto &positions, auto lengths, auto transform_ptr,
       openvdb::points::createPointDataGrid<FPCodec, EnlargedPointDataGrid>(
           *point_index_grid, wrapper, *transform_ptr);
 
-  //grid->tree().prune();
+  grid->tree().prune();
 
   set_grid_meta(grid, lengths, requested_fg_pct);
 
@@ -1730,12 +1730,13 @@ auto read_tiff_planes = [](const std::vector<std::string> &fns,
     if (!fs::exists(fn)) {
       throw std::runtime_error("ERROR non existent TIFF file " + fn);
     }
-    TIFF* tiff;
+    TIFF *tiff;
     try {
       tiff = TIFFOpen(&fn[0], "r");
     } catch (...) {
-      //std::cout << " a standard exception was caught, with message " << e.what()
-                //<< '\n';
+      // std::cout << " a standard exception was caught, with message " <<
+      // e.what()
+      //<< '\n';
       throw std::runtime_error("libtiff threw while reading TIFF file " + fn);
     }
     if (!tiff) {
@@ -1803,14 +1804,19 @@ auto get_dir_files = [](const std::string &dir, const std::string &ext) {
     throw std::runtime_error(os.str());
   }
 
-  auto tif_filenames = std::vector<std::string>();
-  rng::for_each(fs::directory_iterator(dir), [&tif_filenames, &dir,
-                                              &ext](auto const &entry) {
-    if (fs::is_regular_file(entry) && entry.path().extension() == ext) {
-      const auto full_name = dir + "/" + entry.path().filename().string();
-      tif_filenames.emplace_back(full_name);
-    }
-  });
+  // not a safe range, so convert to object before passing to range-v3
+  auto iter = fs::directory_iterator(dir);
+  auto tif_filenames =
+      iter |
+      rv::filter([](auto const &entry) { return fs::is_regular_file(entry); }) |
+      rv::filter([&ext](auto const &entry) {
+        return entry.path().extension() == ext;
+      }) |
+      rv::transform([&dir](auto const &entry) {
+        return dir + "/" + entry.path().filename().string();
+      }) |
+      rv::filter([](auto const &entry) { return fs::exists(entry); }) |
+      rng::to_vector;
 
   if (tif_filenames.empty()) {
     os << " directory must contain at least one file with extension " << ext;
