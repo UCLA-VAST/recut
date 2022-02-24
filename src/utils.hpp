@@ -989,7 +989,7 @@ auto create_point_grid = [](auto &positions, auto lengths, auto transform_ptr,
       openvdb::points::createPointDataGrid<FPCodec, EnlargedPointDataGrid>(
           *point_index_grid, wrapper, *transform_ptr);
 
-  grid->tree().prune();
+  //grid->tree().prune();
 
   set_grid_meta(grid, lengths, requested_fg_pct);
 
