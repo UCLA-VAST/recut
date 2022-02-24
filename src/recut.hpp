@@ -2056,6 +2056,10 @@ void Recut<image_t>::io_interval(int interval_id, T1 &grids, T2 &uint8_grids,
     auto tile_offsets = id_interval_to_img_offsets(interval_id);
     // bbox is inclusive, therefore substract 1
     auto interval_max = (tile_offsets + this->interval_lengths).offsetBy(-1);
+    // protect out of bounds
+    if (interval_max.z() >= this->image_lengths[2]) {
+      interval_max[2] = this->image_lengths[2] - 1;
+    }
     const auto tile_bbox = CoordBBox(tile_offsets, interval_max);
     std::unique_ptr<vto::Dense<image_t, vto::LayoutXYZ>> dense_tile;
 
