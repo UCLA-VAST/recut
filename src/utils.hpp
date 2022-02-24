@@ -1733,9 +1733,9 @@ auto read_tiff_planes = [](const std::vector<std::string> &fns,
     TIFF* tiff;
     try {
       tiff = TIFFOpen(&fn[0], "r");
-    } catch (const std::exception &e) {
-      std::cout << " a standard exception was caught, with message " << e.what()
-                << '\n';
+    } catch (...) {
+      //std::cout << " a standard exception was caught, with message " << e.what()
+                //<< '\n';
       throw std::runtime_error("libtiff threw while reading TIFF file " + fn);
     }
     if (!tiff) {
