@@ -23,11 +23,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1640727881,
-        "narHash": "sha256-m8HECsPdrUav6Ybs81T/tfxkeKT0D7ApBZg2P9e7Re8=",
+        "lastModified": 1645675666,
+        "narHash": "sha256-9hhUHISJ1FP+RgyhNBA2nX8VxXAs5PeUPyxr5HdABbs=",
         "ref": "master",
-        "rev": "d671a528898aaabdac0c78f221d05bc6987e5fc8",
-        "revCount": 3275,
+        "rev": "0ebe10997b452894a9e051c8a8880be5c36cd6e7",
+        "revCount": 3393,
         "type": "git",
         "url": "ssh://git@github.com/UCLA-VAST/openvdb"
       },
