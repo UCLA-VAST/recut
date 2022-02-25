@@ -136,8 +136,7 @@ public:
 
   image_t get_img_val(const image_t *tile, GridCoord coord);
   inline VID_t rotate_index(VID_t img_coord, const VID_t current,
-                            const VID_t neighbor,
-                            const VID_t tile_block_size,
+                            const VID_t neighbor, const VID_t tile_block_size,
                             const VID_t pad_block_size);
   template <typename T>
   void place_vertex(const VID_t nb_tile_id, VID_t block_id, VID_t nb,
@@ -160,9 +159,8 @@ public:
   OffsetCoord v_to_off(VID_t tile_id, VID_t block_id, VertexAttr *v);
 
   template <typename T>
-  void check_ghost_update(VID_t tile_id, VID_t block_id,
-                          GridCoord dst_coord, VertexAttr *dst,
-                          std::string stage, T vdb_accessor);
+  void check_ghost_update(VID_t tile_id, VID_t block_id, GridCoord dst_coord,
+                          VertexAttr *dst, std::string stage, T vdb_accessor);
   template <typename IndT, typename FlagsT, typename ParentsT, typename ValueT,
             typename PointIter, typename UpdateIter>
   bool accumulate_value(const image_t *tile, VID_t tile_id, VID_t block_id,
@@ -176,16 +174,15 @@ public:
                         float current_vox);
   template <typename T2, typename FlagsT, typename ParentsT, typename PointIter,
             typename UpdateIter>
-  bool accumulate_connected(const image_t *tile, VID_t tile_id,
-                            VID_t block_id, GridCoord dst_coord, T2 ind,
+  bool accumulate_connected(const image_t *tile, VID_t tile_id, VID_t block_id,
+                            GridCoord dst_coord, T2 ind,
                             OffsetCoord offset_to_current, VID_t &revisits,
                             const TileThresholds<image_t> *tile_thresholds,
                             bool &found_adjacent_invalid, PointIter point_leaf,
                             UpdateIter update_leaf, FlagsT flags_handle,
                             ParentsT parents_handle,
                             std::deque<VertexAttr> &connected_fifo);
-  bool is_covered_by_parent(VID_t tile_id, VID_t block_id,
-                            VertexAttr *current);
+  bool is_covered_by_parent(VID_t tile_id, VID_t block_id, VertexAttr *current);
   template <class Container, typename IndT, typename RadiusT, typename FlagsT,
             typename UpdateIter>
   void accumulate_prune(VID_t tile_id, VID_t block_id, GridCoord dst_coord,
@@ -239,12 +236,11 @@ public:
   template <typename T2>
   std::atomic<double>
   process_tile(VID_t tile_id, const image_t *tile, std::string stage,
-                   const TileThresholds<image_t> *tile_thresholds,
-                   T2 vdb_accessor);
+               const TileThresholds<image_t> *tile_thresholds, T2 vdb_accessor);
   template <typename T1, typename T2, typename T3, typename T4>
   void io_tile(int tile_id, T1 &grids, T2 &uint8_grids, T3 &float_grids,
-                   T4 &mask_grids, std::string stage,
-                   Histogram<image_t> &histogram);
+               T4 &mask_grids, std::string stage,
+               Histogram<image_t> &histogram);
   template <class Container>
   void update(std::string stage, Container &fifo = nullptr);
   GridCoord get_input_image_lengths(RecutCommandLineArgs *args);
@@ -266,10 +262,9 @@ public:
 
 template <class image_t>
 GridCoord Recut<image_t>::id_tile_to_img_offsets(const VID_t tile_id) {
-  return coord_add(
-      this->image_offsets,
-      coord_prod(id_to_coord(tile_id, this->grid_tile_lengths),
-                 this->tile_lengths));
+  return coord_add(this->image_offsets,
+                   coord_prod(id_to_coord(tile_id, this->grid_tile_lengths),
+                              this->tile_lengths));
 }
 
 template <class image_t>
@@ -329,7 +324,7 @@ VID_t Recut<image_t>::id_img_to_block_id(const VID_t vid) {
 // first coord of block with respect to whole image
 template <typename image_t>
 GridCoord Recut<image_t>::id_tile_block_to_img_offsets(VID_t tile_id,
-                                                           VID_t block_id) {
+                                                       VID_t block_id) {
   return coord_add(id_tile_to_img_offsets(tile_id),
                    id_block_to_tile_offsets(block_id));
 }
@@ -338,8 +333,7 @@ GridCoord Recut<image_t>::id_tile_block_to_img_offsets(VID_t tile_id,
 template <typename image_t>
 GridCoord Recut<image_t>::v_to_img_coord(VID_t tile_id, VID_t block_id,
                                          VertexAttr *v) {
-  return coord_add(v->offsets,
-                   id_tile_block_to_img_offsets(tile_id, block_id));
+  return coord_add(v->offsets, id_tile_block_to_img_offsets(tile_id, block_id));
 }
 
 // recompute the vertex vid
@@ -353,8 +347,7 @@ VID_t Recut<image_t>::v_to_img_id(VID_t tile_id, VID_t block_id,
 template <typename image_t>
 OffsetCoord Recut<image_t>::v_to_off(VID_t tile_id, VID_t block_id,
                                      VertexAttr *v) {
-  return coord_mod(v_to_img_coord(tile_id, block_id, v),
-                   this->block_lengths);
+  return coord_mod(v_to_img_coord(tile_id, block_id, v), this->block_lengths);
 }
 
 // adds all markers to root_pairs
@@ -470,8 +463,7 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
 template <class image_t>
 template <class Container>
 void Recut<image_t>::setup_radius(Container &fifo) {
-  for (size_t tile_id = 0; tile_id < grid_tile_size;
-       ++tile_id) {
+  for (size_t tile_id = 0; tile_id < grid_tile_size; ++tile_id) {
     active_tiles[tile_id] = true;
 #ifdef FULL_PRINT
     cout << "Set tile " << tile_id << " to active\n";
@@ -594,8 +586,8 @@ template <typename T, typename T2> T absdiff(const T &lhs, const T2 &rhs) {
  */
 template <class image_t>
 image_t Recut<image_t>::get_img_val(const image_t *tile, GridCoord coord) {
-  auto buffer_coord = coord_to_id(coord_mod(coord, this->tile_lengths),
-                                  this->tile_lengths);
+  auto buffer_coord =
+      coord_to_id(coord_mod(coord, this->tile_lengths), this->tile_lengths);
   return tile[buffer_coord];
 }
 
@@ -970,8 +962,8 @@ bool Recut<image_t>::accumulate_connected(
  */
 template <class image_t>
 template <typename T>
-void Recut<image_t>::place_vertex(const VID_t nb_tile_id,
-                                  const VID_t block_id, const VID_t nb_block_id,
+void Recut<image_t>::place_vertex(const VID_t nb_tile_id, const VID_t block_id,
+                                  const VID_t nb_block_id,
                                   struct VertexAttr *dst, GridCoord dst_coord,
                                   OffsetCoord msg_offsets, std::string stage,
                                   T vdb_accessor) {
@@ -1036,9 +1028,8 @@ void Recut<image_t>::check_ghost_update(VID_t tile_id, VID_t block_id,
       VID_t nb_tile_id = tile_id; // defaults to current tile
       if (dst_tile_offsets[1] == 0) {
         nb_tile_id = tile_id - this->grid_tile_lengths[0];
-        nb = sub_block_to_block_id(block_coord[0],
-                                   this->tile_block_lengths[1] - 1,
-                                   block_coord[2]);
+        nb = sub_block_to_block_id(
+            block_coord[0], this->tile_block_lengths[1] - 1, block_coord[2]);
       }
       if ((nb >= 0) && (nb < tile_block_size)) // within valid block bounds
         place_vertex(nb_tile_id, block_id, nb, dst, dst_coord,
@@ -1049,12 +1040,12 @@ void Recut<image_t>::check_ghost_update(VID_t tile_id, VID_t block_id,
   }
   if (dst_offsets[2] == 0) {
     if (dst_coord[2] > 0) { // protect from image out of bounds
-      VID_t nb = block_id - this->tile_block_lengths[0] *
-                                this->tile_block_lengths[1];
+      VID_t nb =
+          block_id - this->tile_block_lengths[0] * this->tile_block_lengths[1];
       VID_t nb_tile_id = tile_id; // defaults to current tile
       if (dst_tile_offsets[2] == 0) {
-        nb_tile_id = tile_id - this->grid_tile_lengths[0] *
-                                           this->grid_tile_lengths[1];
+        nb_tile_id =
+            tile_id - this->grid_tile_lengths[0] * this->grid_tile_lengths[1];
         nb = sub_block_to_block_id(block_coord[0], block_coord[1],
                                    this->tile_block_lengths[2] - 1);
       }
@@ -1069,12 +1060,12 @@ void Recut<image_t>::check_ghost_update(VID_t tile_id, VID_t block_id,
   if (dst_offsets[2] == this->block_lengths[0] - 1) {
     if (dst_coord[2] <
         this->image_lengths[2] - 1) { // protect from image out of bounds
-      VID_t nb = block_id + this->tile_block_lengths[0] *
-                                this->tile_block_lengths[1];
+      VID_t nb =
+          block_id + this->tile_block_lengths[0] * this->tile_block_lengths[1];
       VID_t nb_tile_id = tile_id; // defaults to current tile
       if (dst_tile_offsets[2] == this->tile_lengths[2] - 1) {
-        nb_tile_id = tile_id + this->grid_tile_lengths[0] *
-                                           this->grid_tile_lengths[1];
+        nb_tile_id =
+            tile_id + this->grid_tile_lengths[0] * this->grid_tile_lengths[1];
         nb = sub_block_to_block_id(block_coord[0], block_coord[1], 0);
       }
       if ((nb >= 0) && (nb < tile_block_size)) // within valid block bounds
@@ -1835,9 +1826,9 @@ void Recut<image_t>::prune_tile(const image_t *tile, VID_t tile_id,
         rv::transform([&](auto coord_img) {
           auto ind = leaf_iter->beginIndexVoxel(coord_img);
           // ...has side-effects
-          accumulate_prune(tile_id, block_id, coord_img, ind,
-                           current->radius, current->tombstone(), fifo,
-                           radius_handle, flags_handle, update_leaf);
+          accumulate_prune(tile_id, block_id, coord_img, ind, current->radius,
+                           current->tombstone(), fifo, radius_handle,
+                           flags_handle, update_leaf);
           return ind;
         }) |
         rng::to_vector;
@@ -1863,17 +1854,17 @@ void Recut<image_t>::march_narrow_band(
   VID_t revisits = 0;
 
   if (stage == "value") {
-    value_tile(tile, tile_id, block_id, stage, tile_thresholds, fifo,
-               revisits, leaf_iter);
+    value_tile(tile, tile_id, block_id, stage, tile_thresholds, fifo, revisits,
+               leaf_iter);
   } else if (stage == "connected") {
     connected_tile(tile, tile_id, block_id, stage, tile_thresholds,
                    connected_fifo, fifo, revisits, leaf_iter);
   } else if (stage == "radius") {
-    radius_tile(tile, tile_id, block_id, stage, tile_thresholds, fifo,
-                revisits, leaf_iter);
+    radius_tile(tile, tile_id, block_id, stage, tile_thresholds, fifo, revisits,
+                leaf_iter);
   } else if (stage == "prune") {
-    prune_tile(tile, tile_id, block_id, stage, tile_thresholds, fifo,
-               revisits, leaf_iter);
+    prune_tile(tile, tile_id, block_id, stage, tile_thresholds, fifo, revisits,
+               leaf_iter);
   } else {
     assertm(false, "Stage name not recognized");
   }
@@ -1977,9 +1968,8 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
   if (this->args->foreground_percent >= 0) {
     auto timer = high_resolution_timer();
     // TopPercentile takes a fraction 0 -> 1, not a percentile
-    tile_thresholds->bkg_thresh =
-        bkg_threshold<image_t>(tile->data(), tile_vertex_size,
-                               (this->args->foreground_percent) / 100);
+    tile_thresholds->bkg_thresh = bkg_threshold<image_t>(
+        tile->data(), tile_vertex_size, (this->args->foreground_percent) / 100);
 
 #ifdef LOG
     // cout << "Requested foreground percent: " <<
@@ -2040,9 +2030,8 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
 template <class image_t>
 template <typename T1, typename T2, typename T3, typename T4>
 void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
-                                 T3 &float_grids, T4 &mask_grids,
-                                 std::string stage,
-                                 Histogram<image_t> &histogram) {
+                             T3 &float_grids, T4 &mask_grids, std::string stage,
+                             Histogram<image_t> &histogram) {
 
   // only start tiles that have active processing to do
   if (!active_tiles[tile_id]) {
@@ -2116,9 +2105,9 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
       convert_buffer_to_vdb_acc(
           tile, tile_bbox.dim(),
           /*buffer_offsets=*/buffer_offsets,
-          /*image_offsets=*/tile_bbox.min(),
-          mask_grids[tile_id]->getAccessor(), this->args->output_type,
-          tile_thresholds->bkg_thresh, this->args->upsample_z);
+          /*image_offsets=*/tile_bbox.min(), mask_grids[tile_id]->getAccessor(),
+          this->args->output_type, tile_thresholds->bkg_thresh,
+          this->args->upsample_z);
       if (args->histogram) {
         histogram += hist(tile, tile_bbox.dim(), buffer_offsets);
       }
@@ -2139,17 +2128,15 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
                             this->args->foreground_percent);
 
 #ifdef FULL_PRINT
-      print_vdb_mask(grids[tile_id]->getConstAccessor(),
-                     this->image_lengths);
+      print_vdb_mask(grids[tile_id]->getConstAccessor(), this->image_lengths);
 #endif
     }
 
     active_tiles[tile_id] = false;
 #ifdef LOG
-    std::cout << "Completed tile " << tile_id + 1 << " of "
-              << grid_tile_size << " in " << tile_timer.elapsed()
-              << " converted in " << (tile_timer.elapsed() - convert_start)
-              << " s\n";
+    std::cout << "Completed tile " << tile_id + 1 << " of " << grid_tile_size
+              << " in " << tile_timer.elapsed() << " converted in "
+              << (tile_timer.elapsed() - convert_start) << " s\n";
 #endif
   } else {
     // note openvdb::initialize() must have been called before this point
@@ -2166,8 +2153,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
         /*min*/ 0,
         /*bkg_thresh*/ 0);
 
-    process_tile(tile_id, tile, stage, tile_thresholds,
-                     update_accessor);
+    process_tile(tile_id, tile, stage, tile_thresholds, update_accessor);
   }
 } // if the tile is active
 
@@ -2193,8 +2179,7 @@ void Recut<image_t>::update(std::string stage, Container &fifo) {
   // continue iterating until all tiles are finished
   // tiles can be (re)activated by neighboring tiles
   int outer_iteration_idx;
-  for (outer_iteration_idx = 0; !are_tiles_finished();
-       outer_iteration_idx++) {
+  for (outer_iteration_idx = 0; !are_tiles_finished(); outer_iteration_idx++) {
 
     // Create the custom task_arena with specified threads
     tbb::task_arena arena(args->user_thread_count);
@@ -2203,9 +2188,8 @@ void Recut<image_t>::update(std::string stage, Container &fifo) {
     arena.execute([&] {
       tbb::parallel_for_each(rv::indices(grid_tile_size) | rng::to_vector,
                              [&](const auto tile_id) {
-                               io_tile(tile_id, grids, uint8_grids,
-                                           float_grids, mask_grids, stage,
-                                           histogram);
+                               io_tile(tile_id, grids, uint8_grids, float_grids,
+                                       mask_grids, stage, histogram);
                              }); // end one tile traversal
     });
   } // finished all tiles
@@ -2288,8 +2272,7 @@ inline VID_t Recut<image_t>::sub_block_to_block_id(const VID_t iblock,
                                                    const VID_t jblock,
                                                    const VID_t kblock) {
   return iblock + jblock * this->tile_block_lengths[0] +
-         kblock * this->tile_block_lengths[0] *
-             this->tile_block_lengths[1];
+         kblock * this->tile_block_lengths[0] * this->tile_block_lengths[1];
 }
 
 // Wrap-around rotate all values forward one
@@ -2542,9 +2525,8 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
     // respect that for best performance
     int zchunk = args->input_type == "ims" ? 8 : 8;
     // if it wasn't set by user on command line, then set default
-    this->tile_lengths[2] = this->args->tile_lengths[2] < 1
-                                    ? zchunk
-                                    : this->args->tile_lengths[2];
+    this->tile_lengths[2] =
+        this->args->tile_lengths[2] < 1 ? zchunk : this->args->tile_lengths[2];
 
     //// based on imaris chunk size, Note this makes performance slower
     // most likely due to the cost of seeking to the chunk
@@ -2825,8 +2807,10 @@ void Recut<image_t>::partition_components(
 
     timer.restart();
     if (!is_cluster_self_contained(cluster)) {
-      //throw std::runtime_error("Extracted cluster not self contained");
-      std::cout << "Warning: extracted cluster not self contained, skipping " + std::to_string(index) << '\n';
+      // throw std::runtime_error("Extracted cluster not self contained");
+      std::cout << "Warning: extracted cluster not self contained, skipping " +
+                       std::to_string(index)
+                << '\n';
       return; // skip this component
     }
 
@@ -2836,19 +2820,23 @@ void Recut<image_t>::partition_components(
     if (!is_cluster_self_contained(pruned_cluster))
       throw std::runtime_error("Pruend cluster not self contained");
 
-    pruned_cluster = fix_trifurcations(pruned_cluster);
-    { // check
-      auto trifurcations = tree_is_valid(pruned_cluster);
-      if (!trifurcations.empty()) {
-        rng::for_each(trifurcations,
-                      [](auto mismatch) { std::cout << *mismatch << '\n'; });
-        throw std::runtime_error("Tree has trifurcations" + std::to_string(index));
-      }
-      if (!is_cluster_self_contained(pruned_cluster))
-        throw std::runtime_error("Trifurc cluster not self contained");
-    }
-
     auto trees = partition_cluster(pruned_cluster);
+
+    auto fixed_trees = trees | rv::transform([index](auto tree) {
+      auto fixed_tree = fix_trifurcations(tree);
+      { // check
+        auto trifurcations = tree_is_valid(tree);
+        if (!trifurcations.empty()) {
+          rng::for_each(trifurcations,
+                        [](auto mismatch) { std::cout << *mismatch << '\n'; });
+          throw std::runtime_error("Tree has trifurcations" +
+                                   std::to_string(index));
+        }
+        if (!is_cluster_self_contained(tree))
+          throw std::runtime_error("Trifurc cluster not self contained" + std::to_string(index));
+      }
+      return fixed_tree;
+    });
 
 #ifdef LOG
     component_log << "TP, " << timer.elapsed() << '\n';
@@ -2896,13 +2884,13 @@ void Recut<image_t>::partition_components(
     component_log << "Bounding box, " << bbox << '\n';
 #endif
 
-    for (auto tree : trees) {
+    rng::for_each(fixed_trees, [&](auto tree) {
       write_swc(tree, component_dir_fn, bbox,
                 /*bbox_adjust*/ !args->window_grid_paths.empty());
       if (!tree_is_sorted(tree)) {
         throw std::runtime_error("Tree is not properly sorted");
       }
-    }
+    });
 
     auto write_soma_locs = [](auto component_roots,
                               std::string component_dir_fn) {
