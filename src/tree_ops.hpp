@@ -63,10 +63,12 @@ auto is_cluster_self_contained = [](const std::vector<MyMarker *> &cluster) {
       cluster | rv::filter([](auto marker) {
         return marker->type; // skip roots
       }) |
-      rv::filter([&](auto marker) {
-        // get parent
-        if (!marker->parent)
-          throw std::runtime_error("Parent missing");
+      rv::filter([](auto marker) {
+        if (!marker->parent) // roots skipped above
+                throw std::runtime_error("Only roots can have invalid parents");
+        return marker->parent->type; // ignore if parent is root
+      }) |
+      rv::filter([&coord_to_idx](auto marker) {
         const auto parent_coord =
             GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
         const auto parent_pair = coord_to_idx.find(parent_coord);
