@@ -2820,23 +2820,21 @@ void Recut<image_t>::partition_components(
     if (!is_cluster_self_contained(pruned_cluster))
       throw std::runtime_error("Pruend cluster not self contained");
 
-    auto trees = partition_cluster(pruned_cluster);
-
-    auto fixed_trees = trees | rv::transform([index](auto tree) {
-      auto fixed_tree = fix_trifurcations(tree);
-      { // check
-        auto trifurcations = tree_is_valid(tree);
-        if (!trifurcations.empty()) {
-          rng::for_each(trifurcations,
-                        [](auto mismatch) { std::cout << *mismatch << '\n'; });
-          throw std::runtime_error("Tree has trifurcations" +
-                                   std::to_string(index));
-        }
-        if (!is_cluster_self_contained(tree))
-          throw std::runtime_error("Trifurc cluster not self contained" + std::to_string(index));
+    auto valid_cluster = fix_trifurcations(pruned_cluster);
+    { // check
+      auto trifurcations = tree_is_valid(valid_cluster);
+      if (!trifurcations.empty()) {
+        rng::for_each(trifurcations,
+                      [](auto mismatch) { std::cout << *mismatch << '\n'; });
+        throw std::runtime_error("Tree has trifurcations" +
+                                 std::to_string(index));
       }
-      return fixed_tree;
-    });
+      if (!is_cluster_self_contained(valid_cluster))
+        throw std::runtime_error("Trifurc cluster not self contained" +
+                                 std::to_string(index));
+    }
+
+    auto trees = partition_cluster(valid_cluster);
 
 #ifdef LOG
     component_log << "TP, " << timer.elapsed() << '\n';
@@ -2884,7 +2882,7 @@ void Recut<image_t>::partition_components(
     component_log << "Bounding box, " << bbox << '\n';
 #endif
 
-    rng::for_each(fixed_trees, [&](auto tree) {
+    rng::for_each(trees, [&](auto tree) {
       write_swc(tree, component_dir_fn, bbox,
                 /*bbox_adjust*/ !args->window_grid_paths.empty());
       if (!tree_is_sorted(tree)) {
