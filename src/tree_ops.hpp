@@ -56,8 +56,9 @@ auto create_coord_to_idx = [](const std::vector<MyMarker *> &cluster) {
   return coord_to_idx;
 };
 
-// markers have a ptr to parent, all aprents must point to marker *within* its current vector
-// if it points to marker within a previous vector, undefined behavior
+// markers have a ptr to parent, all aprents must point to marker *within* its
+// current vector if it points to marker within a previous vector, undefined
+// behavior
 auto adjust_parent_ptrs = [](std::vector<MyMarker *> &cluster) {
   auto coord_to_idx = create_coord_to_idx(cluster);
 
@@ -67,10 +68,13 @@ auto adjust_parent_ptrs = [](std::vector<MyMarker *> &cluster) {
       const auto parent_coord =
           GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
       const auto parent_pair = coord_to_idx.find(parent_coord);
-      if (parent_pair == coord_to_idx.end())
+      if (parent_pair == coord_to_idx.end()) {
+        std::cout << "Invalid " << *marker << ' ' << parent_coord << '\n';
         throw std::runtime_error("adjust_parent_ptrs() can not operate on "
                                  "clusters with out-of-cluster parents");
+      } else {
         marker->parent = cluster[parent_pair->second];
+      }
     }
   });
 };
@@ -657,6 +661,5 @@ extract_trees(std::vector<MyMarker *> nlist,
     }
   }
 
-  adjust_parent_ptrs(tree);
   return tree;
 }

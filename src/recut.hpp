@@ -2814,6 +2814,8 @@ void Recut<image_t>::partition_components(
       return; // skip this component
     }
 
+    adjust_parent_ptrs(cluster);
+
     auto pruned_cluster =
         prune_short_branches(cluster, this->args->min_branch_length);
 
