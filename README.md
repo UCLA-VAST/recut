@@ -38,13 +38,13 @@ Where possible Recut attempts to use the maximum threads available to your syste
 ### Conversion
 Convert the folder `ch0` into a VDB point grid:
 ```
-recut ch0 --convert --input-type tiff --output-type point
+recut ch0 --convert --input-type tiff --output-type point --fg-percent .05
 ```
 This creates a .vdb file in the ch0 folder. The name is tagged with information about the conversion process for example the argument values used. This is done to preserve info about the source image and to lower the likelihood of overwriting a costly previous conversion with a generic name. Explicit names are helpful for humans but if you want to pass a simpler name you can do so.
 
 Convert the folder again, but this time only take z-planes of 30 through 45 and name it `subset.vdb`
 ```
-recut ch0 --convert subset.vdb --input-type tiff --output-type point --image-offsets 0 0 30 --image-lengths -1 -1 16
+recut ch0 --convert subset.vdb --input-type tiff --output-type point --image-offsets 0 0 30 --image-lengths -1 -1 16 --fg-percent .05
 ```
 
 .vdbs are a binary format, you can only view information or visualize them with software that explicitly supports them. However for quick info, Recut installs some of the VDB libraries command line tools.
@@ -53,24 +53,38 @@ List the exhausitive info and metatdata about the VDB grid:
 ```
 vdb_print -l -m subset.vdb
 ```
-You'll notice that vdb grid's metadata has been stamped with information about the arguments used during conversion to help distinguish files with different characteristics. If you have no other way to match the identity of VDB with an original image, refer to the original bounding extents which can often uniquely identify an image. The original bounding extents of the image used are preserved as the coordinate frame of all points and voxels regardless of any offset or length arguments passed.
+You'll notice that vdb grid's metadata has been stamped with information about the arguments used during conversion to help distinguish files with different characteristics. If you have no other way to match the identity of VDB with an original image, refer to the original bounding extents which can often uniquely identify an image. The original bounding extents of the image used are preserved as the coordinate frame of all points and voxels regardless of any offset or length arguments passed. Note that vdb command line tools or GUI software don't work with type uint8 grids because they are custom to the Recut software.
 
 #### Image Inference Conversions
 The highest quality *reconstructions* currently involve running the MCP3D pipeline's neurite and soma segmentation and connected component stage followed by recut conversion to a point grid followed by recut's reconstruction of that point grid. MCP3D's connected component stage will output the soma locations `marker_files` for use in reconstruction as shown below. MCP3D's segmentation will output a directory of tiff files of the binarized segmented image, with all background set to 0, therefore converting like we did before:
 ```
 recut ch0 --convert point.vdb --input-type tiff --output-type point
 ```
-will automatically use the background threshold of 0 and place foreground everywhere else. This is quite efficient the inference outputs tends to have only .05% of voxels labeled as foreground.
+Note that this time we left off the `--fg-percent` flag so Recut will automatically cut off pixels valued `0` while saving foreground pixels everywhere else. This is only recommended for inference outputs since their pixel intensity values have already been binarized (0 or 1) and they tend to have only .05% of voxels labeled as foreground (i.e. value of 1).
 
 #### Image Raw Conversions
-While the process above produces the highest quality *reconstructions* with smaller likelihoods of path breaks, we often want to view the original image or a separate channel of the original image for proofreading via the `--output-windows` flag during reconstruction. The high fidelity way of doing this is to convert using a guessed foreground percentage of the image.
+While the process above produces the highest quality *reconstructions* with smaller likelihoods of path breaks, we often want a quick and dirty way to view the original image or a separate channel of the original image for proofreading via the `--output-windows` flag during reconstruction. One way of doing this is to convert using a guessed foreground percentage of the image like so:
 
 ```
 recut test.ims --convert uint8.vdb --input-type ims --output-type uint8 --channel 0 --fg-percent .05
 recut test.ims --convert mask.vdb --input-type ims --output-type mask --channel 1 --fg-percent 10
 ```
-Note that is only necessary if you want to output windows while doing a reconstruction.
+Note that doing multiple image conversions is only necessary if you want to output windows (create cropped images) while doing a reconstruction. Note the size of VDBs on disk reflect mainly the active voxel count of your conversion, for light microscopy data it's rare that you will want foreground percentages above 1%.
 
+It's possible to background threshold based off a raw pixel intensity value as shown below:
+```
+recut ch0 --convert point.vdb --input-type tiff --output-type point --bg-thresh 127
+```
+While this results in the fastest conversions it is not recommended since it is highly sensitive to image normalization and preprocessing.
+
+It is possible to run the full Recut pipeline on raw images but it may require guesswork in selecting the right foreground percentage for your image as shown below.
+Either way you will want an automated way of detecting seed points (somas) see the Seeds section in the documentation below.
+```
+# an example flow on raw images
+recut ch0 --convert point.vdb --input-type tiff --output-type point --fg-percent .05
+# you would need to write the coordinates and radii of known seed points (somas) by hand in marker_files/
+recut point.vdb --seeds marker_files
+```
 ### Reconstruct
 
 If you've created a point grid for an image, for example named `point.vdb`, the following would reconstruct the image based off of a directory of files which note the coordinates of starting locations (somas). This directory in the following example is shown as `marker_files`:
@@ -90,6 +104,10 @@ Instead of outputting windows from the original image as demonstrated above, it'
 recut point.vdb --seeds marker_files --output-windows uint8.vdb mask.vdb inference-mask.vdb
 ```
 Now each component folder will have a TIFF window from the original image, the 1-bit channel 1, and the binarized inference of the original inference. Having different image windows (labels) with corresponding SWCs can be a very efficient way to retrain or build better neural network models since it removes much of the manual human annotation steps.
+
+#### Seeds
+Even in inferenced neural tissue of internal data, only about 20% of foreground voxels are reachable from known soma locations. In order for Recut to build trees it must traverse from a seed (soma) point. These seed points are generated by the MCP3D's connected component stage which runs after the inference stage. If you wish to generate soma locations via a separate method, output all somas in the image into separate files in the same folder. Each file contains a single line with the coordinate and radius information separated by commas like so:
+`X,Y,Z,RADIUS`
 
 ### Combine
 Not finished.
@@ -121,14 +139,14 @@ Reading this second paper is a fast way to understand the overall design and exe
 ## CMake Only Installation (Deprecated)
 The following are the commands are required for a CMake and git based installation. If taking this route, the OpenVDB c++ library may need to be installed with CMake first.
 ```
-git clone git@github.com:UCLA-VAST/recut-pipeline
+git clone git@github.com:UCLA-VAST/recut
 cd recut
 mkdir build
 cd build
 cmake ..
 make [-j 8]
 sudo make install [-j 8]
-# required to generate test and interval data
+# required to generate test data
 sudo make installcheck
 # Optionally, run all tests by running the test suite
 make test
@@ -146,7 +164,7 @@ This program relies on:
 - Optionally: google-test and google-benchmark library submodules ( auto built/linked through cmake, see
   `recut/CMakeLists.txt` for details)
 - Optionally: HDF5 an image reading library for Imaris/HDF5 file types
-- Optionally: python3.8 matplotlib, gdb, clang-tools, linux-perf
+- Optionally: python3.8 matplotlib, gdb, clang-tools, linux-perf for development
 - Note: to increase reproducibility and dependencies issues we recommend developing within the Nix package environment (see the Troubleshooting section)
 
 #### Troubleshooting
