@@ -2373,6 +2373,12 @@ TEST(RecutPipeline, PrintDefaultInfo) {
        << '\n';
 }
 
+
+//TEST(Test, Test) {
+  //auto dense =
+      //std::make_unique<vto::Dense<std::variant<uint8_t, uint16_t>, vto::LayoutXYZ>>(zeros());
+//}
+
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
   testing::Test::RecordProperty("GlobalProperty", XSTR(GIT_HASH));

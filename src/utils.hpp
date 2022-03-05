@@ -19,6 +19,9 @@
 #include <queue>
 #include <stdlib.h> // ultoa
 #include <tiffio.h>
+#include <variant>
+
+using image_width = std::variant<uint8_t,uint16_t>;
 
 namespace fs = std::filesystem;
 namespace rng = ranges;
@@ -28,6 +31,13 @@ namespace rv = ranges::views;
 // be able to change pp values into std::string
 #define XSTR(x) STR(x)
 #define STR(x) #x
+
+// A helper to create overloaded function objects and type pattern match
+// Taken from Functional C++ - Cukic
+template <typename... Fs>
+struct overloaded : Fs... { using Fs::operator()...; };
+
+template <typename... Fs> overloaded(Fs...) -> overloaded<Fs...>;
 
 auto print_iter = [](auto iterable) {
   rng::for_each(iterable, [](auto i) { std::cout << i << ", "; });
@@ -3106,8 +3116,10 @@ auto load_imaris_tile = [](std::string file_name, const CoordBBox &bbox,
   // check inputs
   auto imaris_bbox = imaris_image_bbox(file_name, resolution, channel);
   // FIXME get voxel type
+  //auto dense =
+      //std::make_unique<vto::Dense<image_width, vto::LayoutXYZ>>(bbox);
   auto dense =
-      std::make_unique<vto::Dense<uint16_t, vto::LayoutXYZ>>(bbox, /*fill*/ 0.);
+      std::make_unique<vto::Dense<uint16_t, vto::LayoutXYZ>>(bbox);
 
   if (!imaris_bbox.isInside(bbox)) {
     std::ostringstream os;

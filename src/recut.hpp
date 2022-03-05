@@ -231,8 +231,8 @@ public:
                   const TileThresholds<image_t> *tile_thresholds,
                   Container &fifo, VID_t revisits, T2 leaf_iter);
   void create_march_thread(VID_t tile_id, VID_t block_id);
-  TileThresholds<image_t> *get_tile_thresholds(
-      std::unique_ptr<vto::Dense<uint16_t, vto::LayoutXYZ>> &tile);
+  TileThresholds<image_width> *get_tile_thresholds(
+      std::unique_ptr<vto::Dense<image_width, vto::LayoutXYZ>> &tile);
   template <typename T2>
   std::atomic<double>
   process_tile(VID_t tile_id, const image_t *tile, std::string stage,
@@ -1953,12 +1953,17 @@ std::atomic<double> Recut<image_t>::process_tile(
 // to args this function has no sideffects outside
 // of the returned tile_thresholds struct
 template <class image_t>
-TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
-    std::unique_ptr<vto::Dense<uint16_t, vto::LayoutXYZ>> &tile) {
+TileThresholds<image_width> *Recut<image_t>::get_tile_thresholds(
+    std::unique_ptr<vto::Dense<image_width, vto::LayoutXYZ>> &tile) {
 
-  auto tile_thresholds = new TileThresholds<image_t>();
+  auto tile_thresholds = new TileThresholds<image_width>();
   auto tile_dims = tile->bbox().dim();
   auto tile_vertex_size = coord_prod_accum(tile_dims);
+  //if (auto value =
+          //std::get_if<vto::Dense<uint16_t, vto::LayoutXYZ>>(tile->get())) {
+  if (auto value =
+          std::get_if<uint16_t>(tile->data())) {
+  }
 
   // assign thresholding value
   // foreground parameter takes priority
@@ -1968,8 +1973,20 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
   if (this->args->foreground_percent >= 0) {
     auto timer = high_resolution_timer();
     // TopPercentile takes a fraction 0 -> 1, not a percentile
-    tile_thresholds->bkg_thresh = bkg_threshold<image_t>(
-        tile->data(), tile_vertex_size, (this->args->foreground_percent) / 100);
+    // FIXME extract the value of the type
+    //if (auto value =
+            //std::get_if<std::unique_ptr<vto::Dense<uint16_t, vto::LayoutXYZ>>>(
+                //tile)) {
+      //tile_thresholds->bkg_thresh =
+          //bkg_threshold<uint16_t>(tile->data(), tile_vertex_size,
+                                  //(this->args->foreground_percent) / 100);
+    //} else if (auto value = std::get_if<
+                   //std::unique_ptr<vto::Dense<uint8_t, vto::LayoutXYZ>>>(
+                   //tile)) {
+      //tile_thresholds->bkg_thresh =
+          //bkg_threshold<uint8_t>(tile->data(), tile_vertex_size,
+                                 //(this->args->foreground_percent) / 100);
+    //}
 
 #ifdef LOG
     // cout << "Requested foreground percent: " <<
@@ -1985,8 +2002,17 @@ TileThresholds<image_t> *Recut<image_t>::get_tile_thresholds(
   // otherwise: tile_thresholds->bkg_thresh default inits to 0
 
   if (this->args->convert_only) {
-    tile_thresholds->max_int = std::numeric_limits<image_t>::max();
-    tile_thresholds->min_int = std::numeric_limits<image_t>::min();
+    //if (auto value =
+            //std::get_if<std::unique_ptr<vto::Dense<uint16_t, vto::LayoutXYZ>>>(
+                //&tile)) {
+      //tile_thresholds->max_int = std::numeric_limits<uint16_t>::max();
+      //tile_thresholds->min_int = std::numeric_limits<uint16_t>::min();
+    //} else if (auto value = std::get_if<
+                   //std::unique_ptr<vto::Dense<uint8_t, vto::LayoutXYZ>>>(
+                   //&tile)) {
+      //tile_thresholds->max_int = std::numeric_limits<uint8_t>::max();
+      //tile_thresholds->min_int = std::numeric_limits<uint8_t>::min();
+    //}
     return tile_thresholds;
   }
 
@@ -2040,7 +2066,6 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
 
   auto tile_timer = high_resolution_timer();
 
-  image_t *tile;
   if (stage == "convert") {
     auto tile_offsets = id_tile_to_img_offsets(tile_id);
     // bbox is inclusive, therefore substract 1
@@ -2051,7 +2076,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
       tile_max[2] = this->image_lengths[2] - 1;
     }
     const auto tile_bbox = CoordBBox(tile_offsets, tile_max);
-    std::unique_ptr<vto::Dense<image_t, vto::LayoutXYZ>> dense_tile;
+    std::unique_ptr<vto::Dense<image_width, vto::LayoutXYZ>> dense_tile;
 
     if (args->input_type == "ims") {
 #ifdef USE_HDF5
@@ -2063,11 +2088,10 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
     }
 
     if (args->input_type == "tiff") {
-      dense_tile = load_tile<image_t>(tile_bbox, args->input_path);
+      // dense_tile = load_tile<image_t>(tile_bbox, args->input_path);
     }
 
     auto tile_thresholds = get_tile_thresholds(dense_tile);
-    tile = dense_tile->data();
 
     assertm(!this->input_is_vdb, "input can't be vdb during convert stage");
 
@@ -2075,41 +2099,42 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
 
 #ifdef FULL_PRINT
     cout << "print_image\n";
-    print_image_3D(tile, tile_bbox.dim());
+    print_image_3D(dense_tile->data(), tile_bbox.dim());
 #endif
 
+    // FIXME collapse these blocks into an output std::variant
     if (this->args->output_type == "uint8") {
       uint8_grids[tile_id] = ImgGrid::create();
       convert_buffer_to_vdb_acc(
-          tile, tile_bbox.dim(),
+          dense_tile->data(), tile_bbox.dim(),
           /*buffer_offsets=*/buffer_offsets,
           /*image_offsets=*/tile_bbox.min(),
           uint8_grids[tile_id]->getAccessor(), this->args->output_type,
           tile_thresholds->bkg_thresh, this->args->upsample_z);
       if (args->histogram) {
-        histogram += hist(tile, tile_bbox.dim(), buffer_offsets);
+        histogram += hist(dense_tile->data(), tile_bbox.dim(), buffer_offsets);
       }
     } else if (this->args->output_type == "float") {
       float_grids[tile_id] = openvdb::FloatGrid::create();
       convert_buffer_to_vdb_acc(
-          tile, tile_bbox.dim(),
+          dense_tile->data(), tile_bbox.dim(),
           /*buffer_offsets=*/buffer_offsets,
           /*image_offsets=*/tile_bbox.min(),
           float_grids[tile_id]->getAccessor(), this->args->output_type,
           tile_thresholds->bkg_thresh, this->args->upsample_z);
       if (args->histogram) {
-        histogram += hist(tile, tile_bbox.dim(), buffer_offsets);
+        histogram += hist(dense_tile->data(), tile_bbox.dim(), buffer_offsets);
       }
     } else if (this->args->output_type == "mask") {
       mask_grids[tile_id] = openvdb::MaskGrid::create();
       convert_buffer_to_vdb_acc(
-          tile, tile_bbox.dim(),
+          dense_tile->data(), tile_bbox.dim(),
           /*buffer_offsets=*/buffer_offsets,
           /*image_offsets=*/tile_bbox.min(), mask_grids[tile_id]->getAccessor(),
           this->args->output_type, tile_thresholds->bkg_thresh,
           this->args->upsample_z);
       if (args->histogram) {
-        histogram += hist(tile, tile_bbox.dim(), buffer_offsets);
+        histogram += hist(dense_tile->data(), tile_bbox.dim(), buffer_offsets);
       }
     } else { // point
 
@@ -2117,7 +2142,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
       // use the last bkg_thresh calculated for metadata,
       // bkg_thresh is constant for each tile unless a specific % is
       // input by command line user
-      convert_buffer_to_vdb(tile, tile_bbox.dim(),
+      convert_buffer_to_vdb(dense_tile->data(), tile_bbox.dim(),
                             /*buffer_offsets=*/buffer_offsets,
                             /*image_offsets=*/tile_bbox.min(), positions,
                             tile_thresholds->bkg_thresh,
@@ -2153,6 +2178,8 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
         /*min*/ 0,
         /*bkg_thresh*/ 0);
 
+    image_t *tile; // passing raw image buffers is deprecated, only used vdb
+                   // sparse grids
     process_tile(tile_id, tile, stage, tile_thresholds, update_accessor);
   }
 } // if the tile is active
