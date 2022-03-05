@@ -17,6 +17,12 @@ Test your installation by running:
 ```
 recut
 ```
+### Update to the latest version
+If some time has passed since your original installation and you need to update to the latest version, from the Recut github directory run:
+```
+git pull origin master
+nix-env -f . -i
+```
 
 ## Usage
 Once recut is installed globally you can see the example usage by running on the command line:
