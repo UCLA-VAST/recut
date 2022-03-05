@@ -77,11 +77,11 @@ recut test.ims --convert mask.vdb --input-type ims --output-type mask --channel 
 ```
 Note that doing multiple image conversions is only necessary if you want to output windows (create cropped images) while doing a reconstruction. Note the size of VDBs on disk reflect mainly the active voxel count of your conversion, for light microscopy data it's rare that you will want foreground percentages above 1%.
 
-It's possible to background threshold based off a raw pixel intensity value as shown below:
+It's possible to background threshold based off a known raw pixel intensity value, for example if you have already background thresholded, clamped, and or background subtracted an image. In such cases simply convert like below, inputing your known intensity value:
 ```
 recut ch0 --convert point.vdb --input-type tiff --output-type point --bg-thresh 127
 ```
-While this results in the fastest conversions it is not recommended since it is highly sensitive to image normalization and preprocessing.
+While this results in the fastest conversions it is rarely useful since it is highly sensitive to image normalization and preprocessing.
 
 It is possible to run the full Recut pipeline on raw images but it may require guesswork in selecting the right foreground percentage for your image as shown below.
 Either way you will want an automated way of detecting seed points (somas) see the Seeds section in the documentation below.
