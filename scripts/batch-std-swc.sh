@@ -12,7 +12,8 @@ for d in $1/*/ ; do
 	  swc=`basename $path`
 	  echo "    $swc"
 	  # filter app2 swcs
-	  java -jar $jarpath $dir/stdlog-$swc.txt -op Recut -f -corrected.swc -in $path
+	  # java -jar $jarpath $dir/stdlog-$swc.txt -op Recut -f -corrected.swc -in $path
+	  java -jar $jarpath $dir/stdlog-$swc.txt -op Recut -in $path
       fi
     done
   fi
