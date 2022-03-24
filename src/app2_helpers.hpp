@@ -1704,6 +1704,7 @@ void run_app2(ValuedGrid component_with_values,
 #ifdef LOG
   component_log << "HP, " << timer.elapsed() << '\n';
 #endif
+  timer.restart();
 
   // adjust app2_output_tree_prune to match global image, for swc output
   if (global_bbox_adjust) {
@@ -1717,4 +1718,7 @@ void run_app2(ValuedGrid component_with_values,
   auto app2_fn =
       component_dir_fn + "/app2-component-" + std::to_string(index) + ".swc";
   marker_to_swc_file(app2_fn, app2_output_tree_prune);
+#ifdef LOG
+  component_log << "APP write SWC, " << timer.elapsed() << '\n';
+#endif
 }
