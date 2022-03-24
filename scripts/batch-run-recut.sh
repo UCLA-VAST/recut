@@ -12,28 +12,14 @@ for d in $1/*/ ; do
     # create point.vdb
     if [ ! -f point.vdb ]
     then
-    recut $d/$EXT_PATH --convert point.vdb --parallel 24
-    else
-	echo "   found vdb"
-    fi
-
-    if [ ! -f uint8.vdb ]
-    then
-    recut $d/$EXT_PATH --convert uint8.vdb --type uint8 --parallel 24
-    else
-	echo "   found vdb"
-    fi
-
-    if [ ! -f float.vdb ]
-    then
-    recut $d/$EXT_PATH --convert float.vdb --type float --parallel 24
+    recut $d/$EXT_PATH --convert --input-type tiff --output-type point --parallel 8
     else
 	echo "   found vdb"
     fi
 
     # if [ ! -f components ]
     # then
-    recut point.vdb --seeds marker_files --output-windows uint8.vdb --run-app2
+    #recut point.vdb --seeds marker_files --output-windows uint8.vdb --run-app2
     # else
     #	echo "   found previous"
     # fi
