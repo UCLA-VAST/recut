@@ -2788,7 +2788,7 @@ void Recut<image_t>::partition_components(
 
 #ifdef LOG
     auto component_log_fn =
-        component_dir_fn + "/component-" + std::to_string(index) + "-log.txt";
+        component_dir_fn + "/component-" + std::to_string(index) + "-log.csv";
     std::ofstream component_log;
     component_log.open(component_log_fn);
     component_log << std::fixed << std::setprecision(6);
@@ -3002,10 +3002,11 @@ template <class image_t> void Recut<image_t>::init_run() {
       return probe_dir;
     };
     this->run_dir = get_run_dir();
-    this->log_fn = this->run_dir + "/log.txt";
+    this->log_fn = this->run_dir + "/log.csv";
     fs::create_directories(run_dir);
 #ifdef LOG
     std::ofstream run_log(log_fn);
+    run_log << "Thread count, " << args->user_thread_count << '\n';
     run_log << "Prune radius, " << args->prune_radius << '\n';
     run_log << "Soma radius, " << SOMA_PRUNE_RADIUS << '\n';
     run_log << "Min branch, " << args->min_branch_length << '\n';
