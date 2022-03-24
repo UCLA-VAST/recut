@@ -2701,6 +2701,7 @@ void Recut<image_t>::partition_components(
   cout << "Topo to float " << global_timer.elapsed() << '\n';
 
 #ifdef LOG
+  auto total_timer = high_resolution_timer();
   {
     VID_t selected_count = float_grid->activeVoxelCount();
     std::ofstream run_log;
@@ -2919,12 +2920,13 @@ void Recut<image_t>::partition_components(
     write_vdb_file(grids, "final-point-grid.vdb");
   }
 #ifdef LOG
-  // only log this if it isn't occluded by app2 and window write times
-  if (!(args->run_app2 || !args->window_grid_paths.empty())) {
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
+  // only log this if it isn't occluded by app2 and window write times
+  if (!(args->run_app2 || !args->window_grid_paths.empty())) {
     run_log << "TC+TP, " << global_timer.elapsed() << '\n';
   }
+  run_log << "Aggregated prune, " << total_timer.elapsed() << '\n';
 #endif
 }
 
@@ -3010,6 +3012,8 @@ template <class image_t> void Recut<image_t>::init_run() {
     run_log << "Prune radius, " << args->prune_radius << '\n';
     run_log << "Soma radius, " << SOMA_PRUNE_RADIUS << '\n';
     run_log << "Min branch, " << args->min_branch_length << '\n';
+    run_log << "Run app2, " << args->run_app2 << '\n';
+    run_log << "Output channel count, " << args->window_grid_paths.size() << '\n';
 #endif
   }
 }
