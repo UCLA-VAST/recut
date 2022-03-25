@@ -3,12 +3,14 @@ import argparse
 # set backend that allows save plots without X11 forwarding/
 # $DISPLAY set
 import matplotlib
-matplotlib.use('Agg')
+# matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import subprocess
 import json
 from statistics import mean
 from os import getcwd
+from os import walk
+import pandas as pd
 from matplotlib import rc
 rc('font',**{'family':'serif','serif':['Palatino']})
 rc('text', usetex=True)
@@ -144,25 +146,49 @@ def radius(args):
 
 def stages(args):
     ''' Show runtime comparison of stages'''
-    stage_names = ['value', 'radius', 'prune', 'qc', 'g-cut']
-    runtimes =     [7.4, 8.1, 9.7, 1.2, 16]
-    seq_runtimes = [126.4, 72.9, 31.0, 0, 0]
-    if args.save or args.show:
-        field = r'Recut speedup factor %'
-        ylabel = r'Runtime (mins)'
-        title = r'Stage Runtime Comparison'
-        # xargs = (list(range(len(stage_names))), r'Stages')
-        xargs = (stage_names, r'Stages')
-        yargs = (runtimes, ylabel)
-        legends = (r'Recut', r'APP2')
+    # aggregate data
+    stage_names = ['CC', 'SDF', 'TC+TP']
+    frames = []
+    for root, dirs, files in os.walk(args.output):
+        for file in files:
+            if 'log.csv' == file:
+              name = os.path.join(root, file)
+              print(name)
+              cols = stage_names.append('Thread count')
+              f = pd.read_csv(name, header=None).T
+              f = f.rename(columns=f.iloc[0]).drop(f.index[0])[['CC', 'SDF', 'TC+TP', 'Thread count']].astype({'Thread count':'int'})
+              frames.append(f)
+    df = pd.concat(frames)
+    g = df.groupby('Thread count')
+    means = g.mean()
+    errors = g.std()
+    fig, ax = plt.subplots()
+    means.plot.bar(yerr=errors, ax=ax, capsize=4, rot=0)
+    ax.set_ylabel('Time (s)')
+    ax.set_title('Stage runtime / efficiency')
+    # ax.set_yscale('log')
+    fig.tight_layout()
+    fig.show()
+    import pdb; pdb.set_trace()
 
-        rplot(*xargs,
-                *yargs,
-                title,
-                args, 
-                legends=legends,
-                yiter_secondary=seq_runtimes, 
-                bar=True)
+    # runtimes =     [7.4, 8.1, 9.7, 1.2, 16]
+    # seq_runtimes = [126.4, 72.9, 31.0, 0, 0]
+    # if args.save or args.show:
+        # field = r'Recut speedup factor %'
+        # ylabel = r'Runtime (mins)'
+        # title = r'Stage Runtime Comparison'
+        # # xargs = (list(range(len(stage_names))), r'Stages')
+        # xargs = (stage_names, r'Stages')
+        # yargs = (runtimes, ylabel)
+        # legends = (r'Recut', r'APP2')
+
+        # rplot(*xargs,
+                # *yargs,
+                # title,
+                # args, 
+                # legends=legends,
+                # yiter_secondary=seq_runtimes, 
+                # bar=True)
 
 def value(args):
     ''' Fastmarching Performance '''
