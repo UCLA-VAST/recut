@@ -2990,20 +2990,23 @@ template <class image_t> void Recut<image_t>::init_run() {
     }
 
     this->run_dir = ".";
-    this->log_fn = this->run_dir + "/" + this->args->output_name + "-log.txt";
+    this->log_fn = this->run_dir + "/" + this->args->output_name + "-log-" + std::to_string(args->user_thread_count) + ".txt";
+#ifdef LOG
+    std::ofstream convert_log(this->log_fn);
+    convert_log << "Thread count, " << args->user_thread_count << '\n';
+#endif
   } else {
-    auto get_run_dir = [probe_dir =
-                            static_cast<std::string>("./run-1")]() mutable {
+    auto get_unique_fn = [](std::string probe_name) {
       // make sure its a clean write
-      while (fs::exists(probe_dir)) {
+      while (fs::exists(probe_name)) {
         auto l =
-            probe_dir | rv::split('-') | rng::to<std::vector<std::string>>();
+            probe_name | rv::split('-') | rng::to<std::vector<std::string>>();
         l.back() = std::to_string(std::stoi(l.back()) + 1);
-        probe_dir = l | rv::join('-') | rng::to<std::string>();
+        probe_name = l | rv::join('-') | rng::to<std::string>();
       }
-      return probe_dir;
+      return probe_name;
     };
-    this->run_dir = get_run_dir();
+    this->run_dir = get_unique_fn("./run-1");
     this->log_fn = this->run_dir + "/log.csv";
     fs::create_directories(run_dir);
 #ifdef LOG
