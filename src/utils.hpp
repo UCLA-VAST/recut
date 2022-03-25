@@ -3247,7 +3247,7 @@ load_tile(const CoordBBox &bbox, const std::string &dir) {
 
   auto dense = read_tiff_planes<image_t>(tile_filenames, bbox);
 #ifdef LOG
-  cout << "Load image " << bbox << " in " << timer.elapsed() << " sec." << '\n';
+  //cout << "Load image " << bbox << " in " << timer.elapsed() << " sec." << '\n';
 #endif
   return dense;
 }
