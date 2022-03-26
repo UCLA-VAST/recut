@@ -2851,14 +2851,14 @@ void Recut<image_t>::partition_components(
           openvdb::gridPtrCast<ImgGrid>(window_grids.front());
       auto [valued_window_grid, window_bbox] =
           create_window_grid(image_grid, component, component_log);
-      write_output_windows<ImgGrid::Ptr>(image_grid, component_dir_fn,
+      auto window_fn = write_output_windows<ImgGrid::Ptr>(image_grid, component_dir_fn,
                                          component_log, index, false, true,
                                          window_bbox, 0);
 
       // if outputting crops/windows, offset SWCs coords to match window
       bbox = window_bbox;
 
-      // skips channel 0
+      // for all other windows passed, skipping channel 0 since already processed above
       rng::for_each(window_grids | rv::enumerate | rv::tail,
                     [&](const auto window_gridp) {
                       auto [channel, window_grid] = window_gridp;
@@ -2873,6 +2873,9 @@ void Recut<image_t>::partition_components(
       // skip components that are 0s in the original image
       auto mm = vto::minMax(valued_window_grid->tree());
       if (args->run_app2 && (mm.max() > 0)) {
+        // make app2 read the window to get accurate comparison of IO
+        //read_tiff_dir(window_fn);
+
         // for comparison/benchmark/testing purposes
         run_app2(valued_window_grid, component_roots, component_dir_fn, index,
                  this->args->min_branch_length, component_log,
