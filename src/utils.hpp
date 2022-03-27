@@ -19,10 +19,13 @@
 #include <queue>
 #include <stdlib.h> // ultoa
 #include <tiffio.h>
+#include <variant>
 
 namespace fs = std::filesystem;
 namespace rng = ranges;
 namespace rv = ranges::views;
+
+using image_width = std::variant<uint8_t, uint16_t>;
 
 #define PI 3.14159265
 // be able to change pp values into std::string
@@ -1736,7 +1739,23 @@ auto open_tiff_file = [](std::string fn) {
     throw std::runtime_error(
         "ERROR TIFF file must be striped, instead found tiled file");
   }
+
+  short samples_per_pixel;
+  TIFFGetField(tiff, TIFFTAG_SAMPLESPERPIXEL, &samples_per_pixel);
+  if (samples_per_pixel > 1) {
+    throw std::runtime_error(
+        "Recut does not support TIFFs with samples per pixel > 1 yet");
+  }
+
   return tiff;
+};
+
+auto read_tiff_bit_width = [](auto fn) {
+  auto tiff = open_tiff_file(fn);
+  short bits_per_sample;
+  TIFFGetField(tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
+  TIFFClose(tiff);
+  return bits_per_sample;
 };
 
 auto read_tiff_dims = [](auto fn) {
@@ -1758,13 +1777,8 @@ auto read_tiff_dims = [](auto fn) {
 auto read_tiff_file = [](auto fn, auto z, auto dense) {
   auto tiff = open_tiff_file(fn);
 
-  short bits_per_sample, samples_per_pixel;
+  short bits_per_sample;
   TIFFGetField(tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
-
-  TIFFGetField(tiff, TIFFTAG_SAMPLESPERPIXEL, &samples_per_pixel);
-  if (samples_per_pixel > 1) {
-    throw std::runtime_error("samples per pixel > 1");
-  }
 
   auto dims = dense->bbox().dim();
 
@@ -1777,12 +1791,13 @@ auto read_tiff_file = [](auto fn, auto z, auto dense) {
   // throw std::runtime_error(os.str());
   //}
 
+  unsigned int samples_per_pixel = 1; // grayscale=1 ; RGB=3
   size_t bytes_per_pixel = (size_t)bits_per_sample / 8 * samples_per_pixel;
   size_t n_image_bytes = (size_t)bytes_per_pixel * dims[1] * dims[0];
 
-  uint16_t *data_ptr = dense->data();
-  uint64_t z_offset =
-      static_cast<uint64_t>(z) * dense->bbox().dim()[0] * dense->bbox().dim()[1];
+  auto data_ptr = dense->data();
+  uint64_t z_offset = static_cast<uint64_t>(z) * dense->bbox().dim()[0] *
+                      dense->bbox().dim()[1];
   tstrip_t n_strips = TIFFNumberOfStrips(tiff);
   tsize_t strip_size_bytes = TIFFStripSize(tiff);
   int64_t subimg_sample_offset = 0, strip_sample_offset;
@@ -1811,17 +1826,32 @@ auto read_tiff_planes = [](const std::vector<std::string> &fns,
   return dense;
 };
 
-template <typename image_t = uint8_t>
-auto read_tiff_paged = [](const std::string &fn) {
+//std::unique_ptr<vto::Dense<image_width, vto::LayoutXYZ>>
+std::unique_ptr<vto::Dense<uint8_t, vto::LayoutXYZ>>
+read_tiff_paged(const std::string &fn) {
   auto dims = read_tiff_dims(fn);
-
-  auto dense = std::make_unique<vto::Dense<image_t, vto::LayoutXYZ>>(
+  auto dense = std::make_unique<vto::Dense<uint8_t, vto::LayoutXYZ>>(
       CoordBBox(zeros(), dims), /*fill*/ 0.);
-
   read_tiff_file(fn, 0, dense.get());
-
   return dense;
-};
+
+  // auto bits_per_sample = read_tiff_bit_width(fn);
+  // if (bits_per_sample == 8) {
+  // auto dense = std::make_unique<vto::Dense<uint8_t, vto::LayoutXYZ>>(
+  // CoordBBox(zeros(), dims), [>fill<] 0.);
+  // read_tiff_file(fn, 0, dense.get());
+  // return dense;
+  //} else if (bits_per_sample == 16) {
+  // auto dense = std::make_unique<vto::Dense<uint16_t, vto::LayoutXYZ>>(
+  // CoordBBox(zeros(), dims), [>fill<] 0.);
+  // read_tiff_file(fn, 0, dense.get());
+  // return dense;
+  //}
+
+  // throw std::runtime_error(
+  //"Recut only supports unsigned (grayscale) 8 or 16-bit tiffs");
+  // return nullptr;
+}
 
 auto get_dir_files = [](const std::string &dir, const std::string &ext) {
   std::ostringstream os;
