@@ -2136,7 +2136,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
 #ifdef LOG
     std::cout << "Completed tile " << tile_id + 1 << " of " << grid_tile_size
               << " in " << tile_timer.elapsed() << " s\n";
-              //" converted in " << (tile_timer.elapsed() - convert_start) << 
+    //" converted in " << (tile_timer.elapsed() - convert_start) <<
 #endif
   } else {
     // note openvdb::initialize() must have been called before this point
@@ -2851,14 +2851,15 @@ void Recut<image_t>::partition_components(
           openvdb::gridPtrCast<ImgGrid>(window_grids.front());
       auto [valued_window_grid, window_bbox] =
           create_window_grid(image_grid, component, component_log);
-      write_output_windows<ImgGrid::Ptr>(image_grid, component_dir_fn,
-                                         component_log, index, false, true,
-                                         window_bbox, 0);
+      auto window_fn = write_output_windows<ImgGrid::Ptr>(
+          image_grid, component_dir_fn, component_log, index, false, true,
+          window_bbox, 0);
 
       // if outputting crops/windows, offset SWCs coords to match window
       bbox = window_bbox;
 
-      // skips channel 0
+      // for all other windows passed, skipping channel 0 since already
+      // processed above
       rng::for_each(window_grids | rv::enumerate | rv::tail,
                     [&](const auto window_gridp) {
                       auto [channel, window_grid] = window_gridp;
@@ -2873,6 +2874,13 @@ void Recut<image_t>::partition_components(
       // skip components that are 0s in the original image
       auto mm = vto::minMax(valued_window_grid->tree());
       if (args->run_app2 && (mm.max() > 0)) {
+        auto read_timer = high_resolution_timer();
+        // make app2 read the window to get accurate comparison of IO
+        read_tiff_paged(window_fn);
+#ifdef LOG
+        component_log << "Read window, " << read_timer.elapsed() << '\n';
+#endif
+
         // for comparison/benchmark/testing purposes
         run_app2(valued_window_grid, component_roots, component_dir_fn, index,
                  this->args->min_branch_length, component_log,
@@ -2920,8 +2928,8 @@ void Recut<image_t>::partition_components(
     write_vdb_file(grids, "final-point-grid.vdb");
   }
 #ifdef LOG
-    std::ofstream run_log;
-    run_log.open(log_fn, std::ios::app);
+  std::ofstream run_log;
+  run_log.open(log_fn, std::ios::app);
   // only log this if it isn't occluded by app2 and window write times
   if (!(args->run_app2 || !args->window_grid_paths.empty())) {
     run_log << "TC+TP, " << global_timer.elapsed() << '\n';
@@ -2990,7 +2998,8 @@ template <class image_t> void Recut<image_t>::init_run() {
     }
 
     this->run_dir = ".";
-    this->log_fn = this->run_dir + "/" + this->args->output_name + "-log-" + std::to_string(args->user_thread_count) + ".txt";
+    this->log_fn = this->run_dir + "/" + this->args->output_name + "-log-" +
+                   std::to_string(args->user_thread_count) + ".txt";
 #ifdef LOG
     std::ofstream convert_log(this->log_fn);
     convert_log << "Thread count, " << args->user_thread_count << '\n';
@@ -3016,7 +3025,8 @@ template <class image_t> void Recut<image_t>::init_run() {
     run_log << "Soma radius, " << SOMA_PRUNE_RADIUS << '\n';
     run_log << "Min branch, " << args->min_branch_length << '\n';
     run_log << "Run app2, " << args->run_app2 << '\n';
-    run_log << "Output channel count, " << args->window_grid_paths.size() << '\n';
+    run_log << "Output channel count, " << args->window_grid_paths.size()
+            << '\n';
 #endif
   }
 }

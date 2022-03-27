@@ -19,10 +19,13 @@
 #include <queue>
 #include <stdlib.h> // ultoa
 #include <tiffio.h>
+#include <variant>
 
 namespace fs = std::filesystem;
 namespace rng = ranges;
 namespace rv = ranges::views;
+
+using image_width = std::variant<uint8_t, uint16_t>;
 
 #define PI 3.14159265
 // be able to change pp values into std::string
@@ -279,8 +282,7 @@ VID_t get_used_vertex_size(VID_t grid_size, VID_t block_size) {
   return tile_vert_num;
 }
 
-auto print_marker_3D = [](auto markers, auto tile_lengths,
-                          std::string stage) {
+auto print_marker_3D = [](auto markers, auto tile_lengths, std::string stage) {
   for (int zi = 0; zi < tile_lengths[2]; zi++) {
     cout << "y | Z=" << zi << '\n';
     for (int xi = 0; xi < 2 * tile_lengths[0] + 4; xi++) {
@@ -1337,10 +1339,11 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
   return selected;
 }
 
-RecutCommandLineArgs
-get_args(int grid_size, int tile_length, int block_size, int slt_pct,
-         int tcase, bool input_is_vdb = false, std::string input_type = "point",
-         std::string output_type = "point", int downsample_factor = 1) {
+RecutCommandLineArgs get_args(int grid_size, int tile_length, int block_size,
+                              int slt_pct, int tcase, bool input_is_vdb = false,
+                              std::string input_type = "point",
+                              std::string output_type = "point",
+                              int downsample_factor = 1) {
 
   bool print = false;
 
@@ -1709,7 +1712,6 @@ void write_tiff(uint16_t *inimg1d, std::string base, const GridCoord dims,
       fn << base << "/img_" << std::setfill('0') << std::setw(6) << z << ".tif";
       VID_t start = z * dims[0] * dims[1];
 
-      // write_tiff_page(&(inimg1d[start]), fn, dims);
       write_single_z_plane(&(inimg1d[start]), fn.str(), dims);
     }
     if (print)
@@ -1717,84 +1719,139 @@ void write_tiff(uint16_t *inimg1d, std::string base, const GridCoord dims,
   }
 }
 
+auto open_tiff_file = [](std::string fn) {
+  // try reading file
+  if (!fs::exists(fn)) {
+    throw std::runtime_error("ERROR non existent TIFF file " + fn);
+  }
+  TIFF *tiff;
+  try {
+    tiff = TIFFOpen(&fn[0], "r");
+  } catch (...) {
+    throw std::runtime_error("libtiff threw while during TIFFOpen " + fn);
+  }
+  if (!tiff) {
+    throw std::runtime_error("ERROR could not open TIFF file " + fn);
+  }
+
+  // not supported currently
+  if (TIFFIsTiled(tiff)) {
+    throw std::runtime_error(
+        "ERROR TIFF file must be striped, instead found tiled file");
+  }
+
+  short samples_per_pixel;
+  TIFFGetField(tiff, TIFFTAG_SAMPLESPERPIXEL, &samples_per_pixel);
+  if (samples_per_pixel > 1) {
+    throw std::runtime_error(
+        "Recut does not support TIFFs with samples per pixel > 1 yet");
+  }
+
+  return tiff;
+};
+
+auto read_tiff_bit_width = [](auto fn) {
+  auto tiff = open_tiff_file(fn);
+  short bits_per_sample;
+  TIFFGetField(tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
+  TIFFClose(tiff);
+  return bits_per_sample;
+};
+
+auto read_tiff_dims = [](auto fn) {
+  auto tiff = open_tiff_file(fn);
+  uint32_t image_width, image_height;
+  uint32_t dircount = 0;
+  {
+    TIFFGetField(tiff, TIFFTAG_IMAGEWIDTH, &image_width);
+    TIFFGetField(tiff, TIFFTAG_IMAGELENGTH, &image_height);
+    do {
+      ++dircount;
+    } while (TIFFReadDirectory(tiff));
+  }
+  TIFFClose(tiff);
+
+  return GridCoord(image_width, image_height, dircount);
+};
+
+auto read_tiff_file = [](auto fn, auto z, auto dense) {
+  auto tiff = open_tiff_file(fn);
+
+  short bits_per_sample;
+  TIFFGetField(tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
+
+  auto dims = dense->bbox().dim();
+
+  // if (dims[0] != dense->bbox.dim()[0] ||
+  // dims[1] != dense->bbox.dim()[1]) {
+  // std::ostringstream os;
+  // os << "mismatch among tif file contents in width or height\nexpected: "
+  //<< dense->bbox.dim() << "\ngot " << dims[0] << " by " << dims[1]
+  //<< '\n';
+  // throw std::runtime_error(os.str());
+  //}
+
+  unsigned int samples_per_pixel = 1; // grayscale=1 ; RGB=3
+  size_t bytes_per_pixel = (size_t)bits_per_sample / 8 * samples_per_pixel;
+  size_t n_image_bytes = (size_t)bytes_per_pixel * dims[1] * dims[0];
+
+  auto data_ptr = dense->data();
+  uint64_t z_offset = static_cast<uint64_t>(z) * dense->bbox().dim()[0] *
+                      dense->bbox().dim()[1];
+  tstrip_t n_strips = TIFFNumberOfStrips(tiff);
+  tsize_t strip_size_bytes = TIFFStripSize(tiff);
+  int64_t subimg_sample_offset = 0, strip_sample_offset;
+
+  uint64_t strip_offset = 0;
+  for (tstrip_t strip_idx = 0; (tstrip_t)strip_idx < n_strips; ++strip_idx) {
+    // decode and place 1 strip
+    auto bytes_read = TIFFReadEncodedStrip(
+        tiff, strip_idx, &data_ptr[z_offset + strip_offset], strip_size_bytes);
+    strip_offset += (strip_size_bytes / (bits_per_sample / 8));
+  }
+  TIFFClose(tiff);
+};
+
 template <typename image_t = uint16_t>
 auto read_tiff_planes = [](const std::vector<std::string> &fns,
                            const CoordBBox &bbox) {
   auto dense =
       std::make_unique<vto::Dense<image_t, vto::LayoutXYZ>>(bbox, /*fill*/ 0.);
 
-  for (auto z = 0; z < fns.size(); ++z) {
-    const auto fn = fns[z];
-
-    // try reading file
-    if (!fs::exists(fn)) {
-      throw std::runtime_error("ERROR non existent TIFF file " + fn);
-    }
-    TIFF *tiff;
-    try {
-      tiff = TIFFOpen(&fn[0], "r");
-    } catch (...) {
-      // std::cout << " a standard exception was caught, with message " <<
-      // e.what()
-      //<< '\n';
-      throw std::runtime_error("libtiff threw while reading TIFF file " + fn);
-    }
-    if (!tiff) {
-      throw std::runtime_error("ERROR reading TIFF file " + fn);
-    }
-
-    if (TIFFIsTiled(tiff)) {
-      throw std::runtime_error(
-          "ERROR TIFF file must be striped, instead found tiled file");
-    }
-
-    short bits_per_sample, samples_per_pixel;
-    TIFFGetField(tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
-    auto output_bits = 8 * sizeof(image_t);
-    if (bits_per_sample != output_bits) {
-      throw std::runtime_error("ERROR expected tiff file of uint" +
-                               std::to_string(output_bits) + "\n");
-    }
-
-    TIFFGetField(tiff, TIFFTAG_SAMPLESPERPIXEL, &samples_per_pixel);
-    if (samples_per_pixel > 1) {
-      throw std::runtime_error("samples per pixel > 1");
-    }
-
-    uint32_t image_width, image_height;
-    TIFFGetField(tiff, TIFFTAG_IMAGEWIDTH, &image_width);
-    TIFFGetField(tiff, TIFFTAG_IMAGELENGTH, &image_height);
-    if (image_width != bbox.dim()[0] || image_height != bbox.dim()[1]) {
-      std::ostringstream os;
-      os << "mismatch among tif file contents in width or height\nexpected: "
-         << bbox.dim() << "\ngot " << image_width << " by " << image_height
-         << '\n';
-      throw std::runtime_error(os.str());
-    }
-
-    size_t bytes_per_pixel = (size_t)bits_per_sample / 8 * samples_per_pixel;
-    size_t n_image_bytes = (size_t)bytes_per_pixel * image_height * image_width;
-
-    uint16_t *data_ptr = dense->data();
-    uint64_t z_offset =
-        static_cast<uint64_t>(z) * bbox.dim()[0] * bbox.dim()[1];
-    tstrip_t n_strips = TIFFNumberOfStrips(tiff);
-    tsize_t strip_size_bytes = TIFFStripSize(tiff);
-    int64_t subimg_sample_offset = 0, strip_sample_offset;
-
-    uint64_t strip_offset = 0;
-    for (tstrip_t strip_idx = 0; (tstrip_t)strip_idx < n_strips; ++strip_idx) {
-      // decode and place 1 strip
-      auto bytes_read = TIFFReadEncodedStrip(tiff, strip_idx,
-                                             &data_ptr[z_offset + strip_offset],
-                                             strip_size_bytes);
-      strip_offset += (strip_size_bytes / (bits_per_sample / 8));
-    }
-    TIFFClose(tiff);
-  }
+  rng::for_each(fns | rv::enumerate, [densep = dense.get()](auto fn_z) {
+    auto [z, fn] = fn_z;
+    read_tiff_file(fn, z, densep);
+  });
 
   return dense;
 };
+
+//std::unique_ptr<vto::Dense<image_width, vto::LayoutXYZ>>
+std::unique_ptr<vto::Dense<uint8_t, vto::LayoutXYZ>>
+read_tiff_paged(const std::string &fn) {
+  auto dims = read_tiff_dims(fn);
+  auto dense = std::make_unique<vto::Dense<uint8_t, vto::LayoutXYZ>>(
+      CoordBBox(zeros(), dims), /*fill*/ 0.);
+  read_tiff_file(fn, 0, dense.get());
+  return dense;
+
+  // auto bits_per_sample = read_tiff_bit_width(fn);
+  // if (bits_per_sample == 8) {
+  // auto dense = std::make_unique<vto::Dense<uint8_t, vto::LayoutXYZ>>(
+  // CoordBBox(zeros(), dims), [>fill<] 0.);
+  // read_tiff_file(fn, 0, dense.get());
+  // return dense;
+  //} else if (bits_per_sample == 16) {
+  // auto dense = std::make_unique<vto::Dense<uint16_t, vto::LayoutXYZ>>(
+  // CoordBBox(zeros(), dims), [>fill<] 0.);
+  // read_tiff_file(fn, 0, dense.get());
+  // return dense;
+  //}
+
+  // throw std::runtime_error(
+  //"Recut only supports unsigned (grayscale) 8 or 16-bit tiffs");
+  // return nullptr;
+}
 
 auto get_dir_files = [](const std::string &dir, const std::string &ext) {
   std::ostringstream os;
@@ -2712,7 +2769,8 @@ auto convert_vdb_to_dense = [](auto grid) {
 // components, create a full dense buffer will fault with bad_alloc due to size
 // z-plane by z-plane helps prevents this
 template <typename GridT>
-void write_vdb_to_tiff_page(GridT grid, std::string base, CoordBBox bbox = {}) {
+std::string write_vdb_to_tiff_page(GridT grid, std::string base,
+                                   CoordBBox bbox = {}) {
 
   if (bbox.empty())
     bbox = grid->evalActiveVoxelBoundingBox(); // inclusive both ends
@@ -2744,6 +2802,7 @@ void write_vdb_to_tiff_page(GridT grid, std::string base, CoordBBox bbox = {}) {
   });
 
   TIFFClose(tiff);
+  return fn;
 }
 
 template <typename image_t>
@@ -2776,8 +2835,8 @@ void encoded_tiff_write(image_t *inimg1d, TIFF *tiff, const GridCoord dims) {
 // components, create a full dense buffer will fault with bad_alloc due to size
 // z-plane by z-plane like below prevents this
 template <typename GridT>
-void write_vdb_to_tiff_planes(GridT grid, std::string base, CoordBBox bbox = {},
-                              int channel = 0) {
+std::string write_vdb_to_tiff_planes(GridT grid, std::string base,
+                                     CoordBBox bbox = {}, int channel = 0) {
   if (bbox.empty())
     bbox = grid->evalActiveVoxelBoundingBox(); // inclusive both ends
 
@@ -2809,6 +2868,7 @@ void write_vdb_to_tiff_planes(GridT grid, std::string base, CoordBBox bbox = {},
 
     write_single_z_plane(dense.data(), fn.str(), plane_bbox.dim());
   });
+  return base;
 }
 
 // for all active values of the output grid copy the value at that coordinate
@@ -2860,20 +2920,21 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
 // values copied in topology and written z-plane by z-plane to individual tiff
 // files tiff component also saved
 template <typename GridT>
-void write_output_windows(GridT output_grid, std::string dir,
-                          std::ofstream &runtime, int index = 0,
-                          bool output_vdb = false, bool paged = true,
-                          CoordBBox bbox = {}, int channel = 0) {
+std::string write_output_windows(GridT output_grid, std::string dir,
+                                 std::ofstream &runtime, int index = 0,
+                                 bool output_vdb = false, bool paged = true,
+                                 CoordBBox bbox = {}, int channel = 0) {
 
   auto base = dir + "/img-component-" + std::to_string(index) + "-ch" +
               std::to_string(channel);
 
+  std::string output_fn;
   if (output_grid->activeVoxelCount()) {
     auto timer = high_resolution_timer();
     if (paged) // all to one file
-      write_vdb_to_tiff_page(output_grid, base, bbox);
+      output_fn = write_vdb_to_tiff_page(output_grid, base, bbox);
     else
-      write_vdb_to_tiff_planes(output_grid, dir, bbox, channel);
+      output_fn = write_vdb_to_tiff_planes(output_grid, dir, bbox, channel);
 
     runtime << "Write tiff " << timer.elapsed() << '\n';
 
@@ -2891,6 +2952,7 @@ void write_output_windows(GridT output_grid, std::string dir,
     cout << "Warning: component " << index
          << " had an empty window for the --output-windows grid\n";
   }
+  return output_fn;
 }
 
 auto adjust_marker = [](MyMarker *marker, GridCoord offsets) {
@@ -3240,14 +3302,14 @@ load_tile(const CoordBBox &bbox, const std::string &dir) {
                              dir);
   }
 
-  auto tile_filenames = tif_filenames |
-                        rv::slice(bbox.min()[2], bbox.max()[2] + 1) |
-                        rv::remove_if([](auto const& fn) { return fn.empty(); }) |
-                        rng::to_vector;
+  auto tile_filenames =
+      tif_filenames | rv::slice(bbox.min()[2], bbox.max()[2] + 1) |
+      rv::remove_if([](auto const &fn) { return fn.empty(); }) | rng::to_vector;
 
   auto dense = read_tiff_planes<image_t>(tile_filenames, bbox);
 #ifdef LOG
-  //cout << "Load image " << bbox << " in " << timer.elapsed() << " sec." << '\n';
+  // cout << "Load image " << bbox << " in " << timer.elapsed() << " sec." <<
+  // '\n';
 #endif
   return dense;
 }
