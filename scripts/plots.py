@@ -149,17 +149,28 @@ def stages(args):
     # aggregate data
     stage_names = ['CC', 'SDF', 'TC+TP']
     frames = []
+    convert_frames = []
     for root, dirs, files in os.walk(args.output):
         for file in files:
-            if 'log.csv' == file:
-              name = os.path.join(root, file)
-              print(name)
-              cols = stage_names.append('Thread count')
-              f = pd.read_csv(name, header=None).T
-              f = f.rename(columns=f.iloc[0]).drop(f.index[0])[['CC', 'SDF', 'TC+TP', 'Thread count']].astype({'Thread count':'int'})
-              frames.append(f)
+            name = os.path.join(root, file)
+            try:
+                if 'log.csv' == file:
+                    print(name)
+                    f = pd.read_csv(name, header=None).T
+                    f = f.rename(columns=f.iloc[0]).drop(f.index[0])[['CC', 'SDF', 'TC+TP', 'Thread count']].astype({'Thread count':'int'})
+                    frames.append(f)
+                elif 'point.vdb-log-' in file:
+                    print(name)
+                    f = pd.read_csv(name, header=None).T
+                    f = f.rename(columns=f.iloc[0]).drop(f.index[0])[['VC', 'Thread count']].astype({'Thread count':'int'})
+                    convert_frames.append(f)
+            except:
+              print("Could not process file: " + name)
     df = pd.concat(frames)
-    g = df.groupby('Thread count')
+    cv = pd.concat(convert_frames)
+    merged = pd.merge(cv, df, how='inner', on=['Thread count'])
+    g = merged.groupby('Thread count')
+    #import pdb; pdb.set_trace()
     means = g.mean()
     errors = g.std()
     fig, ax = plt.subplots()
