@@ -1774,8 +1774,18 @@ auto read_tiff_dims = [](auto fn) {
   return GridCoord(image_width, image_height, dircount);
 };
 
-auto read_tiff_file = [](auto fn, auto z, auto dense) {
+auto read_tiff_file = [](auto fn, auto z, auto dense, bool is_multi = false) {
   auto tiff = open_tiff_file(fn);
+
+  // advance to correct directory (z)
+  if (is_multi) {
+    rng::for_each(rv::indices(z), [tiff](auto i) { TIFFReadDirectory(tiff); });
+    auto dir = TIFFCurrentDirectory(tiff);
+    if (TIFFCurrentDirectory(tiff) != z) {
+      throw std::runtime_error("Directory mismatch at: " + std::to_string(dir) +
+                               " requested: " + std::to_string(z));
+    }
+  }
 
   short bits_per_sample;
   TIFFGetField(tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
@@ -1826,13 +1836,15 @@ auto read_tiff_planes = [](const std::vector<std::string> &fns,
   return dense;
 };
 
-//std::unique_ptr<vto::Dense<image_width, vto::LayoutXYZ>>
+// std::unique_ptr<vto::Dense<image_width, vto::LayoutXYZ>>
 std::unique_ptr<vto::Dense<uint8_t, vto::LayoutXYZ>>
 read_tiff_paged(const std::string &fn) {
   auto dims = read_tiff_dims(fn);
   auto dense = std::make_unique<vto::Dense<uint8_t, vto::LayoutXYZ>>(
       CoordBBox(zeros(), dims), /*fill*/ 0.);
-  read_tiff_file(fn, 0, dense.get());
+  rng::for_each(rv::indices(dims.z()), [densep = dense.get(), fn](auto z) {
+    read_tiff_file(fn, z, densep, true);
+  });
   return dense;
 
   // auto bits_per_sample = read_tiff_bit_width(fn);
@@ -2936,7 +2948,7 @@ std::string write_output_windows(GridT output_grid, std::string dir,
     else
       output_fn = write_vdb_to_tiff_planes(output_grid, dir, bbox, channel);
 
-    runtime << "Write tiff " << timer.elapsed() << '\n';
+    runtime << "Write tiff, " << timer.elapsed() << '\n';
 
     if (output_vdb) {
       timer.restart();
