@@ -2435,9 +2435,6 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
 #else
       throw std::runtime_error("HDF5 dependency required for input type ims");
 #endif
-    } else {
-      throw std::runtime_error(
-          "If input is not vdb, must pass type of tiff or ims");
     }
   }
   return input_image_lengths;
@@ -3031,9 +3028,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   init_run();
 
   // if point.vdb was not already set by input
-  if (this->input_is_vdb) {
-    assertm(this->topology_grid, "Topology grid must be set before starting reconstruction");
-  } else {
+  if (!this->input_is_vdb) {
     convert_topology();
 
     if (args->convert_only) {
@@ -3056,6 +3051,8 @@ template <class image_t> void Recut<image_t>::operator()() {
       return;
     }
   }
+
+  assertm(this->topology_grid, "Topology grid must be set before starting reconstruction");
 
   // constrain topology to only those reachable from roots
   auto stage = "connected";
