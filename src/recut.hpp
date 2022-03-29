@@ -3003,6 +3003,7 @@ template <class image_t> void Recut<image_t>::init_run() {
 #ifdef LOG
     std::ofstream convert_log(this->log_fn);
     convert_log << "Thread count, " << args->user_thread_count << '\n';
+    convert_log << "Original voxel count, " << coord_prod_accum(this->image_lengths) << '\n';
 #endif
   } else {
     auto get_unique_fn = [](std::string probe_name) {
@@ -3027,6 +3028,7 @@ template <class image_t> void Recut<image_t>::init_run() {
     run_log << "Run app2, " << args->run_app2 << '\n';
     run_log << "Output channel count, " << args->window_grid_paths.size()
             << '\n';
+    run_log << "Original voxel count, " << coord_prod_accum(this->image_lengths) << '\n';
 #endif
   }
 }
