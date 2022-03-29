@@ -36,7 +36,7 @@ Recut has several principle usages:
 4. Filtration and quality control of neurons based on domain specific features. Since recut takes a batch process approach where large volumes of neuron tissue are reconstructed concurrently, methods that filter and discard neurons based on tuned features automatically are critical.
 5. Converting .ims or .vdb files to .tiff and other image to image conversions.
 
-The first argument passed to recut is the path to the input which can either be a directory for .tiff files or a distinct file in the case of .ims or .vdb files. The ordering of all other arguments is arbitrary. You call recut to process the inputs using an action, for example `--convert` or `--combine`. If no action is described, the default behavior is to do an end-to-end reconstruction from input to reconstructed cell swcs. Where possible, arguments have assumed default values for the most common expected behavior. The following are some use cases.
+The first argument passed to recut is the path to the input which can either be a directory for .tiff files or a distinct file in the case of .ims or .vdb files. The ordering of all other arguments is arbitrary. The default behavior is to convert either an .ims file or .tiff directory to a VDB file and exit. To do an end-to-end reconstruction pass an .ims, .tiff, or point VDB as input and specify a `--seeds` directory. Arguments have assumed default values for the most common expected behavior.
 
 ## Warning
 Where possible Recut attempts to use the maximum threads available to your system by default. This can be a problem when converting large images or when using the `--output-windows` with multiple large grids since each thread is grabbing large chunks of images and operating on them in DRAM. Meanwhile reconstruction alone consumes very little memory since it operates on images that have already been compressed to VDB grids. In general you should use the system with the maximum amount of DRAM that you can. When you are still limited on DRAM you should lower the thread count used by recut by specifying the threads like `--parallel 2`. When recut consumes too much memory you will see erros like `Segmentation fault` or `SIGKILL`. Lower the thread count until the process can complete, you can monitor the dynamic usage of your DRAM during execution by running the command `htop` in a separate terminal. This can be helpful to guage what parallel factor you want to use.
@@ -44,13 +44,13 @@ Where possible Recut attempts to use the maximum threads available to your syste
 ### Conversion
 Convert the folder `ch0` into a VDB point grid:
 ```
-recut ch0 --convert --input-type tiff --output-type point --fg-percent .05
+recut ch0 --input-type tiff --output-type point --fg-percent .05
 ```
 This creates a .vdb file in the ch0 folder. The name is tagged with information about the conversion process for example the argument values used. This is done to preserve info about the source image and to lower the likelihood of overwriting a costly previous conversion with a generic name. Explicit names are helpful for humans but if you want to pass a simpler name you can do so.
 
 Convert the folder again, but this time only take z-planes of 30 through 45 and name it `subset.vdb`
 ```
-recut ch0 --convert subset.vdb --input-type tiff --output-type point --image-offsets 0 0 30 --image-lengths -1 -1 16 --fg-percent .05
+recut ch0 -o subset.vdb --input-type tiff --output-type point --image-offsets 0 0 30 --image-lengths -1 -1 16 --fg-percent .05
 ```
 
 .vdbs are a binary format, you can only view information or visualize them with software that explicitly supports them. However for quick info, Recut installs some of the VDB libraries command line tools.
@@ -64,7 +64,7 @@ You'll notice that vdb grid's metadata has been stamped with information about t
 #### Image Inference Conversions
 The highest quality *reconstructions* currently involve running the MCP3D pipeline's neurite and soma segmentation and connected component stage followed by recut conversion to a point grid followed by recut's reconstruction of that point grid. MCP3D's connected component stage will output the soma locations `marker_files` for use in reconstruction as shown below. MCP3D's segmentation will output a directory of tiff files of the binarized segmented image, with all background set to 0, therefore converting like we did before:
 ```
-recut ch0 --convert point.vdb --input-type tiff --output-type point
+recut ch0 -o point.vdb --input-type tiff --output-type point
 ```
 Note that this time we left off the `--fg-percent` flag so Recut will automatically cut off pixels valued `0` while saving foreground pixels everywhere else. This is only recommended for inference outputs since their pixel intensity values have already been binarized (0 or 1) and they tend to have only .05% of voxels labeled as foreground (i.e. value of 1).
 
@@ -72,14 +72,14 @@ Note that this time we left off the `--fg-percent` flag so Recut will automatica
 While the process above produces the highest quality *reconstructions* with smaller likelihoods of path breaks, we often want a quick and dirty way to view the original image or a separate channel of the original image for proofreading via the `--output-windows` flag during reconstruction. One way of doing this is to convert using a guessed foreground percentage of the image like so:
 
 ```
-recut test.ims --convert uint8.vdb --input-type ims --output-type uint8 --channel 0 --fg-percent .05
-recut test.ims --convert mask.vdb --input-type ims --output-type mask --channel 1 --fg-percent 10
+recut test.ims -o uint8.vdb --input-type ims --output-type uint8 --channel 0 --fg-percent .05
+recut test.ims -o mask.vdb --input-type ims --output-type mask --channel 1 --fg-percent 10
 ```
 Note that doing multiple image conversions is only necessary if you want to output windows (create cropped images) while doing a reconstruction. Note the size of VDBs on disk reflect mainly the active voxel count of your conversion, for light microscopy data it's rare that you will want foreground percentages above 1%.
 
 It's possible to background threshold based off a known raw pixel intensity value, for example if you have already background thresholded, clamped, and or background subtracted an image. In such cases simply convert like below, inputing your known intensity value:
 ```
-recut ch0 --convert point.vdb --input-type tiff --output-type point --bg-thresh 127
+recut ch0 -o point.vdb --input-type tiff --output-type point --bg-thresh 127
 ```
 While this results in the fastest conversions it is rarely useful since it is highly sensitive to image normalization and preprocessing.
 
@@ -87,7 +87,7 @@ It is possible to run the full Recut pipeline on raw images but it may require g
 Either way you will want an automated way of detecting seed points (somas) see the Seeds section in the documentation below.
 ```
 # an example flow on raw images
-recut ch0 --convert point.vdb --input-type tiff --output-type point --fg-percent .05
+recut ch0 -o point.vdb --input-type tiff --output-type point --fg-percent .05
 # you would need to write the coordinates and radii of known seed points (somas) by hand in marker_files/
 recut point.vdb --seeds marker_files
 ```
@@ -119,7 +119,7 @@ Even in inferenced neural tissue of internal data, only about 20% of foreground 
 Within the directory `recut` is invoked from, a new folder named `run-1` will be created which contains a set of folders for each connected component connected to at least 1 seed point. The folders prepended with `a-multi...` contain multiple somas (seed points), therefore these particular folders contain multiple SWC files (trees) within them. If you ran the reconstruction passing different images to `--output-windows` these folders will also contain compressed tiff volumes for the bounding box of all trees within the component for proofreading or training. You can do further analysis or run quality control on these outputs if you install [StdSwc](http://neuromorpho.org/StdSwc1.21.jsp) and run `[recut_root_dir]/scripts/batch-std-swc.sh run-1` for the run directory generated. For each tree in the run directory a new corresponding text file will be placed alongside it logging any warnings for the proofreader. These logs are prepended with `stdlog-...`.
 
 ### Combine
-Not finished.
+You call recut to process the inputs using an action, for example `--combine`. 
 
 ## Developer Usage
 If you'd like a virtual environment with all of Recut's dependencies and python provided for you can run:

@@ -2935,6 +2935,7 @@ void Recut<image_t>::partition_components(
     run_log << "TC+TP, " << global_timer.elapsed() << '\n';
   }
   run_log << "Aggregated prune, " << total_timer.elapsed() << '\n';
+  run_log << "Neuron count, " << root_pairs.size() << '\n';
 #endif
 }
 
@@ -2944,24 +2945,6 @@ template <class image_t> void Recut<image_t>::convert_topology() {
   // mutates input_grid
   auto stage = "convert";
   this->update(stage, map_fifo);
-
-  openvdb::GridPtrVec grids;
-
-  if (args->output_type == "float") {
-    print_grid_metadata(this->input_grid);
-    grids.push_back(this->input_grid);
-  } else if (args->output_type == "uint8") {
-    print_grid_metadata(this->img_grid);
-    grids.push_back(this->img_grid);
-  } else if (args->output_type == "mask") {
-    print_grid_metadata(this->mask_grid);
-    grids.push_back(this->mask_grid);
-  } else if (args->output_type == "point") {
-    print_grid_metadata(this->topology_grid);
-    grids.push_back(this->topology_grid);
-  }
-
-  write_vdb_file(grids, this->args->output_name);
 }
 
 template <class image_t> void Recut<image_t>::init_run() {
@@ -3003,7 +2986,8 @@ template <class image_t> void Recut<image_t>::init_run() {
 #ifdef LOG
     std::ofstream convert_log(this->log_fn);
     convert_log << "Thread count, " << args->user_thread_count << '\n';
-    convert_log << "Original voxel count, " << coord_prod_accum(this->image_lengths) << '\n';
+    convert_log << "Original voxel count, "
+                << coord_prod_accum(this->image_lengths) << '\n';
 #endif
   } else {
     auto get_unique_fn = [](std::string probe_name) {
@@ -3028,7 +3012,8 @@ template <class image_t> void Recut<image_t>::init_run() {
     run_log << "Run app2, " << args->run_app2 << '\n';
     run_log << "Output channel count, " << args->window_grid_paths.size()
             << '\n';
-    run_log << "Original voxel count, " << coord_prod_accum(this->image_lengths) << '\n';
+    run_log << "Original voxel count, " << coord_prod_accum(this->image_lengths)
+            << '\n';
 #endif
   }
 }
@@ -3045,10 +3030,31 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   init_run();
 
-  if (args->convert_only) {
+  // if point.vdb was not already set by input
+  if (this->input_is_vdb) {
+    assertm(this->topology_grid, "Topology grid must be set before starting reconstruction");
+  } else {
     convert_topology();
-    // no more work to do, exiting
-    return;
+
+    if (args->convert_only) {
+      openvdb::GridPtrVec grids;
+      if (args->output_type == "float") {
+        print_grid_metadata(this->input_grid);
+        grids.push_back(this->input_grid);
+      } else if (args->output_type == "uint8") {
+        print_grid_metadata(this->img_grid);
+        grids.push_back(this->img_grid);
+      } else if (args->output_type == "mask") {
+        print_grid_metadata(this->mask_grid);
+        grids.push_back(this->mask_grid);
+      } else if (args->output_type == "point") {
+        print_grid_metadata(this->topology_grid);
+        grids.push_back(this->topology_grid);
+      }
+      write_vdb_file(grids, this->args->output_name);
+      // no more work to do, exiting
+      return;
+    }
   }
 
   // constrain topology to only those reachable from roots

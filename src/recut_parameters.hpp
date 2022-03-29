@@ -17,7 +17,7 @@ public:
         output_type("uint8"), prune_radius(ANISOTROPIC_FACTOR), run_app2(false),
         user_thread_count(tbb::info::default_concurrency()),
         tile_lengths({-1, -1, -1}), min_branch_length(MIN_BRANCH_LENGTH),
-        convert_only(false), output_name("out.vdb"), background_thresh(-1),
+        convert_only(true), output_name("out.vdb"), background_thresh(-1),
         foreground_percent(-0.01), combine(false), histogram(false),
         window_grid_paths(std::vector<std::string>()), second_grid(std::string()),
         upsample_z(1), downsample_factor(1), max_intensity(-1),
