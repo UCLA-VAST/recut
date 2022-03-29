@@ -3,7 +3,7 @@
 void RecutCommandLineArgs::PrintUsage() {
   std::cout << "Basic usage : recut <image file or dir> [--seeds <marker_dir>] "
                "[--type point/uint8/mask/float/ims/tiff] "
-               "[--convert <output_vdb_file_name>] "
+               "[-o <output_vdb_file_name>] "
                "[--bkg-thresh <int>] [--fg-percent <double>]\n\n";
   "[--image-offsets <int> [<int>] [<int>]] "
   "[--image-lengths <int> [<int>] [<int>]] "
@@ -14,10 +14,10 @@ void RecutCommandLineArgs::PrintUsage() {
 
   std::cout << "<image file or dir>  file or directory of input image(s)\n";
   std::cout << "--seeds              directory of files which represent known "
-               "root/soma locations\n";
+               "root/soma locations, passing seeds will run reconstruction to completion\n";
   std::cout
-      << "--convert            [-cv] convert image file and exit defaults to "
-         "out.vdb\n";
+      << "--output-name            [-o] give converted vdb a custom name defaults to "
+         "naming with useful image attributes\n";
   std::cout << "--input-type               input type img: 'ims', 'tiff' | "
                "VDB: 'point', "
                "'uint8', 'mask' or 'float'\n";
@@ -68,7 +68,7 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout
       << "--downsample-factor  for images scaled down in x and z dimension "
          "scale the marker files by specified factor\n";
-  std::cout << "--upsample-z         during --convert only z-dimension will be "
+  std::cout << "--upsample-z         during conversion only z-dimension will be "
                "upsampled (copied) by specified factor, default is 1 i.e. no "
                "upsampling\n";
   std::cout
@@ -111,15 +111,15 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
     // if the switch is given, parameter(s) corresponding to the switch is
     // expected
     for (int i = 2; i < argc; ++i) {
-      if (strcmp(argv[i], "--convert") == 0 || strcmp(argv[i], "-cv") == 0) {
+      if (strcmp(argv[i], "--output-name") == 0 || strcmp(argv[i], "-o") == 0) {
         if (!((i + 1) >= argc || argv[i + 1][0] == '-')) {
           args.output_name = argv[i + 1];
           ++i;
         }
-        args.convert_only = true;
       } else if (strcmp(argv[i], "--seeds") == 0 ||
                  strcmp(argv[i], "-s") == 0) {
         args.seed_path = argv[i + 1];
+        args.convert_only = false;
         ++i;
       } else if (strcmp(argv[i], "--resolution-level") == 0 ||
                  strcmp(argv[i], "-rl") == 0) {
