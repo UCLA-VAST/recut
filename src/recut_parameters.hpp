@@ -14,7 +14,7 @@ public:
   RecutCommandLineArgs()
       : input_path(std::string()), channel(0), resolution_level(0),
         image_offsets(0, 0, 0), image_lengths(-1, -1, -1), input_type("point"),
-        output_type("uint8"), prune_radius(ANISOTROPIC_FACTOR), run_app2(false),
+        output_type("point"), prune_radius(ANISOTROPIC_FACTOR), run_app2(false),
         user_thread_count(tbb::info::default_concurrency()),
         tile_lengths({-1, -1, -1}), min_branch_length(MIN_BRANCH_LENGTH),
         convert_only(true), output_name("out.vdb"), background_thresh(-1),

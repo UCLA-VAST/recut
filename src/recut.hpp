@@ -118,7 +118,7 @@ public:
   Recut(RecutCommandLineArgs &args) : args(&args) {}
 
   void operator()();
-  void init_run();
+  void start_run_dir_and_logs();
   void print_to_swc(std::string swc_path);
   void adjust_parent();
   void prune_radii();
@@ -244,7 +244,8 @@ public:
   template <class Container>
   void update(std::string stage, Container &fifo = nullptr);
   GridCoord get_input_image_lengths(RecutCommandLineArgs *args);
-  std::vector<std::pair<GridCoord, uint8_t>> initialize();
+  void initialize();
+  void update_hierarchical_dims(const GridCoord &tile_lengths);
   inline VID_t sub_block_to_block_id(VID_t iblock, VID_t jblock, VID_t kblock);
   template <class Container> void setup_radius(Container &fifo);
   void
@@ -358,11 +359,6 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
 
   auto local_bbox =
       openvdb::math::CoordBBox(grid_offsets, grid_offsets + grid_lengths);
-
-#ifdef LOG
-  cout << "Processing region: " << local_bbox << '\n';
-  print_point_count(this->topology_grid);
-#endif
 
   // input handler
   {
@@ -2143,11 +2139,12 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
     // otherwise seg faults will occur
     auto update_accessor = this->update_grid->getAccessor();
 
-    if (!this->input_is_vdb) {
+    if (stage == "value") {
       throw std::runtime_error(
           "Unimplemented: need to generate tile_threshold for raw images");
     }
 
+    // dummy values, only used in unimplemented value stage
     auto tile_thresholds = new TileThresholds<image_t>(
         /*max*/ 2,
         /*min*/ 0,
@@ -2197,8 +2194,6 @@ void Recut<image_t>::update(std::string stage, Container &fifo) {
   if (stage == "convert") {
     auto finalize_start = timer.elapsed();
 
-    assertm(args->convert_only,
-            "reduce grids only possible for convert_only stage");
     if (args->output_type == "point") {
 
       this->topology_grid = merge_grids(grids);
@@ -2316,59 +2311,55 @@ inline VID_t Recut<image_t>::rotate_index(VID_t img_coord, const VID_t current,
 template <class image_t>
 void Recut<image_t>::initialize_globals(const VID_t &grid_tile_size,
                                         const VID_t &tile_block_size) {
-  this->active_tiles = vector(grid_tile_size, false);
 
   auto timer = high_resolution_timer();
 
-  if (!args->convert_only) {
-
-    auto is_boundary = [](auto coord) {
-      for (int i = 0; i < 3; ++i) {
-        if (coord[i]) {
-          if (coord[i] == (LEAF_LENGTH - 1))
-            return true;
-        } else {
+  auto is_boundary = [](auto coord) {
+    for (int i = 0; i < 3; ++i) {
+      if (coord[i]) {
+        if (coord[i] == (LEAF_LENGTH - 1))
           return true;
-        }
+      } else {
+        return true;
       }
-      return false;
-    };
-
-    std::map<GridCoord, std::deque<VertexAttr>> inner;
-    VID_t tile_id = 0;
-
-    for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
-         ++leaf_iter) {
-      auto origin = leaf_iter->getNodeBoundingBox().min();
-
-      // per leaf fifo/pq resources
-      inner[origin] = std::deque<VertexAttr>();
-      heap_map[origin] = local_heap();
-
-      // every topology_grid leaf must have a corresponding leaf explicitly
-      // created
-      auto update_leaf =
-          new openvdb::tree::LeafNode<bool, LEAF_LOG2DIM>(origin, false);
-
-      // init update grid with fixed topology (active state)
-      for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
-        // get coord
-        auto coord = ind.getCoord();
-        auto leaf_coord = coord_mod(
-            coord, new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH));
-        if (is_boundary(leaf_coord)) {
-          update_leaf->setActiveState(coord, true);
-        }
-      }
-      this->update_grid->tree().addLeaf(update_leaf);
     }
+    return false;
+  };
 
-    // fifo is a deque representing the vids left to
-    // process at each stage
-    this->map_fifo = inner;
-    this->connected_map = inner;
-    // global active vertex list
+  std::map<GridCoord, std::deque<VertexAttr>> inner;
+  VID_t tile_id = 0;
+
+  for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
+       ++leaf_iter) {
+    auto origin = leaf_iter->getNodeBoundingBox().min();
+
+    // per leaf fifo/pq resources
+    inner[origin] = std::deque<VertexAttr>();
+    heap_map[origin] = local_heap();
+
+    // every topology_grid leaf must have a corresponding leaf explicitly
+    // created
+    auto update_leaf =
+        new openvdb::tree::LeafNode<bool, LEAF_LOG2DIM>(origin, false);
+
+    // init update grid with fixed topology (active state)
+    for (auto ind = leaf_iter->beginIndexOn(); ind; ++ind) {
+      // get coord
+      auto coord = ind.getCoord();
+      auto leaf_coord = coord_mod(
+          coord, new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH));
+      if (is_boundary(leaf_coord)) {
+        update_leaf->setActiveState(coord, true);
+      }
+    }
+    this->update_grid->tree().addLeaf(update_leaf);
   }
+
+  // fifo is a deque representing the vids left to
+  // process at each stage
+  this->map_fifo = inner;
+  this->connected_map = inner;
+  // global active vertex list
 
 #ifdef LOG
   cout << "Active leaf count: " << this->update_grid->tree().leafCount()
@@ -2387,7 +2378,8 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
   if (this->input_is_vdb) { // running based of a vdb input
 
     assertm(!args->convert_only,
-            "Convert only option is not valid from vdb to vdb");
+            "Convert only option is not valid from vdb to vdb pass a --seeds "
+            "directory to start reconstructions");
 
     auto timer = high_resolution_timer();
     auto base_grid = read_vdb_file(args->input_path);
@@ -2435,13 +2427,54 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
 #else
       throw std::runtime_error("HDF5 dependency required for input type ims");
 #endif
+    } else {
+      throw std::runtime_error("unknown input type" + args->input_type);
     }
   }
   return input_image_lengths;
 }
 
 template <class image_t>
-std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
+void Recut<image_t>::update_hierarchical_dims(const GridCoord &tile_lengths) {
+
+  // determine the length of tiles in each dim
+  // rounding up (ceil)
+  rng::for_each(rv::indices(3), [this](int i) {
+    this->grid_tile_lengths[i] =
+        (this->image_lengths[i] + this->tile_lengths[i] - 1) /
+        this->tile_lengths[i];
+  });
+
+  // the resulting tile size override the user inputted block size
+  if (this->args->convert_only) {
+    this->block_lengths[0] = this->tile_lengths[0];
+    this->block_lengths[1] = this->tile_lengths[1];
+    this->block_lengths[2] = this->tile_lengths[2];
+  } else {
+    this->block_lengths[0] = std::min(this->tile_lengths[0], LEAF_LENGTH);
+    this->block_lengths[1] = std::min(this->tile_lengths[1], LEAF_LENGTH);
+    this->block_lengths[2] = std::min(this->tile_lengths[2], LEAF_LENGTH);
+  }
+
+  // determine length of blocks that span an tile for each dim
+  // this rounds up
+  rng::for_each(rv::indices(3), [this](int i) {
+    this->tile_block_lengths[i] =
+        (this->tile_lengths[i] + this->block_lengths[i] - 1) /
+        this->block_lengths[i];
+  });
+
+  this->grid_tile_size = coord_prod_accum(this->grid_tile_lengths);
+  this->tile_block_size = coord_prod_accum(this->tile_block_lengths);
+
+#ifdef LOG
+  print_coord(this->tile_lengths, "tile");
+#endif
+
+  this->active_tiles = std::vector(this->grid_tile_size, false);
+}
+
+template <class image_t> void Recut<image_t>::initialize() {
 
   if (args->convert_only && args->input_type == "ims") {
     args->user_thread_count = 1;
@@ -2454,8 +2487,23 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
   // input type
   {
-    auto path_extension = std::string(fs::path(args->input_path).extension());
-    this->input_is_vdb = path_extension == ".vdb" ? true : false;
+    if (fs::is_directory(args->input_path)) {
+      this->input_is_vdb = false;
+      this->args->input_type = "tiff";
+    } else {
+      auto path_extension = std::string(fs::path(args->input_path).extension());
+      if (path_extension == ".vdb") {
+        this->input_is_vdb = true;
+      } else {
+        this->input_is_vdb = false;
+        if (path_extension == "ims") {
+          this->args->input_type = "ims";
+        } else {
+          throw std::runtime_error(
+              "Recut does not support single files of type: " + path_extension);
+        }
+      }
+    }
   }
 
   // actual possible lengths
@@ -2496,7 +2544,7 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
 
   // TODO move this clipping up to the read step for faster performance on sub
   // grids
-  if (!this->args->convert_only) {
+  if (this->input_is_vdb) {
     this->topology_grid->clip(this->image_bbox);
   }
 
@@ -2517,78 +2565,18 @@ std::vector<std::pair<GridCoord, uint8_t>> Recut<image_t>::initialize() {
   });
 
   // set good defaults for conversion depending on tiff/ims
-  if (this->args->convert_only) {
+  if (!this->input_is_vdb) {
     // images are saved in separate z-planes for tiff, so conversion should
     // respect that for best performance
-    int zchunk = args->input_type == "ims" ? 8 : 8;
     // if it wasn't set by user on command line, then set default
     this->tile_lengths[2] =
-        this->args->tile_lengths[2] < 1 ? zchunk : this->args->tile_lengths[2];
-
-    //// based on imaris chunk size, Note this makes performance slower
-    // most likely due to the cost of seeking to the chunk
-    // or some other hdf5 overhead
-    // if (args->input_type == "ims") {
-    // rng::for_each(rv::indices(2), [this](int i) {
-    //// if it wasn't set by user on command line, then set default
-    // if (this->args->tile_lengths[i] < 1)
-    // this->tile_lengths[i] = 256;
-    //});
-    //}
+        this->args->tile_lengths[2] < 1 ? 8 : this->args->tile_lengths[2];
   }
-
-  // determine the length of tiles in each dim
-  // rounding up (ceil)
-  rng::for_each(rv::indices(3), [this](int i) {
-    this->grid_tile_lengths[i] =
-        (this->image_lengths[i] + this->tile_lengths[i] - 1) /
-        this->tile_lengths[i];
-  });
-
-  // the resulting tile size override the user inputted block size
-  if (this->args->convert_only) {
-    this->block_lengths[0] = this->tile_lengths[0];
-    this->block_lengths[1] = this->tile_lengths[1];
-    this->block_lengths[2] = this->tile_lengths[2];
-  } else {
-    this->block_lengths[0] = std::min(this->tile_lengths[0], LEAF_LENGTH);
-    this->block_lengths[1] = std::min(this->tile_lengths[1], LEAF_LENGTH);
-    this->block_lengths[2] = std::min(this->tile_lengths[2], LEAF_LENGTH);
-  }
-
-  // determine length of blocks that span an tile for each dim
-  // this rounds up
-  rng::for_each(rv::indices(3), [this](int i) {
-    this->tile_block_lengths[i] =
-        (this->tile_lengths[i] + this->block_lengths[i] - 1) /
-        this->block_lengths[i];
-  });
-
-  this->grid_tile_size = coord_prod_accum(this->grid_tile_lengths);
-  this->tile_block_size = coord_prod_accum(this->tile_block_lengths);
 
 #ifdef LOG
   print_coord(this->image_lengths, "image");
-  print_coord(this->tile_lengths, "tile");
-  // print_coord(this->block_lengths, "block");
-  // print_coord(this->tile_block_lengths, "tile block lengths");
-  // std::cout << "tiles per grid: " << grid_tile_size
-  //<< " blocks per tile: " << tile_block_size << '\n';
 #endif
-
-  auto timer = high_resolution_timer();
-  initialize_globals(grid_tile_size, tile_block_size);
-
-#ifdef LOG
-  cout << "Initialized globals " << timer.elapsed() << '\n';
-#endif
-
-  if (args->convert_only) {
-    return {};
-  } else {
-    // adds all valid markers to roots vector and returns
-    return process_marker_dir(this->image_offsets, this->image_lengths);
-  }
+  update_hierarchical_dims(this->tile_lengths);
 }
 
 // reject unvisited vertices
@@ -2703,7 +2691,6 @@ void Recut<image_t>::partition_components(
     VID_t selected_count = float_grid->activeVoxelCount();
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
-    run_log << "Thread count, " << args->user_thread_count << '\n';
     run_log << "Active, " << this->topology_grid->activeVoxelCount() << '\n';
     run_log << "Selected, " << selected_count << '\n';
     assertm(selected_count, "active voxels in float grid must be > 0");
@@ -2791,6 +2778,7 @@ void Recut<image_t>::partition_components(
     std::ofstream component_log;
     component_log.open(component_log_fn);
     component_log << std::fixed << std::setprecision(6);
+    component_log << "Thread count, " << args->user_thread_count << '\n';
     component_log << "Soma count, " << component_roots.size() << '\n';
     component_log << "Component count, " << markers.size() << '\n';
     component_log << "TC count, " << pruned_markers.size() << '\n';
@@ -2945,7 +2933,7 @@ template <class image_t> void Recut<image_t>::convert_topology() {
   this->update(stage, map_fifo);
 }
 
-template <class image_t> void Recut<image_t>::init_run() {
+template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
   // Warning: if you want to fuse conversion with other stages you need
   // to assign to these variable before running convert, since they
   // rely on output_name and run dir to be set
@@ -3023,13 +3011,17 @@ template <class image_t> void Recut<image_t>::operator()() {
     return;
   }
 
-  // read the list of root vids
-  auto root_pairs = this->initialize();
+  this->initialize();
 
-  init_run();
+  start_run_dir_and_logs();
 
   // if point.vdb was not already set by input
   if (!this->input_is_vdb) {
+    if (!args->convert_only) {
+      if (this->args->output_type != "point") {
+        throw std::runtime_error("If running reconstruction, output type must be type point");
+      }
+    }
     convert_topology();
 
     if (args->convert_only) {
@@ -3051,9 +3043,23 @@ template <class image_t> void Recut<image_t>::operator()() {
       // no more work to do, exiting
       return;
     }
+
+    // set the z tile lengths to equallying whole image for reconstruction
+    this->tile_lengths[2] = this->image_lengths[2];
+    update_hierarchical_dims(this->tile_lengths);
+    append_attributes(this->topology_grid);
+    // assume starting from VDB for rest of run
+    this->input_is_vdb = true;
   }
 
-  assertm(this->topology_grid, "Topology grid must be set before starting reconstruction");
+  assertm(this->topology_grid,
+          "Topology grid must be set before starting reconstruction");
+
+  // adds all valid markers to roots vector and returns
+  auto root_pairs =
+      process_marker_dir(this->image_offsets, this->image_lengths);
+
+  initialize_globals(this->grid_tile_size, this->tile_block_size);
 
   // constrain topology to only those reachable from roots
   auto stage = "connected";
