@@ -11,6 +11,7 @@ from statistics import mean
 from os import getcwd
 from os import walk
 import pandas as pd
+import numpy as np
 from matplotlib import rc
 rc('font',**{'family':'serif','serif':['Palatino']})
 rc('text', usetex=True)
@@ -131,7 +132,7 @@ def radius(args):
         df = data['benchmarks']
         # only collect it once, the benchmark data is inherently ordered
         grid_sizes = [int(i['name'].split('/')[-1]) for i in df if 'recut' in i['name']]
-        names = ['recut', 'xy', 'accurate' ]
+        names = ['recut', 'xy', 'accurate']
         real_times = []
         time_unit = df[0]['time_unit']
         time_unit = 's'
@@ -143,6 +144,60 @@ def radius(args):
         legends = (r'Recut $ O(n) $', r'APP2 $ O(nr^3) $', r'Accurate $ O(nr^4) $')
         rplot((radius_sizes, radius_sizes, radius_sizes), r'Radius size (pixels)', real_times,
                 r'Elapsed time (%s)' % time_unit, r'Calculate Radius Performance Sequential', args, legends=legends)
+
+def throughput(args):
+    ''' Show throughput comparison of app2 and recut'''
+    # aggregate data
+    frames = []
+    for root, dirs, files in os.walk(args.output):
+        for file in files:
+            name = os.path.join(root, file)
+            #try:
+            if '-log.csv' in file:
+                print(name)
+                f = pd.read_csv(name, header=None, error_bad_lines=False).T
+                f = f.rename(columns=f.iloc[0]).drop(f.index[0])
+                if 'FM' in f and 'Write tiff' in f and 'Thread count' in f and (f['Thread count'] == 1).all():
+                  frames.append(f.drop(columns=['Soma count', 'APP write SWC', 'Volume', 'TC count', 'TP count', 'Thread count']))
+            #except:
+            #  print("Could not process file: " + name)
+    df = pd.concat(frames)
+    # drop any rows that contain a zero
+    df = df[(df != 0).all(1)]
+    # sum Recut
+    df['Recut prune'] = df[list(df.columns)[1:4]].sum(axis=1)
+    # sum APP2
+    df['APP2'] = df[list(df.columns)[4:8]].sum(axis=1)
+    # find V/s
+    inv = 1 / df.iloc[:,1:]
+    throughput = inv.multiply(df['Component count'], axis=0)
+    throughput['Voxel count'] = df['Component count']
+
+    fig, ax = plt.subplots()
+    # ax.set_yscale('log')
+    ax = throughput.plot.scatter(x='Voxel count', y='Write tiff', color='Pink', label='Write window', ax=ax)
+    ax = throughput.plot.scatter(x='Voxel count', y='Read window', color='Purple', label='Read window', ax=ax)
+    ax = throughput.plot.scatter(x='Voxel count', y='FM', label='FM', color='Orange', ax=ax)
+    ax = throughput.plot.scatter(x='Voxel count', y='HP', label='HP', color='Yellow', ax=ax)
+    ax = throughput.plot.scatter(x='Voxel count', y='TC', color='Green', label='TC', ax=ax)
+    ax = throughput.plot.scatter(x='Voxel count', y='Recut prune', label='Recut prune', color='DarkBlue', ax=ax)
+    ax = throughput.plot.scatter(x='Voxel count', y='APP2', label='APP2', color='Red', ax=ax)
+
+    x = 'Voxel count'
+    stages = ['Recut prune', 'APP2']
+    colors = ['DarkBlue', 'Red']
+    # for stage, color in zip(stages, colors):
+      # import pdb; pdb.set_trace()
+      # d = np.polyfit(throughput[x].astype('float'), throughput[stage].astype('float'), 1)
+      # f = np.poly1d(d)
+      # throughput.plot(throughput[x].astype('float'), f(x), color=color)
+
+    ax.set_ylabel('Vertices/s')
+    ax.set_xlabel('Vertex count')
+    ax.set_title('Throughput and Scalability')
+    ax.set_yscale('log')
+    ax.set_xscale('log')
+    plt.show()
 
 def stages(args):
     ''' Show runtime comparison of stages'''
@@ -181,25 +236,6 @@ def stages(args):
     fig.tight_layout()
     fig.show()
     import pdb; pdb.set_trace()
-
-    # runtimes =     [7.4, 8.1, 9.7, 1.2, 16]
-    # seq_runtimes = [126.4, 72.9, 31.0, 0, 0]
-    # if args.save or args.show:
-        # field = r'Recut speedup factor %'
-        # ylabel = r'Runtime (mins)'
-        # title = r'Stage Runtime Comparison'
-        # # xargs = (list(range(len(stage_names))), r'Stages')
-        # xargs = (stage_names, r'Stages')
-        # yargs = (runtimes, ylabel)
-        # legends = (r'Recut', r'APP2')
-
-        # rplot(*xargs,
-                # *yargs,
-                # title,
-                # args, 
-                # legends=legends,
-                # yiter_secondary=seq_runtimes, 
-                # bar=True)
 
 def value(args):
     ''' Fastmarching Performance '''
@@ -504,6 +540,8 @@ def main(args):
         scalability(args)
     if args.case == 'stages':
         stages(args)
+    if args.case == 'throughput':
+        throughput(args)
 
 
 if __name__ == '__main__':
@@ -513,7 +551,7 @@ if __name__ == '__main__':
     group.add_argument('-a', '--all', help="Use all known cases",
             action="store_true")
     group.add_argument('-c', '--case', help="Specify which case to use",
-            choices=['stages', 'radius', 'scalability', 'value', 'read'])
+            choices=['stages', 'throughput', 'radius', 'scalability', 'value', 'read'])
 
     parser.add_argument('-r', '--rerun', help="Rerun all to generate new test data", action="store_true")
     parser.add_argument('-w', '--save', help="save all plots to file", action="store_true")

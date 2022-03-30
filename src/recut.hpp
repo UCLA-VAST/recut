@@ -2703,6 +2703,7 @@ void Recut<image_t>::partition_components(
     VID_t selected_count = float_grid->activeVoxelCount();
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
+    run_log << "Thread count, " << args->user_thread_count << '\n';
     run_log << "Active, " << this->topology_grid->activeVoxelCount() << '\n';
     run_log << "Selected, " << selected_count << '\n';
     assertm(selected_count, "active voxels in float grid must be > 0");
