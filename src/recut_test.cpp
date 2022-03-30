@@ -265,7 +265,9 @@ TEST(VDB, InitializeGlobals) {
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
-  auto root_coords = recut.initialize();
+  recut.initialize();
+  auto root_coords =
+      recut.process_marker_dir(recut.image_offsets, recut.image_lengths);
 
   auto update_accessor = recut.update_grid->getConstAccessor();
   auto topology_accessor = recut.topology_grid->getConstAccessor();
@@ -412,7 +414,9 @@ TEST(VDB, IntegrateUpdateGrid) {
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
-  auto root_coords = recut.initialize();
+  recut.initialize();
+  auto root_coords =
+      recut.process_marker_dir(recut.image_offsets, recut.image_lengths);
   // recut.activate_vids(root_coords, "connected", recut.map_fifo);
   auto update_accessor = recut.update_grid->getAccessor();
   auto topology_accessor = recut.topology_grid->getConstAccessor();
@@ -551,7 +555,9 @@ TEST(VDB, ActivateVids) {
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
-  auto root_coords = recut.initialize();
+  recut.initialize();
+  auto root_coords =
+      recut.process_marker_dir(recut.image_offsets, recut.image_lengths);
   recut.activate_vids(recut.topology_grid, root_coords, "connected",
                       recut.map_fifo, recut.connected_map);
 
@@ -601,7 +607,9 @@ TEST(VDB, PriorityQueue) {
                /*input_is_vdb=*/true,
                /* type =*/"float"); // priority queue must have type float
   auto recut = Recut<uint16_t>(args);
-  auto root_coords = recut.initialize();
+  recut.initialize();
+  auto root_coords =
+      recut.process_marker_dir(recut.image_offsets, recut.image_lengths);
 
   // TODO switch this to a more formal method
   // set the topology_grid mainly from file for this test
@@ -667,7 +675,9 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
                        /*input_is_vdb=*/true,
                        /* type =*/"point");
   auto recut = Recut<uint16_t>(args);
-  auto root_coords = recut.initialize();
+  recut.initialize();
+  auto root_coords =
+      recut.process_marker_dir(recut.image_offsets, recut.image_lengths);
   cout << "root " << root_coords[0].first << '\n';
 
   // TODO switch this to a more formal method
@@ -755,7 +765,9 @@ TEST(Utils, AdjustSomaRadii) {
                /*input_is_vdb=*/true,
                /* type =*/"float"); // priority queue must have type float
   auto recut = Recut<uint16_t>(args);
-  auto root_coords = recut.initialize();
+  recut.initialize();
+  auto root_coords =
+      recut.process_marker_dir(recut.image_offsets, recut.image_lengths);
 
   // TODO switch this to a more formal method
   // set the topology_grid mainly from file for this test
@@ -933,7 +945,9 @@ TEST(VDB, Connected) {
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
-  auto root_coords = recut.initialize();
+  recut.initialize();
+  auto root_coords =
+      recut.process_marker_dir(recut.image_offsets, recut.image_lengths);
   auto stage = "connected";
   recut.activate_vids(recut.topology_grid, root_coords, stage, recut.map_fifo,
                       recut.connected_map);
@@ -1688,7 +1702,7 @@ TEST(CoveredByParent, Full) {
   auto args = get_args(grid_size, grid_size, grid_size, 100, 5, true);
 
   auto recut = Recut<uint16_t>(args);
-  auto root_coords = recut.initialize();
+  recut.initialize();
 
   // -3 steps in x y z respect.
   // +3 steps in x y z respect.
@@ -1725,7 +1739,7 @@ TEST(CheckGlobals, DISABLED_AllFifo) {
   int max_size = 8;
   auto args = get_args(max_size, max_size, max_size, 100, 0, true);
   auto recut = Recut<uint16_t>(args);
-  auto root_coords = recut.initialize();
+  recut.initialize();
   std::list<VID_t> l(10);
   std::iota(l.begin(), l.end(), 0);
 
@@ -1831,7 +1845,7 @@ TEST(CheckGlobals, DISABLED_AllFifo) {
 //[>input_is_vdb=<]true,
 //[>type<] "float");
 // auto recut = Recut<uint16_t>(args);
-// auto root_coords = recut.initialize();
+// recut.initialize();
 
 // if (print_all) {
 // print_vdb_mask(recut.input_grid->getConstAccessor(), lengths);
@@ -1927,7 +1941,7 @@ TEST(Update, EachStageIteratively) {
             continue;
           auto is_sequential_run =
               (grid_size == tile_size) && (grid_size == block_size) ? true
-                                                                        : false;
+                                                                    : false;
           for (auto &tcase : tcases) {
             GridCoord grid_extents(grid_size);
             GridCoord tile_extents(tile_size);
@@ -1948,9 +1962,8 @@ TEST(Update, EachStageIteratively) {
             // ideally tiles >> thread count
             auto final_tile_size =
                 tile_size > grid_size ? grid_size : tile_size;
-            auto final_block_size = block_size > final_tile_size
-                                        ? final_tile_size
-                                        : block_size;
+            auto final_block_size =
+                block_size > final_tile_size ? final_tile_size : block_size;
 
             std::ostringstream iteration_trace;
             // use this to tag and reconstruct data from json file
@@ -1968,7 +1981,9 @@ TEST(Update, EachStageIteratively) {
                                  tcase, input_is_vdb);
 
             auto recut = Recut<uint16_t>(args);
-            auto root_coords = recut.initialize();
+            recut.initialize();
+            auto root_coords = recut.process_marker_dir(recut.image_offsets,
+                                                        recut.image_lengths);
 
             if (print_all) {
               std::cout << "ground truth image grid" << endl;
