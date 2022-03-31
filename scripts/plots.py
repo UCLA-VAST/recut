@@ -175,13 +175,13 @@ def throughput(args):
 
     fig, ax = plt.subplots()
     # ax.set_yscale('log')
-    ax = throughput.plot.scatter(x='Voxel count', y='Write tiff', color='Pink', label='Write window', ax=ax)
+    ax = throughput.plot.scatter(x='Voxel count', y='Write tiff', color='Blue', label='Write window', ax=ax)
     ax = throughput.plot.scatter(x='Voxel count', y='Read window', color='Purple', label='Read window', ax=ax)
     ax = throughput.plot.scatter(x='Voxel count', y='FM', label='FM', color='Orange', ax=ax)
-    ax = throughput.plot.scatter(x='Voxel count', y='HP', label='HP', color='Yellow', ax=ax)
-    ax = throughput.plot.scatter(x='Voxel count', y='TC', color='Green', label='TC', ax=ax)
-    ax = throughput.plot.scatter(x='Voxel count', y='Recut prune', label='Recut prune', color='DarkBlue', ax=ax)
-    ax = throughput.plot.scatter(x='Voxel count', y='APP2', label='APP2', color='Red', ax=ax)
+    ax = throughput.plot.scatter(x='Voxel count', y='HP', label='HP', color='Green', ax=ax)
+    ax = throughput.plot.scatter(x='Voxel count', y='APP2', label='APP2 cumulative', color='Red', ax=ax)
+    # ax = throughput.plot.scatter(x='Voxel count', y='TC', color='Green', label='TC', ax=ax)
+    ax = throughput.plot.scatter(x='Voxel count', y='Recut prune', label='Recut TC+TP', color='k', ax=ax)
 
     x = 'Voxel count'
     stages = ['Recut prune', 'APP2']
@@ -194,17 +194,21 @@ def throughput(args):
 
     ax.set_ylabel('Vertices/s')
     ax.set_xlabel('Vertex count')
-    ax.set_title('Throughput and Scalability')
+    ax.set_title('Sequential Efficiency')
     ax.set_yscale('log')
     ax.set_xscale('log')
+    ax.legend(loc='lower left')
     plt.show()
 
 def stages(args):
     ''' Show runtime comparison of stages'''
     # aggregate data
-    stage_names = ['CC', 'SDF', 'TC+TP']
+    stage_names = ['VC', 'CC', 'SDF', 'TC+TP']
+    textures = ['///', '...', '', 'OOO']
+    bar_width = 1
+    xscale = 4.5
     frames = []
-    convert_frames = []
+    # convert_frames = []
     for root, dirs, files in os.walk(args.output):
         for file in files:
             name = os.path.join(root, file)
@@ -212,27 +216,61 @@ def stages(args):
                 if 'log.csv' == file:
                     print(name)
                     f = pd.read_csv(name, header=None).T
-                    f = f.rename(columns=f.iloc[0]).drop(f.index[0])[['CC', 'SDF', 'TC+TP', 'Thread count']].astype({'Thread count':'int'})
+                    f = f.rename(columns=f.iloc[0]).drop(f.index[0])[['VC', 'CC', 'SDF', 'TC+TP', 'Thread count', 'Original voxel count', 'Selected', 'Neuron count']].astype({'Thread count':'int'})
                     frames.append(f)
-                elif 'point.vdb-log-' in file:
-                    print(name)
-                    f = pd.read_csv(name, header=None).T
-                    f = f.rename(columns=f.iloc[0]).drop(f.index[0])[['VC', 'Thread count']].astype({'Thread count':'int'})
-                    convert_frames.append(f)
+                # take VC stage only with rest of stages
+                # elif 'point.vdb-log-' in file:
+                    # print(name)
+                    # f = pd.read_csv(name, header=None).T
+                    # f = f.rename(columns=f.iloc[0]).drop(f.index[0])[['VC', 'Thread count']].astype({'Thread count':'int'})
+                    # convert_frames.append(f)
             except:
               print("Could not process file: " + name)
     df = pd.concat(frames)
-    cv = pd.concat(convert_frames)
-    merged = pd.merge(cv, df, how='inner', on=['Thread count'])
-    g = merged.groupby('Thread count')
+    # cv = pd.concat(convert_frames)
+    # merged = pd.merge(cv, df, how='inner', on=['Thread count'])
+    # g = df.groupby('Thread count')
     #import pdb; pdb.set_trace()
-    means = g.mean()
-    errors = g.std()
+    # means = g.mean()
+    # errors = g.std()
     fig, ax = plt.subplots()
-    means.plot.bar(yerr=errors, ax=ax, capsize=4, rot=0)
-    ax.set_ylabel('Time (s)')
-    ax.set_title('Stage runtime / efficiency')
-    # ax.set_yscale('log')
+    axx = ax.twinx()
+    df = df.astype(np.float64).sort_values('Thread count')
+    # stacked stages
+    xlabel = df['Thread count'].astype('int32').astype('str')
+    x = xscale * np.arange(len(xlabel))
+    bottoms = np.zeros(len(x))
+    for texture, stage in zip(textures, stage_names):
+      y = df[stage] / 60
+      bars = ax.bar(x - (2 * bar_width), y, bottom=bottoms, edgecolor='black', hatch=texture, color='White', width=bar_width, align='edge', label=stage + ' minutes')
+      bottoms += y
+    ax.bar_label(bars, fmt='%d')
+
+    df['Runtime'] = df[list(df.columns)[:4]].sum(axis=1)
+    # 16bit 2 Bytes per  voxel
+    name = 'TB/day'
+    df[name] = (df['Original voxel count'].div(df['Runtime']) * 2) * 3600 * 24 / 1e+12
+    bars = axx.bar(x - bar_width, df[name], edgecolor='black', color='Black', width=bar_width, align='edge', label=name)
+    axx.bar_label(bars, fmt='%d')
+
+    name = 'Kvertex/s'
+    df[name] = df['Selected'].div(df['Runtime']) / 1e+03
+    bars = axx.bar(x, df[name], edgecolor='black', color='DarkGray', width=bar_width, align='edge', label=name)
+    axx.bar_label(bars, fmt='%d')
+
+    name = 'Kneuron/day'
+    df[name] = df['Neuron count'].div(df['Runtime']) * 60 * 60 * 24 / 1e+03
+    bars = axx.bar(x+bar_width, df[name], edgecolor='black', color='LightGray', width=bar_width, align='edge', label=name)
+    axx.bar_label(bars, fmt='%d')
+
+    ax.set_ylabel('Runtime per 170 GB volume (minutes)')
+    axx.set_ylabel('Throughput')
+    loc=(.4, 1.0)
+    ax.legend(loc='upper right', bbox_to_anchor=loc)
+    axx.legend(loc='upper left', bbox_to_anchor=loc)
+    ax.set_xticks(x)
+    ax.set_xticklabels(xlabel)
+    ax.set_title('Runtime and Throughput Scaling')
     fig.tight_layout()
     fig.show()
     import pdb; pdb.set_trace()
