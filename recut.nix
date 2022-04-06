@@ -24,8 +24,8 @@ in
   nativeBuildInputs = [ cmake gcc11 ];
 
   buildInputs = [
-    python38Packages.matplotlib
-    python38Packages.pandas
+    python39Packages.matplotlib
+    python39Packages.pandas
     range-v3
     gtest
     libtiff
