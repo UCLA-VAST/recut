@@ -1715,8 +1715,15 @@ void run_app2(ValuedGrid component_with_values,
   }
 
   // print
-  auto app2_fn =
-      component_dir_fn + "/app2-component-" + std::to_string(index) + ".swc";
+  auto app2_fn = component_dir_fn + "/app2-component-" + std::to_string(index) + ".swc";
+  if (component_roots.size() < 2) {
+      auto coord = component_roots.front().first;
+      app2_fn = component_dir_fn + "/app2-tree-with-soma-xyz-" + 
+                  std::to_string(coord.x()) + '-' +
+                  std::to_string(coord.y()) + '-' +
+                  std::to_string(coord.z()) + ".swc";
+
+  }
   marker_to_swc_file(app2_fn, app2_output_tree_prune);
 #ifdef LOG
   component_log << "APP write SWC, " << timer.elapsed() << '\n';
