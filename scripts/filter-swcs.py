@@ -1,16 +1,9 @@
 import os
 import sys
+import shutil
+import pathlib
 
 # python filter-swcs.py proofread_folder recut_folder out_folder
-
-swc_types = ['recut', 'app2', 'proofreads']
-out = sys.argv[3]
-out_paths = []
-
-for dirn in swc_types:
-    full_dir = "%s/%s" % (out, dirn)
-    print("Make dir: %s" % full_dir)
-    out_paths.append(full_dir)
 
 print(sys.argv[1])
 proofreads = {}
@@ -25,8 +18,8 @@ recuts = {}
 app2 = {}
 markers = {}
 print(sys.argv[2])
-# valid_components = (f for f in os.scandir(sys.argv[2]) if f.is_dir() and ('multi' not in f.name))
-valid_components = (f for f in os.scandir(sys.argv[2]) if f.is_dir())
+valid_components = (f for f in os.scandir(sys.argv[2]) if f.is_dir() and ('multi' not in f.name))
+# valid_components = (f for f in os.scandir(sys.argv[2]) if f.is_dir())
 for component in valid_components:
     for root, dirs, files in os.walk(component):
         #ignore a multi's since they don't have good app2s
@@ -36,9 +29,11 @@ for component in valid_components:
                 x, y, z = file.split('.')[0].split('-')[-3:]
                 coord = (int(x), int(y), int(z))
                 if coord in proofreads:
-                    recuts[coord] = name
+                    if 'app2-' in file:
+                        app2[coord] = name
+                    else:
+                        recuts[coord] = name
                     # for nb_file in os.scandir(root):
-                        # if 'app2-' in nb_file:
                             # app2s[coord] = os.path
                 # else:
                     # continue
@@ -56,4 +51,27 @@ for root, dirs, files in os.walk(path):
             markers[coord] = name
             # if coord in proofreads:
                 # print(coord)
-import pdb; pdb.set_trace()
+
+print('Proofread count: %d' % len(proofreads))
+print('Recut count: %d' % len(recuts))
+print('APP2 count: %d' % len(app2))
+
+# Out
+swc_types = ['proofread', 'recut', 'app2']
+out = sys.argv[3]
+out_paths = []
+
+for dirn in swc_types:
+    full_dir = "%s/%s" % (out, dirn)
+    out_paths.append(full_dir)
+
+for out_path, dic in zip(out_paths, [proofreads, recuts, app2]):
+    print("Make dir: %s" % out_path)
+    # os.makedir(full_dir)
+    os.makedirs(out_path, exist_ok=True)
+    # path = pathlib.Path(out_path)
+    # path.parent.mkdir(parents=True, exist_ok=True)
+    for fn in dic.values():
+        shutil.copy2(fn, out_path)
+
+# import pdb; pdb.set_trace()
