@@ -1,8 +1,3 @@
-// OCT 11, modification :
-// 1.add degree as union type in MyMarker, 
-// 2. MyMarker is alias as MyNode
-// 3. just disable __SET_MARKER_DEGREE__ if you don't like these change
-
 //last change; by PHC 20121127. update the swc and marker saving funcs
 
 // modified from vaa3d/vaa3d_tools/released_plugins/v3d_plugins/neurontracing_vn2/app2/my_surf_objs.h mzhu 05/23/2019
@@ -20,9 +15,7 @@ typedef uint64_t VID_t;
 
 using namespace std;
 
-#define __SET_MARKER_DEGREE__
-#define MARKER_BASE 1.0 // the basic offset of marker is 1.0, the marker coordinate will be converted when read and save
-
+#define MARKER_BASE 1 // the basic offset of marker is 0, the marker coordinate will be converted when read and save
 
 // root node with parent 0
 struct MyMarker
@@ -32,9 +25,6 @@ struct MyMarker
 	double z;
 	union
 	{
-#ifdef __SET_MARKER_DEGREE__
-		double degree;
-#endif
 		double radius;
 	};
     // type 3 is dendrite

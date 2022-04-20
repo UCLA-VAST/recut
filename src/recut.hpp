@@ -397,25 +397,19 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
     cout << "Read marker assigning radius: " << markers[0].radius << '\n';
 #endif
 
-    // delete this later
-    // cout << "Warning: temporarily adjusting x,y,z of marker\n";
-    // markers[0].x += this->image_offsets[0];
-    // markers[0].y += this->image_offsets[1];
-    // markers[0].z += this->image_offsets[2];
-
     inmarkers.insert(inmarkers.end(), markers.begin(), markers.end());
   });
 
   // transform to <coord, radius> of all somas/roots
-  auto roots =
-      inmarkers | rv::transform([this](auto marker) {
-        return std::pair{
-            ones() + GridCoord(marker.x / args->downsample_factor,
-                               marker.y / args->downsample_factor,
-                               upsample_idx(args->upsample_z, marker.z)),
-            static_cast<uint8_t>(marker.radius)};
-      }) |
-      rng::to_vector;
+  auto roots = inmarkers | rv::transform([this](auto marker) {
+                 return std::pair{
+                     // ones() + GridCoord(marker.x / args->downsample_factor,
+                     // marker.y / args->downsample_factor,
+                     // upsample_idx(args->upsample_z, marker.z)),
+                     GridCoord(marker.x, marker.y, marker.z),
+                     static_cast<uint8_t>(marker.radius)};
+               }) |
+               rng::to_vector;
 
   auto filtered_roots =
       roots | rv::remove_if([this, &local_bbox](auto coord_radius) {
@@ -3019,7 +3013,8 @@ template <class image_t> void Recut<image_t>::operator()() {
   if (!this->input_is_vdb) {
     if (!args->convert_only) {
       if (this->args->output_type != "point") {
-        throw std::runtime_error("If running reconstruction, output type must be type point");
+        throw std::runtime_error(
+            "If running reconstruction, output type must be type point");
       }
     }
     convert_topology();
