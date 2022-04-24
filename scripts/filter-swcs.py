@@ -5,6 +5,11 @@ import pathlib
 
 # python filter-swcs.py proofread_folder recut_folder out_folder
 
+# build set of sections from proofread folder
+# get list of sections
+sections = [f for f in os.scandir(sys.argv[1]) if f.is_dir()]
+recut_sections = [f for f in os.scandir(sys.argv[2]) if f.is_dir() and ('TME07-1_30x_Str' in f.name()]
+
 print(sys.argv[1])
 proofreads = {}
 for root, dirs, files in os.walk(sys.argv[1]):
