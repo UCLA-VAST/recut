@@ -16,9 +16,11 @@ do
   for thread_count in 1
   do
   #if [ ! -f point.vdb-log-$thread_count.txt ]
-  if [ $thread_count -eq 100 ]
-  then
-    recut ../$d$EXT_PATH --seeds marker_files --parallel $thread_count --output-windows uint8.vdb --run-app2
+  if [ $thread_count -eq 1 ]
+  then 
+    # convert + reconstruct
+    # recut ../$d$EXT_PATH --seeds marker_files --parallel $thread_count --output-windows uint8.vdb --run-app2
+    recut point.vdb --seeds marker_files --parallel $thread_count --output-windows uint8.vdb --run-app2
   else
     recut ../$d$EXT_PATH --seeds marker_files --parallel $thread_count 
 	  WAIT_TIME=60
