@@ -1,15 +1,15 @@
 import sys
-sys.path.append("/home/kdmarrett/TMD")
+sys.path.append("/mnt/c/Users/YangRecon2/Desktop/TMD")
 
 import tmd
 import tmd.view as view
 import numpy as np
 
-validated = tmd.io.load_population("/home/kdmarrett/data/7-3A-validated")
+validated = tmd.io.load_population("/mnt/d/Reconstructions_Working/For_Karl/archived-recut-delete-after-publication/TME07/out/proofread")
 print("Validated len: " + str(len(validated.neurons)))
-recut = tmd.io.load_population("/home/kdmarrett/data/recut-07-3A-final-swcs")
+recut = tmd.io.load_population("/mnt/d/Reconstructions_Working/For_Karl/archived-recut-delete-after-publication/TME07/out/recut")
 print("Recut len: " + str(len(recut.neurons)))
-app2 = tmd.io.load_population("/home/kdmarrett/data/7-3A-app2")
+app2 = tmd.io.load_population("/mnt/d/Reconstructions_Working/For_Karl/archived-recut-delete-after-publication/TME07/out/app2")
 print("APP2 len: " + str(len(app2.neurons)))
 
 phs_validated = [tmd.methods.get_ph_neuron(n, neurite_type='all') for n in validated.neurons]
