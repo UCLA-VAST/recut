@@ -2807,14 +2807,15 @@ void Recut<image_t>::partition_components(
     { // check
       auto trifurcations = tree_is_valid(valid_cluster);
       if (!trifurcations.empty()) {
+        std::cout << "Warning tree in component-" + std::to_string(index) << " has trifurcations listed below:\n";
         rng::for_each(trifurcations,
-                      [](auto mismatch) { std::cout << *mismatch << '\n'; });
-        throw std::runtime_error("Tree has trifurcations" +
-                                 std::to_string(index));
+                      [](auto mismatch) { std::cout << "    " << *mismatch << '\n'; });
+        //throw std::runtime_error("Tree has trifurcations" + std::to_string(index));
       }
-      if (!is_cluster_self_contained(valid_cluster))
-        throw std::runtime_error("Trifurc cluster not self contained" +
-                                 std::to_string(index));
+      if (!is_cluster_self_contained(valid_cluster)) {
+        std::cout << "Warning a tree in component-" + std::to_string(index) << " contains at least 1 node with an invalid parent\n";
+        //throw std::runtime_error("Trifurc cluster not self contained" + std::to_string(index));
+      }
     }
 
     auto trees = partition_cluster(valid_cluster);
