@@ -2855,11 +2855,14 @@ void Recut<image_t>::partition_components(
       auto mm = vto::minMax(valued_window_grid->tree());
       if (args->run_app2 && (mm.max() > 0)) {
         auto read_timer = high_resolution_timer();
-        // make app2 read the window to get accurate comparison of IO
-        read_tiff_paged(window_fn);
+        // protect against possibly empty windows ending up in stats
+        if (!window_fn.empty()) {
+          // make app2 read the window to get accurate comparison of IO
+          read_tiff_paged(window_fn);
 #ifdef LOG
-        component_log << "Read window, " << read_timer.elapsed() << '\n';
+          component_log << "Read window, " << read_timer.elapsed() << '\n';
 #endif
+        }
 
         // for comparison/benchmark/testing purposes
         run_app2(valued_window_grid, component_roots, component_dir_fn, index,
