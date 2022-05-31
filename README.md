@@ -184,3 +184,6 @@ all software via the Nix package manager. To our knowledge, Nix is the state of 
 in terms of software reproducibility, package and dependency management, and solving
 versioning issues in multi-language repositories.  You can install Nix on any Linux
 distribution, MacOS and Windows (via WSL).
+
+#### Cite
+If you find this software helpful please consider citing the [preprint](https://www.biorxiv.org/content/10.1101/2021.12.07.471686v2.full).

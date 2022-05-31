@@ -24,8 +24,7 @@ jobs:
       with:
         ssh-private-key: ${{ secrets.UCLA_MCP3D_DEPLOY_KEY }}
     # Verify that the main program builds
-    - run: nix build -L
-    # Check global installs work
+    # and check global installs work
     - run: nix-env -f . -i
     - run: nix shell -c echo OK
     - run: recut_test
