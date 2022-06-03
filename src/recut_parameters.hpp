@@ -21,7 +21,7 @@ public:
         foreground_percent(-0.01), combine(false), histogram(false),
         window_grid_paths(std::vector<std::string>()), second_grid(std::string()),
         upsample_z(1), downsample_factor(1), max_intensity(-1),
-        min_intensity(-1) {}
+        min_intensity(-1), expand_window_pixels(30) {}
 
   static void PrintUsage();
   std::string MetaString();
@@ -47,7 +47,7 @@ public:
       second_grid;
   std::vector<std::string> window_grid_paths;
   uint16_t prune_radius, user_thread_count, min_branch_length, resolution_level,
-      channel, upsample_z, downsample_factor;
+      channel, upsample_z, downsample_factor, expand_window_pixels;
   int background_thresh, max_intensity, min_intensity, tcase;
   double foreground_percent, slt_pct;
   VID_t selected, root_vid;

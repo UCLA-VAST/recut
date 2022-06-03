@@ -74,13 +74,10 @@ using ImgGrid = openvdb::Grid<UInt8Tree>;
 // using EnlargedPointIndexGrid = openvdb::Grid<vp::PointIndexTree>;
 using EnlargedPointIndexGrid = vto::PointIndexGrid;
 
-
 #define SWC_MIN_LINE 110
 #define SOMA_PRUNE_RADIUS 1.6
 #define MAX_SOMA_PER_COMPONENT std::numeric_limits<int>::max()
 #define MIN_Z_DEPTH 30
-// if value is 0, uses only bounding volume and the binarized component for output windows
-#define EXPAND_CROP_PIXELS 30
 // euclidean voxel path distance of branches to prune
 #define MIN_BRANCH_LENGTH 20
 #define ANISOTROPIC_FACTOR 5

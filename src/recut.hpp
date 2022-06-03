@@ -2831,7 +2831,7 @@ void Recut<image_t>::partition_components(
       ImgGrid::Ptr image_grid =
           openvdb::gridPtrCast<ImgGrid>(window_grids.front());
       auto [valued_window_grid, window_bbox] =
-          create_window_grid(image_grid, component, component_log);
+          create_window_grid(image_grid, component, component_log, args->expand_window_pixels);
       auto window_fn = write_output_windows<ImgGrid::Ptr>(
           image_grid, component_dir_fn, component_log, index, false, true,
           window_bbox, 0);

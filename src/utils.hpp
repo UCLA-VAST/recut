@@ -1350,6 +1350,7 @@ RecutCommandLineArgs get_args(int grid_size, int tile_length, int block_size,
   RecutCommandLineArgs args;
   args.input_type = input_type;
   args.output_type = output_type;
+  args.convert_only = false; // default is true from CL
   auto str_path = get_data_dir();
   args.seed_path = str_path + "/test_markers/" + std::to_string(grid_size) +
                    "/tcase" + std::to_string(tcase) + "/slt_pct" +
@@ -2903,14 +2904,14 @@ void copy_values(ValueGridT img_grid, OutputGridT output_grid) {
 template <typename GridT>
 std::pair<ImgGrid::Ptr, CoordBBox>
 create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
-                   std::ofstream &component_log) {
+                   std::ofstream &component_log, uint16_t expand_window_pixels=0) {
 
   assertm(valued_grid, "Must have input grid set to run output_windows_");
   // if an expanded crop is requested, the actual image values outside of the
   // component bounding volume are needed therefore clip the original image
   // to a bounding volume
   auto bbox =
-      component_grid->evalActiveVoxelBoundingBox().expandBy(EXPAND_CROP_PIXELS);
+      component_grid->evalActiveVoxelBoundingBox().expandBy(expand_window_pixels);
 
   vb::BBoxd clipBox(bbox.min().asVec3d(), bbox.max().asVec3d());
   const auto output_grid = vto::clip(*valued_grid, clipBox);
