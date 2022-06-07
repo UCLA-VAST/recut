@@ -191,7 +191,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
                  strcmp(argv[i], "-pl") == 0) {
         args.user_thread_count = atoi(argv[i + 1]);
         ++i;
-      } else if (strcmp(argv[i], "--expand-window-pixels") == 0) {
+      } else if (strcmp(argv[i], "--expand-windows") == 0) {
         args.expand_window_pixels = atoi(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--downsample-factor") == 0) {

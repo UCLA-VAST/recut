@@ -558,6 +558,9 @@ TEST(VDB, ActivateVids) {
   recut.initialize();
   auto root_coords =
       recut.process_marker_dir(recut.image_offsets, recut.image_lengths);
+
+  recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
+
   recut.activate_vids(recut.topology_grid, root_coords, "connected",
                       recut.map_fifo, recut.connected_map);
 
@@ -620,6 +623,8 @@ TEST(VDB, PriorityQueue) {
   auto base_grid = read_vdb_file(point_args.input_path);
   recut.topology_grid = openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
   append_attributes(recut.topology_grid);
+
+  recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
 
   auto stage = "value";
   recut.activate_vids(recut.topology_grid, root_coords, stage, recut.map_fifo,
@@ -689,6 +694,8 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
   auto base_grid = read_vdb_file(float_args.input_path);
   // priority queue must have type float
   recut.input_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
+
+  recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
 
   auto stage = "value";
   recut.activate_vids(recut.topology_grid, root_coords, stage, recut.map_fifo,
@@ -948,6 +955,7 @@ TEST(VDB, Connected) {
   recut.initialize();
   auto root_coords =
       recut.process_marker_dir(recut.image_offsets, recut.image_lengths);
+  recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
   auto stage = "connected";
   recut.activate_vids(recut.topology_grid, root_coords, stage, recut.map_fifo,
                       recut.connected_map);
@@ -1997,6 +2005,7 @@ TEST(Update, EachStageIteratively) {
             // RECUT CONNECTED
             {
               auto stage = "connected";
+  recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
               recut.activate_vids(recut.topology_grid, root_coords, "connected",
                                   recut.map_fifo, recut.connected_map);
               recut.update(stage, recut.map_fifo);
@@ -2222,6 +2231,7 @@ TEST(Update, EachStageIteratively) {
                 args.output_tree =
                     convert_to_markers(recut.topology_grid, false);
                 auto stage = std::string{"prune"};
+  recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
                 recut.activate_vids(recut.topology_grid, root_coords, stage,
                                     recut.map_fifo, recut.connected_map);
                 recut.update(stage, recut.map_fifo);

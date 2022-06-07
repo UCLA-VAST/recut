@@ -2912,11 +2912,13 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
   // to a bounding volume
   auto bbox =
       component_grid->evalActiveVoxelBoundingBox().expandBy(expand_window_pixels);
+  auto aniso_expand_factor = expand_window_pixels / ANISOTROPIC_FACTOR;
+  CoordBBox anisotropic_expanded_bbox(bbox.min().x() - expand_window_pixels, bbox.min().y() - expand_window_pixels, bbox.min().z() - aniso_expand_factor, bbox.max().x() + expand_window_pixels, bbox.max().y() + expand_window_pixels, bbox.max().z() + aniso_expand_factor);
 
-  vb::BBoxd clipBox(bbox.min().asVec3d(), bbox.max().asVec3d());
+  vb::BBoxd clipBox(anisotropic_expanded_bbox.min().asVec3d(), anisotropic_expanded_bbox.max().asVec3d());
   const auto output_grid = vto::clip(*valued_grid, clipBox);
   if (output_grid->activeVoxelCount()) {
-    bbox = output_grid->evalActiveVoxelBoundingBox();
+    anisotropic_expanded_bbox = output_grid->evalActiveVoxelBoundingBox();
   }
 
   // alternatively... for simply carrying values across:
@@ -2925,7 +2927,7 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
   // to isolate window pixels to those covered by the component like:
   // output_grid = vto::tools::clip(output_grid, component_grid);
 
-  return {output_grid, bbox};
+  return {output_grid, anisotropic_expanded_bbox};
 }
 
 // valued_grid : holds the pixel intensity values
