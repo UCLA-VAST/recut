@@ -81,6 +81,8 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 // euclidean voxel path distance of branches to prune
 #define MIN_BRANCH_LENGTH 20
 #define ANISOTROPIC_FACTOR 5
+// the value to add for on bits when merging a mask grid with a image grid
+#define PIXEL_VAL_MASK 64
 
 // Below are deprecated or are not (yet) affecting behavior:
 #define MIN_RADII 2

@@ -2897,6 +2897,11 @@ void copy_values(ValueGridT img_grid, OutputGridT output_grid) {
   }
 }
 
+template <typename GridT>
+void add_mask_to_image_grid(ImgGrid::Ptr image_grid, GridT mask_grid) {
+  // iterate mask grid
+}
+
 // valued_grid : holds the pixel intensity values
 // topology_grid : holds the topology of the neuron cluster in question
 // values copied in topology and written z-plane by z-plane to individual tiff
@@ -2904,18 +2909,25 @@ void copy_values(ValueGridT img_grid, OutputGridT output_grid) {
 template <typename GridT>
 std::pair<ImgGrid::Ptr, CoordBBox>
 create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
-                   std::ofstream &component_log, uint16_t expand_window_pixels=0) {
+                   std::ofstream &component_log,
+                   uint16_t expand_window_pixels = 0) {
 
   assertm(valued_grid, "Must have input grid set to run output_windows_");
   // if an expanded crop is requested, the actual image values outside of the
   // component bounding volume are needed therefore clip the original image
   // to a bounding volume
-  auto bbox =
-      component_grid->evalActiveVoxelBoundingBox().expandBy(expand_window_pixels);
+  auto bbox = component_grid->evalActiveVoxelBoundingBox().expandBy(
+      expand_window_pixels);
   auto aniso_expand_factor = expand_window_pixels / ANISOTROPIC_FACTOR;
-  CoordBBox anisotropic_expanded_bbox(bbox.min().x() - expand_window_pixels, bbox.min().y() - expand_window_pixels, bbox.min().z() - aniso_expand_factor, bbox.max().x() + expand_window_pixels, bbox.max().y() + expand_window_pixels, bbox.max().z() + aniso_expand_factor);
+  CoordBBox anisotropic_expanded_bbox(bbox.min().x() - expand_window_pixels,
+                                      bbox.min().y() - expand_window_pixels,
+                                      bbox.min().z() - aniso_expand_factor,
+                                      bbox.max().x() + expand_window_pixels,
+                                      bbox.max().y() + expand_window_pixels,
+                                      bbox.max().z() + aniso_expand_factor);
 
-  vb::BBoxd clipBox(anisotropic_expanded_bbox.min().asVec3d(), anisotropic_expanded_bbox.max().asVec3d());
+  vb::BBoxd clipBox(anisotropic_expanded_bbox.min().asVec3d(),
+                    anisotropic_expanded_bbox.max().asVec3d());
   const auto output_grid = vto::clip(*valued_grid, clipBox);
   if (output_grid->activeVoxelCount()) {
     anisotropic_expanded_bbox = output_grid->evalActiveVoxelBoundingBox();
