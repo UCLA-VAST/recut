@@ -16,7 +16,7 @@
 
 using namespace std;
 
-vector<MyMarker> readMarker_file(string marker_file)
+vector<MyMarker> readMarker_file(string marker_file, int marker_base)
 {
 	vector<MyMarker> markers; markers.reserve(1000);
 	ifstream ifs(marker_file.c_str()); if(ifs.fail()){cout<<" unable to open marker file "<<marker_file<<endl; return markers;}
@@ -28,9 +28,9 @@ vector<MyMarker> readMarker_file(string marker_file)
 		MyMarker marker;
 		ifs>>marker.x;ifs.ignore(10,',');ifs>>marker.y;ifs.ignore(10,',');ifs>>marker.z;ifs.ignore(10,',');ifs>>marker.radius;ifs.ignore(1000,'\n');
 		
-		marker.x -= MARKER_BASE;
-		marker.y -= MARKER_BASE;
-		marker.z -= MARKER_BASE;
+		marker.x -= marker_base;
+		marker.y -= marker_base;
+		marker.z -= marker_base;
 
 		if(0 && marker_set.find(marker) != marker_set.end())
 		{
@@ -47,35 +47,6 @@ vector<MyMarker> readMarker_file(string marker_file)
 	//cout<<count<<" markers loaded"<<endl;
 	ifs.close();
 	return markers;
-}
-
-bool readMarker_file(string marker_file, vector<MyMarker*> &markers)
-{
-	ifstream ifs(marker_file.c_str()); if(ifs.fail()){cout<<" unable to open marker file "<<marker_file<<endl; return false;}
-	set<MyMarker> marker_set; // to check the duplicated marker
-	while(ifs.good())
-	{
-		if(ifs.peek() == '#' || ifs.eof()){ifs.ignore(1000,'\n'); continue;}
-		MyMarker *marker = new MyMarker;
-		ifs>>marker->x;ifs.ignore(10,',');ifs>>marker->y;ifs.ignore(10,',');ifs>>marker->z;ifs.ignore(10,',');ifs>>marker->radius;ifs.ignore(1000,'\n');
-
-		marker->x -= MARKER_BASE;
-		marker->y -= MARKER_BASE;
-		marker->z -= MARKER_BASE;
-
-		if(marker_set.find(*marker) != marker_set.end())
-		{
-			cout<<"omit duplicated marker"<<markers.size()<<" : x = "<<marker->x<<" y = "<<marker->y<<" z = "<<marker->z<<" r = "<<marker->radius<<endl;
-		}
-		else
-		{
-			markers.push_back(marker);
-			marker_set.insert(*marker);
-			if(0) cout<<"marker"<<markers.size()<<" : x = "<<marker->x<<" y = "<<marker->y<<" z = "<<marker->z<<" r = "<<marker->radius<<endl;
-		}
-	}
-	ifs.close();
-	return true;
 }
 
 bool saveMarker_file(string marker_file, vector<MyMarker> & outmarkers)

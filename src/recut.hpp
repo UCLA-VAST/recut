@@ -255,8 +255,8 @@ public:
                 std::map<GridCoord, std::deque<VertexAttr>> &fifo,
                 std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo);
   std::vector<std::pair<GridCoord, uint8_t>>
-  process_marker_dir(const GridCoord grid_offsets,
-                     const GridCoord grid_lengths);
+  process_marker_dir(const GridCoord grid_offsets, const GridCoord grid_lengths,
+                     int marker_base);
   void set_parent_non_branch(const VID_t tile_id, const VID_t block_id,
                              VertexAttr *dst, VertexAttr *potential_new_parent);
 };
@@ -355,7 +355,8 @@ OffsetCoord Recut<image_t>::v_to_off(VID_t tile_id, VID_t block_id,
 template <class image_t>
 std::vector<std::pair<GridCoord, uint8_t>>
 Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
-                                   const GridCoord grid_lengths) {
+                                   const GridCoord grid_lengths,
+                                   int marker_base) {
 
   auto local_bbox =
       openvdb::math::CoordBBox(grid_offsets, grid_offsets + grid_lengths);
@@ -377,28 +378,29 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
 
   // gather all markers within directory
   auto inmarkers = std::vector<MyMarker>();
-  rng::for_each(fs::directory_iterator(args->seed_path), [&inmarkers, this](
-                                                             auto marker_file) {
-    std::stringstream fn(marker_file.path().filename());
-    const auto full_marker_name =
-        args->seed_path + marker_file.path().filename().string();
-    auto markers = readMarker_file(full_marker_name);
-    assertm(markers.size() == 1, "only 1 marker file per soma");
+  rng::for_each(
+      fs::directory_iterator(args->seed_path),
+      [&inmarkers, this, marker_base](auto marker_file) {
+        std::stringstream fn(marker_file.path().filename());
+        const auto full_marker_name =
+            args->seed_path + marker_file.path().filename().string();
+        auto markers = readMarker_file(full_marker_name, marker_base);
+        assertm(markers.size() == 1, "only 1 marker file per soma");
 
-    if (markers[0].radius == 0) {
-      std::string mass; // mass is the last number of the file name
-      while (std::getline(fn, mass, '_')) {
-      }
-      assertm(!mass.empty(), "can not deduce radius size of input marker");
-      markers[0].radius =
-          static_cast<int>(std::cbrt(std::stoi(mass) / (4 * PI / 3)));
-    }
+        if (markers[0].radius == 0) {
+          std::string mass; // mass is the last number of the file name
+          while (std::getline(fn, mass, '_')) {
+          }
+          assertm(!mass.empty(), "can not deduce radius size of input marker");
+          markers[0].radius =
+              static_cast<int>(std::cbrt(std::stoi(mass) / (4 * PI / 3)));
+        }
 #ifdef FULL_PRINT
-    cout << "Read marker assigning radius: " << markers[0].radius << '\n';
+        cout << "Read marker assigning radius: " << markers[0].radius << '\n';
 #endif
 
-    inmarkers.insert(inmarkers.end(), markers.begin(), markers.end());
-  });
+        inmarkers.insert(inmarkers.end(), markers.begin(), markers.end());
+      });
 
   // transform to <coord, radius> of all somas/roots
   auto roots = inmarkers | rv::transform([this](auto marker) {
@@ -2807,14 +2809,19 @@ void Recut<image_t>::partition_components(
     { // check
       auto trifurcations = tree_is_valid(valid_cluster);
       if (!trifurcations.empty()) {
-        std::cout << "Warning tree in component-" + std::to_string(index) << " has trifurcations listed below:\n";
-        rng::for_each(trifurcations,
-                      [](auto mismatch) { std::cout << "    " << *mismatch << '\n'; });
-        //throw std::runtime_error("Tree has trifurcations" + std::to_string(index));
+        std::cout << "Warning tree in component-" + std::to_string(index)
+                  << " has trifurcations listed below:\n";
+        rng::for_each(trifurcations, [](auto mismatch) {
+          std::cout << "    " << *mismatch << '\n';
+        });
+        // throw std::runtime_error("Tree has trifurcations" +
+        // std::to_string(index));
       }
       if (!is_cluster_self_contained(valid_cluster)) {
-        std::cout << "Warning a tree in component-" + std::to_string(index) << " contains at least 1 node with an invalid parent\n";
-        //throw std::runtime_error("Trifurc cluster not self contained" + std::to_string(index));
+        std::cout << "Warning a tree in component-" + std::to_string(index)
+                  << " contains at least 1 node with an invalid parent\n";
+        // throw std::runtime_error("Trifurc cluster not self contained" +
+        // std::to_string(index));
       }
     }
 
@@ -2830,12 +2837,13 @@ void Recut<image_t>::partition_components(
       // rest of the output grids
       ImgGrid::Ptr image_grid =
           openvdb::gridPtrCast<ImgGrid>(window_grids.front());
-      auto [valued_window_grid, window_bbox] =
-          create_window_grid(image_grid, component, component_log, args->expand_window_pixels);
+      auto [valued_window_grid, window_bbox] = create_window_grid(
+          image_grid, component, component_log, args->expand_window_pixels);
 
       // build windowed mask grid
-      auto mask_grid = openvdb::gridPtrCast<openvdb::MaskGrid>(window_grids.back());
-      //add_mask_to_image_grid(image_grid, mask_grid);
+      auto mask_grid =
+          openvdb::gridPtrCast<openvdb::MaskGrid>(window_grids.back());
+      // add_mask_to_image_grid(image_grid, mask_grid);
 
       auto window_fn = write_output_windows<ImgGrid::Ptr>(
           image_grid, component_dir_fn, component_log, index, false, true,
@@ -3061,7 +3069,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   // adds all valid markers to roots vector and returns
   auto root_pairs =
-      process_marker_dir(this->image_offsets, this->image_lengths);
+      process_marker_dir(this->image_offsets, this->image_lengths, 1);
 
   initialize_globals(this->grid_tile_size, this->tile_block_size);
 
