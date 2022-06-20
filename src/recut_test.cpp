@@ -6,6 +6,8 @@
 #include <fcntl.h>
 #include <fstream>
 #include <iostream>
+#include <openvdb/tools/LevelSetSphere.h>
+#include <openvdb/tools/FastSweeping.h>
 #include <string>
 #include <tbb/parallel_for.h>
 #include <tuple>
@@ -253,6 +255,54 @@ void check_image_equality(uint16_t *inimg1d, uint16_t *check, VID_t volume) {
 //}
 //}
 //};
+
+TEST(VDB, CreateSomaSpheres) {
+  auto grid_size = 14;
+  auto grid_extents = GridCoord(grid_size);
+  float radius = 2.;
+  float iso_value = 0;
+  float voxelSize = 1.;
+  auto center = openvdb::Vec3f(3, 3, 3);
+  auto center2 = openvdb::Vec3f(9, 9, 9);
+  auto grids = std::vector<openvdb::FloatGrid::Ptr>();
+  openvdb::FloatGrid::Ptr sphere1 =
+      vto::createLevelSetSphere<openvdb::FloatGrid>(radius, center,
+                                                          voxelSize);
+
+  print_vdb_mask(sphere1->getConstAccessor(), grid_extents);
+  print_vdb_values(sphere1->getConstAccessor(), grid_extents);
+  grids.push_back(sphere1);
+
+  openvdb::FloatGrid::Ptr sphere2 =
+      vto::createLevelSetSphere<openvdb::FloatGrid>(radius, center2, voxelSize);
+  print_vdb_mask(sphere2->getConstAccessor(), grid_extents);
+  grids.push_back(sphere2);
+
+  // merge grids
+  auto grid = merge_grids(grids);
+
+  // convert to SDF
+  grid = vto::sdfToSdf(*grid, iso_value);
+
+  // visualize SDF values
+  auto acc = grid->getConstAccessor();
+  print_vdb_mask(acc, grid_extents);
+
+  // create a mask grid of a sphere centered at 4,4,4
+  auto sphere_center = GridCoord(6, 6, 6);
+  radius = 4;
+  auto mask_grid = openvdb::MaskGrid::create();
+  for (const auto coord : sphere_iterator(sphere_center, radius)) {
+    mask_grid->tree().setValueOn(coord);
+  }
+
+  // extend SDF values into a new maskgrid
+  auto final_grid = vto::maskSdf(*grid, *mask_grid);
+  print_vdb_mask(final_grid->getConstAccessor(), grid_extents);
+
+  // show values
+  print_vdb_values(final_grid->getConstAccessor(), grid_extents);
+}
 
 TEST(VDB, InitializeGlobals) {
   // make big enough such that you have at least 2 blocks across each dim
@@ -598,7 +648,7 @@ TEST(VDB, ActivateVids) {
   }
 }
 
-TEST(VDB, PriorityQueue) {
+TEST(VDB, DISABLED_PriorityQueue) {
   VID_t grid_size = 8;
   auto grid_extents = GridCoord(grid_size);
   // do no use tcase 4 since it is randomized and will not match
