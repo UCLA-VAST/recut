@@ -6,8 +6,6 @@
 #include <fcntl.h>
 #include <fstream>
 #include <iostream>
-#include <openvdb/tools/LevelSetSphere.h>
-#include <openvdb/tools/FastSweeping.h>
 #include <string>
 #include <tbb/parallel_for.h>
 #include <tuple>
@@ -261,34 +259,19 @@ TEST(VDB, CreateSomaSpheres) {
   auto grid_extents = GridCoord(grid_size);
   float radius = 2.;
   float iso_value = 0;
-  float voxelSize = 1.;
-  auto center = openvdb::Vec3f(3, 3, 3);
-  auto center2 = openvdb::Vec3f(9, 9, 9);
-  auto grids = std::vector<openvdb::FloatGrid::Ptr>();
-  openvdb::FloatGrid::Ptr sphere1 =
-      vto::createLevelSetSphere<openvdb::FloatGrid>(radius, center,
-                                                          voxelSize);
+  float voxel_size = 1.;
 
-  print_vdb_mask(sphere1->getConstAccessor(), grid_extents);
-  print_vdb_values(sphere1->getConstAccessor(), grid_extents);
-  grids.push_back(sphere1);
+  auto root_pairs = std::vector<std::pair<GridCoord, uint8_t>>();
+  root_pairs.emplace_back(GridCoord(3,3,3), radius);
+  root_pairs.emplace_back(GridCoord(9,9,9), radius);
 
-  openvdb::FloatGrid::Ptr sphere2 =
-      vto::createLevelSetSphere<openvdb::FloatGrid>(radius, center2, voxelSize);
-  print_vdb_mask(sphere2->getConstAccessor(), grid_extents);
-  grids.push_back(sphere2);
-
-  // merge grids
-  auto grid = merge_grids(grids);
-
-  // convert to SDF
-  grid = vto::sdfToSdf(*grid, iso_value);
+  auto grid = join_somas_sdf_grid(root_pairs);
 
   // visualize SDF values
   auto acc = grid->getConstAccessor();
   print_vdb_mask(acc, grid_extents);
 
-  // create a mask grid of a sphere centered at 4,4,4
+  // create a mask grid of a sphere 
   auto sphere_center = GridCoord(6, 6, 6);
   radius = 4;
   auto mask_grid = openvdb::MaskGrid::create();
@@ -302,6 +285,11 @@ TEST(VDB, CreateSomaSpheres) {
 
   // show values
   print_vdb_values(final_grid->getConstAccessor(), grid_extents);
+}
+
+TEST(VDB, TestSDFSomaPerf) {
+  // load mask
+  //
 }
 
 TEST(VDB, InitializeGlobals) {

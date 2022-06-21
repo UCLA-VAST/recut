@@ -16,6 +16,8 @@
 #include <openvdb/tools/Clip.h>
 #include <openvdb/tools/Composite.h>
 #include <openvdb/tools/Dense.h> // copyToDense
+#include <openvdb/tools/FastSweeping.h>
+#include <openvdb/tools/LevelSetSphere.h>
 #include <queue>
 #include <stdlib.h> // ultoa
 #include <tiffio.h>
@@ -3371,4 +3373,28 @@ load_tile(const CoordBBox &bbox, const std::string &dir) {
   // '\n';
 #endif
   return dense;
+}
+
+// returns an SDF grid of the joined soma/root spheres passed
+openvdb::FloatGrid::Ptr
+join_somas_sdf_grid(std::vector<std::pair<GridCoord, uint8_t>> root_pairs) {
+  float iso_value = 0;
+  float voxel_size = 1.;
+
+  auto grids = root_pairs | rv::transform([voxel_size](auto root_pair) {
+                 auto sphere = vto::createLevelSetSphere<openvdb::FloatGrid>(
+                     root_pair.second, root_pair.first.asVec3s(), voxel_size);
+                 // print_vdb_mask(sphere->getConstAccessor(), grid_extents);
+                 // print_vdb_values(sphere->getConstAccessor(), grid_extents);
+                 return sphere;
+               }) |
+               rng::to_vector;
+
+  // merge grids
+  auto grid = merge_grids(grids);
+
+  // convert to SDF
+  grid = vto::sdfToSdf(*grid, iso_value);
+
+  return grid;
 }
