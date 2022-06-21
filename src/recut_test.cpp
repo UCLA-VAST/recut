@@ -262,8 +262,8 @@ TEST(VDB, CreateSomaSpheres) {
   float voxel_size = 1.;
 
   auto root_pairs = std::vector<std::pair<GridCoord, uint8_t>>();
-  root_pairs.emplace_back(GridCoord(3,3,3), radius);
-  root_pairs.emplace_back(GridCoord(9,9,9), radius);
+  root_pairs.emplace_back(GridCoord(3, 3, 3), radius);
+  root_pairs.emplace_back(GridCoord(9, 9, 9), radius);
 
   auto grid = join_somas_sdf_grid(root_pairs);
 
@@ -271,7 +271,7 @@ TEST(VDB, CreateSomaSpheres) {
   auto acc = grid->getConstAccessor();
   print_vdb_mask(acc, grid_extents);
 
-  // create a mask grid of a sphere 
+  // create a mask grid of a sphere
   auto sphere_center = GridCoord(6, 6, 6);
   radius = 4;
   auto mask_grid = openvdb::MaskGrid::create();
@@ -288,8 +288,39 @@ TEST(VDB, CreateSomaSpheres) {
 }
 
 TEST(VDB, TestSDFSomaPerf) {
+  VID_t grid_size = 8;
+  auto grid_extents = GridCoord(grid_size);
+  // do no use tcase 4 since it is randomized and will not match
+  // for the second read test
+  auto tcase = 7;
+  double slt_pct = 100;
+  bool print_all = false;
+
+  auto args =
+      get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
+               /*input_is_vdb=*/true,
+               /* type =*/"float"); // priority queue must have type float
+  args.seed_path =
+      "/home/kdmarrett/data/old-7/TME07-1_30x_Str_01A/marker_files";
+  args.input_path =
+      "/home/kdmarrett/data/old-7/TME07-1_30x_Str_01A/TME07-01A-ch0/"
+      "TME07-130xStr01AFusionStitcherneurite+soma-ch0-mask-fgpct-0.010-zoff0."
+      "vdb";
+  auto recut = Recut<uint16_t>(args);
+  recut.initialize();
+  auto root_pairs = recut.process_marker_dir(recut.image_offsets,
+                                              recut.image_lengths, 0, false);
+
+  auto grid = join_somas_sdf_grid(root_pairs);
+
   // load mask
-  //
+  auto base_grid = read_vdb_file(args.input_path);
+  auto mask_grid = openvdb::gridPtrCast<openvdb::MaskGrid>(base_grid);
+
+  // extend SDF values into a new maskgrid
+  auto timer = high_resolution_timer();
+  auto final_grid = vto::maskSdf(*grid, mask_grid);
+  std::cout << "SDF extension into mask time: " << timer.elapsed() << '\n';
 }
 
 TEST(VDB, InitializeGlobals) {
@@ -304,8 +335,8 @@ TEST(VDB, InitializeGlobals) {
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto root_coords =
-      recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
+  auto root_coords = recut.process_marker_dir(recut.image_offsets,
+                                              recut.image_lengths, 0, true);
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
 
   auto update_accessor = recut.update_grid->getConstAccessor();
@@ -454,8 +485,8 @@ TEST(VDB, IntegrateUpdateGrid) {
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto root_coords =
-      recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
+  auto root_coords = recut.process_marker_dir(recut.image_offsets,
+                                              recut.image_lengths, 0, true);
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
   // recut.activate_vids(root_coords, "connected", recut.map_fifo);
   auto update_accessor = recut.update_grid->getAccessor();
@@ -596,8 +627,8 @@ TEST(VDB, ActivateVids) {
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto root_coords =
-      recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
+  auto root_coords = recut.process_marker_dir(recut.image_offsets,
+                                              recut.image_lengths, 0, true);
 
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
 
@@ -651,8 +682,8 @@ TEST(VDB, DISABLED_PriorityQueue) {
                /* type =*/"float"); // priority queue must have type float
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto root_coords =
-      recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
+  auto root_coords = recut.process_marker_dir(recut.image_offsets,
+                                              recut.image_lengths, 0, true);
 
   // TODO switch this to a more formal method
   // set the topology_grid mainly from file for this test
@@ -721,8 +752,8 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
                        /* type =*/"point");
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto root_coords =
-      recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
+  auto root_coords = recut.process_marker_dir(recut.image_offsets,
+                                              recut.image_lengths, 0, true);
   cout << "root " << root_coords[0].first << '\n';
 
   // TODO switch this to a more formal method
@@ -813,8 +844,8 @@ TEST(Utils, AdjustSomaRadii) {
                /* type =*/"float"); // priority queue must have type float
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto root_coords =
-      recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
+  auto root_coords = recut.process_marker_dir(recut.image_offsets,
+                                              recut.image_lengths, 0, true);
 
   // TODO switch this to a more formal method
   // set the topology_grid mainly from file for this test
@@ -993,8 +1024,8 @@ TEST(VDB, Connected) {
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto root_coords =
-      recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
+  auto root_coords = recut.process_marker_dir(recut.image_offsets,
+                                              recut.image_lengths, 0, true);
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
   auto stage = "connected";
   recut.activate_vids(recut.topology_grid, root_coords, stage, recut.map_fifo,
@@ -2030,8 +2061,8 @@ TEST(Update, EachStageIteratively) {
 
             auto recut = Recut<uint16_t>(args);
             recut.initialize();
-            auto root_coords = recut.process_marker_dir(recut.image_offsets,
-                                                        recut.image_lengths, 0);
+            auto root_coords = recut.process_marker_dir(
+                recut.image_offsets, recut.image_lengths, 0, true);
 
             if (print_all) {
               std::cout << "ground truth image grid" << endl;

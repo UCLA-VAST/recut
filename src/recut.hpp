@@ -256,7 +256,7 @@ public:
                 std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo);
   std::vector<std::pair<GridCoord, uint8_t>>
   process_marker_dir(const GridCoord grid_offsets, const GridCoord grid_lengths,
-                     int marker_base);
+                     int marker_base, bool filter);
   void set_parent_non_branch(const VID_t tile_id, const VID_t block_id,
                              VertexAttr *dst, VertexAttr *potential_new_parent);
 };
@@ -356,7 +356,7 @@ template <class image_t>
 std::vector<std::pair<GridCoord, uint8_t>>
 Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
                                    const GridCoord grid_lengths,
-                                   int marker_base) {
+                                   int marker_base, bool filter) {
 
   auto local_bbox =
       openvdb::math::CoordBBox(grid_offsets, grid_offsets + grid_lengths);
@@ -412,6 +412,9 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
                      static_cast<uint8_t>(marker.radius)};
                }) |
                rng::to_vector;
+
+  if (!filter)
+    return roots;
 
   auto filtered_roots =
       roots | rv::remove_if([this, &local_bbox](auto coord_radius) {
@@ -3069,7 +3072,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   // adds all valid markers to roots vector and returns
   auto root_pairs =
-      process_marker_dir(this->image_offsets, this->image_lengths, 1);
+      process_marker_dir(this->image_offsets, this->image_lengths, 1, true);
 
   initialize_globals(this->grid_tile_size, this->tile_block_size);
 
