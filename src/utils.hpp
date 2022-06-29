@@ -1576,13 +1576,15 @@ auto convert_buffer_to_vdb_acc =
     [](auto buffer, GridCoord buffer_lengths, GridCoord buffer_offsets,
        GridCoord image_offsets, auto accessor, std::string grid_type,
        auto bkg_thresh = 0, int upsample_z = 1) {
+      using T = std::decay_t<decltype(buffer)>;
       for (auto z : rv::iota(0, buffer_lengths[2])) {
         for (auto y : rv::iota(0, buffer_lengths[1])) {
           for (auto x : rv::iota(0, buffer_lengths[0])) {
             GridCoord xyz(x, y, z);
             GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
             GridCoord grid_xyz = coord_add(xyz, image_offsets);
-            auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
+            auto val = std::get<T>(buffer[coord_to_id(buffer_xyz, buffer_lengths)]);
+            //auto val = std::get<T>(buffer[coord_to_id(buffer_xyz, buffer_lengths)]);
             // voxels equal to bkg_thresh are always discarded
             if (val > bkg_thresh) {
               for (auto upsample_z_idx : rv::iota(0, upsample_z)) {
@@ -1836,6 +1838,20 @@ auto get_dir_files = [](const std::string &dir, const std::string &ext) {
   std::sort(tif_filenames.begin(), tif_filenames.end());
 
   return tif_filenames;
+};
+
+auto get_tif_bit_width = [](const std::string &tif_dir) {
+  const auto tif_filenames = get_dir_files(tif_dir, ".tif");
+  // take the first file, conver to char*
+  TIFF *tiff = TIFFOpen(&tif_filenames[0][0], "r");
+  if (!tiff) {
+    throw std::runtime_error(
+        "ERROR reading (not existent, not accessible or no TIFF file)");
+  }
+  short bits_per_sample, samples_per_pixel;
+  TIFFGetField(tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
+  TIFFClose(tiff);
+  return bits_per_sample;
 };
 
 auto get_tif_dims = [](const std::vector<std::string> &tif_filenames) {
@@ -3116,10 +3132,10 @@ auto load_imaris_tile = [](std::string file_name, const CoordBBox &bbox,
   // check inputs
   auto imaris_bbox = imaris_image_bbox(file_name, resolution, channel);
   // FIXME get voxel type
-  //auto dense =
-      //std::make_unique<vto::Dense<image_width, vto::LayoutXYZ>>(bbox);
   auto dense =
-      std::make_unique<vto::Dense<uint16_t, vto::LayoutXYZ>>(bbox);
+      std::make_unique<vto::Dense<image_width, vto::LayoutXYZ>>(bbox);
+  //auto dense =
+      //std::make_unique<vto::Dense<uint16_t, vto::LayoutXYZ>>(bbox);
 
   if (!imaris_bbox.isInside(bbox)) {
     std::ostringstream os;

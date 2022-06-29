@@ -2028,7 +2028,7 @@ TileThresholds<image_width> *Recut<image_t>::get_tile_thresholds(
 #endif
   } else if (this->args->min_intensity < 0) {
     // if max intensity was set but not a min, just use the bkg_thresh value
-    if (tile_thresholds->bkg_thresh >= 0) {
+    if (std::get<uint16_t>(tile_thresholds->bkg_thresh) >= 0) {
       tile_thresholds->min_int = tile_thresholds->bkg_thresh;
     } else {
       // max and min members will be set
@@ -2077,6 +2077,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
     }
     const auto tile_bbox = CoordBBox(tile_offsets, tile_max);
     std::unique_ptr<vto::Dense<image_width, vto::LayoutXYZ>> dense_tile;
+    auto bits_per_sample = get_tif_bit_width(args->input_path);
 
     if (args->input_type == "ims") {
 #ifdef USE_HDF5
