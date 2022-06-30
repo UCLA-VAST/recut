@@ -2402,13 +2402,18 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
       //"did no match");
       auto [lengths, _] = get_metadata(input_grid);
       input_image_lengths = lengths;
+      append_attributes(this->topology_grid);
     } else if (this->args->input_type == "point") {
       this->topology_grid =
           openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
       auto [lengths, _] = get_metadata(topology_grid);
       input_image_lengths = lengths;
+      append_attributes(this->topology_grid);
+    } else if (this->args->input_type == "mask") {
+      this->mask_grid = openvdb::gridPtrCast<openvdb::MaskGrid>(base_grid);
+      auto [lengths, _] = get_metadata(this->mask_grid);
+      input_image_lengths = lengths;
     }
-    append_attributes(this->topology_grid);
 
 #ifdef LOG
     cout << "Read grid in: " << timer.elapsed() << " s\n";
@@ -2543,7 +2548,7 @@ template <class image_t> void Recut<image_t>::initialize() {
 
   // TODO move this clipping up to the read step for faster performance on sub
   // grids
-  if (this->input_is_vdb) {
+  if (this->input_is_vdb && (this->args->input_type != "mask")) {
     this->topology_grid->clip(this->image_bbox);
   }
 

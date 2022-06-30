@@ -3375,7 +3375,7 @@ load_tile(const CoordBBox &bbox, const std::string &dir) {
   return dense;
 }
 
-// returns an SDF grid of the joined soma/root spheres passed
+// returns an SDF grid ptr of the joined soma/root spheres passed
 openvdb::FloatGrid::Ptr
 join_somas_sdf_grid(std::vector<std::pair<GridCoord, uint8_t>> root_pairs) {
   float iso_value = 0;

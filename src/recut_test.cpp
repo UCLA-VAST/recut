@@ -299,7 +299,7 @@ TEST(VDB, TestSDFSomaPerf) {
   auto args =
       get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
                /*input_is_vdb=*/true,
-               /* type =*/"float"); // priority queue must have type float
+               /* type =*/"mask"); // priority queue must have type float
   args.seed_path =
       "/home/kdmarrett/data/old-7/TME07-1_30x_Str_01A/marker_files";
   args.input_path =
@@ -311,15 +311,16 @@ TEST(VDB, TestSDFSomaPerf) {
   auto root_pairs = recut.process_marker_dir(recut.image_offsets,
                                               recut.image_lengths, 0, false);
 
-  auto grid = join_somas_sdf_grid(root_pairs);
+  openvdb::FloatGrid::Ptr grid = join_somas_sdf_grid(root_pairs);
 
   // load mask
   auto base_grid = read_vdb_file(args.input_path);
-  auto mask_grid = openvdb::gridPtrCast<openvdb::MaskGrid>(base_grid);
+  openvdb::MaskGrid::Ptr mask_grid = openvdb::gridPtrCast<openvdb::MaskGrid>(base_grid);
 
   // extend SDF values into a new maskgrid
   auto timer = high_resolution_timer();
-  auto final_grid = vto::maskSdf(*grid, mask_grid);
+  // takes a non-ptr sdf and mask grid
+  auto final_grid = vto::maskSdf(*grid, *mask_grid);
   std::cout << "SDF extension into mask time: " << timer.elapsed() << '\n';
 }
 
