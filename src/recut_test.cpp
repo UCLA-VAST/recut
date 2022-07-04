@@ -9,7 +9,6 @@
 #include <string>
 #include <tbb/parallel_for.h>
 #include <tuple>
-#include <typeinfo>
 #include <vector>
 
 // catch an assertion and auto drop into
