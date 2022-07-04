@@ -2103,6 +2103,8 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
     print_image_3D(dense_tile->data(), tile_bbox.dim());
 #endif
 
+    //using T = std::decay_t<decltype(dense_tile->data())>;
+    //auto data_ptr = std::get<T>(dense_tile->data());
     // FIXME collapse these blocks into an output std::variant
     if (this->args->output_type == "uint8") {
       uint8_grids[tile_id] = ImgGrid::create();

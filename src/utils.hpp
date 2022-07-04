@@ -1576,14 +1576,13 @@ auto convert_buffer_to_vdb_acc =
     [](auto buffer, GridCoord buffer_lengths, GridCoord buffer_offsets,
        GridCoord image_offsets, auto accessor, std::string grid_type,
        auto bkg_thresh = 0, int upsample_z = 1) {
-      using T = std::decay_t<decltype(buffer)>;
       for (auto z : rv::iota(0, buffer_lengths[2])) {
         for (auto y : rv::iota(0, buffer_lengths[1])) {
           for (auto x : rv::iota(0, buffer_lengths[0])) {
             GridCoord xyz(x, y, z);
             GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
             GridCoord grid_xyz = coord_add(xyz, image_offsets);
-            auto val = std::get<T>(buffer[coord_to_id(buffer_xyz, buffer_lengths)]);
+            auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
             //auto val = std::get<T>(buffer[coord_to_id(buffer_xyz, buffer_lengths)]);
             // voxels equal to bkg_thresh are always discarded
             if (val > bkg_thresh) {
