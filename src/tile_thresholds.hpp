@@ -38,7 +38,8 @@ template <class image_t> struct TileThresholds {
       1.03521, 1.0306,  1.02633, 1.02239, 1.01878, 1.0155,  1.01253, 1.00989,
       1.00756, 1.00555, 1.00385, 1.00246, 1.00139, 1.00062, 1.00015, 1};
 
-  TileThresholds<image_t>() : max_int(0), min_int(0), bkg_thresh(0) {}
+  // TileThresholds<image_t>() : max_int(0), min_int(0), bkg_thresh(0) {}
+  TileThresholds<image_t>() {}
 
   TileThresholds<image_t>(image_t max_int, image_t min_int, image_t bkg_thresh)
     : max_int(max_int), min_int(min_int), bkg_thresh(bkg_thresh) {}
@@ -63,12 +64,13 @@ template <class image_t> struct TileThresholds {
     return this->givals[idx];
   }
 
-  void get_max_min(const image_t *img, VID_t tile_vertex_size) {
+  template <typename buffer_t>
+  void get_max_min(const buffer_t *img, VID_t tile_vertex_size) {
     auto timer = new high_resolution_timer();
 
     // GI parameter min_int, max_int
-    double local_max = 0; // maximum intensity, used in GI
-    double local_min = std::numeric_limits<double>::max(); // max value
+    buffer_t local_max = 0; // maximum intensity, used in GI
+    buffer_t local_min = std::numeric_limits<buffer_t>::max(); // max value
     //#pragma omp parallel for reduction(max:local_max)
     for (auto i = 0; i < tile_vertex_size; i++) {
       if (img[i] > local_max) {
