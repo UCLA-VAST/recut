@@ -3134,9 +3134,7 @@ auto load_imaris_tile = [](std::string file_name, const CoordBBox &bbox,
   auto imaris_bbox = imaris_image_bbox(file_name, resolution, channel);
   // FIXME get voxel type
   auto dense =
-      std::make_unique<vto::Dense<image_width, vto::LayoutXYZ>>(bbox);
-  //auto dense =
-      //std::make_unique<vto::Dense<uint16_t, vto::LayoutXYZ>>(bbox);
+      std::make_unique<vto::Dense<uint16_t, vto::LayoutXYZ>>(bbox);
 
   if (!imaris_bbox.isInside(bbox)) {
     std::ostringstream os;

@@ -2079,7 +2079,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
     }
 
     if (args->input_type == "tiff") {
-      dense_tile = load_tile<image_t>(tile_bbox, args->input_path);
+      //dense_tile = load_tile<image_width>(tile_bbox, args->input_path);
     }
 
     auto tile_thresholds = get_tile_thresholds(dense_tile);
