@@ -2105,7 +2105,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
     // visit type of buffer uint8/uint16
     // TODO pass to lambda by ref where appropriate
     std::visit(
-        [this,uint8_grids,float_grids,mask_grids,grids,tile_bbox,buffer_offsets,tile_thresholds,histogram,tile_id](const auto buffer) mutable {
+        [this,uint8_grids,float_grids,mask_grids,grids,tile_bbox,buffer_offsets,histogram,tile_id](const auto buffer, const auto bkg_thresh) mutable {
           // FIXME collapse these blocks into an output std::variant
           if (this->args->output_type == "uint8") {
             uint8_grids[tile_id] = ImgGrid::create();
@@ -2114,7 +2114,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
                 /*buffer_offsets=*/buffer_offsets,
                 /*image_offsets=*/tile_bbox.min(),
                 uint8_grids[tile_id]->getAccessor(), this->args->output_type,
-                tile_thresholds->bkg_thresh, this->args->upsample_z);
+                bkg_thresh, this->args->upsample_z);
             if (args->histogram) {
               histogram +=
                   hist(&buffer, tile_bbox.dim(), buffer_offsets);
@@ -2126,7 +2126,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
                 /*buffer_offsets=*/buffer_offsets,
                 /*image_offsets=*/tile_bbox.min(),
                 float_grids[tile_id]->getAccessor(), this->args->output_type,
-                tile_thresholds->bkg_thresh, this->args->upsample_z);
+                bkg_thresh, this->args->upsample_z);
             if (args->histogram) {
               histogram +=
                   hist(&buffer, tile_bbox.dim(), buffer_offsets);
@@ -2138,7 +2138,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
                 /*buffer_offsets=*/buffer_offsets,
                 /*image_offsets=*/tile_bbox.min(),
                 mask_grids[tile_id]->getAccessor(), this->args->output_type,
-                tile_thresholds->bkg_thresh, this->args->upsample_z);
+                bkg_thresh, this->args->upsample_z);
             if (args->histogram) {
               histogram +=
                   hist(&buffer, tile_bbox.dim(), buffer_offsets);
@@ -2152,7 +2152,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
             convert_buffer_to_vdb(&buffer, tile_bbox.dim(),
                                   /*buffer_offsets=*/buffer_offsets,
                                   /*image_offsets=*/tile_bbox.min(), positions,
-                                  tile_thresholds->bkg_thresh,
+                                  bkg_thresh,
                                   this->args->upsample_z);
 
             grids[tile_id] = create_point_grid(positions, this->image_lengths,
@@ -2165,7 +2165,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
 #endif
           }
         },
-        *(dense_tile->data()));
+        *(dense_tile->data()), tile_thresholds->bkg_thresh);
 
     active_tiles[tile_id] = false;
 #ifdef LOG

@@ -1597,8 +1597,10 @@ auto convert_buffer_to_vdb_acc =
                                     std::clamp(static_cast<uint8_t>(val),
                                                static_cast<uint8_t>(0),
                                                static_cast<uint8_t>(255)));
+                } else if (grid_type == "float") {
+                  accessor.setValue(upsample_grid_xyz, static_cast<float>(val));
                 } else {
-                  accessor.setValue(upsample_grid_xyz, val);
+                  throw std::runtime_error("Unknown grid type");
                 }
               }
             }
