@@ -21,7 +21,12 @@
 #include <tiffio.h>
 #include <variant>
 
-using image_width = std::variant<uint8_t,uint16_t>;
+using image_width = std::variant<uint8_t, uint16_t>;
+using Tile8 = std::unique_ptr<vto::Dense<uint8_t, vto::LayoutXYZ>>;
+using Tile16 = std::unique_ptr<vto::Dense<uint16_t, vto::LayoutXYZ>>;
+using TileType =
+    std::variant<std::unique_ptr<vto::Dense<uint16_t, vto::LayoutXYZ>>,
+                 std::unique_ptr<vto::Dense<uint8_t, vto::LayoutXYZ>>>;
 
 namespace fs = std::filesystem;
 namespace rng = ranges;
@@ -34,8 +39,9 @@ namespace rv = ranges::views;
 
 // A helper to create overloaded function objects and type pattern match
 // Taken from Functional C++ - Cukic
-template <typename... Fs>
-struct overloaded : Fs... { using Fs::operator()...; };
+template <typename... Fs> struct overloaded : Fs... {
+  using Fs::operator()...;
+};
 
 template <typename... Fs> overloaded(Fs...) -> overloaded<Fs...>;
 
@@ -289,8 +295,7 @@ VID_t get_used_vertex_size(VID_t grid_size, VID_t block_size) {
   return tile_vert_num;
 }
 
-auto print_marker_3D = [](auto markers, auto tile_lengths,
-                          std::string stage) {
+auto print_marker_3D = [](auto markers, auto tile_lengths, std::string stage) {
   for (int zi = 0; zi < tile_lengths[2]; zi++) {
     cout << "y | Z=" << zi << '\n';
     for (int xi = 0; xi < 2 * tile_lengths[0] + 4; xi++) {
@@ -1347,10 +1352,11 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
   return selected;
 }
 
-RecutCommandLineArgs
-get_args(int grid_size, int tile_length, int block_size, int slt_pct,
-         int tcase, bool input_is_vdb = false, std::string input_type = "point",
-         std::string output_type = "point", int downsample_factor = 1) {
+RecutCommandLineArgs get_args(int grid_size, int tile_length, int block_size,
+                              int slt_pct, int tcase, bool input_is_vdb = false,
+                              std::string input_type = "point",
+                              std::string output_type = "point",
+                              int downsample_factor = 1) {
 
   bool print = false;
 
@@ -1583,8 +1589,9 @@ auto convert_buffer_to_vdb_acc =
             GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
             GridCoord grid_xyz = coord_add(xyz, image_offsets);
             auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
-            //auto val = std::get<T>(buffer[coord_to_id(buffer_xyz, buffer_lengths)]);
-            // voxels equal to bkg_thresh are always discarded
+            // auto val = std::get<T>(buffer[coord_to_id(buffer_xyz,
+            // buffer_lengths)]);
+            //  voxels equal to bkg_thresh are always discarded
             if (val > bkg_thresh) {
               for (auto upsample_z_idx : rv::iota(0, upsample_z)) {
                 auto upsample_grid_xyz =
@@ -3133,8 +3140,7 @@ auto load_imaris_tile = [](std::string file_name, const CoordBBox &bbox,
   // check inputs
   auto imaris_bbox = imaris_image_bbox(file_name, resolution, channel);
   // FIXME get voxel type
-  auto dense =
-      std::make_unique<vto::Dense<uint16_t, vto::LayoutXYZ>>(bbox);
+  auto dense = std::make_unique<vto::Dense<uint16_t, vto::LayoutXYZ>>(bbox);
 
   if (!imaris_bbox.isInside(bbox)) {
     std::ostringstream os;
@@ -3267,10 +3273,9 @@ load_tile(const CoordBBox &bbox, const std::string &dir) {
                              dir);
   }
 
-  auto tile_filenames = tif_filenames |
-                        rv::slice(bbox.min()[2], bbox.max()[2] + 1) |
-                        rv::remove_if([](auto const& fn) { return fn.empty(); }) |
-                        rng::to_vector;
+  auto tile_filenames =
+      tif_filenames | rv::slice(bbox.min()[2], bbox.max()[2] + 1) |
+      rv::remove_if([](auto const &fn) { return fn.empty(); }) | rng::to_vector;
 
   auto dense = read_tiff_planes<image_t>(tile_filenames, bbox);
 #ifdef LOG
