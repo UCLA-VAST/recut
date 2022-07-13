@@ -1978,13 +1978,14 @@ Recut<image_t>::get_tile_thresholds(local_image_t *buffer,
 #endif
   } else { // if bkg set explicitly and foreground wasn't
     if (this->args->background_thresh >= 0) {
-      tile_thresholds->bkg_thresh =
-          (local_image_t)this->args->background_thresh;
+      tile_thresholds->bkg_thresh = this->args->background_thresh;
     }
   }
   // otherwise: tile_thresholds->bkg_thresh default inits to 0
 
   if (this->args->convert_only) {
+    tile_thresholds->max_int = std::numeric_limits<local_image_t>::max();
+    tile_thresholds->min_int = std::numeric_limits<local_image_t>::min();
     return tile_thresholds;
   }
 
@@ -2062,44 +2063,13 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
     }
 
     if (args->input_type == "tiff") {
-      // dense_tile = load_tile<image_width>(tile_bbox, args->input_path);
+      if (bits_per_sample == 8)
+        dense_tile = load_tile<uint8_t>(tile_bbox, args->input_path);
+      else if (bits_per_sample == 16)
+        dense_tile = load_tile<uint16_t>(tile_bbox, args->input_path);
+      else
+        throw std::runtime_error("TIFF bits per sample not supported");
     }
-
-    // std::variant<TileThresholds<uint8_t> *, TileThresholds<uint16_t> *>
-    // tile_thresholds;
-    // std::visit(Overload{[this, tile_thresholds](Tile8 tile) mutable {
-    // auto tile_dims = tile->bbox().dim();
-    // auto tile_vertex_size = coord_prod_accum(tile_dims);
-    // tile_thresholds = get_tile_thresholds(
-    // tile->data(), tile_vertex_size);
-    //},
-    //[this, tile_thresholds](Tile16 tile) mutable {
-    // auto tile_dims = tile->bbox().dim();
-    // auto tile_vertex_size = coord_prod_accum(tile_dims);
-    // tile_thresholds = get_tile_thresholds(
-    // tile->data(), tile_vertex_size);
-    //}},
-    // dense_tile);
-
-    // auto tile_thresholds = std::visit(
-    // Overload{[this](Tile8 tile) {
-    // auto tile_dims = tile->bbox().dim();
-    // auto tile_vertex_size = coord_prod_accum(tile_dims);
-    // return get_tile_thresholds(tile->data(), tile_vertex_size);
-    //},
-    //[this](Tile16 tile) {
-    // auto tile_dims = tile->bbox().dim();
-    // auto tile_vertex_size = coord_prod_accum(tile_dims);
-    // return get_tile_thresholds(tile->data(), tile_vertex_size);
-    //}},
-    // dense_tile);
-
-    // auto tile_thresholds = std::visit(
-    //[this](auto tile) {
-    // auto tile_dims = tile->bbox().dim();
-    // auto tile_vertex_size = coord_prod_accum(tile_dims);
-    // return get_tile_thresholds(tile->data(), tile_vertex_size);
-    //}, dense_tile);
 
     // FIXME can't auto deduce a std::variant type
     std::variant<TileThresholds<uint8_t> *, TileThresholds<uint16_t> *>
@@ -2125,10 +2095,8 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
     // visit type of buffer uint8/uint16
     // TODO pass to lambda by ref where appropriate
     std::visit(
-        [this, uint8_grids, float_grids, mask_grids, grids, tile_bbox,
-         buffer_offsets, histogram,
-         tile_id](const auto& dense_tile, const auto& tile_thresholds) mutable {
-          auto buffer = dense_tile->data();
+        [&, this](const auto &tile, const auto &tile_thresholds) mutable {
+          auto buffer = tile->data();
           // FIXME collapse these blocks into an output std::variant
           if (this->args->output_type == "uint8") {
             uint8_grids[tile_id] = ImgGrid::create();

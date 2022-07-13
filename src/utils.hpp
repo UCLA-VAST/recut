@@ -1795,7 +1795,7 @@ auto read_tiff_planes = [](const std::vector<std::string> &fns,
     size_t bytes_per_pixel = (size_t)bits_per_sample / 8 * samples_per_pixel;
     size_t n_image_bytes = (size_t)bytes_per_pixel * image_height * image_width;
 
-    uint16_t *data_ptr = dense->data();
+    image_t *data_ptr = dense->data();
     uint64_t z_offset =
         static_cast<uint64_t>(z) * bbox.dim()[0] * bbox.dim()[1];
     tstrip_t n_strips = TIFFNumberOfStrips(tiff);
@@ -3003,13 +3003,16 @@ VType bkg_threshold(VType *data, const VID_t &n, double q) {
 
 template <typename GridTypePtr>
 GridTypePtr merge_grids(std::vector<GridTypePtr> grids) {
+  if (grids.size() < 1)
+    throw std::runtime_error("Can't merge empty grids");
 
   for (int i = 0; i < (grids.size() - 1); ++i) {
+    grids[i + 1]->tree().merge(grids[i]->tree(),
+                               vb::MERGE_ACTIVE_STATES_AND_NODES);
+    // alternate method:
     // vb::tools::compActiveLeafVoxels(grids[i]->tree(), grids[i +
     // 1]->tree());
     // leaves grids[i] empty, copies all to grids[i+1]
-    grids[i + 1]->tree().merge(grids[i]->tree(),
-                               vb::MERGE_ACTIVE_STATES_AND_NODES);
   }
   auto final_grid = grids[grids.size() - 1];
   final_grid->tree().prune(); // collapse uniform values
