@@ -30,6 +30,13 @@
 template <typename... Ts> struct Overload : Ts... { using Ts::operator()...; };
 template <class... Ts> Overload(Ts...) -> Overload<Ts...>;
 
+using ThreshV =
+    std::variant<TileThresholds<uint8_t> *, TileThresholds<uint16_t> *>;
+using HistV = std::variant<Histogram<uint8_t>, Histogram<uint16_t>>;
+using TileV =
+    std::variant<std::unique_ptr<vto::Dense<uint16_t, vto::LayoutXYZ>>,
+                 std::unique_ptr<vto::Dense<uint8_t, vto::LayoutXYZ>>>;
+
 struct InstrumentedUpdateStatistics {
   int iterations;
   double total_time;
@@ -243,8 +250,7 @@ public:
                const TileThresholds<image_t> *tile_thresholds, T2 vdb_accessor);
   template <typename T1, typename T2, typename T3, typename T4>
   void io_tile(int tile_id, T1 &grids, T2 &uint8_grids, T3 &float_grids,
-               T4 &mask_grids, std::string stage,
-               Histogram<image_t> &histogram);
+               T4 &mask_grids, std::string stage, HistV &histogram);
   template <class Container>
   void update(std::string stage, Container &fifo = nullptr);
   GridCoord get_input_image_lengths(RecutCommandLineArgs *args);
@@ -2027,7 +2033,7 @@ template <class image_t>
 template <typename T1, typename T2, typename T3, typename T4>
 void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
                              T3 &float_grids, T4 &mask_grids, std::string stage,
-                             Histogram<image_t> &histogram) {
+                             HistV &histogram) {
 
   // only start tiles that have active processing to do
   if (!active_tiles[tile_id]) {
@@ -2046,11 +2052,8 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
       tile_max[2] = this->image_lengths[2] - 1;
     }
     const auto tile_bbox = CoordBBox(tile_offsets, tile_max);
-    // std::unique_ptr<vto::Dense<image_width, vto::LayoutXYZ>> dense_tile;
-    // std::variant<std::unique_ptr<vto::Dense<uint16_t>, vto::LayoutXYZ>,
-    // std::unique_ptr<vto::Dense<uint8_t>, vto::LayoutXYZ>>
-    // dense_tile;
-    TileType dense_tile;
+
+    TileV dense_tile;
     auto bits_per_sample = get_tif_bit_width(args->input_path);
 
     if (args->input_type == "ims") {
@@ -2071,9 +2074,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
         throw std::runtime_error("TIFF bits per sample not supported");
     }
 
-    // FIXME can't auto deduce a std::variant type
-    std::variant<TileThresholds<uint8_t> *, TileThresholds<uint16_t> *>
-        tile_thresholds;
+    ThreshV tile_thresholds;
 
     std::visit(
         [this, &tile_thresholds](auto &tile) {
@@ -2095,7 +2096,8 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
     // visit type of buffer uint8/uint16
     // TODO pass to lambda by ref where appropriate
     std::visit(
-        [&, this](const auto &tile, const auto &tile_thresholds) mutable {
+        [&, this](const auto &tile, const auto &tile_thresholds,
+                  const auto &histogram) mutable {
           auto buffer = tile->data();
           // FIXME collapse these blocks into an output std::variant
           if (this->args->output_type == "uint8") {
@@ -2153,7 +2155,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
 #endif
           }
         },
-        dense_tile, tile_thresholds);
+        dense_tile, tile_thresholds, histogram);
 
     active_tiles[tile_id] = false;
 #ifdef LOG
@@ -2198,7 +2200,8 @@ void Recut<image_t>::update(std::string stage, Container &fifo) {
   std::vector<openvdb::FloatGrid::Ptr> float_grids(this->grid_tile_size);
   std::vector<openvdb::MaskGrid::Ptr> mask_grids(this->grid_tile_size);
 
-  auto histogram = Histogram<image_t>();
+  // auto histogram = Histogram<image_t>();
+  HistV histogram;
 
   // Main march for loop
   // continue iterating until all tiles are finished
@@ -2251,14 +2254,14 @@ void Recut<image_t>::update(std::string stage, Container &fifo) {
       }
 
       if (args->histogram) {
-        auto write_to_file = [](auto out, std::string fn) {
-          std::ofstream hist_file;
-          hist_file.open(fn);
-          hist_file << out;
-          hist_file.close();
-        };
-
-        write_to_file(histogram, "hist.txt");
+        std::visit(
+            [](auto &histogram) {
+              std::ofstream hist_file;
+              hist_file.open("hist.txt");
+              hist_file << histogram;
+              hist_file.close();
+            },
+            histogram);
       }
     }
 

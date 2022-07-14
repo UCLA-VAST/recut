@@ -21,13 +21,6 @@
 #include <tiffio.h>
 #include <variant>
 
-using image_width = std::variant<uint8_t, uint16_t>;
-using Tile8 = std::unique_ptr<vto::Dense<uint8_t, vto::LayoutXYZ>>;
-using Tile16 = std::unique_ptr<vto::Dense<uint16_t, vto::LayoutXYZ>>;
-using TileType =
-    std::variant<std::unique_ptr<vto::Dense<uint16_t, vto::LayoutXYZ>>,
-                 std::unique_ptr<vto::Dense<uint8_t, vto::LayoutXYZ>>>;
-
 namespace fs = std::filesystem;
 namespace rng = ranges;
 namespace rv = ranges::views;
@@ -1485,8 +1478,7 @@ template <typename image_t> struct Histogram {
   int size() const { return bin_counts.size(); }
 
   // print to csv
-  template <typename T>
-  friend std::ostream &operator<<(std::ostream &os, const Histogram<T> &hist) {
+  friend std::ostream &operator<<(std::ostream &os, const Histogram<image_t> &hist) {
 
     uint64_t cumulative_count = 0;
     rng::for_each(hist.bin_counts, [&cumulative_count](const auto kvalpair) {
