@@ -208,7 +208,8 @@ void check_image_error(uint16_t *inimg1d, uint16_t *baseline, uint16_t *check,
   error_rate = 100 * error_sum / static_cast<double>(tol_sz);
 }
 
-void check_image_equality(uint16_t *inimg1d, uint16_t *check, VID_t volume) {
+template <typename image_t>
+void check_image_equality(image_t *inimg1d, image_t *check, VID_t volume) {
   for (VID_t i = 0; i < volume; i++) {
     ASSERT_LE(inimg1d[i], 1);
     ASSERT_EQ(inimg1d[i], check[i]);
@@ -1467,36 +1468,67 @@ TEST(Install, DISABLED_ImageReadWrite) {
   auto bbox = CoordBBox(image_offsets, image_lengths);
 
   VID_t selected = volume; // for tcase 4
-  uint16_t *inimg1d = new uint16_t[volume];
-  create_image(tcase, inimg1d, grid_size, selected, get_central_vid(grid_size));
-  if (print_all) {
-    cout << "Created image:\n";
-    print_image_3D(inimg1d, grid_extents);
+  // 16 bit
+  {
+    uint16_t *inimg1d = new uint16_t[volume];
+    create_image(tcase, inimg1d, grid_size, selected,
+                 get_central_vid(grid_size));
+    if (print_all) {
+      cout << "Created image:\n";
+      print_image_3D(inimg1d, grid_extents);
+    }
+
+    write_tiff(inimg1d, fn, grid_extents);
+
+    auto fn_ch0 = fn + "/ch0";
+    auto check = read_tiff_dir(fn_ch0);
+
+    if (print_all) {
+      cout << "Read image:\n";
+      print_image_3D(check->data(), grid_extents);
+    }
+
+    ASSERT_NO_FATAL_FAILURE(
+        check_image_equality(inimg1d, check->data(), volume));
+
+    // check again
+    if (print_all) {
+      cout << "first read passed\n";
+      cout << "second read\n";
+    }
+
+    auto check2 = read_tiff_dir(fn_ch0);
+    ASSERT_NO_FATAL_FAILURE(
+        check_image_equality(inimg1d, check2->data(), volume));
+
+    delete[] inimg1d;
   }
 
-  write_tiff(inimg1d, fn, grid_extents);
+  // 8 bit
+  {
+    fn += "/8";
+    uint8_t *inimg1d = new uint8_t[volume];
+    create_image(tcase, inimg1d, grid_size, selected,
+                 get_central_vid(grid_size));
+    if (print_all) {
+      cout << "Created image:\n";
+      print_image_3D(inimg1d, grid_extents);
+    }
 
-  auto fn_ch0 = fn + "/ch0";
-  auto check = read_tiff_dir(fn_ch0);
+    write_tiff(inimg1d, fn, grid_extents);
 
-  if (print_all) {
-    cout << "Read image:\n";
-    print_image_3D(check->data(), grid_extents);
+    auto fn_ch0 = fn + "/ch0";
+    auto check = read_tiff_dir<uint8_t>(fn_ch0);
+
+    if (print_all) {
+      cout << "Read image:\n";
+      print_image_3D(check->data(), grid_extents);
+    }
+
+    ASSERT_NO_FATAL_FAILURE(
+        check_image_equality(inimg1d, check->data(), volume));
+
   }
-
-  ASSERT_NO_FATAL_FAILURE(check_image_equality(inimg1d, check->data(), volume));
-
-  // check again
-  if (print_all) {
-    cout << "first read passed\n";
-    cout << "second read\n";
-  }
-
-  auto check2 = read_tiff_dir(fn_ch0);
-  ASSERT_NO_FATAL_FAILURE(
-      check_image_equality(inimg1d, check2->data(), volume));
-
-  delete[] inimg1d;
 }
 
 TEST(VertexAttr, Defaults) {
@@ -1926,7 +1958,7 @@ TEST(Update, EachStageIteratively) {
             continue;
           auto is_sequential_run =
               (grid_size == tile_size) && (grid_size == block_size) ? true
-                                                                        : false;
+                                                                    : false;
           for (auto &tcase : tcases) {
             GridCoord grid_extents(grid_size);
             GridCoord tile_extents(tile_size);
@@ -1947,9 +1979,8 @@ TEST(Update, EachStageIteratively) {
             // ideally tiles >> thread count
             auto final_tile_size =
                 tile_size > grid_size ? grid_size : tile_size;
-            auto final_block_size = block_size > final_tile_size
-                                        ? final_tile_size
-                                        : block_size;
+            auto final_block_size =
+                block_size > final_tile_size ? final_tile_size : block_size;
 
             std::ostringstream iteration_trace;
             // use this to tag and reconstruct data from json file
@@ -2372,10 +2403,10 @@ TEST(RecutPipeline, PrintDefaultInfo) {
        << '\n';
 }
 
-
-//TEST(Test, Test) {
-  //auto dense =
-      //std::make_unique<vto::Dense<std::variant<uint8_t, uint16_t>, vto::LayoutXYZ>>(zeros());
+// TEST(Test, Test) {
+// auto dense =
+// std::make_unique<vto::Dense<std::variant<uint8_t, uint16_t>,
+// vto::LayoutXYZ>>(zeros());
 //}
 
 int main(int argc, char **argv) {

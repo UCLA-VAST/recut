@@ -703,9 +703,9 @@ auto print_all_points = [](const EnlargedPointDataGrid::Ptr grid,
   }
 };
 
-template <typename T>
-void print_image_3D(const T *inimg1d, const GridCoord lengths,
-                    const T bkg_thresh = 0) {
+template <typename image_t>
+void print_image_3D(const image_t *inimg1d, const GridCoord lengths,
+                    const image_t bkg_thresh = 0) {
   auto total_count = coord_prod_accum(lengths);
   cout << "Print image 3D:\n";
   for (int zi = 0; zi < lengths[2]; zi++) {
@@ -732,7 +732,7 @@ void print_image_3D(const T *inimg1d, const GridCoord lengths,
   }
 }
 
-template <typename T> void print_image(T *inimg1d, VID_t size) {
+template <typename image_t> void print_image(image_t *inimg1d, VID_t size) {
   cout << "print image " << '\n';
   for (VID_t i = 0; i < size; i++) {
     cout << i << " " << +inimg1d[i] << '\n';
@@ -743,7 +743,8 @@ template <typename T> void print_image(T *inimg1d, VID_t size) {
 // the domain, thus it's an extremely hard test to pass
 // not even original fastmarching can
 // recover all of the original pixels
-VID_t trace_mesh_image(VID_t id, uint16_t *inimg1d,
+template <typename image_t>
+VID_t trace_mesh_image(VID_t id, image_t *inimg1d,
                        const VID_t desired_selected, int grid_size) {
   VID_t i, j, k, ic, jc, kc;
   i = j = k = ic = kc = jc = 0;
@@ -1131,7 +1132,8 @@ void write_vdb_file(openvdb::GridPtrVec vdb_grids, std::string fp = "") {
  * and creates a central sphere of specified
  * radius directly in the center of the grid
  */
-VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
+template <typename image_t>
+VID_t create_image(int tcase, image_t *inimg1d, int grid_size,
                    const VID_t desired_selected, VID_t root_vid) {
 
   // need to count total selected for tcase 3 and 5
@@ -1478,7 +1480,8 @@ template <typename image_t> struct Histogram {
   int size() const { return bin_counts.size(); }
 
   // print to csv
-  friend std::ostream &operator<<(std::ostream &os, const Histogram<image_t> &hist) {
+  friend std::ostream &operator<<(std::ostream &os,
+                                  const Histogram<image_t> &hist) {
 
     uint64_t cumulative_count = 0;
     rng::for_each(hist.bin_counts, [&cumulative_count](const auto kvalpair) {
@@ -1703,7 +1706,8 @@ void write_single_z_plane(image_t *inimg1d, std::string fn,
   TIFFClose(tiff);
 }
 
-void write_tiff(uint16_t *inimg1d, std::string base, const GridCoord dims,
+template <typename image_t = uint16_t>
+void write_tiff(image_t *inimg1d, std::string base, const GridCoord dims,
                 bool rerun = false) {
   auto print = false;
 #ifdef LOG
