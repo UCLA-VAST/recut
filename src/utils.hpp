@@ -32,6 +32,14 @@ using image_width = std::variant<uint8_t, uint16_t>;
 #define XSTR(x) STR(x)
 #define STR(x) #x
 
+// A helper to create overloaded function objects and type pattern match
+// Taken from Functional C++ - Cukic
+template <typename... Fs> struct overloaded : Fs... {
+  using Fs::operator()...;
+};
+
+template <typename... Fs> overloaded(Fs...) -> overloaded<Fs...>;
+
 auto print_iter = [](auto iterable) {
   rng::for_each(iterable, [](auto i) { std::cout << i << ", "; });
   std::cout << '\n';
@@ -697,9 +705,9 @@ auto print_all_points = [](const EnlargedPointDataGrid::Ptr grid,
   }
 };
 
-template <typename T>
-void print_image_3D(const T *inimg1d, const GridCoord lengths,
-                    const T bkg_thresh = 0) {
+template <typename image_t>
+void print_image_3D(const image_t *inimg1d, const GridCoord lengths,
+                    const image_t bkg_thresh = 0) {
   auto total_count = coord_prod_accum(lengths);
   cout << "Print image 3D:\n";
   for (int zi = 0; zi < lengths[2]; zi++) {
@@ -726,7 +734,7 @@ void print_image_3D(const T *inimg1d, const GridCoord lengths,
   }
 }
 
-template <typename T> void print_image(T *inimg1d, VID_t size) {
+template <typename image_t> void print_image(image_t *inimg1d, VID_t size) {
   cout << "print image " << '\n';
   for (VID_t i = 0; i < size; i++) {
     cout << i << " " << +inimg1d[i] << '\n';
@@ -737,7 +745,8 @@ template <typename T> void print_image(T *inimg1d, VID_t size) {
 // the domain, thus it's an extremely hard test to pass
 // not even original fastmarching can
 // recover all of the original pixels
-VID_t trace_mesh_image(VID_t id, uint16_t *inimg1d,
+template <typename image_t>
+VID_t trace_mesh_image(VID_t id, image_t *inimg1d,
                        const VID_t desired_selected, int grid_size) {
   VID_t i, j, k, ic, jc, kc;
   i = j = k = ic = kc = jc = 0;
@@ -1125,7 +1134,8 @@ void write_vdb_file(openvdb::GridPtrVec vdb_grids, std::string fp = "") {
  * and creates a central sphere of specified
  * radius directly in the center of the grid
  */
-VID_t create_image(int tcase, uint16_t *inimg1d, int grid_size,
+template <typename image_t>
+VID_t create_image(int tcase, image_t *inimg1d, int grid_size,
                    const VID_t desired_selected, VID_t root_vid) {
 
   // need to count total selected for tcase 3 and 5
@@ -1473,8 +1483,8 @@ template <typename image_t> struct Histogram {
   int size() const { return bin_counts.size(); }
 
   // print to csv
-  template <typename T>
-  friend std::ostream &operator<<(std::ostream &os, const Histogram<T> &hist) {
+  friend std::ostream &operator<<(std::ostream &os,
+                                  const Histogram<image_t> &hist) {
 
     uint64_t cumulative_count = 0;
     rng::for_each(hist.bin_counts, [&cumulative_count](const auto kvalpair) {
@@ -1577,7 +1587,9 @@ auto convert_buffer_to_vdb_acc =
             GridCoord buffer_xyz = coord_add(xyz, buffer_offsets);
             GridCoord grid_xyz = coord_add(xyz, image_offsets);
             auto val = buffer[coord_to_id(buffer_xyz, buffer_lengths)];
-            // voxels equal to bkg_thresh are always discarded
+            // auto val = std::get<T>(buffer[coord_to_id(buffer_xyz,
+            // buffer_lengths)]);
+            //  voxels equal to bkg_thresh are always discarded
             if (val > bkg_thresh) {
               for (auto upsample_z_idx : rv::iota(0, upsample_z)) {
                 auto upsample_grid_xyz =
@@ -1590,8 +1602,10 @@ auto convert_buffer_to_vdb_acc =
                                     std::clamp(static_cast<uint8_t>(val),
                                                static_cast<uint8_t>(0),
                                                static_cast<uint8_t>(255)));
+                } else if (grid_type == "float") {
+                  accessor.setValue(upsample_grid_xyz, static_cast<float>(val));
                 } else {
-                  accessor.setValue(upsample_grid_xyz, val);
+                  throw std::runtime_error("Unknown grid type");
                 }
               }
             }
@@ -1695,7 +1709,8 @@ void write_single_z_plane(image_t *inimg1d, std::string fn,
   TIFFClose(tiff);
 }
 
-void write_tiff(uint16_t *inimg1d, std::string base, const GridCoord dims,
+template <typename image_t = uint16_t>
+void write_tiff(image_t *inimg1d, std::string base, const GridCoord dims,
                 bool rerun = false) {
   auto print = false;
 #ifdef LOG
@@ -1896,6 +1911,20 @@ auto get_dir_files = [](const std::string &dir, const std::string &ext) {
   std::sort(tif_filenames.begin(), tif_filenames.end());
 
   return tif_filenames;
+};
+
+auto get_tif_bit_width = [](const std::string &tif_dir) {
+  const auto tif_filenames = get_dir_files(tif_dir, ".tif");
+  // take the first file, conver to char*
+  TIFF *tiff = TIFFOpen(&tif_filenames[0][0], "r");
+  if (!tiff) {
+    throw std::runtime_error(
+        "ERROR reading (not existent, not accessible or no TIFF file)");
+  }
+  short bits_per_sample, samples_per_pixel;
+  TIFFGetField(tiff, TIFFTAG_BITSPERSAMPLE, &bits_per_sample);
+  TIFFClose(tiff);
+  return bits_per_sample;
 };
 
 auto get_tif_dims = [](const std::vector<std::string> &tif_filenames) {
@@ -3058,13 +3087,16 @@ VType bkg_threshold(VType *data, const VID_t &n, double q) {
 
 template <typename GridTypePtr>
 GridTypePtr merge_grids(std::vector<GridTypePtr> grids) {
+  if (grids.size() < 1)
+    throw std::runtime_error("Can't merge empty grids");
 
   for (int i = 0; i < (grids.size() - 1); ++i) {
+    grids[i + 1]->tree().merge(grids[i]->tree(),
+                               vb::MERGE_ACTIVE_STATES_AND_NODES);
+    // alternate method:
     // vb::tools::compActiveLeafVoxels(grids[i]->tree(), grids[i +
     // 1]->tree());
     // leaves grids[i] empty, copies all to grids[i+1]
-    grids[i + 1]->tree().merge(grids[i]->tree(),
-                               vb::MERGE_ACTIVE_STATES_AND_NODES);
   }
   auto final_grid = grids[grids.size() - 1];
   final_grid->tree().prune(); // collapse uniform values
@@ -3195,8 +3227,7 @@ auto load_imaris_tile = [](std::string file_name, const CoordBBox &bbox,
   // check inputs
   auto imaris_bbox = imaris_image_bbox(file_name, resolution, channel);
   // FIXME get voxel type
-  auto dense =
-      std::make_unique<vto::Dense<uint16_t, vto::LayoutXYZ>>(bbox, /*fill*/ 0.);
+  auto dense = std::make_unique<vto::Dense<uint16_t, vto::LayoutXYZ>>(bbox);
 
   if (!imaris_bbox.isInside(bbox)) {
     std::ostringstream os;
