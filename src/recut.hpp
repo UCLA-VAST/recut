@@ -2980,7 +2980,14 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
     // reassign output_name from the default
     if (this->args->output_name == "out.vdb") {
       auto convert_fn_vdb = [this](const std::string &name, auto split_char) {
-        auto stripped = name | rv::split(split_char) | rv::drop_last(1) |
+        auto dir_path = name | rv::split('/') | rng::to<std::vector<std::string>>();
+        auto file_name = name;
+        std::string parent = "";
+        if (dir_path.size() > 1) { // is a full path
+          file_name = dir_path.back();
+          parent = name | rv::split('/') | rv::drop_last(1) | rv::join('/') | rng::to<std::string>();
+        }
+        auto stripped = file_name | rv::split(split_char) | rv::drop_last(1) |
                         rv::join | rng::to<std::string>();
         stripped += "-ch" + std::to_string(this->args->channel);
         stripped += "-" + this->args->output_type;
@@ -2989,7 +2996,9 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
         out << std::fixed << this->args->foreground_percent;
         stripped += "-fgpct" + out.str();
         stripped += "-zoff" + std::to_string(args->image_offsets.z());
-        return stripped + ".vdb";
+        stripped += ".vdb";
+        stripped = dir_path.size() > 1 ? parent + "/" + stripped : stripped;
+        return stripped;
       };
 
       if (args->input_type == "ims") {
