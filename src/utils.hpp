@@ -3360,6 +3360,7 @@ load_tile(const CoordBBox &bbox, const std::string &dir) {
                              dir);
   }
 
+  // bbox defines an inclusive range
   auto tile_filenames =
       tif_filenames | rv::slice(bbox.min()[2], bbox.max()[2] + 1) |
       rv::remove_if([](auto const &fn) { return fn.empty(); }) | rng::to_vector;

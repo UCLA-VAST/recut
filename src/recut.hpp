@@ -2039,9 +2039,12 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
     // bbox is inclusive, therefore substract 1
     auto tile_max = (tile_offsets + this->tile_lengths).offsetBy(-1);
     GridCoord buffer_offsets = zeros();
-    // protect out of bounds
-    if (tile_max.z() >= this->image_lengths[2]) {
-      tile_max[2] = this->image_lengths[2] - 1;
+    // protect out of bounds of whole image by cropping z only to extent
+    auto z_extent = this->image_offsets[2] + this->image_lengths[2];
+
+    if (tile_max.z() >= z_extent) {
+      // bbox defines an inclusive range at both ends
+      tile_max[2] = z_extent - 1;
     }
     const auto tile_bbox = CoordBBox(tile_offsets, tile_max);
 
@@ -2216,6 +2219,7 @@ void Recut<image_t>::update(std::string stage, Container &fifo) {
   } // finished all tiles
 
   if (stage == "convert") {
+    std::cout << "Start merge\n";
     auto finalize_start = timer.elapsed();
 
     if (args->output_type == "point") {
