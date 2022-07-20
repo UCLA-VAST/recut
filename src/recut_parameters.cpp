@@ -14,19 +14,19 @@ void RecutCommandLineArgs::PrintUsage() {
 
   std::cout << "<image file or dir>  file or directory of input image(s)\n";
   std::cout << "--seeds              directory of files which represent known "
-               "root/soma locations, passing seeds will run reconstruction to completion\n";
+               "root/soma locations, seeds are required to reconstruct\n";
   std::cout
-      << "--output-name            [-o] give converted vdb a custom name defaults to "
+      << "--output-name        [-o] give converted vdb a custom name defaults to "
          "naming with useful image attributes\n";
-  std::cout << "--input-type               input type img: 'ims', 'tiff' | "
+  std::cout << "--input-type         input type img: 'ims', 'tiff' | "
                "VDB: 'point', "
                "'uint8', 'mask' or 'float'\n";
-  std::cout << "--output-type              input type img: 'ims', 'tiff' | "
+  std::cout << "--output-type        output type img: 'ims', 'tiff' | "
                "VDB: 'point', "
                "'uint8', 'mask' or 'float'\n";
   std::cout
       << "--prune-radius       larger values decrease node sampling density "
-         "along paths, default 5 the z anisotropic factor\n";
+         "along paths, default 5\n";
   // std::cout << "--max                set max image voxel raw value allowed, "
   //"computed automatically when --bg_thresh or --fg-percent are "
   //"specified\n";
@@ -45,11 +45,11 @@ void RecutCommandLineArgs::PrintUsage() {
          " to max range from offset start to max length in each axis (-1, -1, "
          "-1)\n";
   std::cout
-      << "--bg-thresh          [-bt] background threshold value desired\n";
+      << "--bg-thresh          [-bt] all pixels greater than this passed intensity value are treated as foreground\n";
   std::cout
       << "--min-branch-length  prune leaf branches lower, defaults to 20\n";
   std::cout
-      << "--fg-percent         [-fp] auto calculate a bg-thresh closest to a "
+      << "--fg-percent         [-fp] auto calculate a bg-thresh value closest to the passed "
          "foreground \% between (0-100], overriding any --bg-thresh args. "
          "Value of .08 yields ~8 in 10,000 voxels "
          "as foreground per z-plane\n";
@@ -63,7 +63,7 @@ void RecutCommandLineArgs::PrintUsage() {
                "order to create "
                "image windows for each neuron cluster/component\n";
   std::cout
-      << "--tile-lengths      dimensions for fg percentages and conversion, "
+      << "--tile-lengths       dimensions for fg percentages and conversion, "
          "defaults to image sizes\n";
   std::cout
       << "--downsample-factor  for images scaled down in x and z dimension "
@@ -71,7 +71,7 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "--upsample-z         during conversion only z-dimension will be "
                "upsampled (copied) by specified factor, default is 1 i.e. no "
                "upsampling\n";
-  std::cout << "--expand-windows    if value is 0 windows only extend to bounding volume of component, defaults to 30 pixels\n";
+  std::cout << "--expand-windows     if value is 0 windows only extend to bounding volume of component, defaults to 30 pixels\n";
   std::cout
       << "--run-app2           for benchmarks and comparisons runs app2 on "
          "the vdb passed to --output-windows\n";

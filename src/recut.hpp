@@ -2785,7 +2785,7 @@ void Recut<image_t>::partition_components(
 
     auto timer = high_resolution_timer();
     auto [markers, coord_to_idx] =
-        convert_float_to_markers(component, this->topology_grid);
+        convert_float_to_markers(component, this->topology_grid, this->args->prune_radius);
     // auto markers = convert_to_markers(this->topology_grid, false);
 #ifdef LOG
     // cout << "Convert to markers in " << timer.elapsed() << '\n';

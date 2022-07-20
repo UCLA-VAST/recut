@@ -2685,7 +2685,7 @@ convert_float_to_point(openvdb::FloatGrid::Ptr float_grid) {
 
 std::pair<vector<MyMarker *>, std::unordered_map<GridCoord, VID_t>>
 convert_float_to_markers(openvdb::FloatGrid::Ptr component,
-                         EnlargedPointDataGrid::Ptr point_grid) {
+                         EnlargedPointDataGrid::Ptr point_grid, uint16_t prune_radius_factor) {
 #ifdef FULL_PRINT
   cout << "Convert" << '\n';
 #endif
@@ -2705,7 +2705,7 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
   };
 
   auto establish_marker_set = [&coord_to_marker_ptr, &coord_to_idx,
-                               &outtree](const auto &flags_handle,
+                               &outtree, prune_radius_factor](const auto &flags_handle,
                                          auto &parents_handle,
                                          const auto &radius_handle,
                                          const auto &ind, const auto &coord) {
@@ -2730,7 +2730,7 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
       // this mitigates this effect
       // however, dilation trick like below causes large nodules probably
       // because previously inflated get maxed and creates compounding cycle
-      marker->radius *= (ANISOTROPIC_FACTOR / 2);
+      marker->radius *= (prune_radius_factor / 2);
     }
 
     // save this marker ptr to a map
