@@ -2735,7 +2735,10 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
 
     // save this marker ptr to a map
     coord_to_marker_ptr.emplace(coord, marker);
-    assertm(marker->radius, "can't have 0 radius");
+    if (marker->radius == 0) {
+      marker->radius = 1;
+      std::cout << "Warning: marker can't have 0 radius\n";
+    }
 
     coord_to_idx[coord] = outtree.size();
     outtree.push_back(marker);
