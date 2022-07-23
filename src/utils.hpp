@@ -746,8 +746,8 @@ template <typename image_t> void print_image(image_t *inimg1d, VID_t size) {
 // not even original fastmarching can
 // recover all of the original pixels
 template <typename image_t>
-VID_t trace_mesh_image(VID_t id, image_t *inimg1d,
-                       const VID_t desired_selected, int grid_size) {
+VID_t trace_mesh_image(VID_t id, image_t *inimg1d, const VID_t desired_selected,
+                       int grid_size) {
   VID_t i, j, k, ic, jc, kc;
   i = j = k = ic = kc = jc = 0;
   // set root to 1
@@ -2685,7 +2685,8 @@ convert_float_to_point(openvdb::FloatGrid::Ptr float_grid) {
 
 std::pair<vector<MyMarker *>, std::unordered_map<GridCoord, VID_t>>
 convert_float_to_markers(openvdb::FloatGrid::Ptr component,
-                         EnlargedPointDataGrid::Ptr point_grid, uint16_t prune_radius_factor) {
+                         EnlargedPointDataGrid::Ptr point_grid,
+                         uint16_t prune_radius_factor) {
 #ifdef FULL_PRINT
   cout << "Convert" << '\n';
 #endif
@@ -2704,45 +2705,54 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
     return float_leaf->isValueOn(coord);
   };
 
-  auto establish_marker_set = [&coord_to_marker_ptr, &coord_to_idx,
-                               &outtree, prune_radius_factor](const auto &flags_handle,
-                                         auto &parents_handle,
-                                         const auto &radius_handle,
-                                         const auto &ind, const auto &coord) {
-    assertm(coord_to_marker_ptr.count(coord) == 0,
-            "Can't have two matching vids");
-    // get original i, j, k
-    auto marker = new MyMarker(coord[0], coord[1], coord[2]);
-    assertm(marker != nullptr, "is a nullptr");
+  auto establish_marker_set =
+      [&coord_to_marker_ptr, &coord_to_idx, &outtree, prune_radius_factor](
+          const auto &flags_handle, auto &parents_handle,
+          const auto &radius_handle, const auto &ind, const auto &coord) {
+        assertm(coord_to_marker_ptr.count(coord) == 0,
+                "Can't have two matching vids");
+        // get original i, j, k
+        auto marker = new MyMarker(coord[0], coord[1], coord[2]);
+        assertm(marker != nullptr, "is a nullptr");
 
-    marker->radius = radius_handle.get(*ind);
-    if (is_root(flags_handle, ind)) {
-      // a marker with a type of 0, must be a root
-      marker->type = 0;
-      // increase reported radius slightly to remove nodes on edge
-      // and decrease proofreading efforts
-      // otherwise any concavities outside of a sphere get marked as branches
-      // which can heavily impact morphological metrics
-      marker->radius *= SOMA_PRUNE_RADIUS;
-    } else {
-      // upsample by factor to account for anisotropic images
-      // neurites may appear thinner due to anisotropic imaging
-      // this mitigates this effect
-      // however, dilation trick like below causes large nodules probably
-      // because previously inflated get maxed and creates compounding cycle
-      marker->radius *= (prune_radius_factor / 2);
-    }
+        marker->radius = radius_handle.get(*ind);
+        if (marker->radius == 0) {
+          marker->radius = 1;
+          std::cout << "Note: marker with radius 0 changed to 1\n";
+        }
+        if (is_root(flags_handle, ind)) {
+          // a marker with a type of 0, must be a root
+          marker->type = 0;
+          // increase reported radius slightly to remove nodes on edge
+          // and decrease proofreading efforts
+          // otherwise any concavities outside of a sphere get marked as
+          // branches which can heavily impact morphological metrics round to
+          // nearest int
+          marker->radius = static_cast<uint16_t>(
+              (static_cast<double>(marker->radius) * SOMA_PRUNE_RADIUS) + .5);
+        } else {
+          // upsample by factor to account for anisotropic images
+          // neurites may appear thinner due to anisotropic imaging
+          // this mitigates this effect
+          // however, dilation trick like below causes large nodules probably
+          // because previously inflated get maxed and creates compounding cycle
+          // round to nearest int
+          marker->radius = static_cast<uint16_t>(
+              (static_cast<double>(marker->radius) *
+               static_cast<double>(prune_radius_factor) / 2.) +
+              .5);
+        }
+        if (marker->radius == 0) {
+          marker->radius = 1;
+          std::cout << "Warning: marker can't have 0 radius\n";
+        }
 
-    // save this marker ptr to a map
-    coord_to_marker_ptr.emplace(coord, marker);
-    if (marker->radius == 0) {
-      marker->radius = 1;
-      std::cout << "Warning: marker can't have 0 radius\n";
-    }
+        // save this marker ptr to a map
+        coord_to_marker_ptr.emplace(coord, marker);
 
-    coord_to_idx[coord] = outtree.size();
-    outtree.push_back(marker);
-  };
+        coord_to_idx[coord] = outtree.size();
+        outtree.push_back(marker);
+      };
 
   // iterate all active vertices ahead of time so each marker
   // can have a pointer to it's parent marker
