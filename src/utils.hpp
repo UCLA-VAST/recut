@@ -2717,8 +2717,7 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
 
         marker->radius = radius_handle.get(*ind);
         if (marker->radius == 0) {
-          marker->radius = 1;
-          std::cout << "Note: marker with radius 0 changed to 1\n";
+          throw std::runtime_error("Note: active vertex can not have radius 0\n");
         }
         if (is_root(flags_handle, ind)) {
           // a marker with a type of 0, must be a root
@@ -2743,8 +2742,7 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
               .5);
         }
         if (marker->radius == 0) {
-          marker->radius = 1;
-          std::cout << "Warning: marker can't have 0 radius\n";
+          throw std::runtime_error("Note: active marker can not have radius 0\n");
         }
 
         // save this marker ptr to a map
