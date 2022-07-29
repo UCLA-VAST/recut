@@ -2244,7 +2244,7 @@ auto print_swc_line =
        std::ofstream &out,
        std::unordered_map<GridCoord, uint32_t> &coord_to_swc_id,
        std::array<float, 3> voxel_size,
-       bool bbox_adjust = true) {
+       bool bbox_adjust = true, bool is_eswc=false) {
       std::ostringstream line;
 
       if (bbox_adjust) { // implies output window crops is set
@@ -2270,7 +2270,7 @@ auto print_swc_line =
       line << voxel_size[0] * swc_coord[0] << ' ' << voxel_size[1] * swc_coord[1] << ' ' << voxel_size[2] * swc_coord[2] << ' ';
 
       // radius, already been adjsuted to voxel size
-      line << +(radius) << ' ';
+      line << static_cast<float>(radius) << ' ';
 
       // parent
       if (is_root) {
@@ -2281,6 +2281,10 @@ auto print_swc_line =
       } else {
         auto parent_coord = coord_add(swc_coord, parent_offset_coord);
         line << find_or_assign(parent_coord, coord_to_swc_id);
+      }
+
+      if (is_eswc) {
+        line << "0 0 0 0 1";
       }
 
       line << '\n';

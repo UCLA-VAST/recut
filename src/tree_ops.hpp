@@ -176,28 +176,67 @@ auto partition_cluster = [](const std::vector<MyMarker *> &cluster) {
 };
 
 // assumes tree passed is sorted root at front of tree
-auto write_swc = [](std::vector<MyMarker *> &tree, std::array<float,3> voxel_size,
+auto write_swc = [](std::vector<MyMarker *> &tree,
+                    std::array<float, 3> voxel_size,
                     std::string component_dir_fn = ".", CoordBBox bbox = {},
-                    bool bbox_adjust = false) {
+                    bool bbox_adjust = false, bool is_eswc = false) {
   auto root = tree.front();
   if (root->type)
     throw std::runtime_error("First marker of tree must be a root (type 0)");
 
   // start swc and add header metadata
-  auto swc_name = component_dir_fn + "/tree-with-soma-xyz-" +
+  auto suffix = is_eswc ? ".ano.eswc" : ".swc";
+  auto swc_base = component_dir_fn + "/tree-with-soma-xyz-" +
                   std::to_string(static_cast<int>(root->x)) + '-' +
                   std::to_string(static_cast<int>(root->y)) + '-' +
-                  std::to_string(static_cast<int>(root->z)) + ".swc";
-  std::ofstream swc_file;
-  swc_file.open(swc_name);
-  swc_file << "# Crop windows bounding volume: " << bbox << '\n';
-  swc_file << "# id type_id x y z radius parent_id\n";
+                  std::to_string(static_cast<int>(root->z)) + suffix;
+  auto swc_name = swc_base + suffix;
 
   auto coord_to_swc_id = get_id_map();
 
+  // write apo file
+  if (is_eswc) {
+    auto apo_file_name = swc_base + ".ano.apo";
+
+    std::ofstream ano_file;
+    ano_file.open(swc_base + ".ano");
+    ano_file << "APOFILE=" << apo_file_name << "\n";
+    ano_file << "SWCFILE=" << swc_name << '\n';
+    ano_file.close();
+
+    std::ofstream apo_file;
+    apo_file.open(apo_file_name);
+    apofile << std::fixed << std::setprecision(SWC_PRECISION);
+    // 56630,,,,2452.761,4745.697,3057.039,
+    // 0.000,0.000,0.000,314.159,0.000,,,,0,0,255
+    apo_file
+        << "##n,orderinfo,name,comment,z,x,y, "
+           "pixmax,intensity,sdev,volsize,mass,,,, color_r,color_g,color_b\n";
+    // n
+    apo_file << std::to_string(find_or_assign(swc_coord, coord_to_swc_id));
+    // orderinfo,name,comment
+    apo_file << << ",,,,";
+    // z,y,x
+      apofile << voxel_size[0] * swc_coord[0] << ',' << voxel_size[1] * swc_coord[1] << ',' << voxel_size[2] * swc_coord[2] << ',';
+    // pixmax,intensity,sdev,
+    apofile << "0.,0.,0.,
+    // volsize
+    apofile << radius * radius * radius;
+    // mass,,,, color_r,color_g,color_b
+    apofile << "0.,,,,0,0,255\n";
+    apofile.close();
+  }
+
+  std::ofstream swc_file;
+  swc_file.open(swc_name);
+  swc_file << "# Crop windows bounding volume: " << bbox << '\n';
+  swc_file << "# id type_id x y z radius parent_id";
+  if (is_eswc)
+    swc_file << "seg_id level mode timestamp TFresindex";
+  swc_file << '\n';
+
   // iter those marker*
-  rng::for_each(tree, [&swc_file, &coord_to_swc_id, &bbox,
-                       bbox_adjust,&voxel_size](const auto marker) {
+  rng::for_each(tree, [&](const auto marker) {
     auto coord = GridCoord(marker->x, marker->y, marker->z);
     auto is_root = marker->type == 0;
     auto parent_offset = zeros();
@@ -207,9 +246,9 @@ auto write_swc = [](std::vector<MyMarker *> &tree, std::array<float,3> voxel_siz
           GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
       parent_offset = coord_sub(parent_coord, coord);
     }
-    // print_swc_line() expects an offset to a parent
+    // expects an offset to a parent
     print_swc_line(coord, is_root, marker->radius, parent_offset, bbox,
-                   swc_file, coord_to_swc_id, voxel_size, bbox_adjust);
+                   swc_file, coord_to_swc_id, voxel_size, bbox_adjust, is_eswc);
   });
 };
 

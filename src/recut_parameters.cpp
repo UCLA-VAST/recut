@@ -163,11 +163,11 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--output-type") == 0) {
         auto arg = std::string(argv[i + 1]);
         if (arg == "float" || arg == "point" || arg == "uint8" ||
-            arg == "mask" || arg == "ims" || arg == "tiff") {
+            arg == "mask" || arg == "ims" || arg == "tiff" || arg == "eswc" || arg == "swc") {
           args.output_type = (argv[i + 1]);
         } else {
           cerr << "--output-type option must be one of "
-                  "[float,point,uint8,mask,ims,tiff]\n";
+                  "[float,point,uint8,mask,ims,tiff,swc,eswc]\n";
           exit(1);
         }
         ++i;
