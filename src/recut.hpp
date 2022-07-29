@@ -2605,6 +2605,24 @@ template <class image_t> void Recut<image_t>::initialize() {
   print_coord(this->image_lengths, "image");
 #endif
   update_hierarchical_dims(this->tile_lengths);
+
+  // set the prune radius if not passed at command line
+  // based on the voxel size
+  if (! this->args->prune_radius) {
+    float maxx, minx = this->args->voxel_size[0];
+    for (int i = 1; i < 3; ++i) {
+      auto current = this->args->voxel_size[i];
+      if (maxx < current)
+        maxx = current;
+      if (current < minx)
+        minx = current;
+    }
+    // round to nearest int
+    this->args->prune_radius = static_cast<uint16_t>((maxx / minx) + .5);
+#ifdef LOG
+    std::cout << "Set based off voxel size prune radius to: " << this->args->prune_radius.value() << '\n';
+#endif
+  }
 }
 
 // reject unvisited vertices
@@ -2785,7 +2803,7 @@ void Recut<image_t>::partition_components(
 
     auto timer = high_resolution_timer();
     auto [markers, coord_to_idx] =
-        convert_float_to_markers(component, this->topology_grid, this->args->prune_radius);
+        convert_float_to_markers(component, this->topology_grid, this->args->prune_radius.value());
     // auto markers = convert_to_markers(this->topology_grid, false);
 #ifdef LOG
     // cout << "Convert to markers in " << timer.elapsed() << '\n';
@@ -2794,7 +2812,7 @@ void Recut<image_t>::partition_components(
     timer.restart();
     // prune radius already set when converting from markers above
     auto pruned_markers =
-        advantra_prune(markers, /*prune_radius*/ this->args->prune_radius, coord_to_idx);
+        advantra_prune(markers, /*prune_radius*/ this->args->prune_radius.value(), coord_to_idx);
 
     // is a fresh run_dir
     auto component_dir_fn =
@@ -3045,7 +3063,7 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
 #ifdef LOG
     std::ofstream run_log(log_fn);
     run_log << "Thread count, " << args->user_thread_count << '\n';
-    run_log << "Prune radius, " << args->prune_radius << '\n';
+    run_log << "Prune radius, " << args->prune_radius.value() << '\n';
     run_log << "Soma radius, " << SOMA_PRUNE_RADIUS << '\n';
     run_log << "Min branch, " << args->min_branch_length << '\n';
     run_log << "Run app2, " << args->run_app2 << '\n';

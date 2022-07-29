@@ -24,9 +24,6 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "--output-type        output type img: 'ims', 'tiff' | "
                "VDB: 'point', "
                "'uint8', 'mask' or 'float'\n";
-  std::cout
-      << "--prune-radius       larger values decrease node sampling density "
-         "along paths, default 5\n";
   // std::cout << "--max                set max image voxel raw value allowed, "
   //"computed automatically when --bg_thresh or --fg-percent are "
   //"specified\n";
@@ -39,6 +36,12 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout
       << "--image-offsets      [-io] offsets of subvolume, in x y z order "
          "default 0 0 0\n";
+  std::cout
+      << "--voxel-size               um lengths of voxel in x y z order "
+         "default 1.0 1.0 1.0 determines prune radius\n";
+  std::cout
+      << "--prune-radius       larger values decrease node sampling density "
+         "along paths, default is set by the anisotropic factor of --voxel-size\n";
   std::cout
       << "--image-lengths      [-ie] lengths of subvolume, in x y z order "
          "defaults"
@@ -82,7 +85,6 @@ std::string RecutCommandLineArgs::MetaString() {
   std::stringstream meta_stream;
   meta_stream << "image file/dir = " << input_path << '\n';
   meta_stream << "channel = " << channel << '\n';
-  meta_stream << "prune radius = " << prune_radius << '\n';
   meta_stream << "resolution level = " << resolution_level << '\n';
   meta_stream << "offsets (xyz) = " << image_offsets[0] << " "
               << image_offsets[1] << " " << image_offsets[2] << '\n';
@@ -134,6 +136,11 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
           ++i;
         }
         args.set_image_offsets(offsets);
+      } else if (strcmp(argv[i], "--voxel-size") == 0) {
+        for (int j = 0; j < 3; ++j) {
+          args.voxel_size[j] = atof(argv[i + 1]);
+          ++i;
+        }
       } else if (strcmp(argv[i], "--image-lengths") == 0 ||
                  strcmp(argv[i], "-ie") == 0) {
         GridCoord lengths(3);
