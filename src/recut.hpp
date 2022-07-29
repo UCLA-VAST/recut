@@ -2943,7 +2943,7 @@ void Recut<image_t>::partition_components(
 
     rng::for_each(trees, [&,this](auto tree) {
       write_swc(tree, this->args->voxel_size, component_dir_fn, bbox,
-                /*bbox_adjust*/ !args->window_grid_paths.empty());
+                /*bbox_adjust*/ !args->window_grid_paths.empty(), this->args->output_type == "eswc");
       if (!tree_is_sorted(tree)) {
         throw std::runtime_error("Tree is not properly sorted");
       }

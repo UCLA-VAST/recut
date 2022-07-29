@@ -2243,8 +2243,8 @@ auto print_swc_line =
        const OffsetCoord parent_offset_coord, CoordBBox bbox,
        std::ofstream &out,
        std::unordered_map<GridCoord, uint32_t> &coord_to_swc_id,
-       std::array<float, 3> voxel_size,
-       bool bbox_adjust = true) {
+       std::array<float, 3> voxel_size, bool bbox_adjust = true,
+       bool is_eswc = false) {
       std::ostringstream line;
 
       if (bbox_adjust) { // implies output window crops is set
@@ -2267,10 +2267,12 @@ auto print_swc_line =
       line << std::fixed << std::setprecision(SWC_PRECISION);
 
       // coordinates
-      line << voxel_size[0] * swc_coord[0] << ' ' << voxel_size[1] * swc_coord[1] << ' ' << voxel_size[2] * swc_coord[2] << ' ';
+      line << voxel_size[0] * swc_coord[0] << ' '
+           << voxel_size[1] * swc_coord[1] << ' '
+           << voxel_size[2] * swc_coord[2] << ' ';
 
       // radius, already been adjsuted to voxel size
-      line << +(radius) << ' ';
+      line << static_cast<float>(radius) << ' ';
 
       // parent
       if (is_root) {
@@ -2281,6 +2283,11 @@ auto print_swc_line =
       } else {
         auto parent_coord = coord_add(swc_coord, parent_offset_coord);
         line << find_or_assign(parent_coord, coord_to_swc_id);
+      }
+
+      if (is_eswc) {
+        // " seg_id level mode timestamp TFresindex";
+        line << " 0 0 0 0 1";
       }
 
       line << '\n';
@@ -2708,52 +2715,54 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
     return float_leaf->isValueOn(coord);
   };
 
-  auto establish_marker_set =
-      [&coord_to_marker_ptr, &coord_to_idx, &outtree, prune_radius_factor](
-          const auto &flags_handle, auto &parents_handle,
-          const auto &radius_handle, const auto &ind, const auto &coord) {
-        assertm(coord_to_marker_ptr.count(coord) == 0,
-                "Can't have two matching vids");
-        // get original i, j, k
-        auto marker = new MyMarker(coord[0], coord[1], coord[2]);
-        assertm(marker != nullptr, "is a nullptr");
+  auto establish_marker_set = [&coord_to_marker_ptr, &coord_to_idx, &outtree,
+                               prune_radius_factor](const auto &flags_handle,
+                                                    auto &parents_handle,
+                                                    const auto &radius_handle,
+                                                    const auto &ind,
+                                                    const auto &coord) {
+    assertm(coord_to_marker_ptr.count(coord) == 0,
+            "Can't have two matching vids");
+    // get original i, j, k
+    auto marker = new MyMarker(coord[0], coord[1], coord[2]);
+    assertm(marker != nullptr, "is a nullptr");
 
-        marker->radius = radius_handle.get(*ind);
-        if (marker->radius == 0) {
-          throw std::runtime_error("Note: active vertex can not have radius 0\n");
-        }
-        if (is_root(flags_handle, ind)) {
-          // a marker with a type of 0, must be a root
-          marker->type = 0;
-          // increase reported radius slightly to remove nodes on edge
-          // and decrease proofreading efforts
-          // otherwise any concavities outside of a sphere get marked as
-          // branches which can heavily impact morphological metrics round to
-          // nearest int
-          marker->radius = static_cast<uint16_t>(
-              (static_cast<double>(marker->radius) * SOMA_PRUNE_RADIUS) + .5);
-        } else {
-          // upsample by factor to account for anisotropic images
-          // neurites may appear thinner due to anisotropic imaging
-          // this mitigates this effect
-          // however, dilation trick like below causes large nodules probably
-          // because previously inflated get maxed and creates compounding cycle
-          // round to nearest int
-          marker->radius = static_cast<uint16_t>(
-              (static_cast<double>(marker->radius) *
-               static_cast<double>(prune_radius_factor)) +
-              .5);
-        }
-        if (marker->radius == 0) {
-          throw std::runtime_error("Note: active marker can not have radius 0\n");
-        }
+    marker->radius = radius_handle.get(*ind);
+    if (marker->radius == 0) {
+      throw std::runtime_error("Note: active vertex can not have radius 0\n");
+    }
+    if (is_root(flags_handle, ind)) {
+      // a marker with a type of 0, must be a root
+      marker->type = 0;
+      // increase reported radius slightly to remove nodes on edge
+      // and decrease proofreading efforts
+      // otherwise any concavities outside of a sphere get marked as
+      // branches which can heavily impact morphological metrics round to
+      // nearest int
+      marker->radius = static_cast<uint16_t>(
+          (static_cast<double>(marker->radius) * SOMA_PRUNE_RADIUS) + .5);
+    } else {
+      // upsample by factor to account for anisotropic images
+      // neurites may appear thinner due to anisotropic imaging
+      // this mitigates this effect
+      // however, dilation trick like below causes large nodules probably
+      // because previously inflated get maxed and creates compounding cycle
+      // round to nearest int
+      marker->radius =
+          static_cast<uint16_t>((static_cast<double>(marker->radius) *
+                                 static_cast<double>(prune_radius_factor)) +
+                                .5);
+    }
+    if (marker->radius == 0) {
+      throw std::runtime_error("Note: active marker can not have radius 0\n");
+    }
 
-        // save this marker ptr to a map
-        coord_to_marker_ptr.emplace(coord, marker);
+    // save this marker ptr to a map
+    coord_to_marker_ptr.emplace(coord, marker);
 
-        coord_to_idx[coord] = outtree.size();
-        outtree.push_back(marker);
-      };
+    coord_to_idx[coord] = outtree.size();
+    outtree.push_back(marker);
+  };
 
   // iterate all active vertices ahead of time so each marker
   // can have a pointer to it's parent marker
