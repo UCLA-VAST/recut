@@ -864,7 +864,7 @@ TEST(TreeOps, FixTrifurcations) {
   tree.push_back(f);
 
   if (write_swc_disk)
-    write_swc(tree);
+    write_swc(tree, {1,1,1});
 
   auto fixed_tree = fix_trifurcations(tree);
   ASSERT_TRUE(is_cluster_self_contained(fixed_tree));
@@ -887,7 +887,7 @@ TEST(TreeOps, FixTrifurcations) {
 
   for (auto fixed_tree : fixed_trees) {
     if (write_swc_disk) {
-      write_swc(fixed_tree);
+      write_swc(fixed_tree, {1,1,1});
     }
     ASSERT_TRUE(tree_is_sorted(fixed_tree));
   }

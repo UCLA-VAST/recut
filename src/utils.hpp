@@ -2243,6 +2243,7 @@ auto print_swc_line =
        const OffsetCoord parent_offset_coord, CoordBBox bbox,
        std::ofstream &out,
        std::unordered_map<GridCoord, uint32_t> &coord_to_swc_id,
+       std::array<float, 3> voxel_size,
        bool bbox_adjust = true) {
       std::ostringstream line;
 
@@ -2263,18 +2264,20 @@ auto print_swc_line =
       } else {
         line << "3 ";
       }
+      line << std::fixed << std::setprecision(SWC_PRECISION);
 
       // coordinates
-      line << swc_coord[0] << ' ' << swc_coord[1] << ' ' << swc_coord[2] << ' ';
+      line << voxel_size[0] * swc_coord[0] << ' ' << voxel_size[1] * swc_coord[1] << ' ' << voxel_size[2] * swc_coord[2] << ' ';
 
-      // radius
+      // radius, already been adjsuted to voxel size
       line << +(radius) << ' ';
 
       // parent
       if (is_root) {
         // only the first line of the file can have a parent of -1
         // any other should connect to themselves
-        line << (current_id == 1) ? "-1" : std::to_string(current_id);
+        // line << (current_id == 1) ? "-1" : std::to_string(current_id);
+        line << std::to_string(current_id);
       } else {
         auto parent_coord = coord_add(swc_coord, parent_offset_coord);
         line << find_or_assign(parent_coord, coord_to_swc_id);

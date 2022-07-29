@@ -83,6 +83,7 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 #define ANISOTROPIC_FACTOR 5
 // the value to add for on bits when merging a mask grid with a image grid
 #define PIXEL_VAL_MASK 64
+#define SWC_PRECISION 2
 
 // Below are deprecated or are not (yet) affecting behavior:
 #define MIN_RADII 2

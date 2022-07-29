@@ -2676,7 +2676,7 @@ void Recut<image_t>::print_to_swc(std::string swc_path) {
                     const auto &flags_handle, const auto &parents_handle,
                     const auto &radius_handle, const auto &ind, auto leaf) {
     auto coord = ind.getCoord();
-    print_swc_line(coord, is_root(flags_handle, ind), radius_handle.get(*ind),
+    print_swc_line(coord, this->args->voxel_size, is_root(flags_handle, ind), radius_handle.get(*ind),
                    parents_handle.get(*ind), this->image_bbox, this->out,
                    /*map*/ coord_to_swc_id, /*adjust*/ true);
   };
@@ -2941,8 +2941,8 @@ void Recut<image_t>::partition_components(
     component_log << "Bounding box, " << bbox << '\n';
 #endif
 
-    rng::for_each(trees, [&](auto tree) {
-      write_swc(tree, component_dir_fn, bbox,
+    rng::for_each(trees, [&,this](auto tree) {
+      write_swc(tree, this->args->voxel_size, component_dir_fn, bbox,
                 /*bbox_adjust*/ !args->window_grid_paths.empty());
       if (!tree_is_sorted(tree)) {
         throw std::runtime_error("Tree is not properly sorted");

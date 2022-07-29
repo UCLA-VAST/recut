@@ -176,7 +176,7 @@ auto partition_cluster = [](const std::vector<MyMarker *> &cluster) {
 };
 
 // assumes tree passed is sorted root at front of tree
-auto write_swc = [](std::vector<MyMarker *> &tree,
+auto write_swc = [](std::vector<MyMarker *> &tree, std::array<float,3> voxel_size,
                     std::string component_dir_fn = ".", CoordBBox bbox = {},
                     bool bbox_adjust = false) {
   auto root = tree.front();
@@ -197,7 +197,7 @@ auto write_swc = [](std::vector<MyMarker *> &tree,
 
   // iter those marker*
   rng::for_each(tree, [&swc_file, &coord_to_swc_id, &bbox,
-                       bbox_adjust](const auto marker) {
+                       bbox_adjust,&voxel_size](const auto marker) {
     auto coord = GridCoord(marker->x, marker->y, marker->z);
     auto is_root = marker->type == 0;
     auto parent_offset = zeros();
@@ -209,7 +209,7 @@ auto write_swc = [](std::vector<MyMarker *> &tree,
     }
     // print_swc_line() expects an offset to a parent
     print_swc_line(coord, is_root, marker->radius, parent_offset, bbox,
-                   swc_file, coord_to_swc_id, bbox_adjust);
+                   swc_file, coord_to_swc_id, voxel_size, bbox_adjust);
   });
 };
 
