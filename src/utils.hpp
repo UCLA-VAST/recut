@@ -2738,7 +2738,7 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
           // round to nearest int
           marker->radius = static_cast<uint16_t>(
               (static_cast<double>(marker->radius) *
-               static_cast<double>(prune_radius_factor) / 2.) +
+               static_cast<double>(prune_radius_factor)) +
               .5);
         }
         if (marker->radius == 0) {

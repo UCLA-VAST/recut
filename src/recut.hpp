@@ -2792,8 +2792,9 @@ void Recut<image_t>::partition_components(
 #endif
 
     timer.restart();
+    // prune radius already set when converting from markers above
     auto pruned_markers =
-        advantra_prune(markers, this->args->prune_radius, coord_to_idx);
+        advantra_prune(markers, /*prune_radius*/ this->args->prune_radius, coord_to_idx);
 
     // is a fresh run_dir
     auto component_dir_fn =
