@@ -380,10 +380,10 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
     if (args->seed_path.back() != '/')
       args->seed_path = args->seed_path.append("/");
 
-#ifdef LOG
-    cout << "marker dir path: " << args->seed_path << '\n';
-    assertm(fs::exists(args->seed_path), "Marker file path must exist");
-#endif
+    if (!fs::exists(args->seed_path)) {
+      throw std::runtime_error("Directory passed to --seeds : " +
+                               args->seed_path + " does not exist");
+    }
   }
 
   // gather all markers within directory
@@ -2389,10 +2389,6 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_tile_size,
   this->connected_map = inner;
   // global active vertex list
 
-#ifdef LOG
-  cout << "Active leaf count: " << this->update_grid->tree().leafCount()
-       << '\n';
-#endif
 #ifdef LOG_FULL
   cout << "\tCreated fifos " << timer.elapsed() << 's' << '\n';
 #endif
@@ -2411,10 +2407,6 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
 
     auto timer = high_resolution_timer();
     auto base_grid = read_vdb_file(args->input_path);
-
-#ifdef LOG
-    cout << "VDB input type " << this->args->input_type << '\n';
-#endif
 
     if (this->args->input_type == "float") {
       this->input_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
@@ -2440,7 +2432,7 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
     append_attributes(this->topology_grid);
 
 #ifdef LOG
-    cout << "Read grid in: " << timer.elapsed() << " s\n";
+    // cout << "Read grid in: " << timer.elapsed() << " s\n";
 #endif
 
   } else { // converting to a new grid from a raw image
@@ -2494,10 +2486,6 @@ void Recut<image_t>::update_hierarchical_dims(const GridCoord &tile_lengths) {
 
   this->grid_tile_size = coord_prod_accum(this->grid_tile_lengths);
   this->tile_block_size = coord_prod_accum(this->tile_block_lengths);
-
-#ifdef LOG
-  print_coord(this->tile_lengths, "tile");
-#endif
 
   this->active_tiles = std::vector(this->grid_tile_size, false);
 }
@@ -2608,7 +2596,7 @@ template <class image_t> void Recut<image_t>::initialize() {
 
   // set the prune radius if not passed at command line
   // based on the voxel size
-  if (! this->args->prune_radius) {
+  if (!this->args->prune_radius) {
     float maxx, minx = this->args->voxel_size[0];
     for (int i = 1; i < 3; ++i) {
       auto current = this->args->voxel_size[i];
@@ -2620,7 +2608,9 @@ template <class image_t> void Recut<image_t>::initialize() {
     // round to nearest int
     this->args->prune_radius = static_cast<uint16_t>((maxx / minx) + .5);
 #ifdef LOG
-    std::cout << "Set based off voxel size prune radius to: " << this->args->prune_radius.value() << '\n';
+    std::cout << "--prune-radius was set to: "
+              << this->args->prune_radius.value()
+              << " by calculating the anisotropic factor of --voxel-size\n";
 #endif
   }
 }
@@ -2676,8 +2666,9 @@ void Recut<image_t>::print_to_swc(std::string swc_path) {
                     const auto &flags_handle, const auto &parents_handle,
                     const auto &radius_handle, const auto &ind, auto leaf) {
     auto coord = ind.getCoord();
-    print_swc_line(coord, this->args->voxel_size, is_root(flags_handle, ind), radius_handle.get(*ind),
-                   parents_handle.get(*ind), this->image_bbox, this->out,
+    print_swc_line(coord, this->args->voxel_size, is_root(flags_handle, ind),
+                   radius_handle.get(*ind), parents_handle.get(*ind),
+                   this->image_bbox, this->out,
                    /*map*/ coord_to_swc_id, /*adjust*/ true);
   };
 
@@ -2802,8 +2793,8 @@ void Recut<image_t>::partition_components(
     }
 
     auto timer = high_resolution_timer();
-    auto [markers, coord_to_idx] =
-        convert_float_to_markers(component, this->topology_grid, this->args->prune_radius.value());
+    auto [markers, coord_to_idx] = convert_float_to_markers(
+        component, this->topology_grid, this->args->prune_radius.value());
     // auto markers = convert_to_markers(this->topology_grid, false);
 #ifdef LOG
     // cout << "Convert to markers in " << timer.elapsed() << '\n';
@@ -2811,8 +2802,9 @@ void Recut<image_t>::partition_components(
 
     timer.restart();
     // prune radius already set when converting from markers above
-    auto pruned_markers =
-        advantra_prune(markers, /*prune_radius*/ this->args->prune_radius.value(), coord_to_idx);
+    auto pruned_markers = advantra_prune(
+        markers, /*prune_radius*/ this->args->prune_radius.value(),
+        coord_to_idx);
 
     // is a fresh run_dir
     auto component_dir_fn =
@@ -2856,19 +2848,21 @@ void Recut<image_t>::partition_components(
     if (!is_cluster_self_contained(pruned_cluster))
       throw std::runtime_error("Pruend cluster not self contained");
 
-    auto valid_cluster = fix_trifurcations(pruned_cluster);
+    auto fixed_cluster = fix_trifurcations(pruned_cluster);
     { // check
-      auto trifurcations = tree_is_valid(valid_cluster);
+      auto trifurcations = tree_is_valid(fixed_cluster);
       if (!trifurcations.empty()) {
+        auto soma = fixed_cluster[0];
         std::cout << "Warning tree in component-" + std::to_string(index)
-                  << " has trifurcations listed below:\n";
+                  << " with soma " << soma->x << ' ' << soma->y << ' '
+                  << soma->z << " has trifurcations listed below:\n";
         rng::for_each(trifurcations, [](auto mismatch) {
           std::cout << "    " << *mismatch << '\n';
         });
         // throw std::runtime_error("Tree has trifurcations" +
         // std::to_string(index));
       }
-      if (!is_cluster_self_contained(valid_cluster)) {
+      if (!is_cluster_self_contained(fixed_cluster)) {
         std::cout << "Warning a tree in component-" + std::to_string(index)
                   << " contains at least 1 node with an invalid parent\n";
         // throw std::runtime_error("Trifurc cluster not self contained" +
@@ -2876,7 +2870,7 @@ void Recut<image_t>::partition_components(
       }
     }
 
-    auto trees = partition_cluster(valid_cluster);
+    auto trees = partition_cluster(fixed_cluster);
 
 #ifdef LOG
     component_log << "TP, " << timer.elapsed() << '\n';
@@ -2941,10 +2935,11 @@ void Recut<image_t>::partition_components(
     component_log << "Bounding box, " << bbox << '\n';
 #endif
 
-    rng::for_each(trees, [&,this](auto tree) {
+    rng::for_each(trees, [&, this](auto tree) {
       write_swc(tree, this->args->voxel_size, component_dir_fn, bbox,
-                /*bbox_adjust*/ !args->window_grid_paths.empty(), this->args->output_type == "eswc");
-      if (!tree_is_sorted(tree)) {
+                /*bbox_adjust*/ !args->window_grid_paths.empty(),
+                this->args->output_type == "eswc");
+      if (!parent_listed_above(tree)) {
         throw std::runtime_error("Tree is not properly sorted");
       }
     });
@@ -3003,12 +2998,14 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
     // reassign output_name from the default
     if (this->args->output_name == "out.vdb") {
       auto convert_fn_vdb = [this](const std::string &name, auto split_char) {
-        auto dir_path = name | rv::split('/') | rng::to<std::vector<std::string>>();
+        auto dir_path =
+            name | rv::split('/') | rng::to<std::vector<std::string>>();
         auto file_name = name;
         std::string parent = "";
         if (dir_path.size() > 1) { // is a full path
           file_name = dir_path.back();
-          parent = name | rv::split('/') | rv::drop_last(1) | rv::join('/') | rng::to<std::string>();
+          parent = name | rv::split('/') | rv::drop_last(1) | rv::join('/') |
+                   rng::to<std::string>();
         }
         auto stripped = file_name | rv::split(split_char) | rv::drop_last(1) |
                         rv::join | rng::to<std::string>();

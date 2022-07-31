@@ -1066,7 +1066,7 @@ auto append_attributes = [](auto grid) {
 
 auto read_vdb_file(std::string fn, std::string grid_name = "") {
 #ifdef LOG
-  cout << "Reading vdb file: " << fn << " grid: " << grid_name << " ...\n";
+  //cout << "Reading vdb file: " << fn << " grid: " << grid_name << " ...\n";
 #endif
   if (!fs::exists(fn)) {
     cout << "Input image file does not exist or not found, exiting...\n";

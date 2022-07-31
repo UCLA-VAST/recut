@@ -33,6 +33,36 @@ auto create_tree_indices = [](std::vector<MyMarker *> &tree) {
   return std::make_pair(indices, coord_to_swc_id);
 };
 
+// trees only, can not pass cluster
+auto parent_listed_above = [](std::vector<MyMarker *> &tree) {
+  // start a new blank map for coord to a unique swc id
+  auto coord_to_swc_id = get_id_map();
+
+  // iter those marker*
+  rng::for_each(tree, [&coord_to_swc_id](const auto marker) {
+    auto coord = GridCoord(marker->x, marker->y, marker->z);
+    auto parent_coord =
+        marker->type
+            ? GridCoord(marker->parent->x, marker->parent->y, marker->parent->z)
+            : coord;
+
+    // add this current id to the mapping regardless
+    find_or_assign(coord, coord_to_swc_id);
+
+    // roots have parents of themselves so they will always be added
+    // in above
+    auto val = coord_to_swc_id.find(parent_coord);
+    if (val == coord_to_swc_id.end()) {
+      // the parent of this node was not already visited
+      // which violates the SWC standard
+      return false;
+    }
+  });
+
+  // found no nodes with a parent not already listed
+  return true;
+};
+
 auto tree_is_sorted = [](std::vector<MyMarker *> &tree) {
   auto [indices, _] = create_tree_indices(tree);
   return std::is_sorted(indices.begin(), indices.end());
@@ -214,12 +244,14 @@ auto write_swc = [](std::vector<MyMarker *> &tree,
         << "##n,orderinfo,name,comment,z,x,y, "
            "pixmax,intensity,sdev,volsize,mass,,,, color_r,color_g,color_b\n";
     // n
-    // apo_file << std::to_string(find_or_assign(swc_coord, coord_to_swc_id)) << ',';
+    // apo_file << std::to_string(find_or_assign(swc_coord, coord_to_swc_id)) <<
+    // ',';
     apo_file << ',';
     // orderinfo,name,comment
     apo_file << ",,,";
     // z,y,x
-    apo_file << voxel_size[2] * marker->z << ',' << voxel_size[1] * marker->y << ',' << voxel_size[0] * marker->x << ',';
+    apo_file << voxel_size[2] * marker->z << ',' << voxel_size[1] * marker->y
+             << ',' << voxel_size[0] * marker->x << ',';
     // pixmax,intensity,sdev,
     apo_file << "0.,0.,0.,";
     // volsize
