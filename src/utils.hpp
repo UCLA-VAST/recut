@@ -2218,7 +2218,7 @@ auto covered_by_bboxs = [](const auto coord, const auto bboxs) {
   return false;
 };
 
-auto find_or_assign = [](GridCoord swc_coord,
+auto find_or_assign = [](std::array<double, 3> swc_coord,
                          auto &coord_to_swc_id) -> uint32_t {
   auto val = coord_to_swc_id.find(swc_coord);
   if (val == coord_to_swc_id.end()) {
