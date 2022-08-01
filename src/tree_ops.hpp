@@ -1,8 +1,22 @@
+struct ArrayHasher {
+  std::size_t operator()(const std::array<double, 3> &a) const {
+    std::size_t h = 0;
+
+    for (auto e : a) {
+      h ^= std::hash<int>{}(e) + 0x9e3779b9 + (h << 6) + (h >> 2);
+    }
+    return h;
+  }
+};
+
 auto get_id_map = []() {
-  std::unordered_map<GridCoord, uint32_t> coord_to_swc_id;
+  std::unordered_map<std::array<double, 3>, uint32_t, ArrayHasher>
+      coord_to_swc_id;
   // add a dummy value that will never be on to the map so that real indices
   // start at 1
-  coord_to_swc_id[GridCoord(INT_MIN, INT_MIN, INT_MIN)] = 0;
+  coord_to_swc_id[{std::numeric_limits<double>::max(),
+                   std::numeric_limits<double>::max(),
+                   std::numeric_limits<double>::max()}] = 0;
   return coord_to_swc_id;
 };
 
@@ -12,23 +26,24 @@ auto create_tree_indices = [](std::vector<MyMarker *> &tree) {
   auto coord_to_swc_id = get_id_map();
 
   // iter those marker*
-  auto indices = tree | rv::transform([&coord_to_swc_id](const auto marker) {
-                   auto coord = GridCoord(marker->x, marker->y, marker->z);
-                   // roots have parents of themselves
-                   auto parent_coord =
-                       marker->type
-                           ? GridCoord(marker->parent->x, marker->parent->y,
-                                       marker->parent->z)
-                           : coord;
+  auto indices =
+      tree | rv::transform([&coord_to_swc_id](const auto marker) {
+        auto coord = std::array<double, 3>{marker->x, marker->y, marker->z};
+        // roots have parents of themselves
+        auto parent_coord =
+            marker->type
+                ? std::array<double, 3>{marker->parent->x, marker->parent->y,
+                                        marker->parent->z}
+                : coord;
 
-                   // also accumulate the mapping
-                   find_or_assign(parent_coord, coord_to_swc_id);
-                   auto id = find_or_assign(coord, coord_to_swc_id);
+        // also accumulate the mapping
+        find_or_assign(parent_coord, coord_to_swc_id);
+        auto id = find_or_assign(coord, coord_to_swc_id);
 
-                   // build the indices
-                   return id;
-                 }) |
-                 rng::to_vector;
+        // build the indices
+        return id;
+      }) |
+      rng::to_vector;
 
   return std::make_pair(indices, coord_to_swc_id);
 };
@@ -39,12 +54,12 @@ auto parent_listed_above = [](std::vector<MyMarker *> &tree) {
   auto coord_to_swc_id = get_id_map();
 
   // iter those marker*
-  rng::for_each(tree, [&coord_to_swc_id](const auto marker) {
-    auto coord = GridCoord(marker->x, marker->y, marker->z);
-    auto parent_coord =
-        marker->type
-            ? GridCoord(marker->parent->x, marker->parent->y, marker->parent->z)
-            : coord;
+  for (const auto marker : tree) {
+    auto coord = std::array<double, 3>{marker->x, marker->y, marker->z};
+    auto parent_coord = marker->type ? std::array<double, 3>{marker->parent->x,
+                                                             marker->parent->y,
+                                                             marker->parent->z}
+                                     : coord;
 
     // add this current id to the mapping regardless
     find_or_assign(coord, coord_to_swc_id);
@@ -57,7 +72,7 @@ auto parent_listed_above = [](std::vector<MyMarker *> &tree) {
       // which violates the SWC standard
       return false;
     }
-  });
+  }
 
   // found no nodes with a parent not already listed
   return true;
@@ -78,10 +93,10 @@ auto sort_tree_in_place = [](std::vector<MyMarker *> &tree) {
 
 auto create_coord_to_idx = [](const std::vector<MyMarker *> &cluster) {
   // build to coord_to_idx
-  std::unordered_map<GridCoord, VID_t> coord_to_idx;
+  std::unordered_map<std::array<double, 3>, VID_t, ArrayHasher> coord_to_idx;
   rng::for_each(cluster | rv::enumerate, [&](auto imarker) {
     auto [id, marker] = imarker;
-    coord_to_idx[GridCoord(marker->x, marker->y, marker->z)] = id;
+    coord_to_idx[{marker->x, marker->y, marker->z}] = id;
   });
   return coord_to_idx;
 };
@@ -95,11 +110,11 @@ auto adjust_parent_ptrs = [](std::vector<MyMarker *> &cluster) {
   // adjust in place
   rng::for_each(cluster, [&](auto marker) {
     if (marker->type) { // skips roots
-      const auto parent_coord =
-          GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
+      const auto parent_coord = std::array<double, 3>{
+          marker->parent->x, marker->parent->y, marker->parent->z};
       const auto parent_pair = coord_to_idx.find(parent_coord);
       if (parent_pair == coord_to_idx.end()) {
-        std::cout << "Invalid " << *marker << ' ' << parent_coord << '\n';
+        std::cout << "Invalid " << *marker << '\n';
         throw std::runtime_error("adjust_parent_ptrs() can not operate on "
                                  "clusters with out-of-cluster parents");
       } else {
@@ -122,8 +137,8 @@ auto is_cluster_self_contained = [](const std::vector<MyMarker *> &cluster) {
         return marker->parent->type; // ignore if parent is root
       }) |
       rv::filter([&coord_to_idx](auto marker) {
-        const auto parent_coord =
-            GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
+        const auto parent_coord = std::array<double, 3>{
+            marker->parent->x, marker->parent->y, marker->parent->z};
         const auto parent_pair = coord_to_idx.find(parent_coord);
         return parent_pair == coord_to_idx.end();
       });
@@ -149,8 +164,8 @@ auto create_child_list = [](const std::vector<MyMarker *> &cluster) {
                   // get parent
                   if (!marker->parent)
                     throw std::runtime_error("Parent missing");
-                  const auto parent_coord = GridCoord(
-                      marker->parent->x, marker->parent->y, marker->parent->z);
+                  const auto parent_coord = std::array<double, 3>{
+                      marker->parent->x, marker->parent->y, marker->parent->z};
                   const auto parent_pair = coord_to_idx.find(parent_coord);
                   if (parent_pair == coord_to_idx.end())
                     throw std::runtime_error("Parent coord not found");
@@ -271,33 +286,31 @@ auto write_swc = [](std::vector<MyMarker *> &tree,
 
   // iter those marker*
   rng::for_each(tree, [&](const auto marker) {
-    auto coord = GridCoord(marker->x, marker->y, marker->z);
+    auto coord = std::array<double, 3>{marker->x, marker->y, marker->z};
     auto is_root = marker->type == 0;
-    auto parent_offset = zeros();
 
-    if (!is_root) {
-      auto parent_coord =
-          GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
-      parent_offset = coord_sub(parent_coord, coord);
-    }
+    auto parent_coord =
+        is_root ? coord
+                : std::array<double, 3>{marker->parent->x, marker->parent->y,
+                                        marker->parent->z};
+
     // expects an offset to a parent
-    print_swc_line(coord, is_root, marker->radius, parent_offset, bbox,
-                   swc_file, coord_to_swc_id, voxel_size, bbox_adjust, is_eswc);
+    print_swc_line(coord, is_root, marker->radius, parent_coord, bbox, swc_file,
+                   coord_to_swc_id, voxel_size, bbox_adjust, is_eswc);
   });
 };
 
 auto create_child_count = [](std::vector<MyMarker *> &tree) {
   // build a map to save coords with 1 or 2 children
   // coords not in this map are therefore leafs
-  auto child_count = std::unordered_map<GridCoord, uint8_t>();
+  auto child_count =
+      std::unordered_map<std::array<double, 3>, uint8_t, ArrayHasher>();
   rng::for_each(tree, [&child_count](auto marker) {
     if (marker->parent) {
       assertm(marker->parent, "Parent missing");
-      const auto parent_coord =
-          GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
+      const std::array<double, 3> parent_coord = {
+          marker->parent->x, marker->parent->y, marker->parent->z};
       const auto val_count = child_count.find(parent_coord);
-      // cout << parent_coord << " <- "
-      //<< GridCoord(marker->x, marker->y, marker->z) << '\n';
       if (val_count == child_count.end()) // not found
         child_count.insert_or_assign(parent_coord, 1);
       else
@@ -312,18 +325,14 @@ std::vector<MyMarker *>
 prune_short_branches(std::vector<MyMarker *> &tree,
                      int min_branch_length = MIN_BRANCH_LENGTH) {
   auto child_count = create_child_count(tree);
-  // for (auto m : child_count) {
-  // cout << m.first << ' ' << +(m.second) << '\n';
-  //}
 
   auto is_a_branch = [&child_count](auto const marker) {
-    const auto val_count =
-        child_count.find(GridCoord(marker->x, marker->y, marker->z));
+    const auto val_count = child_count.find({marker->x, marker->y, marker->z});
     return val_count != child_count.end() ? (val_count->second > 1) : false;
   };
 
   auto is_a_leaf = [&child_count](auto const marker) {
-    return child_count.find(GridCoord(marker->x, marker->y, marker->z)) ==
+    return child_count.find(std::array{marker->x, marker->y, marker->z}) ==
            child_count.end();
   };
 
@@ -379,8 +388,7 @@ prune_short_branches(std::vector<MyMarker *> &tree,
 
 auto is_illegal_branch = [illegal_count = 3](auto const marker,
                                              auto &child_count) {
-  const auto val_count =
-      child_count.find(GridCoord(marker->x, marker->y, marker->z));
+  const auto val_count = child_count.find({marker->x, marker->y, marker->z});
   return val_count != child_count.end() ? (val_count->second >= illegal_count)
                                         : false;
 };
@@ -401,21 +409,24 @@ std::vector<MyMarker *> fix_trifurcations(std::vector<MyMarker *> &tree) {
         return is_illegal_branch(marker->parent, child_count);
       }) |
       rv::transform([&child_count](auto marker) {
-        const auto old_parent_coord =
-            GridCoord(marker->parent->x, marker->parent->y, marker->parent->z);
+        const std::array<double, 3> old_parent_coord = {
+            marker->parent->x, marker->parent->y, marker->parent->z};
 
         // create a new averaged node between the parent and the parent->parent
         // already protected against parent of parent all non somas have a
         // parent
         assertm(marker->parent->parent, "Only roots can have invalid parents");
-        const auto parent_parent_coord =
-            GridCoord(marker->parent->parent->x, marker->parent->parent->y,
-                      marker->parent->parent->z);
-        auto sum = parent_parent_coord + old_parent_coord;
-        auto new_parent_coord =
-            GridCoord(sum.x() / 2, sum.y() / 2, sum.z() / 2);
+        const std::array<double, 3> parent_parent_coord = {
+            marker->parent->parent->x, marker->parent->parent->y,
+            marker->parent->parent->z};
+        const std::array<double, 3> sum = {
+            parent_parent_coord[0] + old_parent_coord[0],
+            parent_parent_coord[1] + old_parent_coord[1],
+            parent_parent_coord[2] + old_parent_coord[2]};
+        const std::array<double, 3> new_parent_coord = {sum[0] / 2, sum[1] / 2,
+                                                        sum[2] / 2};
         auto new_parent = new MyMarker(
-            new_parent_coord.x(), new_parent_coord.y(), new_parent_coord.z(),
+            new_parent_coord[0], new_parent_coord[1], new_parent_coord[2],
             (marker->parent->parent->radius + marker->parent->radius) / 2);
 
         // connect new node to tree, +1 child for pp
@@ -516,6 +527,10 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
     // rounds the current iteratively averaged location of nYi
     auto center =
         GridCoord(std::round(nYi->x), std::round(nYi->y), std::round(nYi->z));
+    // Warning: this loop mutates the position of nYi
+    // neighbors are probed by their integer coordinate
+    // all markers passed to this function are integer coordinates
+    // all markers passed
     for (const auto coord : sphere_iterator(center, radius_for_pruning)) {
       auto ipair = coord_to_idx.find(coord);
       if (ipair == coord_to_idx.end())

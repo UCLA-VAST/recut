@@ -2218,7 +2218,7 @@ auto covered_by_bboxs = [](const auto coord, const auto bboxs) {
   return false;
 };
 
-auto find_or_assign = [](GridCoord swc_coord,
+auto find_or_assign = [](std::array<double, 3> swc_coord,
                          auto &coord_to_swc_id) -> uint32_t {
   auto val = coord_to_swc_id.find(swc_coord);
   if (val == coord_to_swc_id.end()) {
@@ -2239,16 +2239,16 @@ auto find_or_assign = [](GridCoord swc_coord,
 // http://www.neuronland.org/NLMorphologyConverter/MorphologyFormats/SWC/Spec.html
 // https://github.com/HumanBrainProject/swcPlus/blob/master/SWCplus_specification.html
 auto print_swc_line =
-    [](GridCoord swc_coord, bool is_root, uint8_t radius,
-       const OffsetCoord parent_offset_coord, CoordBBox bbox,
+    [](std::array<double, 3> swc_coord, bool is_root, uint8_t radius,
+       const std::array<double, 3> parent_coord, CoordBBox bbox,
        std::ofstream &out,
-       std::unordered_map<GridCoord, uint32_t> &coord_to_swc_id,
+       auto &coord_to_swc_id,
        std::array<float, 3> voxel_size, bool bbox_adjust = true,
        bool is_eswc = false) {
       std::ostringstream line;
 
       if (bbox_adjust) { // implies output window crops is set
-        swc_coord = swc_coord - bbox.min();
+        swc_coord = {swc_coord[0] - bbox.min().x(), swc_coord[1] - bbox.min().y(), swc_coord[2] - bbox.min().z()};
       }
 
       // CoordBBox uses extents inclusively, but we want exclusive bbox
@@ -2281,7 +2281,6 @@ auto print_swc_line =
         // line << (current_id == 1) ? "-1" : std::to_string(current_id);
         line << std::to_string(current_id);
       } else {
-        auto parent_coord = coord_add(swc_coord, parent_offset_coord);
         line << find_or_assign(parent_coord, coord_to_swc_id);
       }
 

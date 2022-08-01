@@ -129,7 +129,7 @@ public:
 
   void operator()();
   void start_run_dir_and_logs();
-  void print_to_swc(std::string swc_path);
+  //void print_to_swc(std::string swc_path);
   void adjust_parent();
   void prune_radii();
   void prune_branch();
@@ -2657,33 +2657,33 @@ template <class image_t> void Recut<image_t>::adjust_parent() {
   visit(this->topology_grid, all_valid, adjust_parent);
 }
 
-template <class image_t>
-void Recut<image_t>::print_to_swc(std::string swc_path) {
+//template <class image_t>
+//void Recut<image_t>::print_to_swc(std::string swc_path) {
 
-  auto coord_to_swc_id = get_id_map();
+  //auto coord_to_swc_id = get_id_map();
 
-  auto to_swc = [this, &coord_to_swc_id](
-                    const auto &flags_handle, const auto &parents_handle,
-                    const auto &radius_handle, const auto &ind, auto leaf) {
-    auto coord = ind.getCoord();
-    print_swc_line(coord, this->args->voxel_size, is_root(flags_handle, ind),
-                   radius_handle.get(*ind), parents_handle.get(*ind),
-                   this->image_bbox, this->out,
-                   /*map*/ coord_to_swc_id, /*adjust*/ true);
-  };
+  //auto to_swc = [this, &coord_to_swc_id](
+                    //const auto &flags_handle, const auto &parents_handle,
+                    //const auto &radius_handle, const auto &ind, auto leaf) {
+    //auto coord = ind.getCoord();
+    //print_swc_line(coord, this->args->voxel_size, is_root(flags_handle, ind),
+                   //radius_handle.get(*ind), parents_handle.get(*ind),
+                   //this->image_bbox, this->out,
+                   //[>map*/ coord_to_swc_id, /*adjust<] true);
+  //};
 
-  this->out.open(swc_path);
-  this->out << "#id type_id x y z radius parent_id\n";
+  //this->out.open(swc_path);
+  //this->out << "#id type_id x y z radius parent_id\n";
 
-  visit(this->topology_grid, keep_root, to_swc);
-  visit(this->topology_grid, not_root, to_swc);
+  //visit(this->topology_grid, keep_root, to_swc);
+  //visit(this->topology_grid, not_root, to_swc);
 
-  if (this->out.is_open())
-    this->out.close();
-#ifdef LOG
-  cout << "Wrote output to " << swc_path << '\n';
-#endif
-}
+  //if (this->out.is_open())
+    //this->out.close();
+//#ifdef LOG
+  //cout << "Wrote output to " << swc_path << '\n';
+//#endif
+//}
 
 template <class image_t> void Recut<image_t>::prune_branch() {
   auto filter_branch = [](const auto &flags_handle, const auto &parents_handle,
