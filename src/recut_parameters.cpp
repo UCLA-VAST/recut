@@ -23,7 +23,7 @@ void RecutCommandLineArgs::PrintUsage() {
                "'uint8', 'mask' or 'float'\n";
   std::cout << "--output-type        output type img: 'ims', 'tiff' | "
                "VDB: 'point', "
-               "'uint8', 'mask' or 'float'\n";
+               "'uint8', 'mask' or 'float' | 'swc', 'eswc', 'labels'\n";
   // std::cout << "--max                set max image voxel raw value allowed, "
   //"computed automatically when --bg_thresh or --fg-percent are "
   //"specified\n";
@@ -37,7 +37,7 @@ void RecutCommandLineArgs::PrintUsage() {
       //<< "--image-offsets      [-io] offsets of subvolume, in x y z order "
          //"default 0 0 0\n";
   std::cout
-      << "--voxel-size               um lengths of voxel in x y z order "
+      << "--voxel-size         um lengths of voxel in x y z order "
          "default 1.0 1.0 1.0 determines prune radius\n";
   std::cout
       << "--prune-radius       larger values decrease node sampling density "
@@ -163,11 +163,11 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--output-type") == 0) {
         auto arg = std::string(argv[i + 1]);
         if (arg == "float" || arg == "point" || arg == "uint8" ||
-            arg == "mask" || arg == "ims" || arg == "tiff" || arg == "eswc" || arg == "swc") {
+            arg == "mask" || arg == "ims" || arg == "tiff" || arg == "eswc" || arg == "swc" || arg == "labels") {
           args.output_type = (argv[i + 1]);
         } else {
           cerr << "--output-type option must be one of "
-                  "[float,point,uint8,mask,ims,tiff,swc,eswc]\n";
+                  "[float,point,uint8,mask,ims,tiff,swc,eswc,labels]\n";
           exit(1);
         }
         ++i;

@@ -2910,6 +2910,10 @@ void Recut<image_t>::partition_components(
                                            window_bbox, channel);
                     });
 
+      if (args->output-type == "labels") {
+        // create a binarized soma sphere with the same dimensions as the other output windows
+      }
+
       // skip components that are 0s in the original image
       auto mm = vto::minMax(valued_window_grid->tree());
       if (args->run_app2 && (mm.max() > 0)) {
