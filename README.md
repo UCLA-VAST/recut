@@ -47,9 +47,9 @@ recut ch0 --input-type tiff --output-type point --fg-percent .05
 ```
 This creates a .vdb file in the ch0 folder. The name is tagged with information about the conversion process for example the argument values used. This is done to preserve info about the source image and to lower the likelihood of overwriting a costly previous conversion with a generic name. Explicit names are helpful for humans but if you want to pass a simpler name you can do so.
 
-Convert the folder again, but this time only take z-planes of 30 through 45 and name it `subset.vdb`
+Convert the folder again, but this time only take z-planes of 0 through 15 and name it `subset.vdb`
 ```
-recut ch0 -o subset.vdb --input-type tiff --output-type point --image-offsets 0 0 30 --image-lengths -1 -1 16 --fg-percent .05
+recut ch0 -o subset.vdb --input-type tiff --output-type point --image-lengths -1 -1 16 --fg-percent .05
 ```
 
 .vdbs are a binary format, you can only view information or visualize them with software that explicitly supports them. However for quick info, Recut installs some of the VDB libraries command line tools.
@@ -58,7 +58,7 @@ List the exhausitive info and metatdata about the VDB grid:
 ```
 vdb_print -l -m subset.vdb
 ```
-You'll notice that vdb grid's metadata has been stamped with information about the arguments used during conversion to help distinguish files with different characteristics. If you have no other way to match the identity of VDB with an original image, refer to the original bounding extents which can often uniquely identify an image. The original bounding extents of the image used are preserved as the coordinate frame of all points and voxels regardless of any offset or length arguments passed. Note that the command line tools `vdb_view`and `vdb_print` as well as Houdini will not work with type uint8 grids.
+You'll notice that vdb grid's metadata has been stamped with information about the arguments used during conversion to help distinguish files with different characteristics. If you have no other way to match the identity of VDB with an original image, refer to the original bounding extents which can often uniquely identify an image. The original bounding extents of the image used are preserved as the coordinate frame of all points and voxels regardless of any length arguments passed. Note that the command line tools `vdb_view`and `vdb_print` as well as Houdini will not work with type uint8 grids.
 
 #### Image Inference Conversions
 The highest quality *reconstructions* currently involve running the MCP3D pipeline's neurite and soma segmentation and connected component stage followed by recut conversion to a point grid followed by recut's reconstruction of that point grid. MCP3D's connected component stage will output the soma locations `marker_files` for use in reconstruction as shown below. MCP3D's segmentation will output a directory of tiff files of the binarized segmented image, with all background set to 0, therefore converting like we did before:
