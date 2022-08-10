@@ -36,8 +36,8 @@ def gather_markers(path):
 
 
 
-label = gather_markers("/Users/mingyan/Desktop/UCLA/Recut/recut-repo-new/marker_files")
-inference = gather_markers("/Users/mingyan/Desktop/UCLA/Recut/recut-repo-new/marker_files")
+# label = gather_markers("/Users/mingyan/Desktop/UCLA/Recut/recut-repo-new/marker_files")
+# inference = gather_markers("/Users/mingyan/Desktop/UCLA/Recut/recut-repo-new/marker_files")
 
 ### define a function to calculate euclidean distance between 1 inferenced point
 ### and all known ground truth points
