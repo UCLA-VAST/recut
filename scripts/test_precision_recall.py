@@ -33,6 +33,11 @@ def gather_markers(path):
 # markers = gather_markers("/Users/mingyan/Desktop/UCLA/Recut/recut-repo-new/marker_files")
 # print(markers)
 
+
+# define threshold for deciding close or not
+# set as 1/4 of the chosen radius by default
+DISTANCE_THRESH = 0.25 * RADIUS
+
 if __name__ == "__main__":
     # args
     parser = argparse.ArgumentParser()
