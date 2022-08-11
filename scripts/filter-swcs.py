@@ -3,20 +3,18 @@ import sys
 import shutil
 import pathlib
 
-def gather_markers(path = '/home/kdmarrett/data/TME07/TME07-1_30x_Str_01A/marker_files'):
-    # marker_entries = (f for f in os.scandir('/home/kdmarrett/data/TME07/TME07-1_30x_Str_01A/marker_files'))
-    # for marker in marker_entries:
-        # print(marker)
-    markers = {}
+# takes a directory path returns list of coord+radius
+def gather_markers(path):
+    markers = []
+    adjust = 0
     for root, dirs, files in os.walk(path):
         for file in files:
             name = os.path.join(root, file)
             if 'marker_' in file:
-                x, y, z, radius = file.split('_')[1:]
-                coord = (int(x) - 1, int(y) - 1, int(z) - 1)
-                markers[coord] = name
-                # if coord in proofreads:
-                    # print(coord)
+                x, y, z, volume = file.split('_')[1:]
+                radius = volume ....
+                coord = (int(x) - adjust, int(y) - adjust, int(z) - adjust)
+                markers.append(coord[[0], coord[1], coord[2], radius)
     return markers
 
 def gather_proofreads(proofread_dir):
