@@ -1,8 +1,9 @@
 from pathlib import Path
 from pandas import read_csv
+import sys
 
 # annotation file that contains soma locations only
-annotations = Path(r"Y:\3D_stitched_LS\20210729_SW210318_07_R_HPC_6x_1000z\Ex_642_Em_680_TeraFly_gaussian\somata_stamp_2022_07_18_13_47.ano.apo")
+annotations = Path(sys.argv[1])
 recut = annotations.parent / 'soma_recut'
 recut.mkdir(exist_ok=True)
 annotations_df = read_csv(annotations)
