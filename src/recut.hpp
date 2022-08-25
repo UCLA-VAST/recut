@@ -2512,7 +2512,7 @@ template <class image_t> void Recut<image_t>::initialize() {
         this->input_is_vdb = true;
       } else {
         this->input_is_vdb = false;
-        if (path_extension == "ims") {
+        if (path_extension == ".ims") {
           this->args->input_type = "ims";
         } else {
           throw std::runtime_error(
@@ -2909,6 +2909,10 @@ void Recut<image_t>::partition_components(
                                            component_log, index, false, true,
                                            window_bbox, channel);
                     });
+
+      if (args->output_type == "labels") {
+        // create a binarized soma sphere with the same dimensions as the other output windows
+      }
 
       // skip components that are 0s in the original image
       auto mm = vto::minMax(valued_window_grid->tree());

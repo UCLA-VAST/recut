@@ -23,7 +23,7 @@ git pull origin master
 nix-env -f . -i
 ```
 
-## Usage
+## Usage and Features
 Once recut is installed globally you can see the example usage by running on the command line:
 ```
 recut
@@ -37,7 +37,7 @@ Recut has several principle usages:
 
 The first argument passed to recut is the path to the input which can either be a directory for .tiff files or a distinct file in the case of .ims or .vdb files. The ordering of all other arguments is arbitrary. The default behavior is to convert either an .ims file or .tiff directory to a VDB file and exit. To do an end-to-end reconstruction pass an .ims, .tiff, or point VDB as input and specify a `--seeds` directory. Arguments have assumed default values for the most common expected behavior.
 
-## Warning
+## Known Issues
 Where possible Recut attempts to use the maximum threads available to your system by default. This can be a problem when converting large images or when using the `--output-windows` with multiple large grids since each thread is grabbing large chunks of images and operating on them in DRAM. Meanwhile reconstruction alone consumes very little memory since it operates on images that have already been compressed to VDB grids. In general you should use the system with the maximum amount of DRAM that you can. When you are still limited on DRAM you should lower the thread count used by recut by specifying the threads like `--parallel 2`. When recut consumes too much memory you will see erros like `Segmentation fault` or `SIGKILL`. Lower the thread count until the process can complete, you can monitor the dynamic usage of your DRAM during execution by running the command `htop` in a separate terminal. This can be helpful to guage what parallel factor you want to use.
 
 ### Conversion
@@ -47,9 +47,9 @@ recut ch0 --input-type tiff --output-type point --fg-percent .05
 ```
 This creates a .vdb file in the ch0 folder. The name is tagged with information about the conversion process for example the argument values used. This is done to preserve info about the source image and to lower the likelihood of overwriting a costly previous conversion with a generic name. Explicit names are helpful for humans but if you want to pass a simpler name you can do so.
 
-Convert the folder again, but this time only take z-planes of 30 through 45 and name it `subset.vdb`
+Convert the folder again, but this time only take z-planes of 0 through 15 and name it `subset.vdb`
 ```
-recut ch0 -o subset.vdb --input-type tiff --output-type point --image-offsets 0 0 30 --image-lengths -1 -1 16 --fg-percent .05
+recut ch0 -o subset.vdb --input-type tiff --output-type point --image-lengths -1 -1 16 --fg-percent .05
 ```
 
 .vdbs are a binary format, you can only view information or visualize them with software that explicitly supports them. However for quick info, Recut installs some of the VDB libraries command line tools.
@@ -58,7 +58,7 @@ List the exhausitive info and metatdata about the VDB grid:
 ```
 vdb_print -l -m subset.vdb
 ```
-You'll notice that vdb grid's metadata has been stamped with information about the arguments used during conversion to help distinguish files with different characteristics. If you have no other way to match the identity of VDB with an original image, refer to the original bounding extents which can often uniquely identify an image. The original bounding extents of the image used are preserved as the coordinate frame of all points and voxels regardless of any offset or length arguments passed. Note that the command line tools `vdb_view`and `vdb_print` as well as Houdini will not work with type uint8 grids.
+You'll notice that vdb grid's metadata has been stamped with information about the arguments used during conversion to help distinguish files with different characteristics. If you have no other way to match the identity of VDB with an original image, refer to the original bounding extents which can often uniquely identify an image. The original bounding extents of the image used are preserved as the coordinate frame of all points and voxels regardless of any length arguments passed. Note that the command line tools `vdb_view`and `vdb_print` as well as Houdini will not work with type uint8 grids.
 
 #### Image Inference Conversions
 The highest quality *reconstructions* currently involve running the MCP3D pipeline's neurite and soma segmentation and connected component stage followed by recut conversion to a point grid followed by recut's reconstruction of that point grid. MCP3D's connected component stage will output the soma locations `marker_files` for use in reconstruction as shown below. MCP3D's segmentation will output a directory of tiff files of the binarized segmented image, with all background set to 0, therefore converting like we did before:
@@ -116,6 +116,13 @@ Even in inferenced neural tissue of internal data, only about 20% of foreground 
 
 #### Outputs
 Within the directory `recut` is invoked from, a new folder named `run-1` will be created which contains a set of folders for each connected component connected to at least 1 seed point. The folders prepended with `a-multi...` contain multiple somas (seed points), therefore these particular folders contain multiple SWC files (trees) within them. If you ran the reconstruction passing different images to `--output-windows` these folders will also contain compressed tiff volumes for the bounding box of all trees within the component for proofreading or training. You can do further analysis or run quality control on these outputs if you install [StdSwc](http://neuromorpho.org/StdSwc1.21.jsp) and run `[recut_root_dir]/scripts/batch-std-swc.sh run-1` for the run directory generated. For each tree in the run directory a new corresponding text file will be placed alongside it logging any warnings for the proofreader. These logs are prepended with `stdlog-...`.
+
+#### Training Labels
+The output windows generated by Recut can also be used to (re)train new neural network models using the script in `recut/pipeline/python/train_model.py`. By default this script expects 16-bit 2D series grayscale window crops with corresponding 8-bit RGB TIFFs to assign a class label. For our usages so far a red value of 255 indicates a voxel of a soma, and a green value of 255 indicates a voxel of a neurite in the corresponding image. Both sets of image and label files are used for training but the creation of these windows is simplified by specifying `--output-type labels` like so:
+
+`recut point.vdb --seeds marker_files --output-windows uint8.vdb --output-type labels --voxel-size 1 1 1`
+
+Specifying `--output-type labels` saves the window as a 2D series instead of the default compressed 3D (multi-page) tiff. This is so 2D labels can be created/modified by hand and compared to their RGB labels.
 
 ### Combine
 You call recut to process the inputs using an action, for example `--combine`. 
