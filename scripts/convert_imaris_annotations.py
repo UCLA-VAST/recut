@@ -12,7 +12,7 @@ from pathlib import Path
 from pandas import read_csv
 import pandas
 import sys
-
+import numpy as np
 
 #####################
 # file paths
@@ -20,8 +20,11 @@ annotations = Path(sys.argv[1])
 recut = annotations.parent / 'soma_recut'
 recut.mkdir(exist_ok=True)
 
-# specs
+# specs (radius)
 SOMA_SIZE = 12
+
+# volume of the sphere
+SOMA_VOLUME = int(4 * np.pi * (SOMA_SIZE**3) / 3)
 
 # variable name for x,y,z coordinates
 X_name = 'Pt Position X'
@@ -61,6 +64,9 @@ annotations_df_filtered = annotations_df[annotations_df['z'] >= 0]
 
 # write individual marker files
 for row in annotations_df_filtered.itertuples():
-    with open(recut/f"marker_{row.x}_{row.y}_{row.z}", 'w') as soma_file:
-        soma_file.write("# x,y,z\n")
-        soma_file.write(f"{row.x},{row.y},{row.z}")
+    with open(recut/f"marker_{row.x}_{row.y}_{row.z}_{SOMA_VOLUME}", 'w') as soma_file:
+        soma_file.write("# x,y,z,radius\n")
+        soma_file.write(f"{row.x},{row.y},{row.z},{SOMA_SIZE}")
+        
+        
+
