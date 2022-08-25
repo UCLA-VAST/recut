@@ -2910,7 +2910,7 @@ void Recut<image_t>::partition_components(
                                            window_bbox, channel);
                     });
 
-      if (args->output-type == "labels") {
+      if (args->output_type == "labels") {
         // create a binarized soma sphere with the same dimensions as the other output windows
       }
 
