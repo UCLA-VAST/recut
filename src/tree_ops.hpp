@@ -231,22 +231,25 @@ auto write_swc = [](std::vector<MyMarker *> &tree,
 
   // start swc and add header metadata
   auto suffix = is_eswc ? ".ano.eswc" : ".swc";
-  auto swc_base = component_dir_fn + "/tree-with-soma-xyz-" +
-                  std::to_string(static_cast<int>(root->x)) + '-' +
-                  std::to_string(static_cast<int>(root->y)) + '-' +
-                  std::to_string(static_cast<int>(root->z));
+  auto file_name_base = "tree-with-soma-xyz-" +
+                        std::to_string(static_cast<int>(root->x)) + '-' +
+                        std::to_string(static_cast<int>(root->y)) + '-' +
+                        std::to_string(static_cast<int>(root->z));
+  auto swc_base = component_dir_fn + "/" + file_name_base;
+
   auto swc_name = swc_base + suffix;
 
   auto coord_to_swc_id = get_id_map();
 
   // write apo file
   if (is_eswc) {
-    auto apo_file_name = swc_base + ".ano.apo";
+    auto apo_file_name_base = file_name_base + ".ano.apo";
+    auto apo_file_name = component_dir_fn + "/" + apo_file_name_base;
 
     std::ofstream ano_file;
     ano_file.open(swc_base + ".ano");
-    ano_file << "APOFILE=" << apo_file_name << "\n";
-    ano_file << "SWCFILE=" << swc_name << '\n';
+    ano_file << "APOFILE=" << apo_file_name_base << "\n";
+    ano_file << "SWCFILE=" << file_name_base + suffix << "\n";
     ano_file.close();
 
     auto marker = tree[0];
