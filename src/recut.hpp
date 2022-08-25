@@ -2512,7 +2512,7 @@ template <class image_t> void Recut<image_t>::initialize() {
         this->input_is_vdb = true;
       } else {
         this->input_is_vdb = false;
-        if (path_extension == "ims") {
+        if (path_extension == ".ims") {
           this->args->input_type = "ims";
         } else {
           throw std::runtime_error(
