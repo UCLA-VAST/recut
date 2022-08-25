@@ -3249,7 +3249,8 @@ auto load_imaris_tile = [](std::string file_name, const CoordBBox &bbox,
   // check inputs
   auto imaris_bbox = imaris_image_bbox(file_name, resolution, channel);
   // FIXME get voxel type
-  auto dense = std::make_unique<vto::Dense<uint16_t, vto::LayoutXYZ>>(bbox);
+  // auto dense = std::make_unique<vto::Dense<uint16_t, vto::LayoutXYZ>>(bbox);
+  auto dense = std::make_unique<vto::Dense<uint8_t, vto::LayoutXYZ>>(bbox);
 
   if (!imaris_bbox.isInside(bbox)) {
     std::ostringstream os;
@@ -3277,7 +3278,8 @@ auto load_imaris_tile = [](std::string file_name, const CoordBBox &bbox,
                                  cname);
             }
             hid_t mem_dataspace_id = memory_dataspace(bbox);
-            hid_t mem_type_id = H5T_NATIVE_USHORT;
+            // hid_t mem_type_id = H5T_NATIVE_USHORT;
+            hid_t mem_type_id = H5T_NATIVE_UCHAR;
             hid_t file_dataspace_id = file_dataspace(data_id, bbox);
             herr_t success =
                 H5Dread(data_id, mem_type_id, mem_dataspace_id,

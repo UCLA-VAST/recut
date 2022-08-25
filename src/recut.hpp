@@ -2049,7 +2049,6 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
     const auto tile_bbox = CoordBBox(tile_offsets, tile_max);
 
     TileV dense_tile;
-    auto bits_per_sample = get_tif_bit_width(args->input_path);
 
     if (args->input_type == "ims") {
 #ifdef USE_HDF5
@@ -2061,6 +2060,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
     }
 
     if (args->input_type == "tiff") {
+      auto bits_per_sample = get_tif_bit_width(args->input_path);
       if (bits_per_sample == 8)
         dense_tile = load_tile<uint8_t>(tile_bbox, args->input_path);
       else if (bits_per_sample == 16)
@@ -2492,15 +2492,6 @@ void Recut<image_t>::update_hierarchical_dims(const GridCoord &tile_lengths) {
 
 template <class image_t> void Recut<image_t>::initialize() {
 
-  if (args->convert_only && args->input_type == "ims") {
-    args->user_thread_count = 1;
-  }
-
-#ifdef LOG
-  cout << "Thread count " << args->user_thread_count << '\n';
-  cout << "User specified image " << args->input_path << '\n';
-#endif
-
   // input type
   {
     if (fs::is_directory(args->input_path)) {
@@ -2521,6 +2512,15 @@ template <class image_t> void Recut<image_t>::initialize() {
       }
     }
   }
+
+  if (args->convert_only && args->input_type == "ims") {
+    args->user_thread_count = 1;
+  }
+
+#ifdef LOG
+  cout << "Thread count " << args->user_thread_count << '\n';
+  cout << "User specified image " << args->input_path << '\n';
+#endif
 
   // actual possible lengths
   auto input_image_lengths = get_input_image_lengths(args);
