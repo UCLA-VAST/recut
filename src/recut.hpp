@@ -3018,7 +3018,7 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
         std::ostringstream out;
         out.precision(3);
         out << std::fixed << this->args->foreground_percent;
-        stripped += "-fgpct" + out.str();
+        stripped += "-fgpct-" + out.str();
         stripped += "-zoff" + std::to_string(args->image_offsets.z());
         stripped += ".vdb";
         stripped = dir_path.size() > 1 ? parent + "/" + stripped : stripped;
