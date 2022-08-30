@@ -268,8 +268,9 @@ auto write_swc = [](std::vector<MyMarker *> &tree,
     // orderinfo,name,comment
     apo_file << ",,,";
     // z,y,x
-    apo_file << voxel_size[2] * marker->z << ',' << voxel_size[1] * marker->y
-             << ',' << voxel_size[0] * marker->x << ',';
+    apo_file << voxel_size[2] * marker->z << ','
+             << voxel_size[0] * marker->x << ','
+             << voxel_size[1] * marker->y << ',';
     // pixmax,intensity,sdev,
     apo_file << "0.,0.,0.,";
     // volsize
