@@ -185,6 +185,8 @@ class ContextPairedReader(ImageReaderBase):
                 if image_name is not None:
                     image_path = os.path.join(self._dataset_dirs[dataset_name], 'image', image_name)
                     image = cv2.imread(image_path, cv2.IMREAD_ANYDEPTH + cv2.IMREAD_GRAYSCALE)
+                    ### modified, convert all non-zero pixels to 255
+                    image[image != 0] = 255
                     self._shard_images[dataset_name][image_name] = self.convert_input_dtype(image)
 
     def n_shard_patches(self):

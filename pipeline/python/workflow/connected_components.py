@@ -322,7 +322,7 @@ def find_somas(pipeline_arguments, pipeline_output_layout):
                          .format(pipeline_output_layout.neural_net_segmentation_dir))
     somas = Somas(pipeline_arguments, pipeline_output_layout)
     somas.find_component_centers()
-    for mass in [1, 10**4, 2 * 10**4]:
+    for mass in [1, 314]:
         somas.write_components(mass_threshold=mass)
 
 
