@@ -129,7 +129,7 @@ public:
 
   void operator()();
   void start_run_dir_and_logs();
-  //void print_to_swc(std::string swc_path);
+  // void print_to_swc(std::string swc_path);
   void adjust_parent();
   void prune_radii();
   void prune_branch();
@@ -2657,31 +2657,31 @@ template <class image_t> void Recut<image_t>::adjust_parent() {
   visit(this->topology_grid, all_valid, adjust_parent);
 }
 
-//template <class image_t>
-//void Recut<image_t>::print_to_swc(std::string swc_path) {
+// template <class image_t>
+// void Recut<image_t>::print_to_swc(std::string swc_path) {
 
-  //auto coord_to_swc_id = get_id_map();
+// auto coord_to_swc_id = get_id_map();
 
-  //auto to_swc = [this, &coord_to_swc_id](
-                    //const auto &flags_handle, const auto &parents_handle,
-                    //const auto &radius_handle, const auto &ind, auto leaf) {
-    //auto coord = ind.getCoord();
-    //print_swc_line(coord, this->args->voxel_size, is_root(flags_handle, ind),
-                   //radius_handle.get(*ind), parents_handle.get(*ind),
-                   //this->image_bbox, this->out,
-                   //[>map*/ coord_to_swc_id, /*adjust<] true);
-  //};
+// auto to_swc = [this, &coord_to_swc_id](
+// const auto &flags_handle, const auto &parents_handle,
+// const auto &radius_handle, const auto &ind, auto leaf) {
+// auto coord = ind.getCoord();
+// print_swc_line(coord, this->args->voxel_size, is_root(flags_handle, ind),
+// radius_handle.get(*ind), parents_handle.get(*ind),
+// this->image_bbox, this->out,
+//[>map*/ coord_to_swc_id, /*adjust<] true);
+//};
 
-  //this->out.open(swc_path);
-  //this->out << "#id type_id x y z radius parent_id\n";
+// this->out.open(swc_path);
+// this->out << "#id type_id x y z radius parent_id\n";
 
-  //visit(this->topology_grid, keep_root, to_swc);
-  //visit(this->topology_grid, not_root, to_swc);
+// visit(this->topology_grid, keep_root, to_swc);
+// visit(this->topology_grid, not_root, to_swc);
 
-  //if (this->out.is_open())
-    //this->out.close();
+// if (this->out.is_open())
+// this->out.close();
 //#ifdef LOG
-  //cout << "Wrote output to " << swc_path << '\n';
+// cout << "Wrote output to " << swc_path << '\n';
 //#endif
 //}
 
@@ -2883,7 +2883,7 @@ void Recut<image_t>::partition_components(
       ImgGrid::Ptr image_grid =
           openvdb::gridPtrCast<ImgGrid>(window_grids.front());
       auto [valued_window_grid, window_bbox] = create_window_grid(
-          image_grid, component, component_log, args->expand_window_pixels);
+          image_grid, component, component_log, args->voxel_size, args->expand_window_um);
 
       // build windowed mask grid
       auto mask_grid =
@@ -2891,7 +2891,8 @@ void Recut<image_t>::partition_components(
       // add_mask_to_image_grid(image_grid, mask_grid);
 
       auto window_fn = write_output_windows<ImgGrid::Ptr>(
-          image_grid, component_dir_fn, component_log, index, false, true,
+          image_grid, component_dir_fn, component_log, index,
+          /*output_vdb*/ false, /*paged*/ args->output_type != "labels",
           window_bbox, 0);
 
       // if outputting crops/windows, offset SWCs coords to match window
@@ -2905,13 +2906,16 @@ void Recut<image_t>::partition_components(
                       auto mask_grid =
                           openvdb::gridPtrCast<openvdb::MaskGrid>(window_grid);
                       // write to disk
-                      write_output_windows(mask_grid, component_dir_fn,
-                                           component_log, index, false, true,
-                                           window_bbox, channel);
+                      write_output_windows(
+                          mask_grid, component_dir_fn, component_log, index,
+                          /*output_vdb*/ false,
+                          /*paged*/ args->output_type != "labels", window_bbox,
+                          channel);
                     });
 
       if (args->output_type == "labels") {
-        // create a binarized soma sphere with the same dimensions as the other output windows
+        // create a binarized soma sphere with the same dimensions as the other
+        // output windows
       }
 
       // skip components that are 0s in the original image

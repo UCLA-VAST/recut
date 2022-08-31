@@ -2960,22 +2960,23 @@ void add_mask_to_image_grid(ImgGrid::Ptr image_grid, GridT mask_grid) {
 template <typename GridT>
 std::pair<ImgGrid::Ptr, CoordBBox>
 create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
-                   std::ofstream &component_log,
-                   uint16_t expand_window_pixels = 0) {
+                   std::ofstream &component_log, std::array<float, 3> voxel_size,
+                   float expand_window_um = 0) {
 
   assertm(valued_grid, "Must have input grid set to run output_windows_");
   // if an expanded crop is requested, the actual image values outside of the
   // component bounding volume are needed therefore clip the original image
   // to a bounding volume
-  auto bbox = component_grid->evalActiveVoxelBoundingBox().expandBy(
-      expand_window_pixels);
-  auto aniso_expand_factor = expand_window_pixels / ANISOTROPIC_FACTOR;
-  CoordBBox anisotropic_expanded_bbox(bbox.min().x() - expand_window_pixels,
-                                      bbox.min().y() - expand_window_pixels,
-                                      bbox.min().z() - aniso_expand_factor,
-                                      bbox.max().x() + expand_window_pixels,
-                                      bbox.max().y() + expand_window_pixels,
-                                      bbox.max().z() + aniso_expand_factor);
+  auto bbox = component_grid->evalActiveVoxelBoundingBox();
+  auto anisotropic_expanded_bbox = bbox;
+
+  //std::array<int, 3> dim_voxel_expansions = {expand_window_um * voxel_size[0], expand_window_um * voxel_size[1], expand_window_um * voxel_size[2]};
+  //CoordBBox anisotropic_expanded_bbox(bbox.min().x() - dim_voxel_expansions[0],
+                                      //bbox.min().y() - dim_voxel_expansions[1],
+                                      //bbox.min().z() - dim_voxel_expansions[2],
+                                      //bbox.max().x() + dim_voxel_expansions[0],
+                                      //bbox.max().y() + dim_voxel_expansions[1],
+                                      //bbox.max().z() + dim_voxel_expansions[2]);
 
   vb::BBoxd clipBox(anisotropic_expanded_bbox.min().asVec3d(),
                     anisotropic_expanded_bbox.max().asVec3d());
