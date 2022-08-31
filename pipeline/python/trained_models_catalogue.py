@@ -11,6 +11,7 @@ dev_models_catalogue = {
 deploy_models_catalogue = {
     ('morph', 'soma'): 'ContextualUNetV1_200129_1051',
     ('morph', 'neurite+soma'): 'ContextualUNetV2_201204_1402',
+    ('morph', 'multi-res_soma'): 'ContextualUNetV2_220817_1606',
     ('rabies', 'soma'): None,
     ('rabies', 'neurite+soma'): None
 }
@@ -22,5 +23,6 @@ default_options = {
 
 model_classes_intensity = {
     'soma': { 'soma': 65535 },
-    'neurite+soma': { 'neurite': '65535', 'soma': 32767 }
+    'neurite+soma': { 'neurite': '65535', 'soma': 32767 },
+    'multi-res_soma': {'soma': 65535}
 }

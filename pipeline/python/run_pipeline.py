@@ -24,8 +24,8 @@ if __name__ == '__main__':
     if len(sys.argv) == 1:
         # arguments to the pipeline
         arguments = [
-            '--commands', 'neural_network', 'connected_components', 'app2', 'gcut',
-            '--input_dir', '/home/kdmarrett/.ssd/shared-images/hollow-sphere-256',
+            '--commands', 'neural_network', 'connected_components',# 'app2', 'gcut',
+            '--input_dir', '/mnt/d/CC_Work/Pipeline_test',
             '--channel', '0',
             '--image_prefix', 'imaris_auto',
             '--offset', '0', '0', '0',
@@ -34,7 +34,7 @@ if __name__ == '__main__':
             '--gb_mem_limit', '1.5',
             '--app2_auto_soma', 'False',
             '--label_technique', 'morph',
-            '--model_classes', 'neurite+soma',
+            '--model_classes', 'multi-res_soma',
             '--mask', 'none',
             ##################################
             #    do not change things below  #
