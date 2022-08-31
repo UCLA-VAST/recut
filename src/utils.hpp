@@ -2962,7 +2962,7 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
                    std::ofstream &component_log,
                    std::array<float, 3> voxel_size,
                    std::vector<std::pair<GridCoord, uint8_t>> component_roots,
-                   int min_window_um,
+                   int min_window_um, bool labels,
                    float expand_window_um = 0) {
 
   assertm(valued_grid, "Must have input grid set to run output_windows_");
@@ -2990,21 +2990,19 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
     });
   });
 
-  auto anisotropic_expanded_bbox = bbox;
-  // std::array<int, 3> dim_voxel_expansions = {expand_window_um *
-  // voxel_size[0], expand_window_um * voxel_size[1], expand_window_um *
-  // voxel_size[2]}; CoordBBox anisotropic_expanded_bbox(bbox.min().x() -
-  // dim_voxel_expansions[0], bbox.min().y() - dim_voxel_expansions[1],
-  // bbox.min().z() - dim_voxel_expansions[2],
-  // bbox.max().x() + dim_voxel_expansions[0],
-  // bbox.max().y() + dim_voxel_expansions[1],
-  // bbox.max().z() + dim_voxel_expansions[2]);
+  if (labels) {
+    // choose the first root if there are multiple
+    auto [root_coord, radius] = component_roots[0];
+    
+    bbox.min()[2] = root_coord.z() - radius;
+    bbox.max()[2] = root_coord.z() + radius;
+  }
 
-  vb::BBoxd clipBox(anisotropic_expanded_bbox.min().asVec3d(),
-                    anisotropic_expanded_bbox.max().asVec3d());
+  vb::BBoxd clipBox(bbox.min().asVec3d(),
+                    bbox.max().asVec3d());
   const auto output_grid = vto::clip(*valued_grid, clipBox);
   if (output_grid->activeVoxelCount()) {
-    anisotropic_expanded_bbox = output_grid->evalActiveVoxelBoundingBox();
+    bbox = output_grid->evalActiveVoxelBoundingBox();
   }
 
   // alternatively... for simply carrying values across:
@@ -3013,7 +3011,7 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
   // to isolate window pixels to those covered by the component like:
   // output_grid = vto::tools::clip(output_grid, component_grid);
 
-  return {output_grid, anisotropic_expanded_bbox};
+  return {output_grid, bbox};
 }
 
 // valued_grid : holds the pixel intensity values
