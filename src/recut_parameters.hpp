@@ -23,6 +23,7 @@ public:
         window_grid_paths(std::vector<std::string>()),
         second_grid(std::string()), upsample_z(1), downsample_factor(1),
         max_intensity(-1), min_intensity(-1), expand_window_um(30.),
+        min_window_um(75.),
         voxel_size({1., 1., 1.}) {}
 
   static void PrintUsage();
@@ -52,7 +53,7 @@ public:
       channel, upsample_z, downsample_factor;
   int background_thresh, max_intensity, min_intensity, tcase;
   double foreground_percent, slt_pct;
-  float expand_window_um;
+  float min_window_um, expand_window_um;
   VID_t selected, root_vid;
   bool run_app2, convert_only, combine, histogram;
   std::array<int, 3> tile_lengths;

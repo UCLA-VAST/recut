@@ -1066,7 +1066,7 @@ auto append_attributes = [](auto grid) {
 
 auto read_vdb_file(std::string fn, std::string grid_name = "") {
 #ifdef LOG
-  //cout << "Reading vdb file: " << fn << " grid: " << grid_name << " ...\n";
+  // cout << "Reading vdb file: " << fn << " grid: " << grid_name << " ...\n";
 #endif
   if (!fs::exists(fn)) {
     cout << "Input image file does not exist or not found, exiting...\n";
@@ -2238,65 +2238,64 @@ auto find_or_assign = [](std::array<double, 3> swc_coord,
 // for more info see:
 // http://www.neuronland.org/NLMorphologyConverter/MorphologyFormats/SWC/Spec.html
 // https://github.com/HumanBrainProject/swcPlus/blob/master/SWCplus_specification.html
-auto print_swc_line =
-    [](std::array<double, 3> swc_coord, bool is_root, uint8_t radius,
-       const std::array<double, 3> parent_coord, CoordBBox bbox,
-       std::ofstream &out,
-       auto &coord_to_swc_id,
-       std::array<float, 3> voxel_size, bool bbox_adjust = true,
-       bool is_eswc = false) {
-      std::ostringstream line;
+auto print_swc_line = [](std::array<double, 3> swc_coord, bool is_root,
+                         uint8_t radius,
+                         const std::array<double, 3> parent_coord,
+                         CoordBBox bbox, std::ofstream &out,
+                         auto &coord_to_swc_id, std::array<float, 3> voxel_size,
+                         bool bbox_adjust = true, bool is_eswc = false) {
+  std::ostringstream line;
 
-      if (bbox_adjust) { // implies output window crops is set
-        swc_coord = {swc_coord[0] - bbox.min().x(), swc_coord[1] - bbox.min().y(), swc_coord[2] - bbox.min().z()};
-      }
+  if (bbox_adjust) { // implies output window crops is set
+    swc_coord = {swc_coord[0] - bbox.min().x(), swc_coord[1] - bbox.min().y(),
+                 swc_coord[2] - bbox.min().z()};
+  }
 
-      // CoordBBox uses extents inclusively, but we want exclusive bbox
-      GridCoord swc_lengths = bbox.extents().offsetBy(-1);
+  // CoordBBox uses extents inclusively, but we want exclusive bbox
+  GridCoord swc_lengths = bbox.extents().offsetBy(-1);
 
-      // n
-      uint32_t current_id = find_or_assign(swc_coord, coord_to_swc_id);
-      line << std::to_string(current_id) << ' ';
+  // n
+  uint32_t current_id = find_or_assign(swc_coord, coord_to_swc_id);
+  line << std::to_string(current_id) << ' ';
 
-      // type_id
-      if (is_root) {
-        line << "1 ";
-      } else {
-        line << "3 ";
-      }
-      line << std::fixed << std::setprecision(SWC_PRECISION);
+  // type_id
+  if (is_root) {
+    line << "1 ";
+  } else {
+    line << "3 ";
+  }
+  line << std::fixed << std::setprecision(SWC_PRECISION);
 
-      // coordinates
-      line << voxel_size[0] * swc_coord[0] << ' '
-           << voxel_size[1] * swc_coord[1] << ' '
-           << voxel_size[2] * swc_coord[2] << ' ';
+  // coordinates
+  line << voxel_size[0] * swc_coord[0] << ' ' << voxel_size[1] * swc_coord[1]
+       << ' ' << voxel_size[2] * swc_coord[2] << ' ';
 
-      // radius, already been adjsuted to voxel size
-      line << static_cast<float>(radius) << ' ';
+  // radius, already been adjsuted to voxel size
+  line << static_cast<float>(radius) << ' ';
 
-      // parent
-      if (is_root) {
-        // only the first line of the file can have a parent of -1
-        // any other should connect to themselves
-        // line << (current_id == 1) ? "-1" : std::to_string(current_id);
-        line << std::to_string(is_eswc? 0 : current_id);
-      } else {
-        line << find_or_assign(parent_coord, coord_to_swc_id);
-      }
+  // parent
+  if (is_root) {
+    // only the first line of the file can have a parent of -1
+    // any other should connect to themselves
+    // line << (current_id == 1) ? "-1" : std::to_string(current_id);
+    line << std::to_string(is_eswc ? 0 : current_id);
+  } else {
+    line << find_or_assign(parent_coord, coord_to_swc_id);
+  }
 
-      if (is_eswc) {
-        // " seg_id level mode timestamp TFresindex";
-        line << " 0 0 0 0 1";
-      }
+  if (is_eswc) {
+    // " seg_id level mode timestamp TFresindex";
+    line << " 0 0 0 0 1";
+  }
 
-      line << '\n';
+  line << '\n';
 
-      if (out.is_open()) {
-        out << line.str();
-      } else {
-        std::cout << line.str();
-      }
-    };
+  if (out.is_open()) {
+    out << line.str();
+  } else {
+    std::cout << line.str();
+  }
+};
 
 // throws if any leaf does not have monotonically increasing offsets or
 // within bounds of attribute arrays
@@ -2960,7 +2959,10 @@ void add_mask_to_image_grid(ImgGrid::Ptr image_grid, GridT mask_grid) {
 template <typename GridT>
 std::pair<ImgGrid::Ptr, CoordBBox>
 create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
-                   std::ofstream &component_log, std::array<float, 3> voxel_size,
+                   std::ofstream &component_log,
+                   std::array<float, 3> voxel_size,
+                   std::vector<std::pair<GridCoord, uint8_t>> component_roots,
+                   int min_window_um,
                    float expand_window_um = 0) {
 
   assertm(valued_grid, "Must have input grid set to run output_windows_");
@@ -2968,15 +2970,35 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
   // component bounding volume are needed therefore clip the original image
   // to a bounding volume
   auto bbox = component_grid->evalActiveVoxelBoundingBox();
-  auto anisotropic_expanded_bbox = bbox;
 
-  //std::array<int, 3> dim_voxel_expansions = {expand_window_um * voxel_size[0], expand_window_um * voxel_size[1], expand_window_um * voxel_size[2]};
-  //CoordBBox anisotropic_expanded_bbox(bbox.min().x() - dim_voxel_expansions[0],
-                                      //bbox.min().y() - dim_voxel_expansions[1],
-                                      //bbox.min().z() - dim_voxel_expansions[2],
-                                      //bbox.max().x() + dim_voxel_expansions[0],
-                                      //bbox.max().y() + dim_voxel_expansions[1],
-                                      //bbox.max().z() + dim_voxel_expansions[2]);
+  rng::for_each(component_roots, [&](auto root) {
+    rng::for_each(rv::iota(0, 3), [&](auto i) {
+      auto [root_coord, radius] = root;
+      auto extent_um =
+          min_window_um + radius * voxel_size[i] + expand_window_um;
+
+      // find a possible min/max in coordinate space
+      auto old_min = bbox.min()[i];
+      auto new_min = static_cast<int>(root_coord.min()[i] - extent_um / voxel_size[i]);
+
+      auto old_max = bbox.max()[i];
+      auto new_max = static_cast<int>(root_coord.max()[i] - extent_um / voxel_size[i]);
+
+      // if the new_min or max would expand the bbox then keep it
+      bbox.min()[i] = std::min(old_min, new_min);
+      bbox.max()[i] = std::max(old_max, new_max);
+    });
+  });
+
+  auto anisotropic_expanded_bbox = bbox;
+  // std::array<int, 3> dim_voxel_expansions = {expand_window_um *
+  // voxel_size[0], expand_window_um * voxel_size[1], expand_window_um *
+  // voxel_size[2]}; CoordBBox anisotropic_expanded_bbox(bbox.min().x() -
+  // dim_voxel_expansions[0], bbox.min().y() - dim_voxel_expansions[1],
+  // bbox.min().z() - dim_voxel_expansions[2],
+  // bbox.max().x() + dim_voxel_expansions[0],
+  // bbox.max().y() + dim_voxel_expansions[1],
+  // bbox.max().z() + dim_voxel_expansions[2]);
 
   vb::BBoxd clipBox(anisotropic_expanded_bbox.min().asVec3d(),
                     anisotropic_expanded_bbox.max().asVec3d());

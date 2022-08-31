@@ -74,7 +74,8 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "--upsample-z         during conversion only z-dimension will be "
                "upsampled (copied) by specified factor, default is 1 i.e. no "
                "upsampling\n";
-  std::cout << "--expand-windows     if value is 0 windows only extend to bounding volume of component, defaults to 30 um\n";
+  std::cout << "--min-window     windows by default only extend to bounding volume of their component, this value specifies the minimum window border surrounding seeds, if no um value is passed it will use 75 um\n";
+  std::cout << "--expand-window        windows by default only extend to bounding volume of their component, this allows specifying an expansion factor around seeds, if no um value is passed it will use 30 um\n";
   std::cout
       << "--run-app2           for benchmarks and comparisons runs app2 on "
          "the vdb passed to --output-windows\n";
@@ -198,7 +199,10 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
                  strcmp(argv[i], "-pl") == 0) {
         args.user_thread_count = atoi(argv[i + 1]);
         ++i;
-      } else if (strcmp(argv[i], "--expand-windows") == 0) {
+      } else if (strcmp(argv[i], "--min-window") == 0) {
+        args.min_window_um = atof(argv[i + 1]);
+        ++i;
+      } else if (strcmp(argv[i], "--expand-window") == 0) {
         args.expand_window_um = atof(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--downsample-factor") == 0) {

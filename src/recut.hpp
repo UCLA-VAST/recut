@@ -2883,7 +2883,8 @@ void Recut<image_t>::partition_components(
       ImgGrid::Ptr image_grid =
           openvdb::gridPtrCast<ImgGrid>(window_grids.front());
       auto [valued_window_grid, window_bbox] = create_window_grid(
-          image_grid, component, component_log, args->voxel_size, args->expand_window_um);
+          image_grid, component, component_log, args->voxel_size,
+          component_roots, args->min_window_um, args->expand_window_um);
 
       // build windowed mask grid
       auto mask_grid =
