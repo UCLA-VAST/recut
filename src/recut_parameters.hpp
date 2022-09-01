@@ -22,8 +22,8 @@ public:
         foreground_percent(-0.01), combine(false), histogram(false),
         window_grid_paths(std::vector<std::string>()),
         second_grid(std::string()), upsample_z(1), downsample_factor(1),
-        max_intensity(-1), min_intensity(-1), expand_window_um(30.),
-        min_window_um(75.),
+        max_intensity(-1), min_intensity(-1), expand_window_um(0.),
+        min_window_um(0.),
         voxel_size({1., 1., 1.}) {}
 
   static void PrintUsage();

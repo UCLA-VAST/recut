@@ -15,9 +15,9 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "<image file or dir>  file or directory of input image(s)\n";
   std::cout << "--seeds              directory of files which represent known "
                "root/soma locations, seeds are required to reconstruct\n";
-  std::cout
-      << "--output-name        [-o] give converted vdb a custom name defaults to "
-         "naming with useful image attributes\n";
+  std::cout << "--output-name        [-o] give converted vdb a custom name "
+               "defaults to "
+               "naming with useful image attributes\n";
   std::cout << "--input-type         input type img: 'ims', 'tiff' | "
                "VDB: 'point', "
                "'uint8', 'mask' or 'float'\n";
@@ -33,26 +33,27 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "--channel            [-c] channel number, default 0\n";
   std::cout << "--resolution-level   [-rl] resolution level default 0 "
                "(original resolution)\n";
-  //std::cout
-      //<< "--image-offsets      [-io] offsets of subvolume, in x y z order "
-         //"default 0 0 0\n";
-  std::cout
-      << "--voxel-size         um lengths of voxel in x y z order "
-         "default 1.0 1.0 1.0 determines prune radius\n";
+  // std::cout
+  //<< "--image-offsets      [-io] offsets of subvolume, in x y z order "
+  //"default 0 0 0\n";
+  std::cout << "--voxel-size         um lengths of voxel in x y z order "
+               "default 1.0 1.0 1.0 determines prune radius\n";
   std::cout
       << "--prune-radius       larger values decrease node sampling density "
-         "along paths, default is set by the anisotropic factor of --voxel-size\n";
+         "along paths, default is set by the anisotropic factor of "
+         "--voxel-size\n";
   std::cout
       << "--image-lengths      [-ie] lengths of subvolume, in x y z order "
          "defaults"
          " to max range from start to max length in each axis (-1, -1, "
          "-1)\n";
-  std::cout
-      << "--bg-thresh          [-bt] all pixels greater than this passed intensity value are treated as foreground\n";
+  std::cout << "--bg-thresh          [-bt] all pixels greater than this passed "
+               "intensity value are treated as foreground\n";
   std::cout
       << "--min-branch-length  prune leaf branches lower, defaults to 20\n";
   std::cout
-      << "--fg-percent         [-fp] auto calculate a bg-thresh value closest to the passed "
+      << "--fg-percent         [-fp] auto calculate a bg-thresh value closest "
+         "to the passed "
          "foreground \% between (0-100], overriding any --bg-thresh args. "
          "Value of .08 yields ~8 in 10,000 voxels "
          "as foreground per z-plane\n";
@@ -71,11 +72,18 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout
       << "--downsample-factor  for images scaled down in x and z dimension "
          "scale the marker files by specified factor\n";
-  std::cout << "--upsample-z         during conversion only z-dimension will be "
-               "upsampled (copied) by specified factor, default is 1 i.e. no "
-               "upsampling\n";
-  std::cout << "--min-window     windows by default only extend to bounding volume of their component, this value specifies the minimum window border surrounding seeds, if no um value is passed it will use 75 um\n";
-  std::cout << "--expand-window        windows by default only extend to bounding volume of their component, this allows specifying an expansion factor around seeds, if no um value is passed it will use 30 um\n";
+  std::cout
+      << "--upsample-z         during conversion only z-dimension will be "
+         "upsampled (copied) by specified factor, default is 1 i.e. no "
+         "upsampling\n";
+  std::cout
+      << "--min-window     windows by default only extend to bounding volume "
+         "of their component, this value specifies the minimum window border "
+         "surrounding seeds, if no um value is passed it will use 75 um\n";
+  std::cout
+      << "--expand-window        windows by default only extend to bounding "
+         "volume of their component, this allows specifying an expansion "
+         "factor around seeds, if no um value is passed it will use 30 um\n";
   std::cout
       << "--run-app2           for benchmarks and comparisons runs app2 on "
          "the vdb passed to --output-windows\n";
@@ -87,8 +95,8 @@ std::string RecutCommandLineArgs::MetaString() {
   meta_stream << "image file/dir = " << input_path << '\n';
   meta_stream << "channel = " << channel << '\n';
   meta_stream << "resolution level = " << resolution_level << '\n';
-  //meta_stream << "offsets (xyz) = " << image_offsets[0] << " "
-              //<< image_offsets[1] << " " << image_offsets[2] << '\n';
+  // meta_stream << "offsets (xyz) = " << image_offsets[0] << " "
+  //<< image_offsets[1] << " " << image_offsets[2] << '\n';
   meta_stream << "lengths (xyz) = " << image_lengths[0] << " "
               << image_lengths[1] << " " << image_lengths[2] << '\n';
   meta_stream << "foreground_percent = " << foreground_percent << '\n';
@@ -164,7 +172,8 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--output-type") == 0) {
         auto arg = std::string(argv[i + 1]);
         if (arg == "float" || arg == "point" || arg == "uint8" ||
-            arg == "mask" || arg == "ims" || arg == "tiff" || arg == "eswc" || arg == "swc" || arg == "labels") {
+            arg == "mask" || arg == "ims" || arg == "tiff" || arg == "eswc" ||
+            arg == "swc" || arg == "labels") {
           args.output_type = (argv[i + 1]);
         } else {
           cerr << "--output-type option must be one of "
@@ -200,11 +209,19 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         args.user_thread_count = atoi(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--min-window") == 0) {
-        args.min_window_um = atof(argv[i + 1]);
-        ++i;
+        if ((i + 1 < argc) && (argv[i + 1][0] != '-')) {
+          args.min_window_um = atof(argv[i + 1]);
+          ++i;
+        } else {
+          args.min_window_um = MIN_WINDOW_UM;
+        }
       } else if (strcmp(argv[i], "--expand-window") == 0) {
-        args.expand_window_um = atof(argv[i + 1]);
-        ++i;
+        if ((i + 1 < argc) && (argv[i + 1][0] != '-')) {
+          args.expand_window_um = atof(argv[i + 1]);
+          ++i;
+        } else {
+          args.min_window_um = EXPAND_WINDOW_UM;
+        }
       } else if (strcmp(argv[i], "--downsample-factor") == 0) {
         args.downsample_factor = atoi(argv[i + 1]);
         ++i;

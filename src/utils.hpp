@@ -2954,8 +2954,7 @@ void add_mask_to_image_grid(ImgGrid::Ptr image_grid, GridT mask_grid) {
 
 // valued_grid : holds the pixel intensity values
 // topology_grid : holds the topology of the neuron cluster in question
-// values copied in topology and written z-plane by z-plane to individual tiff
-// files tiff component also saved
+// values copied in topology and written to tiff
 template <typename GridT>
 std::pair<ImgGrid::Ptr, CoordBBox>
 create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
@@ -2970,6 +2969,8 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
   // component bounding volume are needed therefore clip the original image
   // to a bounding volume
   auto bbox = component_grid->evalActiveVoxelBoundingBox();
+  std::cout << "Component bbox " << bbox << '\n';
+  std::cout << "VAlue bbox " << valued_grid->evalActiveVoxelBoundingBox() << '\n';
 
   rng::for_each(component_roots, [&](auto root) {
     rng::for_each(rv::iota(0, 3), [&](auto i) {
@@ -2979,10 +2980,10 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
 
       // find a possible min/max in coordinate space
       auto old_min = bbox.min()[i];
-      auto new_min = static_cast<int>(root_coord.min()[i] - extent_um / voxel_size[i]);
+      auto new_min = static_cast<int>(root_coord[i] - extent_um / voxel_size[i]);
 
       auto old_max = bbox.max()[i];
-      auto new_max = static_cast<int>(root_coord.max()[i] - extent_um / voxel_size[i]);
+      auto new_max = static_cast<int>(root_coord[i] - extent_um / voxel_size[i]);
 
       // if the new_min or max would expand the bbox then keep it
       bbox.min()[i] = std::min(old_min, new_min);
@@ -3000,10 +3001,14 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
 
   vb::BBoxd clipBox(bbox.min().asVec3d(),
                     bbox.max().asVec3d());
+  std::cout << "Start clipping with " << clipBox << '\n';
   const auto output_grid = vto::clip(*valued_grid, clipBox);
+
+  std::cout << "Finished clipping\n";
   if (output_grid->activeVoxelCount()) {
     bbox = output_grid->evalActiveVoxelBoundingBox();
   }
+  std::cout << "Finished clipping " << bbox << '\n';
 
   // alternatively... for simply carrying values across:
   // copy_values(valued_grid, component_grid);
