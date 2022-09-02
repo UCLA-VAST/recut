@@ -80,7 +80,7 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 #define MIN_Z_DEPTH 30
 // euclidean voxel path distance of branches to prune
 #define MIN_BRANCH_LENGTH 20
-#define MIN_WINDOW_UM 75
+#define MIN_WINDOW_UM 150
 #define EXPAND_WINDOW_UM 30
 // the value to add for on bits when merging a mask grid with a image grid
 #define PIXEL_VAL_MASK 64

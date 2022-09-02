@@ -2899,7 +2899,7 @@ void encoded_tiff_write(image_t *inimg1d, TIFF *tiff, const GridCoord dims) {
 // z-plane by z-plane like below prevents this
 template <typename GridT>
 std::string write_vdb_to_tiff_planes(GridT grid, std::string base,
-                                     CoordBBox bbox = {}, int channel = 0) {
+                                     CoordBBox bbox = {}, int channel = 0, int index = 0) {
   if (bbox.empty())
     bbox = grid->evalActiveVoxelBoundingBox(); // inclusive both ends
 
@@ -2923,7 +2923,7 @@ std::string write_vdb_to_tiff_planes(GridT grid, std::string base,
 
     // overflows at 1 million z planes
     std::ostringstream fn;
-    fn << base << "/img_" << std::setfill('0') << std::setw(6) << index
+    fn << base << "/component_" << index << "_img_" << std::setfill('0') << std::setw(6) << index
        << ".tif";
 
     // cout << '\n' << fn.str() << '\n';
@@ -3001,7 +3001,6 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
 
   vb::BBoxd clipBox(bbox.min().asVec3d(),
                     bbox.max().asVec3d());
-  std::cout << "Start clipping with " << clipBox << '\n';
   const auto output_grid = vto::clip(*valued_grid, clipBox);
 
   if (output_grid->activeVoxelCount()) {
@@ -3036,7 +3035,7 @@ std::string write_output_windows(GridT output_grid, std::string dir,
     if (paged) // all to one file
       output_fn = write_vdb_to_tiff_page(output_grid, base, bbox);
     else
-      output_fn = write_vdb_to_tiff_planes(output_grid, dir, bbox, channel);
+      output_fn = write_vdb_to_tiff_planes(output_grid, dir, bbox, channel, index);
 
     runtime << "Write tiff, " << timer.elapsed() << '\n';
 
