@@ -2888,10 +2888,23 @@ void Recut<image_t>::partition_components(
           args->expand_window_um);
 
       // build windowed mask grid
-      auto mask_grid =
-          openvdb::gridPtrCast<openvdb::MaskGrid>(window_grids.back());
+      // auto mask_grid =
+      // openvdb::gridPtrCast<openvdb::MaskGrid>(window_grids.back());
       // add_mask_to_image_grid(image_grid, mask_grid);
+      if (BINARIZE) {
+        auto accessor = image_grid->getAccessor();
+        std::cout << "bkg thresh " << args->background_thresh << '\n';
+        for (auto iter = image_grid->beginValueOn(); iter; ++iter) {
+          auto coord = iter.getCoord();
+          auto val = accessor.getValue(coord);
+          if (val > 0) {
+            accessor.setValue(coord, 255);
+            std::cout << "c";
+          }
+        }
+      }
 
+      // write the first passed window
       auto window_fn = write_output_windows<ImgGrid::Ptr>(
           image_grid, component_dir_fn, component_log, index,
           /*output_vdb*/ false, /*paged*/ args->output_type != "labels",
