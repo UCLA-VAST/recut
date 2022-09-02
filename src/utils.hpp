@@ -2911,7 +2911,7 @@ std::string write_vdb_to_tiff_planes(GridT grid, std::string base,
               rv::enumerate; // inclusive range
 
   // output each plane to separate file
-  rng::for_each(zrng, [&grid, &base, &bbox](const auto zpair) {
+  rng::for_each(zrng, [&](const auto zpair) {
     auto [index, z] = zpair;
     auto min = GridCoord(bbox.min()[0], bbox.min()[1], z);
     auto max = GridCoord(bbox.max()[0], bbox.max()[1], z); // inclusive
