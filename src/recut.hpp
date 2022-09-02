@@ -452,8 +452,8 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
       rng::to_vector;
 
 #ifdef LOG
-  cout << "Using " << filtered_roots.size() << " of " << roots.size()
-       << " roots found in directory\n";
+  cout << "Only " << filtered_roots.size() << " of " << roots.size()
+       << " seeds in directory have an active voxel and are connected to a component in the provided image\n";
 #endif
 
   return filtered_roots;
@@ -2608,9 +2608,11 @@ template <class image_t> void Recut<image_t>::initialize() {
     // round to nearest int
     this->args->prune_radius = static_cast<uint16_t>((maxx / minx) + .5);
 #ifdef LOG
-    std::cout << "--prune-radius was set to: "
-              << this->args->prune_radius.value()
-              << " by calculating the anisotropic factor of --voxel-size\n";
+    if (!this->args->convert_only) {
+      std::cout << "--prune-radius was set to: "
+                << this->args->prune_radius.value()
+                << " by calculating the anisotropic factor of --voxel-size\n";
+    }
 #endif
   }
 }
@@ -2891,15 +2893,13 @@ void Recut<image_t>::partition_components(
       // auto mask_grid =
       // openvdb::gridPtrCast<openvdb::MaskGrid>(window_grids.back());
       // add_mask_to_image_grid(image_grid, mask_grid);
-      if (BINARIZE) {
+      if (BINARIZE && args->output_type == "labels") {
         auto accessor = image_grid->getAccessor();
-        std::cout << "bkg thresh " << args->background_thresh << '\n';
         for (auto iter = image_grid->beginValueOn(); iter; ++iter) {
           auto coord = iter.getCoord();
           auto val = accessor.getValue(coord);
           if (val > 0) {
             accessor.setValue(coord, 255);
-            std::cout << "c";
           }
         }
       }
