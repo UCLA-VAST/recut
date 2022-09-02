@@ -453,7 +453,8 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
 
 #ifdef LOG
   cout << "Only " << filtered_roots.size() << " of " << roots.size()
-       << " seeds in directory have an active voxel and are connected to a component in the provided image\n";
+       << " seeds in directory have an active voxel and are connected to a "
+          "component in the provided image\n";
 #endif
 
   return filtered_roots;
@@ -2893,7 +2894,14 @@ void Recut<image_t>::partition_components(
       // auto mask_grid =
       // openvdb::gridPtrCast<openvdb::MaskGrid>(window_grids.back());
       // add_mask_to_image_grid(image_grid, mask_grid);
-      if (BINARIZE && args->output_type == "labels") {
+
+      // write the first passed window
+      auto window_fn = write_output_windows<ImgGrid::Ptr>(
+          image_grid, component_dir_fn, component_log, index,
+          /*output_vdb*/ false, /*paged*/ args->output_type != "labels",
+          window_bbox, /*channel*/ 0);
+
+      if (args->output_type == "labels") {
         auto accessor = image_grid->getAccessor();
         for (auto iter = image_grid->beginValueOn(); iter; ++iter) {
           auto coord = iter.getCoord();
@@ -2902,13 +2910,13 @@ void Recut<image_t>::partition_components(
             accessor.setValue(coord, 255);
           }
         }
-      }
 
-      // write the first passed window
-      auto window_fn = write_output_windows<ImgGrid::Ptr>(
-          image_grid, component_dir_fn, component_log, index,
-          /*output_vdb*/ false, /*paged*/ args->output_type != "labels",
-          window_bbox, 0);
+        // write the first passed window as a binarized grid
+        auto window_fn = write_output_windows<ImgGrid::Ptr>(
+            image_grid, component_dir_fn, component_log, index,
+            /*output_vdb*/ false, /*paged*/ args->output_type != "labels",
+            window_bbox, /*channel*/ 1);
+      }
 
       // if outputting crops/windows, offset SWCs coords to match window
       bbox = window_bbox;
@@ -2918,6 +2926,8 @@ void Recut<image_t>::partition_components(
       rng::for_each(window_grids | rv::enumerate | rv::tail,
                     [&](const auto window_gridp) {
                       auto [channel, window_grid] = window_gridp;
+                      // labels already takes channel 1 so you need to offset the rest by 1
+                      channel = args->output_type == "labels" ? channel + 1 : channel;
                       auto mask_grid =
                           openvdb::gridPtrCast<openvdb::MaskGrid>(window_grid);
                       // write to disk

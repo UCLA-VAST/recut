@@ -3004,11 +3004,9 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
   std::cout << "Start clipping with " << clipBox << '\n';
   const auto output_grid = vto::clip(*valued_grid, clipBox);
 
-  std::cout << "Finished clipping\n";
   if (output_grid->activeVoxelCount()) {
     bbox = output_grid->evalActiveVoxelBoundingBox();
   }
-  std::cout << "Finished clipping " << bbox << '\n';
 
   // alternatively... for simply carrying values across:
   // copy_values(valued_grid, component_grid);

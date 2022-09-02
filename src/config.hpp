@@ -85,7 +85,6 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 // the value to add for on bits when merging a mask grid with a image grid
 #define PIXEL_VAL_MASK 64
 #define SWC_PRECISION 3
-#define BINARIZE 1
 
 // Below are deprecated or are not (yet) affecting behavior:
 #define MIN_RADII 2
