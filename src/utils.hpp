@@ -2899,7 +2899,7 @@ void encoded_tiff_write(image_t *inimg1d, TIFF *tiff, const GridCoord dims) {
 // z-plane by z-plane like below prevents this
 template <typename GridT>
 std::string write_vdb_to_tiff_planes(GridT grid, std::string base,
-                                     CoordBBox bbox = {}, int channel = 0, int index = 0) {
+                                     CoordBBox bbox = {}, int channel = 0, int component_index = 0) {
   if (bbox.empty())
     bbox = grid->evalActiveVoxelBoundingBox(); // inclusive both ends
 
@@ -2923,7 +2923,7 @@ std::string write_vdb_to_tiff_planes(GridT grid, std::string base,
 
     // overflows at 1 million z planes
     std::ostringstream fn;
-    fn << base << "/component_" << index << "_img_" << std::setfill('0') << std::setw(6) << index
+    fn << base << "/component_" << component_index << "_img_" << std::setfill('0') << std::setw(6) << index
        << ".tif";
 
     // cout << '\n' << fn.str() << '\n';
@@ -2969,8 +2969,6 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
   // component bounding volume are needed therefore clip the original image
   // to a bounding volume
   auto bbox = component_grid->evalActiveVoxelBoundingBox();
-  std::cout << "Component bbox " << bbox << '\n';
-  std::cout << "VAlue bbox " << valued_grid->evalActiveVoxelBoundingBox() << '\n';
 
   rng::for_each(component_roots, [&](auto root) {
     rng::for_each(rv::iota(0, 3), [&](auto i) {

@@ -2901,6 +2901,9 @@ void Recut<image_t>::partition_components(
           /*output_vdb*/ false, /*paged*/ args->output_type != "labels",
           window_bbox, /*channel*/ 0);
 
+      // if outputting crops/windows, offset SWCs coords to match window
+      bbox = window_bbox;
+
       if (args->output_type == "labels") {
         auto accessor = image_grid->getAccessor();
         for (auto iter = image_grid->beginValueOn(); iter; ++iter) {
@@ -2916,31 +2919,23 @@ void Recut<image_t>::partition_components(
             image_grid, component_dir_fn, component_log, index,
             /*output_vdb*/ false, /*paged*/ args->output_type != "labels",
             window_bbox, /*channel*/ 1);
-      }
+      } else {
 
-      // if outputting crops/windows, offset SWCs coords to match window
-      bbox = window_bbox;
-
-      // for all other windows passed, skipping channel 0 since already
-      // processed above
-      rng::for_each(window_grids | rv::enumerate | rv::tail,
-                    [&](const auto window_gridp) {
-                      auto [channel, window_grid] = window_gridp;
-                      // labels already takes channel 1 so you need to offset the rest by 1
-                      channel = args->output_type == "labels" ? channel + 1 : channel;
-                      auto mask_grid =
-                          openvdb::gridPtrCast<openvdb::MaskGrid>(window_grid);
-                      // write to disk
-                      write_output_windows(
-                          mask_grid, component_dir_fn, component_log, index,
-                          /*output_vdb*/ false,
-                          /*paged*/ args->output_type != "labels", window_bbox,
-                          channel);
-                    });
-
-      if (args->output_type == "labels") {
-        // create a binarized soma sphere with the same dimensions as the other
-        // output windows
+        // for all other windows passed, skipping channel 0 since already
+        // processed above
+        rng::for_each(
+            window_grids | rv::enumerate | rv::tail,
+            [&](const auto window_gridp) {
+              auto [channel, window_grid] = window_gridp;
+              auto mask_grid =
+                  openvdb::gridPtrCast<openvdb::MaskGrid>(window_grid);
+              // write to disk
+              write_output_windows(mask_grid, component_dir_fn, component_log,
+                                   index,
+                                   /*output_vdb*/ false,
+                                   /*paged*/ args->output_type != "labels",
+                                   window_bbox, channel);
+            });
       }
 
       // skip components that are 0s in the original image
