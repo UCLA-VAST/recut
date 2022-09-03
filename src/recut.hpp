@@ -17,7 +17,8 @@
 #include <iostream>
 #include <map>
 #include <openvdb/tools/Composite.h>
-#include <openvdb/tools/VolumeToSpheres.h> // for fillWithSpheres
+#include <openvdb/tools/LevelSetUtil.h> 
+#include <openvdb/tools/TopologyToLevelSet.h> 
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -3104,6 +3105,24 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   if (!args->second_grid.empty()) {
     combine_grids(args->input_path, args->second_grid, this->args->output_name);
+    return;
+  }
+
+  if (args->input_type == "mask") {
+    // mask grids are a fog volume of sparse active values in space
+    auto base_grid = read_vdb_file(args->input_path);
+      this->mask_grid =
+          openvdb::gridPtrCast<openvdb::MaskGrid>(base_grid);
+
+    // change the fog volume into an SDF by holding values on the border between 
+    // active an inactive voxels
+    // the new SDF wraps (dilates by 1) the original active voxels, and additionally holds
+    // values across the interface of the surface
+    //
+    // this function additionally adds a morphological closing step such that holes and valleys in the SDF are filled
+    auto sdf_grid = vto::topologyToLevelSet(*mask_grid, /*halfwidth*/ 1, /*closingwidth*/CLOSING_FACTOR);
+
+
     return;
   }
 
