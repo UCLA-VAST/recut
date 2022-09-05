@@ -17,8 +17,8 @@
 #include <iostream>
 #include <map>
 #include <openvdb/tools/Composite.h>
-#include <openvdb/tools/LevelSetUtil.h> 
-#include <openvdb/tools/TopologyToLevelSet.h> 
+#include <openvdb/tools/LevelSetUtil.h>
+#include <openvdb/tools/TopologyToLevelSet.h>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -3111,17 +3111,55 @@ template <class image_t> void Recut<image_t>::operator()() {
   if (args->input_type == "mask") {
     // mask grids are a fog volume of sparse active values in space
     auto base_grid = read_vdb_file(args->input_path);
-      this->mask_grid =
-          openvdb::gridPtrCast<openvdb::MaskGrid>(base_grid);
+    this->mask_grid = openvdb::gridPtrCast<openvdb::MaskGrid>(base_grid);
 
-    // change the fog volume into an SDF by holding values on the border between 
+    // change the fog volume into an SDF by holding values on the border between
     // active an inactive voxels
-    // the new SDF wraps (dilates by 1) the original active voxels, and additionally holds
-    // values across the interface of the surface
+    // the new SDF wraps (dilates by 1) the original active voxels, and
+    // additionally holds values across the interface of the surface
     //
-    // this function additionally adds a morphological closing step such that holes and valleys in the SDF are filled
-    auto sdf_grid = vto::topologyToLevelSet(*mask_grid, /*halfwidth*/ 1, /*closingwidth*/CLOSING_FACTOR);
+    // this function additionally adds a morphological closing step such that
+    // holes and valleys in the SDF are filled
+    auto sdf_grid = vto::topologyToLevelSet(*mask_grid, /*halfwidth*/ 1,
+                                            /*closingwidth*/ CLOSING_STEPS);
 
+    // find enclosed regions and log
+
+    // these morphological operations may nullify the values stored in the SDF
+    vto::erodeActiveValues(sdf_grid->tree(), OPENING_STEPS);
+    vto::dilateActiveValues(sdf_grid->tree(), OPENING_STEPS);
+
+    // rebuild SDF values?
+
+    // sdf segment
+    // vto:segmentSDF(sdf_grid);
+    std::vector<openvdb::FloatGrid::Ptr> components;
+    vto::segmentActiveVoxels(*sdf_grid, components);
+
+    auto root_pairs = components | rv::transform([](auto component) {
+                        auto bbox = component->evalActiveVoxelBoundingBox();
+                        auto dims = bbox.dim();
+                        // set the radius to be half the longest dimension
+                        auto radius = dims[dims.maxIndex()] / 2;
+                        return std::make_pair(bbox.getCenter(), radius);
+                      });
+
+    // write seed/roots to disk
+    // start run dir
+    // start seeds directory
+    std::string seed_dir = "seeds/";
+    fs::create_directories(seed_dir);
+
+    rng::for_each(root_pairs, [&](auto root_pair) {
+      auto [coord, radius] = root_pair;
+      std::ofstream seed_file;
+      seed_file.open(seed_dir + "marker_" + std::to_string((int)coord.x()) + "_" +
+                         std::to_string((int)coord.y()) + "_" + std::to_string((int)coord.z()),
+                     std::ios::app);
+      seed_file << "#x,y,z,radius\n";
+      seed_file << coord.x() << ',' << coord.y() << ',' << coord.z() << ','
+                << +(radius) << '\n';
+    });
 
     return;
   }
