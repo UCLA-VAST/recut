@@ -3026,41 +3026,7 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
   if (this->args->convert_only) {
     // reassign output_name from the default
     if (this->args->output_name == "out.vdb") {
-      auto convert_fn_vdb = [this](const std::string &name, auto split_char) {
-        auto dir_path =
-            name | rv::split('/') | rng::to<std::vector<std::string>>();
-        auto file_name = name;
-        std::string parent = "";
-        if (dir_path.size() > 1) { // is a full path
-          file_name = dir_path.back();
-          parent = name | rv::split('/') | rv::drop_last(1) | rv::join('/') |
-                   rng::to<std::string>();
-        }
-        auto stripped = file_name | rv::split(split_char) | rv::drop_last(1) |
-                        rv::join | rng::to<std::string>();
-        stripped += "-ch" + std::to_string(this->args->channel);
-        stripped += "-" + this->args->output_type;
-        std::ostringstream out;
-        out.precision(3);
-        out << std::fixed << this->args->foreground_percent;
-        stripped += "-fgpct-" + out.str();
-        stripped += "-zoff" + std::to_string(args->image_offsets.z());
-        stripped += ".vdb";
-        stripped = dir_path.size() > 1 ? parent + "/" + stripped : stripped;
-        return stripped;
-      };
-
-      if (args->input_type == "ims") {
-#ifndef USE_HDF5
-        throw std::runtime_error("HDF5 dependency required for input type ims");
-#endif
-        this->args->output_name = convert_fn_vdb(args->input_path, '.');
-      }
-
-      if (args->input_type == "tiff") {
-        const auto tif_filenames = get_dir_files(args->input_path, ".tif");
-        this->args->output_name = convert_fn_vdb(tif_filenames[0], '_');
-      }
+      this->args->output_name = assign_output_name(args->input_type, args->input_path);
     }
 
     this->run_dir = ".";
@@ -3073,16 +3039,6 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
                 << coord_prod_accum(this->image_lengths) << '\n';
 #endif
   } else {
-    auto get_unique_fn = [](std::string probe_name) {
-      // make sure its a clean write
-      while (fs::exists(probe_name)) {
-        auto l =
-            probe_name | rv::split('-') | rng::to<std::vector<std::string>>();
-        l.back() = std::to_string(std::stoi(l.back()) + 1);
-        probe_name = l | rv::join('-') | rng::to<std::string>();
-      }
-      return probe_name;
-    };
     this->run_dir = get_unique_fn("./run-1");
     this->log_fn = this->run_dir + "/log.csv";
     fs::create_directories(run_dir);

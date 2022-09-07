@@ -2899,7 +2899,8 @@ void encoded_tiff_write(image_t *inimg1d, TIFF *tiff, const GridCoord dims) {
 // z-plane by z-plane like below prevents this
 template <typename GridT>
 std::string write_vdb_to_tiff_planes(GridT grid, std::string base,
-                                     CoordBBox bbox = {}, int channel = 0, int component_index = 0) {
+                                     CoordBBox bbox = {}, int channel = 0,
+                                     int component_index = 0) {
   if (bbox.empty())
     bbox = grid->evalActiveVoxelBoundingBox(); // inclusive both ends
 
@@ -2923,8 +2924,8 @@ std::string write_vdb_to_tiff_planes(GridT grid, std::string base,
 
     // overflows at 1 million z planes
     std::ostringstream fn;
-    fn << base << "/component_" << component_index << "_img_" << std::setfill('0') << std::setw(6) << index
-       << ".tif";
+    fn << base << "/component_" << component_index << "_img_"
+       << std::setfill('0') << std::setw(6) << index << ".tif";
 
     // cout << '\n' << fn.str() << '\n';
     // print_image_3D(dense.data(), plane_bbox.dim());
@@ -2961,8 +2962,7 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
                    std::ofstream &component_log,
                    std::array<float, 3> voxel_size,
                    std::vector<std::pair<GridCoord, uint8_t>> component_roots,
-                   int min_window_um, bool labels,
-                   float expand_window_um = 0) {
+                   int min_window_um, bool labels, float expand_window_um = 0) {
 
   assertm(valued_grid, "Must have input grid set to run output_windows_");
   // if an expanded crop is requested, the actual image values outside of the
@@ -2978,10 +2978,12 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
 
       // find a possible min/max in coordinate space
       auto old_min = bbox.min()[i];
-      auto new_min = static_cast<int>(root_coord[i] - extent_um / voxel_size[i]);
+      auto new_min =
+          static_cast<int>(root_coord[i] - extent_um / voxel_size[i]);
 
       auto old_max = bbox.max()[i];
-      auto new_max = static_cast<int>(root_coord[i] - extent_um / voxel_size[i]);
+      auto new_max =
+          static_cast<int>(root_coord[i] - extent_um / voxel_size[i]);
 
       // if the new_min or max would expand the bbox then keep it
       bbox.min()[i] = std::min(old_min, new_min);
@@ -2992,13 +2994,12 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
   if (labels) {
     // choose the first root if there are multiple
     auto [root_coord, radius] = component_roots[0];
-    
+
     bbox.min()[2] = root_coord.z() - radius;
     bbox.max()[2] = root_coord.z() + radius;
   }
 
-  vb::BBoxd clipBox(bbox.min().asVec3d(),
-                    bbox.max().asVec3d());
+  vb::BBoxd clipBox(bbox.min().asVec3d(), bbox.max().asVec3d());
   const auto output_grid = vto::clip(*valued_grid, clipBox);
 
   if (output_grid->activeVoxelCount()) {
@@ -3033,7 +3034,8 @@ std::string write_output_windows(GridT output_grid, std::string dir,
     if (paged) // all to one file
       output_fn = write_vdb_to_tiff_page(output_grid, base, bbox);
     else
-      output_fn = write_vdb_to_tiff_planes(output_grid, dir, bbox, channel, index);
+      output_fn =
+          write_vdb_to_tiff_planes(output_grid, dir, bbox, channel, index);
 
     runtime << "Write tiff, " << timer.elapsed() << '\n';
 
@@ -3417,3 +3419,50 @@ load_tile(const CoordBBox &bbox, const std::string &dir) {
 #endif
   return dense;
 }
+
+auto get_unique_fn = [](std::string probe_name) {
+  // make sure its a clean write
+  while (fs::exists(probe_name)) {
+    auto l = probe_name | rv::split('-') | rng::to<std::vector<std::string>>();
+    l.back() = std::to_string(std::stoi(l.back()) + 1);
+    probe_name = l | rv::join('-') | rng::to<std::string>();
+  }
+  return probe_name;
+};
+
+auto convert_fn_vdb = [](const std::string &name, auto split_char, args) {
+  auto dir_path = name | rv::split('/') | rng::to<std::vector<std::string>>();
+  auto file_name = name;
+  std::string parent = "";
+  if (dir_path.size() > 1) { // is a full path
+    file_name = dir_path.back();
+    parent = name | rv::split('/') | rv::drop_last(1) | rv::join('/') |
+             rng::to<std::string>();
+  }
+  auto stripped = file_name | rv::split(split_char) | rv::drop_last(1) |
+                  rv::join | rng::to<std::string>();
+  stripped += "-ch" + std::to_string(args->channel);
+  stripped += "-" + args->output_type;
+  std::ostringstream out;
+  out.precision(3);
+  out << std::fixed << args->foreground_percent;
+  stripped += "-fgpct-" + out.str();
+  stripped += "-zoff" + std::to_string(args->image_offsets.z());
+  stripped += ".vdb";
+  stripped = dir_path.size() > 1 ? parent + "/" + stripped : stripped;
+  return stripped;
+};
+
+auto get_output_name = [](auto input_type, auto input_path) {
+  if (input_type == "ims") {
+#ifndef USE_HDF5
+    throw std::runtime_error("HDF5 dependency required for input type ims");
+#endif
+    return convert_fn_vdb(args->input_path, '.', this->args);
+  }
+
+  if (args->input_type == "tiff") {
+    const auto tif_filenames = get_dir_files(args->input_path, ".tif");
+    return convert_fn_vdb(tif_filenames[0], '_', this->args);
+  }
+};
