@@ -2899,7 +2899,8 @@ void encoded_tiff_write(image_t *inimg1d, TIFF *tiff, const GridCoord dims) {
 // z-plane by z-plane like below prevents this
 template <typename GridT>
 std::string write_vdb_to_tiff_planes(GridT grid, std::string base,
-                                     CoordBBox bbox = {}, int channel = 0, int component_index = 0) {
+                                     CoordBBox bbox = {}, int channel = 0,
+                                     int component_index = 0) {
   if (bbox.empty())
     bbox = grid->evalActiveVoxelBoundingBox(); // inclusive both ends
 
@@ -2923,8 +2924,8 @@ std::string write_vdb_to_tiff_planes(GridT grid, std::string base,
 
     // overflows at 1 million z planes
     std::ostringstream fn;
-    fn << base << "/component_" << component_index << "_img_" << std::setfill('0') << std::setw(6) << index
-       << ".tif";
+    fn << base << "/component_" << component_index << "_img_"
+       << std::setfill('0') << std::setw(6) << index << ".tif";
 
     // cout << '\n' << fn.str() << '\n';
     // print_image_3D(dense.data(), plane_bbox.dim());
@@ -2961,8 +2962,7 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
                    std::ofstream &component_log,
                    std::array<float, 3> voxel_size,
                    std::vector<std::pair<GridCoord, uint8_t>> component_roots,
-                   int min_window_um, bool labels,
-                   float expand_window_um = 0) {
+                   int min_window_um, bool labels, float expand_window_um = 0) {
 
   assertm(valued_grid, "Must have input grid set to run output_windows_");
   // if an expanded crop is requested, the actual image values outside of the
@@ -2978,10 +2978,12 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
 
       // find a possible min/max in coordinate space
       auto old_min = bbox.min()[i];
-      auto new_min = static_cast<int>(root_coord[i] - extent_um / voxel_size[i]);
+      auto new_min =
+          static_cast<int>(root_coord[i] - extent_um / voxel_size[i]);
 
       auto old_max = bbox.max()[i];
-      auto new_max = static_cast<int>(root_coord[i] - extent_um / voxel_size[i]);
+      auto new_max =
+          static_cast<int>(root_coord[i] - extent_um / voxel_size[i]);
 
       // if the new_min or max would expand the bbox then keep it
       bbox.min()[i] = std::min(old_min, new_min);
@@ -2992,13 +2994,12 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
   if (labels) {
     // choose the first root if there are multiple
     auto [root_coord, radius] = component_roots[0];
-    
+
     bbox.min()[2] = root_coord.z() - radius;
     bbox.max()[2] = root_coord.z() + radius;
   }
 
-  vb::BBoxd clipBox(bbox.min().asVec3d(),
-                    bbox.max().asVec3d());
+  vb::BBoxd clipBox(bbox.min().asVec3d(), bbox.max().asVec3d());
   const auto output_grid = vto::clip(*valued_grid, clipBox);
 
   if (output_grid->activeVoxelCount()) {
@@ -3033,7 +3034,8 @@ std::string write_output_windows(GridT output_grid, std::string dir,
     if (paged) // all to one file
       output_fn = write_vdb_to_tiff_page(output_grid, base, bbox);
     else
-      output_fn = write_vdb_to_tiff_planes(output_grid, dir, bbox, channel, index);
+      output_fn =
+          write_vdb_to_tiff_planes(output_grid, dir, bbox, channel, index);
 
     runtime << "Write tiff, " << timer.elapsed() << '\n';
 
@@ -3417,3 +3419,14 @@ load_tile(const CoordBBox &bbox, const std::string &dir) {
 #endif
   return dense;
 }
+
+auto binarize_uint8_grid = [](auto image_grid) {
+  auto accessor = image_grid->getAccessor();
+  for (auto iter = image_grid->beginValueOn(); iter; ++iter) {
+    auto coord = iter.getCoord();
+    auto val = accessor.getValue(coord);
+    if (val > 0) {
+      accessor.setValue(coord, 255);
+    }
+  }
+};
