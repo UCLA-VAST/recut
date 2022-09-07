@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.hpp"
+#include <string>
 #include "markers.h"
 #include "range/v3/all.hpp"
 #include "recut_parameters.hpp"
@@ -3430,7 +3431,7 @@ auto get_unique_fn = [](std::string probe_name) {
   return probe_name;
 };
 
-auto convert_fn_vdb = [](const std::string &name, auto split_char, args) {
+auto convert_fn_vdb = [](const std::string &name, auto split_char, auto args) -> std::string {
   auto dir_path = name | rv::split('/') | rng::to<std::vector<std::string>>();
   auto file_name = name;
   std::string parent = "";
@@ -3439,7 +3440,7 @@ auto convert_fn_vdb = [](const std::string &name, auto split_char, args) {
     parent = name | rv::split('/') | rv::drop_last(1) | rv::join('/') |
              rng::to<std::string>();
   }
-  auto stripped = file_name | rv::split(split_char) | rv::drop_last(1) |
+  std::string stripped = file_name | rv::split(split_char) | rv::drop_last(1) |
                   rv::join | rng::to<std::string>();
   stripped += "-ch" + std::to_string(args->channel);
   stripped += "-" + args->output_type;
@@ -3453,16 +3454,17 @@ auto convert_fn_vdb = [](const std::string &name, auto split_char, args) {
   return stripped;
 };
 
-auto get_output_name = [](auto input_type, auto input_path) {
-  if (input_type == "ims") {
+auto get_output_name = [](RecutCommandLineArgs* args) -> std::string {
+  if (args->input_type == "ims") {
 #ifndef USE_HDF5
     throw std::runtime_error("HDF5 dependency required for input type ims");
 #endif
-    return convert_fn_vdb(args->input_path, '.', this->args);
+    return convert_fn_vdb(args->input_path, '.', args);
   }
 
   if (args->input_type == "tiff") {
     const auto tif_filenames = get_dir_files(args->input_path, ".tif");
-    return convert_fn_vdb(tif_filenames[0], '_', this->args);
+    return convert_fn_vdb(tif_filenames[0], '_', args);
   }
+  return std::string("out.vdb");
 };

@@ -3026,12 +3026,12 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
   if (this->args->convert_only) {
     // reassign output_name from the default
     if (this->args->output_name == "out.vdb") {
-      this->args->output_name = assign_output_name(args->input_type, args->input_path);
+      this->args->output_name = get_output_name(args);
     }
 
     this->run_dir = ".";
     this->log_fn = this->run_dir + "/" + this->args->output_name + "-log-" +
-                   std::to_string(args->user_thread_count) + ".txt";
+                   std::to_string(args->user_thread_count) + ".csv";
 #ifdef LOG
     std::ofstream convert_log(this->log_fn);
     convert_log << "Thread count, " << args->user_thread_count << '\n';
@@ -3060,9 +3060,14 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
 template <class image_t> void Recut<image_t>::operator()() {
 
   if (!args->second_grid.empty()) {
+    // combine and exit program
     combine_grids(args->input_path, args->second_grid, this->args->output_name);
     return;
   }
+
+  this->initialize();
+
+  start_run_dir_and_logs();
 
   if (args->input_type == "mask") {
     // mask grids are a fog volume of sparse active values in space
@@ -3077,13 +3082,13 @@ template <class image_t> void Recut<image_t>::operator()() {
     // this function additionally adds a morphological closing step such that
     // holes and valleys in the SDF are filled
     auto sdf_grid = vto::topologyToLevelSet(*mask_grid, /*halfwidth*/ 1,
-                                            /*closingwidth*/ CLOSING_STEPS);
+                                            /*closingwidth*/ args->close_steps);
 
     // find enclosed regions and log
 
     // these morphological operations may nullify the values stored in the SDF
-    vto::erodeActiveValues(sdf_grid->tree(), OPENING_STEPS);
-    vto::dilateActiveValues(sdf_grid->tree(), OPENING_STEPS);
+    vto::erodeActiveValues(sdf_grid->tree(), args->open_steps);
+    vto::dilateActiveValues(sdf_grid->tree(), args->open_steps);
 
     // rebuild SDF values?
 
@@ -3103,7 +3108,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     // write seed/roots to disk
     // start run dir
     // start seeds directory
-    std::string seed_dir = "seeds/";
+    std::string seed_dir = this->run_dir + "/seeds/";
     fs::create_directories(seed_dir);
 
     rng::for_each(root_pairs, [&](auto root_pair) {
@@ -3119,10 +3124,6 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     return;
   }
-
-  this->initialize();
-
-  start_run_dir_and_logs();
 
   // if point.vdb was not already set by input
   if (!this->input_is_vdb) {

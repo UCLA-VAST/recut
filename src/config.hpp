@@ -82,13 +82,7 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 #define MIN_BRANCH_LENGTH 20
 #define MIN_WINDOW_UM 150
 #define EXPAND_WINDOW_UM 30
-// the value to add for on bits when merging a mask grid with a image grid
-#define PIXEL_VAL_MASK 64
 #define SWC_PRECISION 3
-// Factor to multiply the voxel size by for morphological closing
-#define CLOSING_STEPS 8
-// Factor to multiply the voxel size by for morphological opening
-#define OPENING_STEPS 5
 
 // Below are deprecated or are not (yet) affecting behavior:
 #define MIN_RADII 2

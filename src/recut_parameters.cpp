@@ -79,11 +79,17 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout
       << "--min-window     windows by default only extend to bounding volume "
          "of their component, this value specifies the minimum window border "
-         "surrounding seeds, if no um value is passed it will use 75 um\n";
+         "surrounding seeds, if no um value is passed it will use "
+      << MIN_WINDOW_UM << " um\n";
   std::cout
       << "--expand-window        windows by default only extend to bounding "
          "volume of their component, this allows specifying an expansion "
-         "factor around seeds, if no um value is passed it will use 30 um\n";
+         "factor around seeds, if no um value is passed it will use "
+      << EXPAND_WINDOW_UM << " um\n";
+  std::cout
+      << "--open-steps         # of iterations of morphological opening\n";
+  std::cout
+      << "--close-steps        # of iterations of morphological closing\n";
   std::cout
       << "--run-app2           for benchmarks and comparisons runs app2 on "
          "the vdb passed to --output-windows\n";
@@ -222,6 +228,12 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         } else {
           args.min_window_um = EXPAND_WINDOW_UM;
         }
+      } else if (strcmp(argv[i], "--open-steps") == 0) {
+        args.open_steps = atoi(argv[i + 1]);
+        ++i;
+      } else if (strcmp(argv[i], "--close-steps") == 0) {
+        args.close_steps = atoi(argv[i + 1]);
+        ++i;
       } else if (strcmp(argv[i], "--downsample-factor") == 0) {
         args.downsample_factor = atoi(argv[i + 1]);
         ++i;
