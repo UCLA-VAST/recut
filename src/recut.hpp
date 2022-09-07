@@ -2904,7 +2904,7 @@ void Recut<image_t>::partition_components(
       // if outputting crops/windows, offset SWCs coords to match window
       bbox = window_bbox;
 
-      if (args->output_type == "labels") {
+      if (false && args->output_type == "labels") {
         auto accessor = image_grid->getAccessor();
         for (auto iter = image_grid->beginValueOn(); iter; ++iter) {
           auto coord = iter.getCoord();
