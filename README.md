@@ -90,6 +90,14 @@ recut ch0 -o point.vdb --input-type tiff --output-type point --fg-percent .05
 # you would need to write the coordinates and radii of known seed points (somas) by hand in marker_files/
 recut point.vdb --seeds marker_files
 ```
+
+### Soma Segmentation
+For brain volumes with voxel size [1,1,1] in um, we found a morphological closing step of 8 followed by a morphological opening step of 5 to be best for segmenting hollow cell body (soma) regions. You can generate seeds for these parameters like so:
+```
+recut mask.vdb --input-type mask --close-steps 8 --open-steps 5
+```
+This will create a new run directory with a list of projected seeds. 
+
 ### Reconstruct
 
 If you've created a point grid for an image, for example named `point.vdb`, the following would reconstruct the image based off of a directory of files which note the coordinates of starting locations (somas). This directory in the following example is shown as `marker_files`:

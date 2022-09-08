@@ -3162,7 +3162,7 @@ template <class image_t> void Recut<image_t>::operator()() {
       std::ofstream seed_file;
       seed_file.open(seed_dir + "marker_" + std::to_string((int)coord.x()) +
                          "_" + std::to_string((int)coord.y()) + "_" +
-                         std::to_string((int)coord.z()) + "_" + std::to_string(pow(radius, 3)),
+                         std::to_string((int)coord.z()) + "_" + std::to_string(static_cast<int>(((4 * PI) / 3.) * pow(radius, 3))),
                      std::ios::app);
       seed_file << "#x,y,z,radius\n";
       seed_file << coord.x() << ',' << coord.y() << ',' << coord.z() << ','
