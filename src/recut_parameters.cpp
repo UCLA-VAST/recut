@@ -137,7 +137,6 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--seeds") == 0 ||
                  strcmp(argv[i], "-s") == 0) {
         args.seed_path = argv[i + 1];
-        args.convert_only = false;
         ++i;
       } else if (strcmp(argv[i], "--resolution-level") == 0 ||
                  strcmp(argv[i], "-rl") == 0) {
@@ -181,6 +180,10 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
             arg == "mask" || arg == "ims" || arg == "tiff" || arg == "eswc" ||
             arg == "swc" || arg == "labels") {
           args.output_type = (argv[i + 1]);
+          if (arg == "mask" || arg == "float" || arg == "uint8" ||
+              arg == "point") {
+            args.convert_only = true;
+          }
         } else {
           cerr << "--output-type option must be one of "
                   "[float,point,uint8,mask,ims,tiff,swc,eswc,labels]\n";

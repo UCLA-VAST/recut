@@ -2403,9 +2403,9 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
   this->update_grid = openvdb::BoolGrid::create();
   if (this->input_is_vdb) { // running based of a vdb input
 
-    assertm(!args->convert_only,
-            "Convert only option is not valid from vdb to vdb pass a --seeds "
-            "directory to start reconstructions");
+    // assertm(!args->convert_only,
+    //"Convert only option is not valid from vdb to vdb pass a --seeds "
+    //"directory to start reconstructions");
 
     auto timer = high_resolution_timer();
     auto base_grid = read_vdb_file(args->input_path);
@@ -2425,13 +2425,18 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
       //"did no match");
       auto [lengths, _] = get_metadata(input_grid);
       input_image_lengths = lengths;
+      append_attributes(this->topology_grid);
     } else if (this->args->input_type == "point") {
       this->topology_grid =
           openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
       auto [lengths, _] = get_metadata(topology_grid);
       input_image_lengths = lengths;
+      append_attributes(this->topology_grid);
+    } else if (this->args->input_type == "mask") {
+      this->mask_grid = openvdb::gridPtrCast<openvdb::MaskGrid>(base_grid);
+      auto [lengths, _] = get_metadata(mask_grid);
+      input_image_lengths = lengths;
     }
-    append_attributes(this->topology_grid);
 
 #ifdef LOG
     // cout << "Read grid in: " << timer.elapsed() << " s\n";
@@ -2563,7 +2568,10 @@ template <class image_t> void Recut<image_t>::initialize() {
   // TODO move this clipping up to the read step for faster performance on sub
   // grids
   if (this->input_is_vdb) {
-    this->topology_grid->clip(this->image_bbox);
+    if (args->input_type == "mask")
+      this->mask_grid->clip(this->image_bbox);
+    else
+      this->topology_grid->clip(this->image_bbox);
   }
 
   // save to globals the actual size of the full image
@@ -3038,6 +3046,8 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
     convert_log << "Original voxel count, "
                 << coord_prod_accum(this->image_lengths) << '\n';
 #endif
+
+  // Reconstructing volume:
   } else {
     this->run_dir = get_unique_fn("./run-1");
     this->log_fn = this->run_dir + "/log.csv";
@@ -3053,6 +3063,8 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << '\n';
     run_log << "Original voxel count, " << coord_prod_accum(this->image_lengths)
             << '\n';
+    run_log << "Close steps, " << args->close_steps << '\n';
+    run_log << "Open steps, " << args->open_steps << '\n';
 #endif
   }
 }
@@ -3070,10 +3082,13 @@ template <class image_t> void Recut<image_t>::operator()() {
   start_run_dir_and_logs();
 
   if (args->input_type == "mask") {
-    // mask grids are a fog volume of sparse active values in space
-    auto base_grid = read_vdb_file(args->input_path);
-    this->mask_grid = openvdb::gridPtrCast<openvdb::MaskGrid>(base_grid);
 
+#ifdef LOG
+    //std::cout << "Voxel count " << mask_grid->activeVoxelCount() << '\n';
+    auto timer = high_resolution_timer();
+#endif
+
+    // mask grids are a fog volume of sparse active values in space
     // change the fog volume into an SDF by holding values on the border between
     // active an inactive voxels
     // the new SDF wraps (dilates by 1) the original active voxels, and
@@ -3084,18 +3099,49 @@ template <class image_t> void Recut<image_t>::operator()() {
     auto sdf_grid = vto::topologyToLevelSet(*mask_grid, /*halfwidth*/ 1,
                                             /*closingwidth*/ args->close_steps);
 
-    // find enclosed regions and log
+    // define the filter for the morphological operations to the level set
+    // morpho operations can only occur on SDF level sets, not on FOG topologies
+    auto filter =
+        std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(*sdf_grid);
+    filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
+    filter->setTemporalScheme(openvdb::math::TVD_RK1);
+
+#ifdef LOG
+    std::ofstream run_log;
+    run_log.open(log_fn, std::ios::app);
+    run_log << "Closing, " << timer.elapsed() << '\n';
+    //std::cout << "Voxel count " << sdf_grid->activeVoxelCount() << '\n';
+    timer.restart();
+#endif
+
+    // TODO find enclosed regions and log
+
+    filter->offset(args->open_steps);
+    filter->offset(-args->open_steps);
 
     // these morphological operations may nullify the values stored in the SDF
-    vto::erodeActiveValues(sdf_grid->tree(), args->open_steps);
-    vto::dilateActiveValues(sdf_grid->tree(), args->open_steps);
+    // vto::erodeActiveValues(sdf_grid->tree(), args->open_steps);
+    // vto::dilateActiveValues(sdf_grid->tree(), args->open_steps);
+
+#ifdef LOG
+    run_log << "Opening, " << timer.elapsed() << '\n';
+    //std::cout << "Voxel count " << sdf_grid->activeVoxelCount() << '\n';
+    timer.restart();
+#endif
 
     // rebuild SDF values?
 
     // sdf segment
-    // vto:segmentSDF(sdf_grid);
     std::vector<openvdb::FloatGrid::Ptr> components;
+    //vto:segmentSDF(*sdf_grid, components);
     vto::segmentActiveVoxels(*sdf_grid, components);
+
+#ifdef LOG
+    run_log << "Segment, " << timer.elapsed() << '\n';
+    run_log << "Seed count, " << components.size() << '\n';
+    run_log.close();
+    //std::cout << "Voxel count " << sdf_grid->activeVoxelCount() << '\n';
+#endif
 
     auto root_pairs = components | rv::transform([](auto component) {
                         auto bbox = component->evalActiveVoxelBoundingBox();
@@ -3114,14 +3160,16 @@ template <class image_t> void Recut<image_t>::operator()() {
     rng::for_each(root_pairs, [&](auto root_pair) {
       auto [coord, radius] = root_pair;
       std::ofstream seed_file;
-      seed_file.open(seed_dir + "marker_" + std::to_string((int)coord.x()) + "_" +
-                         std::to_string((int)coord.y()) + "_" + std::to_string((int)coord.z()),
+      seed_file.open(seed_dir + "marker_" + std::to_string((int)coord.x()) +
+                         "_" + std::to_string((int)coord.y()) + "_" +
+                         std::to_string((int)coord.z()) + "_" + std::to_string(pow(radius, 3)),
                      std::ios::app);
       seed_file << "#x,y,z,radius\n";
       seed_file << coord.x() << ',' << coord.y() << ',' << coord.z() << ','
                 << +(radius) << '\n';
     });
 
+    // partition_components(root_pairs, false);
     return;
   }
 
