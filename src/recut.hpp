@@ -2466,7 +2466,9 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
 
   } else { // converting to a new grid from a raw image
     if (!args->seed_path.empty()) {
-      throw std::runtime_error("--seeds is not accepted for inputs of images. User defined seeds must be passed with a point VDB");
+      throw std::runtime_error(
+          "--seeds is not accepted for inputs of images. User defined seeds "
+          "must be passed with a point VDB");
     }
     if (args->input_type == "tiff") {
       const auto tif_filenames = get_dir_files(args->input_path, ".tif");
@@ -3277,10 +3279,12 @@ template <class image_t> void Recut<image_t>::operator()() {
               << '\n';
 #endif
 
-    // write out topology
-    openvdb::GridPtrVec grids;
-    grids.push_back(this->topology_grid);
-    write_vdb_file(grids, "masked-sdf.vdb");
+    if (args->save_vdbs) {
+      // write out topology
+      openvdb::GridPtrVec grids;
+      grids.push_back(this->topology_grid);
+      write_vdb_file(grids, this->run_dir + "/masked-sdf.vdb");
+    }
 
     this->topology_grid = convert_sdf_to_points(masked_sdf, this->image_lengths,
                                                 this->args->foreground_percent);

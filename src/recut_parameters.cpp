@@ -1,7 +1,7 @@
 #include "recut_parameters.hpp"
 
 void RecutCommandLineArgs::PrintUsage() {
-  std::cout << "Basic usage : recut <image file or dir> [--seeds <marker_dir>] "
+  std::cout << "Basic usage : recut <image or r> [--seeds <marker_dir>] "
                "[--type point/uint8/mask/float/ims/tiff] "
                "[-o <output_vdb_file_name>] "
                "[--bkg-thresh <int>] [--fg-percent <double>]\n\n";
@@ -30,9 +30,9 @@ void RecutCommandLineArgs::PrintUsage() {
   // std::cout << "--min                set min image voxel raw value allowed, "
   //"computed automatically when --bg_thresh or --fg-percent are "
   //"specified\n";
-  std::cout << "--channel            [-c] channel number, default 0\n";
-  std::cout << "--resolution-level   [-rl] resolution level default 0 "
-               "(original resolution)\n";
+  //std::cout << "--channel            [-c] channel number, default 0\n";
+  //std::cout << "--resolution-level   [-rl] resolution level default 0 "
+               //"(original resolution)\n";
   // std::cout
   //<< "--image-offsets      [-io] offsets of subvolume, in x y z order "
   //"default 0 0 0\n";
@@ -77,12 +77,12 @@ void RecutCommandLineArgs::PrintUsage() {
          "upsampled (copied) by specified factor, default is 1 i.e. no "
          "upsampling\n";
   std::cout
-      << "--min-window     windows by default only extend to bounding volume "
+      << "--min-window         windows by default only extend to bounding volume "
          "of their component, this value specifies the minimum window border "
          "surrounding seeds, if no um value is passed it will use "
       << MIN_WINDOW_UM << " um\n";
   std::cout
-      << "--expand-window        windows by default only extend to bounding "
+      << "--expand-window      windows by default only extend to bounding "
          "volume of their component, this allows specifying an expansion "
          "factor around seeds, if no um value is passed it will use "
       << EXPAND_WINDOW_UM << " um\n";
@@ -90,6 +90,8 @@ void RecutCommandLineArgs::PrintUsage() {
       << "--open-steps         # of iterations of morphological opening\n";
   std::cout
       << "--close-steps        # of iterations of morphological closing\n";
+  std::cout
+      << "--save-vdbs          save intermediate VDB grids during reconstruction transformations\n";
   std::cout
       << "--run-app2           for benchmarks and comparisons runs app2 on "
          "the vdb passed to --output-windows\n";
@@ -189,6 +191,9 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
                   "[float,point,uint8,mask,ims,tiff,swc,eswc,labels]\n";
           exit(1);
         }
+        ++i;
+      } else if (strcmp(argv[i], "--save-vdbs") == 0) {
+        args.save_vdbs = true;
         ++i;
       } else if (strcmp(argv[i], "--channel") == 0 ||
                  strcmp(argv[i], "-c") == 0) {

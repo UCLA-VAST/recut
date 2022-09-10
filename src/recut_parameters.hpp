@@ -24,7 +24,7 @@ public:
         second_grid(std::string()), upsample_z(1), downsample_factor(1),
         max_intensity(-1), min_intensity(-1), expand_window_um(0.),
         min_window_um(0.), open_steps(0), close_steps(0),
-        voxel_size({1., 1., 1.}) {}
+        voxel_size({1., 1., 1.}), save_vdbs(false) {}
 
   static void PrintUsage();
   std::string MetaString();
@@ -55,7 +55,7 @@ public:
   double foreground_percent, slt_pct;
   float min_window_um, expand_window_um;
   VID_t selected, root_vid;
-  bool run_app2, convert_only, combine, histogram;
+  bool run_app2, convert_only, combine, histogram, save_vdbs;
   std::array<int, 3> tile_lengths;
   std::array<float, 3> voxel_size;
   std::optional<uint16_t> prune_radius;
