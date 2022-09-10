@@ -1,7 +1,7 @@
 [![built with
 nix](https://builtwithnix.org/badge.svg)](https://builtwithnix.org)
 
-## Quick Install With Nix (strongly recommended)
+# Quick Install With Nix (strongly recommended)
 Make sure `git` and `curl` is installed and available from your command line and copy and paste the single command to install the Nix package manager for your operating system found [here](https://nixos.org/download.html).
 
 Next, on your command line run:
@@ -23,18 +23,19 @@ git pull origin master
 nix-env -f . -i
 ```
 
-## Usage and Features
+# Features
+Recut has several principle usages: 
+1. Compressing image volumes to a sparse format [VDB grids](https://www.openvdb.org/documentation/doxygen/faq.html) (`.vdb`)
+2. Segment, reconstruct and skeletonize cells in medical images
+3. Creating volumetric image windows for bounding boxes of interest, for example around cells for supervised training labels or proofreading. This is accomplished efficiently and in parallel by uncompressing from the sparse VDB format into `.tiff` which can be more widely consumed by visualization or machine learning software. For example, the cell-based U-net inference software in Recut's pipeline directory consumes `.tiff`s
+4. Filtration and quality control of skeletonized cells (trees) based on domain-specific features. Since recut takes a batch process approach where large volume medical images are reconstructed concurrently, methods that filter and discard cells automatically are critical
+5. Image conversion tools between `.ims`,`.vdb`, and `.tiff` for visualization, reconstruction and machine learning
+
+# Usage 
 Once recut is installed globally you can see the example usage by running on the command line:
 ```
 recut
 ```
-Recut has several principle usages: 
-1. Compressing image volumes to a sparse format [VDB grids](https://www.openvdb.org/documentation/doxygen/faq.html) (`.vdb`)
-2. Segment, reconstruct and skeletonize cells in medical images.
-3. Creating volumetric image windows for bounding boxes of interest, for example around cells for supervised training labels or proofreading. This is accomplished efficiently and in parallel by uncompressing from the sparse VDB format into `.tiff` which can be more widely consumed by visualization or machine learning software. For example, the cell-based U-net inference software in Recut's pipeline directory consumes `.tiff`.
-4. Filtration and quality control of skeletonized cells (trees) based on domain-specific features. Since recut takes a batch process approach where large volume medical images are reconstructed concurrently, methods that filter and discard cells automatically are critical.
-5. Converting `.ims` or `.vdb` files to `.tiff` and other image to image conversions.
-
 The first argument passed to recut is the path to the input which can either be a directory of `.tiff` files or an `.ims` or `.vdb` file. The ordering of all other arguments is arbitrary. The default behavior is to run an end-to-end reconstruction of the passed `.ims` or `.tiff` image.  Arguments have assumed default values for the most common expected behavior.
 
 ### Acceptable Input Formats
@@ -67,7 +68,7 @@ For brain volumes with voxel size [1,1,1] in um, we found a morphological closin
 Even in inferenced neural tissue of internal data, only about 20% of foreground voxels are reachable from known seed locations. In order for Recut to build trees it must traverse from a seed (cell body) point. These seed points can be picked from the image by hand or from the U-net model in the `recut/pipeline` folder. If you wish to generate seed locations via a separate method, output all seed in the image into separate files in the same folder. Each file contains a single line with the coordinate and radius information separated by commas like so:
 `X,Y,Z,RADIUS`
 
-### Conversion
+## Conversions
 Convert the folder `ch0` into a VDB point grid:
 ```
 recut ch0 --input-type tiff --output-type point --fg-percent .05
@@ -112,22 +113,26 @@ While this results in the fastest conversions it is rarely useful since it is hi
 It is possible to run the full Recut pipeline on raw images but it may require guesswork in selecting the right foreground percentage for your image as shown below.
 Either way you will want to make sure your seed points (cell bodies) are properly detected see the morphological operations section in the documentation.
 ```
-# an example flow on raw images
-recut ch0 -o point.vdb --input-type tiff --output-type point --fg-percent .05
-# you would need to write the coordinates and radii of known seed points (cell body) by hand in marker_files/
-recut point.vdb --seeds marker_files
+# do an explicit conversion
+recut ch0 -o mask.vdb --output-type mask --fg-percent .05
+# pass the output to a reconstruction run
+recut mask.vdb --close-steps 8 --open-steps 5
+```
+which is equivalent to:
+```
+recut ch0 --fg-percent .05 --close-steps 8 --open-steps 5
 ```
 
 ### Output Windows (crops, ROIs, labels, etc.)
 If you created a corresponding VDB grid of type uint8 for channel 0 and type mask for channel 1 you can also output a window for the bounding box each individual swc for proofreading by:
 ```
-recut point.vdb --seeds marker_files --output-windows uint8.vdb mask.vdb
+recut ch0 --output-windows uint8.vdb mask.vdb
 ```
 This will create a folder in your current directory `run-2` which has a folder for each component of neurons along with its compressed TIFF file for the bounding volume of the component for the uint8.vdb and mask.vdb grid passed to be used in a SWC viewing software.
 
 Instead of outputting windows from the original image as demonstrated above, it's also possible to use the binarized inference image which Recut uses for reconstruction. To create bounding box windows around each swc first convert the inferenced image into a VDB grid of type mask named for example `inference-mask` then pass it as an argument like so:
 ```
-recut point.vdb --seeds marker_files --output-windows uint8.vdb mask.vdb inference-mask.vdb
+recut ch0 --output-windows uint8.vdb mask.vdb inference-mask.vdb
 ```
 Now each component folder will have a TIFF window from the original image, the 1-bit channel 1, and the binarized inference of the original inference. Having different image windows (labels) with corresponding SWCs can be a very efficient way to retrain or build better neural network models since it removes much of the manual human annotation steps.
 
@@ -136,6 +141,7 @@ If your components have path breaks it is recommended to use the flags `--min-wi
 #### Outputs
 Within the directory `recut` is invoked from, a new folder named `run-1` will be created which contains a set of folders for each connected component connected to at least 1 seed point. The folders prepended with `a-multi...` contain multiple cell bodies (seed points), therefore these particular folders contain multiple SWC files (trees) within them. If you ran the reconstruction passing different images to `--output-windows` these folders will also contain compressed tiff volumes for the bounding box of all trees within the component for proofreading or training. You can do further analysis or run quality control on these outputs if you install [StdSwc](http://neuromorpho.org/StdSwc1.21.jsp) and run `[recut_root_dir]/scripts/batch-std-swc.sh run-1` for the run directory generated. For each tree in the run directory a new corresponding text file will be placed alongside it logging any warnings for the proofreader. These logs are prepended with `stdlog-...`.
 
+## Other Usages
 #### Reconstruction from known seeds
 We recommend allowing Recut to find seeds automatically, but its still possible to pass in custom seeds for a particular run.
 If you've created a point grid for an image, for example named `point.vdb`, the following would reconstruct the image based off of a directory of files which note the coordinates of starting locations (seeds). This directory in the following example is shown as `marker_files`:
@@ -171,13 +177,7 @@ If you have nix installed (recommended) you can also run the same CI tests with:
 All pushes will run `nix-build` via github-actions, so you should run this anyway locally before pushing
 to make sure the regression tests and CI system won't fail.
 
-## Scientific Motivation
-This repository began as a fork of the out-of-memory graph processing framework detailed [here](https://vast.cs.ucla.edu/~chiyuze/pub/icde16.pdf)
-
-The execution pattern and partitioning strategy much more strongly resembles this [paper]( https://arxiv.org/abs/1811.00009), however no public implementation for it was provided.
-Reading this second paper is a fast way to understand the overall design and execution pattern of Recut.
-
-## CMake Only Installation (Deprecated)
+### CMake Only Installation (Deprecated)
 The following are the commands are required for a CMake and git based installation. If taking this route, the OpenVDB c++ library may need to be installed with CMake first.
 ```
 git clone git@github.com:UCLA-VAST/recut
@@ -208,10 +208,10 @@ This program relies on:
 - Optionally: python3.8 matplotlib, gdb, clang-tools, linux-perf for development
 - Note: to increase reproducibility and dependencies issues we recommend developing within the Nix package environment (see the Troubleshooting section)
 
-## Known Issues
+### Known Issues
 Where possible Recut attempts to use the maximum threads available to your system by default. This can be a problem when converting large images or when using the `--output-windows` with multiple large grids since each thread is grabbing large chunks of images and operating on them in DRAM. Meanwhile reconstruction alone consumes very little memory since it operates on images that have already been compressed to VDB grids. In general you should use the system with the maximum amount of DRAM that you can. When you are still limited on DRAM you should lower the thread count used by recut by specifying the threads like `--parallel 2`. When recut consumes too much memory you will see erros like `Segmentation fault` or `SIGKILL`. Lower the thread count until the process can complete, you can monitor the dynamic usage of your DRAM during execution by running the command `htop` in a separate terminal. This can be helpful to guage what parallel factor you want to use.
 
-#### Troubleshooting
+### Troubleshooting
 Some of Recut's dependencies require later releases then you may have
 installed on your system, for example CMake. In these scenarios, or if you're
 running into compile time issues we recommend running a pinned version of
@@ -219,6 +219,9 @@ all software via the Nix package manager. To our knowledge, Nix is the state of 
 in terms of software reproducibility, package and dependency management, and solving
 versioning issues in multi-language repositories.  You can install Nix on any Linux
 distribution, MacOS and Windows (via WSL).
+
+# Scientific Motivation
+The execution pattern and partitioning strategy resembles this [paper]( https://arxiv.org/abs/1811.00009), however we build on top of the [VDB library](https://github.com/AcademySoftwareFoundation/openvdb) for performance in sparse large-scale settings. 
 
 # Cite
 If you find this software helpful please consider citing the [preprint](https://www.biorxiv.org/content/10.1101/2021.12.07.471686v2.full).
