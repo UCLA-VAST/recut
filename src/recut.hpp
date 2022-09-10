@@ -17,9 +17,9 @@
 #include <iostream>
 #include <map>
 #include <openvdb/tools/Composite.h>
+#include <openvdb/tools/FastSweeping.h>
 #include <openvdb/tools/LevelSetUtil.h>
 #include <openvdb/tools/TopologyToLevelSet.h>
-#include <openvdb/tools/FastSweeping.h>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -3048,7 +3048,7 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
                 << coord_prod_accum(this->image_lengths) << '\n';
 #endif
 
-  // Reconstructing volume:
+    // Reconstructing volume:
   } else {
     this->run_dir = get_unique_fn("./run-1");
     this->log_fn = this->run_dir + "/log.csv";
@@ -3085,7 +3085,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   if (args->input_type == "mask") {
 
 #ifdef LOG
-    //std::cout << "Voxel count " << mask_grid->activeVoxelCount() << '\n';
+    // std::cout << "Voxel count " << mask_grid->activeVoxelCount() << '\n';
     auto timer = high_resolution_timer();
 #endif
 
@@ -3097,14 +3097,16 @@ template <class image_t> void Recut<image_t>::operator()() {
     //
     // this function additionally adds a morphological closing step such that
     // holes and valleys in the SDF are filled
-    auto closed_sdf_grid = vto::topologyToLevelSet(*mask_grid, /*halfwidth*/ 1,
-                                            /*closingwidth*/ args->close_steps);
+    auto closed_sdf_grid =
+        vto::topologyToLevelSet(*mask_grid, /*halfwidth*/ 1,
+                                /*closingwidth*/ args->close_steps);
 
 #ifdef LOG
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
     run_log << "Closing, " << timer.elapsed() << '\n';
-    std::cout << "Closing voxel count " << closed_sdf_grid->activeVoxelCount() << '\n';
+    std::cout << "Closing voxel count " << closed_sdf_grid->activeVoxelCount()
+              << '\n';
     timer.restart();
 #endif
 
@@ -3112,8 +3114,8 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     // define the filter for the morphological operations to the level set
     // morpho operations can only occur on SDF level sets, not on FOG topologies
-    auto filter =
-        std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(*closed_sdf_grid);
+    auto filter = std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(
+        *closed_sdf_grid);
     filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
     filter->setTemporalScheme(openvdb::math::TVD_RK1);
     filter->offset(args->open_steps);
@@ -3126,7 +3128,8 @@ template <class image_t> void Recut<image_t>::operator()() {
 
 #ifdef LOG
     run_log << "Opening, " << timer.elapsed() << '\n';
-    std::cout << "Open voxel count " << opened_sdf_grid->activeVoxelCount() << '\n';
+    std::cout << "Open voxel count " << opened_sdf_grid->activeVoxelCount()
+              << '\n';
     timer.restart();
 #endif
 
@@ -3134,7 +3137,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     // sdf segment
     std::vector<openvdb::FloatGrid::Ptr> components;
-    //vto:segmentSDF(*opened_sdf_grid, components);
+    // vto:segmentSDF(*opened_sdf_grid, components);
     vto::segmentActiveVoxels(*opened_sdf_grid, components);
 
 #ifdef LOG
@@ -3162,7 +3165,9 @@ template <class image_t> void Recut<image_t>::operator()() {
       std::ofstream seed_file;
       seed_file.open(seed_dir + "marker_" + std::to_string((int)coord.x()) +
                          "_" + std::to_string((int)coord.y()) + "_" +
-                         std::to_string((int)coord.z()) + "_" + std::to_string(static_cast<int>(((4 * PI) / 3.) * pow(radius, 3))),
+                         std::to_string((int)coord.z()) + "_" +
+                         std::to_string(static_cast<int>(((4 * PI) / 3.) *
+                                                         pow(radius, 3))),
                      std::ios::app);
       seed_file << "#x,y,z,radius\n";
       seed_file << coord.x() << ',' << coord.y() << ',' << coord.z() << ','
@@ -3177,12 +3182,16 @@ template <class image_t> void Recut<image_t>::operator()() {
     auto masked_sdf = vto::maskSdf(*opened_sdf_grid, *closed_sdf_grid);
 #ifdef LOG
     std::cout << "Mask SDF, " << timer.elapsed() << '\n';
-    std::cout << "Masked SDF voxel count " << masked_sdf->activeVoxelCount() << '\n';
+    std::cout << "Masked SDF voxel count " << masked_sdf->activeVoxelCount()
+              << '\n';
 #endif
 
+    // write out topology
     openvdb::GridPtrVec grids;
     grids.push_back(this->topology_grid);
     write_vdb_file(grids, "masked-sdf.vdb");
+
+    this->topology_grid = convert_sdf_to_positions(masked_sdf, this->image_lengths, this->args->foreground_percent);
 
     // partition_components(root_pairs, false);
     return;
