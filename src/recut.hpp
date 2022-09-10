@@ -2411,6 +2411,8 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
     auto timer = high_resolution_timer();
     auto base_grid = read_vdb_file(args->input_path);
 
+    //if (base_grid->isType<openvdb::FloatGrid>()) {
+
     if (this->args->input_type == "float") {
       this->input_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
       // copy topology (bit-mask actives) to the topology grid
@@ -3073,17 +3075,80 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
 template <class image_t> void Recut<image_t>::operator()() {
 
   if (!args->second_grid.empty()) {
-    // combine and exit program
+    // simply combine the passed grids then exit program immediately
     combine_grids(args->input_path, args->second_grid, this->args->output_name);
     return;
   }
 
+  // process the input args and parameters
   this->initialize();
 
   start_run_dir_and_logs();
 
-  if (args->input_type == "mask") {
+  std::vector<std::pair<GridCoord, uint8_t>> root_pairs;
 
+  // if point.vdb was not already set by input
+  if (!this->input_is_vdb) {
+    // if (!args->convert_only) {
+    // if (this->args->output_type != "point") {
+    // throw std::runtime_error(
+    //"If running reconstruction, output type must be type point");
+    //}
+    //}
+
+    if (args->convert_only) {
+      // converts to whatever output_type specifies
+      convert_topology();
+
+      openvdb::GridPtrVec grids;
+      if (args->output_type == "float") {
+        print_grid_metadata(this->input_grid);
+        grids.push_back(this->input_grid);
+      } else if (args->output_type == "uint8") {
+        print_grid_metadata(this->img_grid);
+        grids.push_back(this->img_grid);
+      } else if (args->output_type == "mask") {
+        print_grid_metadata(this->mask_grid);
+        grids.push_back(this->mask_grid);
+      } else if (args->output_type == "point") {
+        print_grid_metadata(this->topology_grid);
+        grids.push_back(this->topology_grid);
+      }
+      write_vdb_file(grids, this->args->output_name);
+      // no more work to do, exiting
+      return;
+
+    } else { // fully reconstruct the image
+
+      auto final_output_type = args->output_type;
+
+      // temporarily set output type to create necessary grids
+      if (args->seed_path.empty()) {
+        // if generating seeds then convert to mask first
+        args->output_type = "mask";
+        convert_topology();
+        // sets to this->mask_grid instead of reading from file
+      } else {
+        args->output_type = "point";
+        convert_topology();
+        append_attributes(this->topology_grid);
+      }
+
+      // reset it
+      args->output_type = final_output_type;
+    }
+
+    // set the z tile lengths to equallying whole image for reconstruction
+    this->tile_lengths[2] = this->image_lengths[2];
+    update_hierarchical_dims(this->tile_lengths);
+    // assume starting from VDB for rest of run
+    this->input_is_vdb = true;
+  }
+
+  if (args->seed_path.empty()) {
+
+    assertm(this->mask_grid,
+            "Mask grid must be set before starting soma segmentation");
 #ifdef LOG
     // std::cout << "Voxel count " << mask_grid->activeVoxelCount() << '\n';
     auto timer = high_resolution_timer();
@@ -3098,7 +3163,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     // this function additionally adds a morphological closing step such that
     // holes and valleys in the SDF are filled
     auto closed_sdf_grid =
-        vto::topologyToLevelSet(*mask_grid, /*halfwidth*/ 1,
+        vto::topologyToLevelSet(*this->mask_grid, /*halfwidth*/ 1,
                                 /*closingwidth*/ args->close_steps);
 
 #ifdef LOG
@@ -3146,13 +3211,15 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log.close();
 #endif
 
-    auto root_pairs = components | rv::transform([](auto component) {
-                        auto bbox = component->evalActiveVoxelBoundingBox();
-                        auto dims = bbox.dim();
-                        // set the radius to be half the longest dimension
-                        auto radius = dims[dims.maxIndex()] / 2;
-                        return std::make_pair(bbox.getCenter(), radius);
-                      });
+    root_pairs = components | rv::transform([](auto component) {
+                   auto bbox = component->evalActiveVoxelBoundingBox();
+                   auto dims = bbox.dim();
+                   // set the radius to be half the longest dimension
+                   auto radius = static_cast<uint8_t>(dims[dims.maxIndex()] / 2);
+                   auto center = bbox.getCenter();
+                   return std::make_pair(new_grid_coord(center.x(), center.y(), center.z()), radius);
+                 }) |
+                 rng::to_vector;
 
     // write seed/roots to disk
     // start run dir
@@ -3191,56 +3258,19 @@ template <class image_t> void Recut<image_t>::operator()() {
     grids.push_back(this->topology_grid);
     write_vdb_file(grids, "masked-sdf.vdb");
 
-    this->topology_grid = convert_sdf_to_positions(masked_sdf, this->image_lengths, this->args->foreground_percent);
+    this->topology_grid = convert_sdf_to_points(
+        masked_sdf, this->image_lengths, this->args->foreground_percent);
 
-    // partition_components(root_pairs, false);
-    return;
+  } else {
+    // adds all valid markers to roots vector and returns
+    root_pairs =
+        process_marker_dir(this->image_offsets, this->image_lengths, 1);
   }
 
-  // if point.vdb was not already set by input
-  if (!this->input_is_vdb) {
-    if (!args->convert_only) {
-      if (this->args->output_type != "point") {
-        throw std::runtime_error(
-            "If running reconstruction, output type must be type point");
-      }
-    }
-    convert_topology();
-
-    if (args->convert_only) {
-      openvdb::GridPtrVec grids;
-      if (args->output_type == "float") {
-        print_grid_metadata(this->input_grid);
-        grids.push_back(this->input_grid);
-      } else if (args->output_type == "uint8") {
-        print_grid_metadata(this->img_grid);
-        grids.push_back(this->img_grid);
-      } else if (args->output_type == "mask") {
-        print_grid_metadata(this->mask_grid);
-        grids.push_back(this->mask_grid);
-      } else if (args->output_type == "point") {
-        print_grid_metadata(this->topology_grid);
-        grids.push_back(this->topology_grid);
-      }
-      write_vdb_file(grids, this->args->output_name);
-      // no more work to do, exiting
-      return;
-    }
-
-    // set the z tile lengths to equallying whole image for reconstruction
-    this->tile_lengths[2] = this->image_lengths[2];
-    update_hierarchical_dims(this->tile_lengths);
-    append_attributes(this->topology_grid);
-    // assume starting from VDB for rest of run
-    this->input_is_vdb = true;
-  }
-
+  assertm(!root_pairs.empty(),
+          "Root paris must be set before beginning reconstruction");
   assertm(this->topology_grid,
           "Topology grid must be set before starting reconstruction");
-
-  // adds all valid markers to roots vector and returns
-  auto root_pairs =
-      process_marker_dir(this->image_offsets, this->image_lengths, 1);
 
   initialize_globals(this->grid_tile_size, this->tile_block_size);
 

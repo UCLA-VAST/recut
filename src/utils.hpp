@@ -3470,7 +3470,7 @@ auto get_output_name = [](RecutCommandLineArgs *args) -> std::string {
   return std::string("out.vdb");
 };
 
-auto convert_sdf_to_positions = [](auto sdf, auto image_lengths,
+auto convert_sdf_to_points = [](auto sdf, auto image_lengths,
                                    auto foreground_percent) {
   std::vector<PositionT> positions;
   for (auto iter = sdf->cbeginValueOn(); iter.test(); ++iter) {
@@ -3478,6 +3478,8 @@ auto convert_sdf_to_positions = [](auto sdf, auto image_lengths,
     positions.push_back(PositionT(coord.x(), coord.y(), coord.z()));
   }
 
-  return create_point_grid(positions, image_lengths, get_transform(),
-                           foreground_percent);
+  auto topology_grid = create_point_grid(positions, image_lengths,
+                                         get_transform(), foreground_percent);
+  append_attributes(topology_grid);
+  return topology_grid;
 };
