@@ -49,7 +49,7 @@ recut ch0
 ```
 This will create a folder in your current directory `run-1` which has a folder for each component of neurons and their respective skeletonized SWC (tree-format) outputs.
 
-### Morphological Operations
+### Morphological Operations and Seed Segmentation
 In order to find the cell bodies of branching neurons more effectively, recut accepts a parameter to conduct morphological opening like so:
 ```
 recut ch0 --open-steps 5
@@ -61,10 +61,10 @@ While the command above works for images with cells with clearly filled interior
 recut ch0 --input-type mask --close-steps 8 --open-steps 5
 ```
 
-For brain volumes with voxel size [1,1,1] in um, we found a morphological closing step of 8 followed by a morphological opening step of 5 with a foreground percent of .1 to be best for segmenting hollow cell body (soma) regions. The estimated cell body location and coordinates will be created in the new run directory under `seeds/`. 
+For brain volumes with voxel size [1,1,1] in um, we found a morphological closing step of 8 followed by a morphological opening step of 5 with a foreground percent of .1 to be best for segmenting hollow cell body (seed) regions. The estimated cell body location and coordinates will be created in the new run directory under `seeds/`. 
 
 #### Seeds
-Even in inferenced neural tissue of internal data, only about 20% of foreground voxels are reachable from known soma locations. In order for Recut to build trees it must traverse from a seed (cell body) point. These seed points can be picked from the image by hand or from the U-net model in the `recut/pipeline` folder. If you wish to generate soma locations via a separate method, output all somas in the image into separate files in the same folder. Each file contains a single line with the coordinate and radius information separated by commas like so:
+Even in inferenced neural tissue of internal data, only about 20% of foreground voxels are reachable from known seed locations. In order for Recut to build trees it must traverse from a seed (cell body) point. These seed points can be picked from the image by hand or from the U-net model in the `recut/pipeline` folder. If you wish to generate seed locations via a separate method, output all seed in the image into separate files in the same folder. Each file contains a single line with the coordinate and radius information separated by commas like so:
 `X,Y,Z,RADIUS`
 
 ### Conversion
@@ -88,7 +88,7 @@ vdb_print -l -m subset.vdb
 You'll notice that vdb grid's metadata has been stamped with information about the arguments used during conversion to help distinguish files with different characteristics. If you have no other way to match the identity of VDB with an original image, refer to the original bounding extents which can often uniquely identify an image. The original bounding extents of the image used are preserved as the coordinate frame of all points and voxels regardless of any length arguments passed. Note that the command line tools `vdb_view`and `vdb_print` as well as Houdini will not work with type uint8 grids.
 
 #### Image Inference Conversions
-The highest quality *reconstructions* currently involve running the MCP3D pipeline's neurite and soma segmentation and connected component stage followed by recut conversion to a point grid followed by recut's reconstruction of that point grid. MCP3D's connected component stage will output the soma locations `marker_files` for use in reconstruction as shown below. MCP3D's segmentation will output a directory of tiff files of the binarized segmented image, with all background set to 0, therefore converting like we did before:
+The highest quality *reconstructions* currently involve running the MCP3D pipeline's neurite and cell body segmentation and connected component stage followed by recut conversion to a point grid followed by recut's reconstruction of that point grid. MCP3D's connected component stage will output the cell body locations `marker_files` for use in reconstruction as shown below. MCP3D's segmentation will output a directory of tiff files of the binarized segmented image, with all background set to 0, therefore converting like we did before:
 ```
 recut ch0 -o point.vdb --input-type tiff --output-type point
 ```
@@ -110,11 +110,11 @@ recut ch0 -o point.vdb --input-type tiff --output-type point --bg-thresh 127
 While this results in the fastest conversions it is rarely useful since it is highly sensitive to image normalization and preprocessing.
 
 It is possible to run the full Recut pipeline on raw images but it may require guesswork in selecting the right foreground percentage for your image as shown below.
-Either way you will want an automated way of detecting seed points (somas) see the Seeds section in the documentation below.
+Either way you will want to make sure your seed points (cell bodies) are properly detected see the morphological operations section in the documentation.
 ```
 # an example flow on raw images
 recut ch0 -o point.vdb --input-type tiff --output-type point --fg-percent .05
-# you would need to write the coordinates and radii of known seed points (somas) by hand in marker_files/
+# you would need to write the coordinates and radii of known seed points (cell body) by hand in marker_files/
 recut point.vdb --seeds marker_files
 ```
 
@@ -134,17 +134,17 @@ Now each component folder will have a TIFF window from the original image, the 1
 If your components have path breaks it is recommended to use the flags `--min-window` or `--expand-window` this will increase the output window sizes in attempt to capture all the branch extensions or surrounding context for proofreading.
 
 #### Outputs
-Within the directory `recut` is invoked from, a new folder named `run-1` will be created which contains a set of folders for each connected component connected to at least 1 seed point. The folders prepended with `a-multi...` contain multiple somas (seed points), therefore these particular folders contain multiple SWC files (trees) within them. If you ran the reconstruction passing different images to `--output-windows` these folders will also contain compressed tiff volumes for the bounding box of all trees within the component for proofreading or training. You can do further analysis or run quality control on these outputs if you install [StdSwc](http://neuromorpho.org/StdSwc1.21.jsp) and run `[recut_root_dir]/scripts/batch-std-swc.sh run-1` for the run directory generated. For each tree in the run directory a new corresponding text file will be placed alongside it logging any warnings for the proofreader. These logs are prepended with `stdlog-...`.
+Within the directory `recut` is invoked from, a new folder named `run-1` will be created which contains a set of folders for each connected component connected to at least 1 seed point. The folders prepended with `a-multi...` contain multiple cell bodies (seed points), therefore these particular folders contain multiple SWC files (trees) within them. If you ran the reconstruction passing different images to `--output-windows` these folders will also contain compressed tiff volumes for the bounding box of all trees within the component for proofreading or training. You can do further analysis or run quality control on these outputs if you install [StdSwc](http://neuromorpho.org/StdSwc1.21.jsp) and run `[recut_root_dir]/scripts/batch-std-swc.sh run-1` for the run directory generated. For each tree in the run directory a new corresponding text file will be placed alongside it logging any warnings for the proofreader. These logs are prepended with `stdlog-...`.
 
 #### Reconstruction from known seeds
 We recommend allowing Recut to find seeds automatically, but its still possible to pass in custom seeds for a particular run.
-If you've created a point grid for an image, for example named `point.vdb`, the following would reconstruct the image based off of a directory of files which note the coordinates of starting locations (somas). This directory in the following example is shown as `marker_files`:
+If you've created a point grid for an image, for example named `point.vdb`, the following would reconstruct the image based off of a directory of files which note the coordinates of starting locations (seeds). This directory in the following example is shown as `marker_files`:
 ```
 recut point.vdb --seeds marker_files
 ```
 
 #### Training Labels
-The output windows generated by Recut can also be used to (re)train new neural network models using the script in `recut/pipeline/python/train_model.py`. By default this script expects 16-bit 2D series grayscale window crops with corresponding 8-bit RGB TIFFs to assign a class label. For our usages so far a red value of 255 indicates a voxel of a soma, and a green value of 255 indicates a voxel of a neurite in the corresponding image. Both sets of image and label files are used for training but the creation of these windows is simplified by specifying `--output-type labels` like so:
+The output windows generated by Recut can also be used to (re)train new neural network models using the script in `recut/pipeline/python/train_model.py`. By default this script expects 16-bit 2D series grayscale window crops with corresponding 8-bit RGB TIFFs to assign a class label. For our usages so far a red value of 255 indicates a voxel of a seed, and a green value of 255 indicates a voxel of a neurite in the corresponding image. Both sets of image and label files are used for training but the creation of these windows is simplified by specifying `--output-type labels` like so:
 
 `recut point.vdb --seeds marker_files --output-windows uint8.vdb --output-type labels --voxel-size 1 1 1`
 
