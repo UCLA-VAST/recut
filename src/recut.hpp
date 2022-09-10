@@ -2411,9 +2411,8 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
     auto timer = high_resolution_timer();
     auto base_grid = read_vdb_file(args->input_path);
 
-    //if (base_grid->isType<openvdb::FloatGrid>()) {
-
-    if (this->args->input_type == "float") {
+    if (base_grid->isType<openvdb::FloatGrid>()) {
+      this->args->input_type = "float";
       this->input_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
       // copy topology (bit-mask actives) to the topology grid
       // this->topology_grid =
@@ -2429,16 +2428,36 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
       auto [lengths, _] = get_metadata(input_grid);
       input_image_lengths = lengths;
       append_attributes(this->topology_grid);
-    } else if (this->args->input_type == "point") {
+    } else if (base_grid->isType<EnlargedPointDataGrid>()) {
+      this->args->input_type = "point";
       this->topology_grid =
           openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
       auto [lengths, _] = get_metadata(topology_grid);
       input_image_lengths = lengths;
       append_attributes(this->topology_grid);
-    } else if (this->args->input_type == "mask") {
+    } else if (base_grid->isType<openvdb::MaskGrid>()) {
+      this->args->input_type = "mask";
       this->mask_grid = openvdb::gridPtrCast<openvdb::MaskGrid>(base_grid);
       auto [lengths, _] = get_metadata(mask_grid);
       input_image_lengths = lengths;
+    } else if (base_grid->isType<ImgGrid>()) {
+      throw std::runtime_error(
+          "VDB grid type 'uint8' not yet supported as an input image");
+    } else {
+      throw std::runtime_error("VDB grid type not recognized, only type "
+                               "'float', 'point', 'mask', 'uint8' supported");
+    }
+
+    if (this->args->input_type == "mask" && !this->args->seed_path.empty()) {
+      throw std::runtime_error(
+          "To pass known --seeds the input should be of type point grid");
+    }
+
+    if (this->args->input_type != "mask" && this->args->seed_path.empty()) {
+      throw std::runtime_error(
+          "For soma segmentation you must pass a raw image or a mask grid. If "
+          "you start reconstruction from float or point you must also specify "
+          "a seeds path");
     }
 
 #ifdef LOG
@@ -2446,6 +2465,9 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
 #endif
 
   } else { // converting to a new grid from a raw image
+    if (!args->seed_path.empty()) {
+      throw std::runtime_error("--seeds is not accepted for inputs of images. User defined seeds must be passed with a point VDB");
+    }
     if (args->input_type == "tiff") {
       const auto tif_filenames = get_dir_files(args->input_path, ".tif");
       input_image_lengths = get_tif_dims(tif_filenames);
@@ -3211,15 +3233,17 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log.close();
 #endif
 
-    root_pairs = components | rv::transform([](auto component) {
-                   auto bbox = component->evalActiveVoxelBoundingBox();
-                   auto dims = bbox.dim();
-                   // set the radius to be half the longest dimension
-                   auto radius = static_cast<uint8_t>(dims[dims.maxIndex()] / 2);
-                   auto center = bbox.getCenter();
-                   return std::make_pair(new_grid_coord(center.x(), center.y(), center.z()), radius);
-                 }) |
-                 rng::to_vector;
+    root_pairs =
+        components | rv::transform([](auto component) {
+          auto bbox = component->evalActiveVoxelBoundingBox();
+          auto dims = bbox.dim();
+          // set the radius to be half the longest dimension
+          auto radius = static_cast<uint8_t>(dims[dims.maxIndex()] / 2);
+          auto center = bbox.getCenter();
+          return std::make_pair(
+              new_grid_coord(center.x(), center.y(), center.z()), radius);
+        }) |
+        rng::to_vector;
 
     // write seed/roots to disk
     // start run dir
@@ -3258,8 +3282,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     grids.push_back(this->topology_grid);
     write_vdb_file(grids, "masked-sdf.vdb");
 
-    this->topology_grid = convert_sdf_to_points(
-        masked_sdf, this->image_lengths, this->args->foreground_percent);
+    this->topology_grid = convert_sdf_to_points(masked_sdf, this->image_lengths,
+                                                this->args->foreground_percent);
 
   } else {
     // adds all valid markers to roots vector and returns
