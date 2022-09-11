@@ -1980,9 +1980,11 @@ Recut<image_t>::get_tile_thresholds(local_image_t *buffer,
   } else { // if bkg set explicitly and foreground wasn't
     if (this->args->background_thresh >= 0) {
       tile_thresholds->bkg_thresh = this->args->background_thresh;
+    } else {
+      // otherwise: tile_thresholds->bkg_thresh default inits to 0
+      tile_thresholds->bkg_thresh = 0;
     }
   }
-  // otherwise: tile_thresholds->bkg_thresh default inits to 0
 
   if (this->args->convert_only) {
     tile_thresholds->max_int = std::numeric_limits<local_image_t>::max();
@@ -2005,6 +2007,7 @@ Recut<image_t>::get_tile_thresholds(local_image_t *buffer,
     if (!already_set(tile_thresholds->bkg_thresh)) {
       // max and min members will be set
       tile_thresholds->get_max_min(buffer, tile_vertex_size);
+      tile_thresholds->bkg_thresh = tile_thresholds->min_int;
     }
   } else { // both values were set
     // either of these values are signed and default inited -1, casting
@@ -2016,11 +2019,11 @@ Recut<image_t>::get_tile_thresholds(local_image_t *buffer,
     tile_thresholds->min_int = (local_image_t)this->args->min_intensity;
   }
 
-#ifdef LOG_FULL
+  //#ifdef LOG_FULL
   cout << "max_int: " << +(tile_thresholds->max_int)
        << " min_int: " << +(tile_thresholds->min_int) << '\n';
   cout << "bkg_thresh value = " << +(tile_thresholds->bkg_thresh) << '\n';
-#endif
+  //#endif
   return tile_thresholds;
 }
 

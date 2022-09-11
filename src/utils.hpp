@@ -3445,11 +3445,14 @@ auto convert_fn_vdb = [](const std::string &name, auto split_char,
                          rv::join | rng::to<std::string>();
   stripped += "-ch" + std::to_string(args->channel);
   stripped += "-" + args->output_type;
-  std::ostringstream out;
-  out.precision(3);
-  out << std::fixed << args->foreground_percent;
-  stripped += "-fgpct-" + out.str();
-  stripped += "-zoff" + std::to_string(args->image_offsets.z());
+
+  if (args->foreground_percent >= 0) {
+    std::ostringstream out;
+    out.precision(3);
+    out << std::fixed << args->foreground_percent;
+    stripped += "-fgpct-" + out.str();
+  }
+  // stripped += "-zoff" + std::to_string(args->image_offsets.z());
   stripped += ".vdb";
   stripped = dir_path.size() > 1 ? parent + "/" + stripped : stripped;
   return stripped;
@@ -3471,7 +3474,7 @@ auto get_output_name = [](RecutCommandLineArgs *args) -> std::string {
 };
 
 auto convert_sdf_to_points = [](auto sdf, auto image_lengths,
-                                   auto foreground_percent) {
+                                auto foreground_percent) {
   std::vector<PositionT> positions;
   for (auto iter = sdf->cbeginValueOn(); iter.test(); ++iter) {
     auto coord = iter.getCoord();
