@@ -3442,7 +3442,7 @@ auto convert_fn_vdb = [](const std::string &name, auto split_char,
              rng::to<std::string>();
   }
   std::string stripped = file_name | rv::split(split_char) | rv::drop_last(1) |
-                         rv::join | rng::to<std::string>();
+                         rv::join(split_char) | rng::to<std::string>();
   stripped += "-ch" + std::to_string(args->channel);
   stripped += "-" + args->output_type;
 

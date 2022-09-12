@@ -2019,11 +2019,11 @@ Recut<image_t>::get_tile_thresholds(local_image_t *buffer,
     tile_thresholds->min_int = (local_image_t)this->args->min_intensity;
   }
 
-  //#ifdef LOG_FULL
+#ifdef LOG_FULL
   cout << "max_int: " << +(tile_thresholds->max_int)
        << " min_int: " << +(tile_thresholds->min_int) << '\n';
   cout << "bkg_thresh value = " << +(tile_thresholds->bkg_thresh) << '\n';
-  //#endif
+#endif
   return tile_thresholds;
 }
 
@@ -3083,6 +3083,7 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
     this->log_fn = this->run_dir + "/log.csv";
     fs::create_directories(run_dir);
 #ifdef LOG
+    std::cout << "All outputs will be written to: " << this->run_dir << '\n';
     std::ofstream run_log(log_fn);
     run_log << "Thread count, " << args->user_thread_count << '\n';
     run_log << "Prune radius, " << args->prune_radius.value() << '\n';
@@ -3176,10 +3177,11 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     assertm(this->mask_grid,
             "Mask grid must be set before starting soma segmentation");
+
 #ifdef LOG
     // std::cout << "Voxel count " << mask_grid->activeVoxelCount() << '\n';
-    auto timer = high_resolution_timer();
 #endif
+    auto timer = high_resolution_timer();
 
     // mask grids are a fog volume of sparse active values in space
     // change the fog volume into an SDF by holding values on the border between
@@ -3197,22 +3199,30 @@ template <class image_t> void Recut<image_t>::operator()() {
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
     run_log << "Closing, " << timer.elapsed() << '\n';
-    std::cout << "Closing voxel count " << closed_sdf_grid->activeVoxelCount()
+    run_log << "Closing voxel count, " << closed_sdf_grid->activeVoxelCount()
               << '\n';
-    timer.restart();
 #endif
+
+    if (args->save_vdbs) {
+      // write out topology
+      openvdb::GridPtrVec grids;
+      grids.push_back(closed_sdf_grid);
+      write_vdb_file(grids, this->run_dir + "/closed_sdf.vdb");
+    }
+
+    timer.restart();
 
     // TODO find enclosed regions and log
 
     // define the filter for the morphological operations to the level set
     // morpho operations can only occur on SDF level sets, not on FOG topologies
+    auto opened_sdf_grid = closed_sdf_grid->deepCopy();
     auto filter = std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(
-        *closed_sdf_grid);
+        *opened_sdf_grid);
     filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
     filter->setTemporalScheme(openvdb::math::TVD_RK1);
     filter->offset(args->open_steps);
     filter->offset(-args->open_steps);
-    auto opened_sdf_grid = closed_sdf_grid;
 
     // these morphological operations may nullify the values stored in the SDF
     // vto::erodeActiveValues(opened_sdf_grid->tree(), args->open_steps);
@@ -3220,10 +3230,17 @@ template <class image_t> void Recut<image_t>::operator()() {
 
 #ifdef LOG
     run_log << "Opening, " << timer.elapsed() << '\n';
-    std::cout << "Open voxel count " << opened_sdf_grid->activeVoxelCount()
+    run_log << "Open voxel count, " << opened_sdf_grid->activeVoxelCount()
               << '\n';
     timer.restart();
 #endif
+
+    if (args->save_vdbs) {
+      // write out topology
+      openvdb::GridPtrVec grids;
+      grids.push_back(opened_sdf_grid);
+      write_vdb_file(grids, this->run_dir + "/opened_sdf.vdb");
+    }
 
     // rebuild SDF values?
 
@@ -3235,7 +3252,6 @@ template <class image_t> void Recut<image_t>::operator()() {
 #ifdef LOG
     run_log << "Segment, " << timer.elapsed() << '\n';
     run_log << "Seed count, " << components.size() << '\n';
-    run_log.close();
 #endif
 
     root_pairs =
@@ -3272,21 +3288,20 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     // build full SDF by extending known somas into reachable neurites
     // or use SDFInteriorMask
-#ifdef LOG
     timer.restart();
-#endif
     auto masked_sdf = vto::maskSdf(*opened_sdf_grid, *closed_sdf_grid);
 #ifdef LOG
-    std::cout << "Mask SDF, " << timer.elapsed() << '\n';
-    std::cout << "Masked SDF voxel count " << masked_sdf->activeVoxelCount()
+    run_log << "Mask SDF, " << timer.elapsed() << '\n';
+    run_log << "Masked SDF voxel count, " << masked_sdf->activeVoxelCount()
               << '\n';
+    run_log.close();
 #endif
 
     if (args->save_vdbs) {
       // write out topology
       openvdb::GridPtrVec grids;
-      grids.push_back(this->topology_grid);
-      write_vdb_file(grids, this->run_dir + "/masked-sdf.vdb");
+      grids.push_back(masked_sdf);
+      write_vdb_file(grids, this->run_dir + "/connected_sdf.vdb");
     }
 
     this->topology_grid = convert_sdf_to_points(masked_sdf, this->image_lengths,
