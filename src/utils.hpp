@@ -3486,3 +3486,47 @@ auto convert_sdf_to_points = [](auto sdf, auto image_lengths,
   append_attributes(topology_grid);
   return topology_grid;
 };
+
+// write seed/roots to disk
+auto write_seeds = [](std::string run_dir,
+                      std::vector<std::pair<GridCoord, uint8_t>> root_pairs) {
+  // start seeds directory
+  std::string seed_dir = run_dir + "/seeds/";
+  fs::create_directories(seed_dir);
+
+  rng::for_each(root_pairs, [&](auto root_pair) {
+    auto [coord, radius] = root_pair;
+    std::ofstream seed_file;
+    seed_file.open(
+        seed_dir + "marker_" + std::to_string((int)coord.x()) + "_" +
+            std::to_string((int)coord.y()) + "_" +
+            std::to_string((int)coord.z()) + "_" +
+            std::to_string(static_cast<int>(((4 * PI) / 3.) * pow(radius, 3))),
+        std::ios::app);
+    seed_file << "#x,y,z,radius\n";
+    seed_file << coord.x() << ',' << coord.y() << ',' << coord.z() << ','
+              << +(radius) << '\n';
+  });
+};
+
+auto create_root_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
+                            EnlargedPointDataGrid::Ptr topology_grid) {
+  return components | rv::filter([topology_grid](auto component) {
+           auto bbox = component->evalActiveVoxelBoundingBox();
+           auto center = bbox.getCenter();
+           auto coord_center =
+               new_grid_coord(center.x(), center.y(), center.z());
+           auto leaf = topology_grid->tree().probeLeaf(coord_center);
+           return leaf->beginIndexVoxel(coord_center); // remove if outside the surface
+         }) |
+         rv::transform([](auto component) {
+           auto bbox = component->evalActiveVoxelBoundingBox();
+           auto dims = bbox.dim();
+           // set the radius to be half the longest dimension
+           auto radius = static_cast<uint8_t>(dims[dims.maxIndex()] / 2);
+           auto center = bbox.getCenter();
+           return std::make_pair(
+               new_grid_coord(center.x(), center.y(), center.z()), radius);
+         }) |
+         rng::to_vector;
+};

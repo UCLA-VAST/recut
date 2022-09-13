@@ -3255,49 +3255,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 
 #ifdef LOG
     run_log << "Segment, " << timer.elapsed() << '\n';
-    run_log << "Seed count, " << components.size() << '\n';
 #endif
-
-    root_pairs =
-        components | rv::remove_if([](auto component) {
-          auto bbox = component->evalActiveVoxelBoundingBox();
-          auto center = bbox.getCenter();
-          auto coord_center =
-              new_grid_coord(center.x(), center.y(), center.z());
-          auto value = component->tree().getValue(coord_center);
-          std::cout << "Value: " << value << '\n';
-          return value < 0; // remove if outside the surface
-        }) |
-        rv::transform([](auto component) {
-          auto bbox = component->evalActiveVoxelBoundingBox();
-          auto dims = bbox.dim();
-          // set the radius to be half the longest dimension
-          auto radius = static_cast<uint8_t>(dims[dims.maxIndex()] / 2);
-          auto center = bbox.getCenter();
-          return std::make_pair(
-              new_grid_coord(center.x(), center.y(), center.z()), radius);
-        }) |
-        rng::to_vector;
-
-    // write seed/roots to disk
-    // start run dir
-    // start seeds directory
-    std::string seed_dir = this->run_dir + "/seeds/";
-    fs::create_directories(seed_dir);
-
-    rng::for_each(root_pairs, [&](auto root_pair) {
-      auto [coord, radius] = root_pair;
-      std::ofstream seed_file;
-      seed_file.open(seed_dir + "marker_" + std::to_string((int)coord.x()) +
-                         "_" + std::to_string((int)coord.y()) + "_" +
-                         std::to_string((int)coord.z()) + "_" +
-                         std::to_string(static_cast<int>(((4 * PI) / 3.) *
-                                                         pow(radius, 3))),
-                     std::ios::app);
-      seed_file << "#x,y,z,radius\n";
-      seed_file << coord.x() << ',' << coord.y() << ',' << coord.z() << ','
-                << +(radius) << '\n';
-    });
 
     // build full SDF by extending known somas into reachable neurites
     // or use SDFInteriorMask
@@ -3319,6 +3277,13 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     this->topology_grid = convert_sdf_to_points(masked_sdf, this->image_lengths,
                                                 this->args->foreground_percent);
+
+    root_pairs = create_root_pairs(components, this->topology_grid);
+    write_seeds(this->run_dir, root_pairs);
+
+#ifdef LOG
+    run_log << "Seed count, " << root_pairs.size() << '\n';
+#endif
 
   } else {
     // adds all valid markers to roots vector and returns
