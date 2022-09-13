@@ -3178,9 +3178,13 @@ template <class image_t> void Recut<image_t>::operator()() {
     assertm(this->mask_grid,
             "Mask grid must be set before starting soma segmentation");
 
-#ifdef LOG
-    // std::cout << "Voxel count " << mask_grid->activeVoxelCount() << '\n';
-#endif
+    if (args->save_vdbs) {
+      // write out topology
+      openvdb::GridPtrVec grids;
+      grids.push_back(this->mask_grid);
+      write_vdb_file(grids, this->run_dir + "/mask.vdb");
+    }
+
     auto timer = high_resolution_timer();
 
     // mask grids are a fog volume of sparse active values in space
@@ -3200,7 +3204,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log.open(log_fn, std::ios::app);
     run_log << "Closing, " << timer.elapsed() << '\n';
     run_log << "Closing voxel count, " << closed_sdf_grid->activeVoxelCount()
-              << '\n';
+            << '\n';
 #endif
 
     if (args->save_vdbs) {
@@ -3231,7 +3235,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 #ifdef LOG
     run_log << "Opening, " << timer.elapsed() << '\n';
     run_log << "Open voxel count, " << opened_sdf_grid->activeVoxelCount()
-              << '\n';
+            << '\n';
     timer.restart();
 #endif
 
@@ -3255,7 +3259,16 @@ template <class image_t> void Recut<image_t>::operator()() {
 #endif
 
     root_pairs =
-        components | rv::transform([](auto component) {
+        components | rv::remove_if([](auto component) {
+          auto bbox = component->evalActiveVoxelBoundingBox();
+          auto center = bbox.getCenter();
+          auto coord_center =
+              new_grid_coord(center.x(), center.y(), center.z());
+          auto value = component->tree().getValue(coord_center);
+          std::cout << "Value: " << value << '\n';
+          return value < 0; // remove if outside the surface
+        }) |
+        rv::transform([](auto component) {
           auto bbox = component->evalActiveVoxelBoundingBox();
           auto dims = bbox.dim();
           // set the radius to be half the longest dimension
@@ -3293,7 +3306,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 #ifdef LOG
     run_log << "Mask SDF, " << timer.elapsed() << '\n';
     run_log << "Masked SDF voxel count, " << masked_sdf->activeVoxelCount()
-              << '\n';
+            << '\n';
     run_log.close();
 #endif
 
@@ -3314,7 +3327,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   }
 
   assertm(!root_pairs.empty(),
-          "Root paris must be set before beginning reconstruction");
+          "Root pairs must be set before beginning reconstruction");
   assertm(this->topology_grid,
           "Topology grid must be set before starting reconstruction");
 

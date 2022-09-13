@@ -87,9 +87,9 @@ void RecutCommandLineArgs::PrintUsage() {
          "factor around seeds, if no um value is passed it will use "
       << EXPAND_WINDOW_UM << " um\n";
   std::cout
-      << "--open-steps         # of iterations of morphological opening\n";
+      << "--open-steps         # of iterations of morphological opening; defaults to 5\n";
   std::cout
-      << "--close-steps        # of iterations of morphological closing\n";
+      << "--close-steps        # of iterations of morphological closing; defaults to 8\n";
   std::cout
       << "--save-vdbs          save intermediate VDB grids during reconstruction transformations\n";
   std::cout
