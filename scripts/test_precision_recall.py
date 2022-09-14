@@ -15,17 +15,6 @@ from collections import Counter
 from pathlib import Path
 from datetime import datetime
 
-# define threshold for deciding close or not
-# set as 1/4 of the chosen radius by default
-
-# RADIUS = 25.6 / 2
-# DISTANCE_THRESH = 0.25 * RADIUS * 2
-
-DISTANCE_THRESH = 25.6 / 2
-print("distance threshold: ", DISTANCE_THRESH)
-# DISTANCE_THRESH = 0
-
-
 ### define a function to retrieve xyz and radius
 def gather_markers(path):
     markers = []
@@ -79,7 +68,7 @@ def euc_distance(label, inference):
 
                    
 ### define a function to decide match/non-match            
-def is_match():
+def is_match(distance_thresh):
     
     """ return a list of tuples indicating match/non-match for each pair based on the threshold;
         1: match, 0: not-match"""
@@ -93,17 +82,17 @@ def is_match():
     for soma_inf in euc_dist:
         is_match_each = []
         soma_inf_lst = list(soma_inf)
-        is_match_each = [1 if d <= DISTANCE_THRESH else 0 for d in soma_inf_lst]
+        is_match_each = [1 if d <= distance_thresh else 0 for d in soma_inf_lst]
         is_match.append(tuple(is_match_each))
     return is_match
    
     
 ### define a function to calculate precision and recall
-def precision_recall():
+def precision_recall(distance_thresh):
     
     """ calculate the precision and recall, and print them out"""
 
-    match = is_match() # all matches and unmatches
+    match = is_match(distance_thresh) # all matches and unmatches
     euc_dist = euc_distance(label, inference)
     
     TP, FP, FN = 0, 0, 0
@@ -228,7 +217,7 @@ def precision_recall():
     current_time = time_now.strftime("%H:%M:%S").replace(':', '_')
     # print(current_time)
     with open(path/f"precision_recall_{current_time}.txt", 'w') as f:
-        f.write(f"Distance threshold: {DISTANCE_THRESH}\n")
+        f.write(f"Distance threshold: {distance_thresh}\n")
         # f.write(f"Number of duplicate match of true labels: {num_dup_match}\n")
         f.write(f"TP: {TP}, FP: {FP}, FN: {FN}\n")
         f.write(f"Precision: {precision}, Recall: {recall}\n")
@@ -253,7 +242,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('labeled_path', help = "input path for labeled soma location")
     parser.add_argument('inferenced_path', help = "input path for inferenced soma location")
+    # set as 1/4 of the chosen radius by default
+    parser.add_argument('distance', default=12.8, type=float, help ="# define threshold for deciding close or not")
+
     args = parser.parse_args()
+    print("distance threshold: ", args.distance)
     
     labeled_path = args.labeled_path
     inferenced_path = args.inferenced_path
@@ -266,7 +259,7 @@ if __name__ == "__main__":
      
     
     # get precision & recall
-    precision_recall()
+    precision_recall(args.distance)
     
 
 
