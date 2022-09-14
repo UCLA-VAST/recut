@@ -3096,6 +3096,16 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << '\n';
     run_log << "Close steps, " << args->close_steps << '\n';
     run_log << "Open steps, " << args->open_steps << '\n';
+    if (args->foreground_percent >= 0) {
+      std::ostringstream out;
+      out.precision(3);
+      out << std::fixed << args->foreground_percent;
+      run_log << "fg %, " + out.str() << '\n';
+    } else if (args->background_thresh >= 0) {
+      // setting fg would set background value
+      // so only log if it was input without a fg %
+      run_log << "Background value, " << +(args->background_thresh) << '\n';
+    } 
 #endif
   }
 }
