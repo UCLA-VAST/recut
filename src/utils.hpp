@@ -3512,9 +3512,9 @@ auto write_seeds = [](std::string run_dir,
     auto [coord, radius] = root_pair;
     std::ofstream seed_file;
     seed_file.open(
-        seed_dir + "marker_" + std::to_string((int)coord.x()) + "_" +
-            std::to_string((int)coord.y()) + "_" +
-            std::to_string((int)coord.z()) + "_" +
+        seed_dir + "marker_" + std::to_string((int)coord.x() * voxel_size[0]) + "_" +
+            std::to_string((int)coord.y() * voxel_size[1]) + "_" +
+            std::to_string((int)coord.z() * voxel_size[2]) + "_" +
             std::to_string(static_cast<int>(((4 * PI) / 3.) * pow(radius * voxel_size[0], 3))),
         std::ios::app);
     seed_file << std::fixed << std::setprecision(SWC_PRECISION);
