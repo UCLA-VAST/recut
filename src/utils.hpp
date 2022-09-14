@@ -3487,9 +3487,23 @@ auto convert_sdf_to_points = [](auto sdf, auto image_lengths,
   return topology_grid;
 };
 
+
+auto anisotropic_factor = [](auto voxel_size) {
+  float maxx, minx = voxel_size[0];
+  for (int i = 1; i < 3; ++i) {
+    auto current = voxel_size[i];
+    if (maxx < current)
+      maxx = current;
+    if (current < minx)
+      minx = current;
+  }
+  // round to nearest int
+  return static_cast<uint16_t>((maxx / minx) + .5);
+};
+
 // write seed/roots to disk
 auto write_seeds = [](std::string run_dir,
-                      std::vector<std::pair<GridCoord, uint8_t>> root_pairs) {
+                      std::vector<std::pair<GridCoord, uint8_t>> root_pairs, std::array<float, 3> voxel_size) {
   // start seeds directory
   std::string seed_dir = run_dir + "/seeds/";
   fs::create_directories(seed_dir);
@@ -3501,11 +3515,14 @@ auto write_seeds = [](std::string run_dir,
         seed_dir + "marker_" + std::to_string((int)coord.x()) + "_" +
             std::to_string((int)coord.y()) + "_" +
             std::to_string((int)coord.z()) + "_" +
-            std::to_string(static_cast<int>(((4 * PI) / 3.) * pow(radius, 3))),
+            std::to_string(static_cast<int>(((4 * PI) / 3.) * pow(radius * voxel_size[0], 3))),
         std::ios::app);
-    seed_file << "#x,y,z,radius\n";
-    seed_file << coord.x() << ',' << coord.y() << ',' << coord.z() << ','
-              << +(radius) << '\n';
+    seed_file << std::fixed << std::setprecision(SWC_PRECISION);
+    seed_file << "#x,y,z,radius in um based of voxel size: [" << voxel_size[0]
+              << ',' << voxel_size[1] << ',' << voxel_size[2] << "]\n";
+    seed_file << voxel_size[0] * coord.x() << ',' << voxel_size[0] * coord.y()
+              << ',' << voxel_size[0] * coord.z() << ','
+              << +(radius * voxel_size[0]) << '\n';
   });
 };
 
@@ -3517,17 +3534,17 @@ auto create_root_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
            auto coord_center =
                new_grid_coord(center.x(), center.y(), center.z());
            auto leaf = topology_grid->tree().probeLeaf(coord_center);
-	   try {
-           if (leaf) {
-             return leaf->beginIndexVoxel(coord_center)
-                        ? true
-                        : false; // remove if outside the surface
-           } else {
+           try {
+             if (leaf) {
+               return leaf->beginIndexVoxel(coord_center)
+                          ? true
+                          : false; // remove if outside the surface
+             } else {
+               return false;
+             }
+           } catch (...) {
              return false;
            }
-	   } catch (...) {
-	     return false;
-	   }
          }) |
          rv::transform([](auto component) {
            auto bbox = component->evalActiveVoxelBoundingBox();

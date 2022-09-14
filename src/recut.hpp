@@ -2637,16 +2637,7 @@ template <class image_t> void Recut<image_t>::initialize() {
   // set the prune radius if not passed at command line
   // based on the voxel size
   if (!this->args->prune_radius) {
-    float maxx, minx = this->args->voxel_size[0];
-    for (int i = 1; i < 3; ++i) {
-      auto current = this->args->voxel_size[i];
-      if (maxx < current)
-        maxx = current;
-      if (current < minx)
-        minx = current;
-    }
-    // round to nearest int
-    this->args->prune_radius = static_cast<uint16_t>((maxx / minx) + .5);
+    this->args->prune_radius = anisotropic_factor(this->args->voxel_size);
 #ifdef LOG
     if (!this->args->convert_only) {
       std::cout << "--prune-radius was set to: "
@@ -3011,19 +3002,7 @@ void Recut<image_t>::partition_components(
       }
     });
 
-    auto write_soma_locs = [](auto component_roots,
-                              std::string component_dir_fn) {
-      auto fn = component_dir_fn + "/soma-coords.txt";
-      std::ofstream soma_of;
-      soma_of.open(fn);
-      rng::for_each(component_roots, [&soma_of](auto coordp) {
-        auto [coord, radius] = coordp;
-        soma_of << coord.x() << ' ' << coord.y() << ' ' << coord.z() << '\n';
-      });
-      soma_of.close();
-    };
-
-    write_soma_locs(component_roots, component_dir_fn);
+    write_seeds(component_dir_fn, component_roots, this->args->voxel_size);
 
     std::cout << "Component " << index << " complete and safe to open\n";
   }; // for each component
@@ -3289,7 +3268,7 @@ template <class image_t> void Recut<image_t>::operator()() {
                                                 this->args->foreground_percent);
 
     root_pairs = create_root_pairs(components, this->topology_grid);
-    write_seeds(this->run_dir, root_pairs);
+    write_seeds(this->run_dir, root_pairs, this->args->voxel_size);
 
 #ifdef LOG
     run_log << "Seed count, " << root_pairs.size() << '\n';
