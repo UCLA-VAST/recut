@@ -3517,11 +3517,13 @@ auto create_root_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
            auto coord_center =
                new_grid_coord(center.x(), center.y(), center.z());
            auto leaf = topology_grid->tree().probeLeaf(coord_center);
-           if (leaf)
-             return leaf->beginIndexVoxel(
-                 coord_center); // remove if outside the surface
-           else
+           if (leaf) {
+             return leaf->beginIndexVoxel(coord_center)
+                        ? true
+                        : false; // remove if outside the surface
+           } else {
              return false;
+           }
          }) |
          rv::transform([](auto component) {
            auto bbox = component->evalActiveVoxelBoundingBox();
