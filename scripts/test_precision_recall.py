@@ -196,21 +196,24 @@ def precision_recall():
         if e not in label_coord_list:
             FN_list.append(e)
     
-
     # print out all FPs (somas in the inference but are not true labels)
     # and their closest distance to labeled somas
     FP_list = []
     FP_closest_dist_list = []
+    FP_closest_label_list = []
     # FP_all_dist_list = []
     for i,e in enumerate(inference):
         if e not in inference_coord_list:
             FP_list.append(e)
             min_dist = min(euc_dist[i])
+            
+            min_dist_indx = euc_dist[i].index(min_dist)
+            closest_label = label[min_dist_indx]
+            
+            FP_closest_label_list.append(closest_label)
             FP_closest_dist_list.append(min_dist)
-            # FP_all_dist_list.append(euc_dist[i])
-    
-    
 
+    
     FP = len(inference) - TP
     FN = len(label) - TP
     print("TP: ", TP, "FP: ", FP, "FN: ", FN)
@@ -235,8 +238,8 @@ def precision_recall():
             f.write(f"inference: {inf}, label: {lab}, closest dist: {dist}\n")
         f.write("\n")
         f.write("FPs (among inferenced markers): \n")
-        for inf_fp,dist in zip(FP_list, FP_closest_dist_list):
-            f.write(f"inference: {inf_fp}, closest distance: {dist}\n")
+        for inf_fp,closest_lab,dist in zip(FP_list, FP_closest_label_list, FP_closest_dist_list):
+            f.write(f"inference: {inf_fp}, closest_label: {closest_lab}, closest distance: {dist}\n")
         # f.write(f"{FP_list}")
         f.write("\n")
         f.write("FNs (among true markers): \n")
