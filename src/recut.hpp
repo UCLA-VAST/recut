@@ -3085,6 +3085,7 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
       // so only log if it was input without a fg %
       run_log << "Background value, " << +(args->background_thresh) << '\n';
     } 
+    run_log << "Voxel size, " << args->voxel_size[0] << ',' << args->voxel_size[1] << ',' << args->voxel_size[2] << '\n';
 #endif
   }
 }

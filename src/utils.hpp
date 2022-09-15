@@ -2241,15 +2241,19 @@ auto find_or_assign = [](std::array<double, 3> swc_coord,
 // https://github.com/HumanBrainProject/swcPlus/blob/master/SWCplus_specification.html
 auto print_swc_line = [](std::array<double, 3> swc_coord, bool is_root,
                          uint8_t radius,
-                         const std::array<double, 3> parent_coord,
+                         std::array<double, 3> parent_coord,
                          CoordBBox bbox, std::ofstream &out,
                          auto &coord_to_swc_id, std::array<float, 3> voxel_size,
                          bool bbox_adjust = true, bool is_eswc = false) {
   std::ostringstream line;
 
   if (bbox_adjust) { // implies output window crops is set
-    swc_coord = {swc_coord[0] - bbox.min().x(), swc_coord[1] - bbox.min().y(),
-                 swc_coord[2] - bbox.min().z()};
+    swc_coord = {swc_coord[0] - static_cast<double>(bbox.min().x()),
+                 swc_coord[1] - static_cast<double>(bbox.min().y()),
+                 swc_coord[2] - static_cast<double>(bbox.min().z())};
+    parent_coord = {parent_coord[0] - static_cast<double>(bbox.min().x()),
+                    parent_coord[1] - static_cast<double>(bbox.min().y()),
+                    parent_coord[2] - static_cast<double>(bbox.min().z())};
   }
 
   // CoordBBox uses extents inclusively, but we want exclusive bbox
@@ -3487,7 +3491,6 @@ auto convert_sdf_to_points = [](auto sdf, auto image_lengths,
   return topology_grid;
 };
 
-
 auto anisotropic_factor = [](auto voxel_size) {
   float maxx, minx = voxel_size[0];
   for (int i = 1; i < 3; ++i) {
@@ -3503,7 +3506,8 @@ auto anisotropic_factor = [](auto voxel_size) {
 
 // write seed/roots to disk
 auto write_seeds = [](std::string run_dir,
-                      std::vector<std::pair<GridCoord, uint8_t>> root_pairs, std::array<float, 3> voxel_size) {
+                      std::vector<std::pair<GridCoord, uint8_t>> root_pairs,
+                      std::array<float, 3> voxel_size) {
   // start seeds directory
   std::string seed_dir = run_dir + "/seeds/";
   fs::create_directories(seed_dir);
@@ -3511,12 +3515,13 @@ auto write_seeds = [](std::string run_dir,
   rng::for_each(root_pairs, [&](auto root_pair) {
     auto [coord, radius] = root_pair;
     std::ofstream seed_file;
-    seed_file.open(
-        seed_dir + "marker_" + std::to_string((int)coord.x() * voxel_size[0]) + "_" +
-            std::to_string((int)coord.y() * voxel_size[1]) + "_" +
-            std::to_string((int)coord.z() * voxel_size[2]) + "_" +
-            std::to_string(static_cast<int>(((4 * PI) / 3.) * pow(radius * voxel_size[0], 3))),
-        std::ios::app);
+    seed_file.open(seed_dir + "marker_" +
+                       std::to_string((int)coord.x() * voxel_size[0]) + "_" +
+                       std::to_string((int)coord.y() * voxel_size[1]) + "_" +
+                       std::to_string((int)coord.z() * voxel_size[2]) + "_" +
+                       std::to_string(static_cast<int>(
+                           ((4 * PI) / 3.) * pow(radius * voxel_size[0], 3))),
+                   std::ios::app);
     seed_file << std::fixed << std::setprecision(SWC_PRECISION);
     seed_file << "#x,y,z,radius in um based of voxel size: [" << voxel_size[0]
               << ',' << voxel_size[1] << ',' << voxel_size[2] << "]\n";
