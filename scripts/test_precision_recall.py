@@ -14,10 +14,26 @@ import numpy as np
 from collections import Counter
 from pathlib import Path
 from datetime import datetime
+import matplotlib.pyplot as plt
+import scipy.stats as stats
+
+# define threshold for deciding close or not
+# set as 1/4 of the chosen radius by default
+
+# RADIUS = 25.6 / 2
+# DISTANCE_THRESH = 0.25 * RADIUS * 2
+
+DISTANCE_THRESH = 25.6 / 2
+print("distance threshold: ", DISTANCE_THRESH)
+# DISTANCE_THRESH = 0
+
+time_now = datetime.now()
+current_time = time_now.strftime("%H:%M:%S").replace(':', '_')
 
 ### define a function to retrieve xyz and radius
 def gather_markers(path):
     markers = []
+    markers_with_radii = []
     adjust = 0
     for root, dir, files in os.walk(path):
         # print("root: ",root)
@@ -30,11 +46,12 @@ def gather_markers(path):
             if 'marker_' in file:
                 x, y, z, volume = [int(i) for i in file.split('_')[1:]] 
                 # print(x,y,z,volume)
-                # radius = np.cbrt(volume * 3 / (4 * np.pi))
+                radius = np.cbrt(volume * 3 / (4 * np.pi))
                 coord = (x - adjust, y - adjust, z - adjust)
                 # markers.append((coord[0], coord[1], coord[2], radius))
                 markers.append((coord[0], coord[1], coord[2]))
-    return markers
+                markers_with_radii.append((coord[0], coord[1], coord[2], radius))
+    return markers,markers_with_radii
 
 
 
@@ -68,7 +85,7 @@ def euc_distance(label, inference):
 
                    
 ### define a function to decide match/non-match            
-def is_match(distance_thresh):
+def is_match():
     
     """ return a list of tuples indicating match/non-match for each pair based on the threshold;
         1: match, 0: not-match"""
@@ -82,17 +99,17 @@ def is_match(distance_thresh):
     for soma_inf in euc_dist:
         is_match_each = []
         soma_inf_lst = list(soma_inf)
-        is_match_each = [1 if d <= distance_thresh else 0 for d in soma_inf_lst]
+        is_match_each = [1 if d <= DISTANCE_THRESH else 0 for d in soma_inf_lst]
         is_match.append(tuple(is_match_each))
     return is_match
    
     
 ### define a function to calculate precision and recall
-def precision_recall(distance_thresh):
+def precision_recall():
     
     """ calculate the precision and recall, and print them out"""
 
-    match = is_match(distance_thresh) # all matches and unmatches
+    match = is_match() # all matches and unmatches
     euc_dist = euc_distance(label, inference)
     
     TP, FP, FN = 0, 0, 0
@@ -137,15 +154,16 @@ def precision_recall(distance_thresh):
     for i,m in enumerate(match):
         cnt_match = m.count(1)
         sanity_list.append(cnt_match)
-    if tuple(set(sanity_list)) == (0,1):
+    if tuple(set(sanity_list)) in [(0,1), (0), (1)] :
         print("Sanity check is good")
   
 
   
-    # true_match_list = [] # placeholder for all matches
-    inference_coord_list = []
-    label_coord_list = []
-    closest_dist_list = []
+    inference_coord_list = [] # placeholder for inferences that has a match
+    label_coord_list = [] # placeholder for label that is matched
+    closest_dist_list = [] # placeholder for the closest distances
+    inference_coord_radii_list = [] # placeholder for inferences that has a match (xyz and radii)
+    
     
     # loop again to generate outputs, now each inference should have as many as 1 soma match
     # and one soma should only match to 1 closest inference
@@ -168,6 +186,7 @@ def precision_recall(distance_thresh):
             # print("match:\ninference: {}, label: {}, shortest dist: {}".format(inference[ind_inf], label[ind_lab], closest_dist))
             
             inference_coord_list.append(inference[ind_inf])
+            inference_coord_radii_list.append(inference_with_radii[ind_inf])
             label_coord_list.append(label[ind_lab])
             closest_dist_list.append(closest_dist)
             
@@ -190,10 +209,13 @@ def precision_recall(distance_thresh):
     FP_list = []
     FP_closest_dist_list = []
     FP_closest_label_list = []
+    FP_coord_radii_list = [] # placeholder for FPs (xyz and radii)
+   
     # FP_all_dist_list = []
     for i,e in enumerate(inference):
         if e not in inference_coord_list:
             FP_list.append(e)
+            FP_coord_radii_list.append(inference_with_radii[i])
             min_dist = min(euc_dist[i])
             
             min_dist_indx = euc_dist[i].index(min_dist)
@@ -213,11 +235,9 @@ def precision_recall(distance_thresh):
 
 
     # save matched pairs and all information of this run to a txt file
-    time_now = datetime.now()
-    current_time = time_now.strftime("%H:%M:%S").replace(':', '_')
     # print(current_time)
-    with open(path/f"precision_recall_{current_time}.txt", 'w') as f:
-        f.write(f"Distance threshold: {distance_thresh}\n")
+    with open(path_result/f"precision_recall_{current_time}.txt", 'w') as f:
+        f.write(f"Distance threshold: {DISTANCE_THRESH}\n")
         # f.write(f"Number of duplicate match of true labels: {num_dup_match}\n")
         f.write(f"TP: {TP}, FP: {FP}, FN: {FN}\n")
         f.write(f"Precision: {precision}, Recall: {recall}\n")
@@ -234,6 +254,122 @@ def precision_recall(distance_thresh):
         f.write("FNs (among true markers): \n")
         for lab_fn in FN_list:
             f.write(f"lab: {lab_fn}\n")
+            
+     # generate histogram and cdf for TP and FP
+    plot_his_cdf(inference_coord_radii_list, FP_coord_radii_list)
+
+
+
+### define a function to plot the histogram and CDF for TPs and FPs
+def plot_his_cdf(inference_coord_radii_list, FP_coord_radii_list):
+    TP_radii = np.array([ele[3] for ele in inference_coord_radii_list])
+    FP_radii = np.array([ele[3] for ele in FP_coord_radii_list])
+    
+    radii_min = min(min(TP_radii), min(FP_radii))
+    radii_max = max(max(TP_radii), max(FP_radii))
+    
+    ### add ttest
+    # if equal variance/not equal vairance (division compared to 4)
+    # if <4, equal varinace assumption is met
+    if max(np.var(TP_radii), np.var(FP_radii)) / min(np.var(TP_radii), np.var(FP_radii)) <= 4:
+        tstats, pval = stats.ttest_ind(a=TP_radii, b=FP_radii, equal_var=True)
+        tstats = round(tstats,2)
+        pval = round(pval,4)
+        # print(tstats, pval)
+    # if >4, perform Welch's ttest
+    elif max(np.var(TP_radii), np.var(FP_radii)) / min(np.var(TP_radii), np.var(FP_radii)) > 4:
+        tstats, pval = stats.ttest_ind(a=TP_radii, b=FP_radii, equal_var=False)
+        tstats = round(tstats,2)
+        pval = round(pval,4)
+        # print(tstats, pval)
+        
+    ### generate figures
+    fig, ax = plt.subplots(3,2)
+    plt.figure(figsize=(15, 15))
+    
+    
+    ### 1,2 plot histograms side by side
+    # binwidth=0.5
+    plt.subplot(3, 2, 1)
+    plt.hist(TP_radii, 
+             alpha=0.5, # the transaparency parameter
+             # bins=np.arange(min(TP_radii), max(TP_radii) + binwidth, binwidth),
+             label='TP radii',
+             color = 'blue',
+             range = (radii_min, radii_max))
+    plt.legend(loc='upper right')
+    plt.title('Distribution of radii of TPs')
+
+    plt.subplot(3, 2, 2)
+    plt.hist(FP_radii,
+             alpha=0.5,
+             # bins=np.arange(min(FP_radii), max(FP_radii) + binwidth, binwidth),
+             label='FP radii',
+             color = 'red',
+             range = (radii_min, radii_max))    
+    plt.legend(loc='upper right')
+    plt.title('Distribution of radii of FPs')
+    
+    # plt.savefig(path/f"histogram_cdf_{current_time}.pdf", format="pdf", bbox_inches="tight")  
+
+    ### 3,4 plot CDFs side by side
+    # getting data of the histogram
+    cnt_TP, bins_count_TP = np.histogram(TP_radii, range = (radii_min, radii_max))
+    cnt_FP, bins_count_FP = np.histogram(FP_radii, range = (radii_min, radii_max))
+    # finding the PDF of the histogram using count values
+    pdf_TP = cnt_TP / sum(cnt_TP)
+    pdf_FP = cnt_FP / sum(cnt_FP)
+      
+    # calculate cdf using pdf
+    cdf_TP = np.cumsum(pdf_TP)
+    cdf_FP = np.cumsum(pdf_FP)
+    
+    # plotting PDF and CDF
+    # plt.plot(bins_count[1:], pdf, color="red", label="PDF")
+    plt.subplot(3, 2, 3)
+    plt.plot(bins_count_TP[1:], cdf_TP, label="CDF of TP", color = 'blue')
+    plt.legend()
+    plt.title("CDF of radii of TPs")
+    
+    plt.subplot(3,2,4)
+    plt.plot(bins_count_FP[1:], cdf_FP, label="CDF of FP", color = 'red')
+    plt.legend()
+    plt.title("CDF of radii of FPs")
+    
+    ### 5,6 plot histogram/CDF overlayed
+    plt.subplot(3,2,5)
+    plt.hist(TP_radii, 
+             alpha=0.5, # the transaparency parameter
+             # bins=np.arange(min(TP_radii), max(TP_radii) + binwidth, binwidth),
+             label='TP radii',
+             color = 'blue',
+             range = (radii_min, radii_max))
+    plt.legend(loc='upper right')
+    plt.title('Distribution of radii of TPs')
+    plt.hist(FP_radii,
+             alpha=0.5,
+             # bins=np.arange(min(FP_radii), max(FP_radii) + binwidth, binwidth),
+             label='FP radii',
+             color = 'red',
+             range = (radii_min, radii_max))    
+    plt.legend(loc='upper right')
+    plt.title('Distribution of radii of FPs')
+    
+    plt.subplot(3,2,6)
+    plt.plot(bins_count_TP[1:], cdf_TP, label="CDF of TP", color = 'blue')
+    plt.legend()
+    plt.title("CDF of radii of TPs")
+    plt.plot(bins_count_FP[1:], cdf_FP, label="CDF of FP", color = 'red')
+    plt.legend()
+    plt.title("CDF of radii of TPs")
+    plt.text((radii_max - radii_min)/2 + radii_min, 0.3, f'Two sample t-test:\nstatistic: {tstats}\npval: {pval}')
+    
+    fig.tight_layout(pad = 2.5)
+    plt.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=None, hspace=0.5)
+
+    # plt.savefig(path/f"histogram_cdf.pdf", format="pdf")
+    plt.savefig(path_result/f"histogram_cdf_{current_time}.pdf", format="pdf")
+    plt.show()  
 
 
 
@@ -242,30 +378,31 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('labeled_path', help = "input path for labeled soma location")
     parser.add_argument('inferenced_path', help = "input path for inferenced soma location")
-    # set as 1/4 of the chosen radius by default
-    parser.add_argument('distance', default=12.8, type=float, help ="# define threshold for deciding close or not")
-
     args = parser.parse_args()
-    print("distance threshold: ", args.distance)
     
     labeled_path = args.labeled_path
     inferenced_path = args.inferenced_path
     
     # gather markers
-    label = gather_markers(labeled_path)
-    inference = gather_markers(inferenced_path)
+    label,label_with_radii = gather_markers(labeled_path)
+    inference,inference_with_radii = gather_markers(inferenced_path)
     
     path = Path(os. path. realpath(__file__)).parent
-     
+    path_result = path/f'result_run_{current_time}' # directory that stores the precision&recall summary file and the plots
+    path_result.mkdir(exist_ok = True)
     
     # get precision & recall
-    precision_recall(args.distance)
+    precision_recall()
+    
+   
     
 
-
-
-               
-
+# ## for testing purpose
+# label, label_with_radii = gather_markers('C:\\Users\\yanyanming77\\Desktop\\precision_recall\\6xmini\\soma_recut')
+# inference, inference_with_radii = gather_markers('C:\\Users\\yanyanming77\\Desktop\\precision_recall\\6xmini\\seeds')
+# path = Path("C:\\Users\\yanyanming77\\Desktop\\precision_recall\\6xmini")
+# path_result = path/f'result_run_{current_time}'
+# path_result.mkdir(exist_ok = True)
     
     
 
