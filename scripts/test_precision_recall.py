@@ -267,6 +267,11 @@ def plot_his_cdf(inference_coord_radii_list, FP_coord_radii_list):
     
     radii_min = min(min(TP_radii), min(FP_radii))
     radii_max = max(max(TP_radii), max(FP_radii))
+
+    summary_stats_TP = "Summary statistics for TP radii:\nmean: {:.2f}, std: {:.2f},\nmin: {:.2f}, 25%: {:.2f}, median: {:.2f}, 75%: {:.2f}, max: {:.2f}"\
+        .format(np.mean(TP_radii), np.std(TP_radii), np.min(TP_radii), np.percentile(TP_radii, 25), np.median(TP_radii), np.percentile(TP_radii, 75), np.max(TP_radii))
+    summary_stats_FP = "Summary statistics for FP radii:\nmean: {:.2f}, std: {:.2f},\nmin: {:.2f}, 25%: {:.2f}, median: {:.2f}, 75%: {:.2f}, max: {:.2f}"\
+        .format(np.mean(FP_radii), np.std(FP_radii), np.min(FP_radii), np.percentile(FP_radii, 25), np.median(FP_radii), np.percentile(FP_radii, 75), np.max(FP_radii))
     
     ### add ttest
     # if equal variance/not equal vairance (division compared to 4)
@@ -282,33 +287,40 @@ def plot_his_cdf(inference_coord_radii_list, FP_coord_radii_list):
         tstats = round(tstats,2)
         pval = round(pval,4)
         # print(tstats, pval)
-        
+    
+    ### get x limits 
+    # x lims:
+    xlim_max = max(max(TP_radii), max(FP_radii))
+    
     ### generate figures
-    fig, ax = plt.subplots(3,2)
-    plt.figure(figsize=(15, 15))
+    fig, axs = plt.subplots(3,2, figsize=(15,15))
+    # plt.figure(figsize=(15, 15))
     
-    
+       
     ### 1,2 plot histograms side by side
     # binwidth=0.5
-    plt.subplot(3, 2, 1)
-    plt.hist(TP_radii, 
+    axs[0,0].hist(TP_radii, 
              alpha=0.5, # the transaparency parameter
              # bins=np.arange(min(TP_radii), max(TP_radii) + binwidth, binwidth),
              label='TP radii',
              color = 'blue',
              range = (radii_min, radii_max))
-    plt.legend(loc='upper right')
-    plt.title('Distribution of radii of TPs')
+    axs[0,0].set_xlim(left=0, right=xlim_max)
+    axs[0,0].set_ylim(bottom=0)
+    axs[0,0].legend(loc='upper right')
+    axs[0,0].set_title("Distribution of radii of TPs")
 
-    plt.subplot(3, 2, 2)
-    plt.hist(FP_radii,
+    # plt.subplot(3, 2, 2)
+    axs[0,1].hist(FP_radii,
              alpha=0.5,
              # bins=np.arange(min(FP_radii), max(FP_radii) + binwidth, binwidth),
              label='FP radii',
              color = 'red',
-             range = (radii_min, radii_max))    
-    plt.legend(loc='upper right')
-    plt.title('Distribution of radii of FPs')
+             range = (radii_min, radii_max))
+    axs[0,1].set_xlim(left=0,right=xlim_max)
+    axs[0,1].set_ylim(bottom=0)
+    axs[0,1].legend(loc='upper right')
+    axs[0,1].set_title("Distribution of radii of FPs")
     
     # plt.savefig(path/f"histogram_cdf_{current_time}.pdf", format="pdf", bbox_inches="tight")  
 
@@ -326,43 +338,46 @@ def plot_his_cdf(inference_coord_radii_list, FP_coord_radii_list):
     
     # plotting PDF and CDF
     # plt.plot(bins_count[1:], pdf, color="red", label="PDF")
-    plt.subplot(3, 2, 3)
-    plt.plot(bins_count_TP[1:], cdf_TP, label="CDF of TP", color = 'blue')
-    plt.legend()
-    plt.title("CDF of radii of TPs")
+    axs[1,0].plot(bins_count_TP[1:], cdf_TP, label="CDF of TP", color = 'blue')
+    axs[1,0].set_xlim(left=0,right=xlim_max)
+    axs[1,0].set_ylim(bottom=0)
+    axs[1,0].legend(loc='upper right')
+    axs[1,0].set_title("CDF of radii of TPs")
     
-    plt.subplot(3,2,4)
-    plt.plot(bins_count_FP[1:], cdf_FP, label="CDF of FP", color = 'red')
-    plt.legend()
-    plt.title("CDF of radii of FPs")
+    axs[1,1].plot(bins_count_FP[1:], cdf_FP, label="CDF of FP", color = 'red')
+    axs[1,1].set_xlim(left=0,right=xlim_max)
+    axs[1,1].set_ylim(bottom=0)
+    axs[1,1].legend(loc='upper right')
+    axs[1,1].set_title("CDF of radii of FPs")
     
     ### 5,6 plot histogram/CDF overlayed
-    plt.subplot(3,2,5)
-    plt.hist(TP_radii, 
+    axs[2,0].hist(TP_radii, 
              alpha=0.5, # the transaparency parameter
              # bins=np.arange(min(TP_radii), max(TP_radii) + binwidth, binwidth),
              label='TP radii',
              color = 'blue',
              range = (radii_min, radii_max))
-    plt.legend(loc='upper right')
-    plt.title('Distribution of radii of TPs')
-    plt.hist(FP_radii,
+    axs[2,0].hist(FP_radii,
              alpha=0.5,
              # bins=np.arange(min(FP_radii), max(FP_radii) + binwidth, binwidth),
              label='FP radii',
              color = 'red',
-             range = (radii_min, radii_max))    
-    plt.legend(loc='upper right')
-    plt.title('Distribution of radii of FPs')
+             range = (radii_min, radii_max)) 
+    axs[2,0].set_xlim(left=0, right=xlim_max)
+    axs[2,0].set_ylim(bottom=0)
+    axs[2,0].legend(loc='upper right')
+    axs[2,0].set_title('Distribution of radii of TPs vs. FPs')
     
-    plt.subplot(3,2,6)
-    plt.plot(bins_count_TP[1:], cdf_TP, label="CDF of TP", color = 'blue')
-    plt.legend()
-    plt.title("CDF of radii of TPs")
-    plt.plot(bins_count_FP[1:], cdf_FP, label="CDF of FP", color = 'red')
-    plt.legend()
-    plt.title("CDF of radii of TPs")
-    plt.text((radii_max - radii_min)/2 + radii_min, 0.3, f'Two sample t-test:\nstatistic: {tstats}\npval: {pval}')
+    
+    axs[2,1].plot(bins_count_TP[1:], cdf_TP, label="CDF of TP", color = 'blue')
+    axs[2,1].plot(bins_count_FP[1:], cdf_FP, label="CDF of FP", color = 'red')
+    axs[2,1].set_xlim(left=0, right=xlim_max)
+    axs[2,1].set_ylim(bottom=0)
+    axs[2,1].legend(loc='upper right')
+    axs[2,1].set_title("CDF of radii of TPs vs. FPs")
+    axs[2,1].text(radii_min,-0.3, f'Two sample t-test:\nstatistic: {tstats}, pval: {pval}')
+    axs[2,1].text(radii_min,-0.5, summary_stats_TP)
+    axs[2,1].text(radii_min,-0.8, summary_stats_FP)
     
     fig.tight_layout(pad = 2.5)
     plt.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=None, hspace=0.5)
@@ -397,10 +412,10 @@ if __name__ == "__main__":
    
     
 
-# ## for testing purpose
-# label, label_with_radii = gather_markers('C:\\Users\\yanyanming77\\Desktop\\precision_recall\\6xmini\\soma_recut')
-# inference, inference_with_radii = gather_markers('C:\\Users\\yanyanming77\\Desktop\\precision_recall\\6xmini\\seeds')
-# path = Path("C:\\Users\\yanyanming77\\Desktop\\precision_recall\\6xmini")
+# # ## for testing purpose
+# label, label_with_radii = gather_markers('C:\\Users\\yanyanming77\\Desktop\\precision_recall\\marker_truth_full')
+# inference, inference_with_radii = gather_markers('C:\\Users\\yanyanming77\\Desktop\\precision_recall\\marker_ms_full')
+# path = Path("C:\\Users\\yanyanming77\\Desktop\\precision_recall")
 # path_result = path/f'result_run_{current_time}'
 # path_result.mkdir(exist_ok = True)
     
