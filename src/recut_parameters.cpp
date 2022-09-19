@@ -30,9 +30,9 @@ void RecutCommandLineArgs::PrintUsage() {
   // std::cout << "--min                set min image voxel raw value allowed, "
   //"computed automatically when --bg_thresh or --fg-percent are "
   //"specified\n";
-  //std::cout << "--channel            [-c] channel number, default 0\n";
-  //std::cout << "--resolution-level   [-rl] resolution level default 0 "
-               //"(original resolution)\n";
+  // std::cout << "--channel            [-c] channel number, default 0\n";
+  // std::cout << "--resolution-level   [-rl] resolution level default 0 "
+  //"(original resolution)\n";
   // std::cout
   //<< "--image-offsets      [-io] offsets of subvolume, in x y z order "
   //"default 0 0 0\n";
@@ -77,7 +77,8 @@ void RecutCommandLineArgs::PrintUsage() {
          "upsampled (copied) by specified factor, default is 1 i.e. no "
          "upsampling\n";
   std::cout
-      << "--min-window         windows by default only extend to bounding volume "
+      << "--min-window         windows by default only extend to bounding "
+         "volume "
          "of their component, this value specifies the minimum window border "
          "surrounding seeds, if no um value is passed it will use "
       << MIN_WINDOW_UM << " um\n";
@@ -86,12 +87,12 @@ void RecutCommandLineArgs::PrintUsage() {
          "volume of their component, this allows specifying an expansion "
          "factor around seeds, if no um value is passed it will use "
       << EXPAND_WINDOW_UM << " um\n";
-  std::cout
-      << "--open-steps         # of iterations of morphological opening; defaults to 5\n";
-  std::cout
-      << "--close-steps        # of iterations of morphological closing; defaults to 8\n";
-  std::cout
-      << "--save-vdbs          save intermediate VDB grids during reconstruction transformations\n";
+  std::cout << "--open-steps         # of iterations of morphological opening; "
+               "defaults to 5\n";
+  std::cout << "--close-steps        # of iterations of morphological closing; "
+               "defaults to 8\n";
+  std::cout << "--save-vdbs          save intermediate VDB grids during "
+               "reconstruction transformations\n";
   std::cout
       << "--run-app2           for benchmarks and comparisons runs app2 on "
          "the vdb passed to --output-windows\n";
@@ -127,6 +128,8 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
     } else {
       // global volume and channel selection
       args.input_path = argv[1];
+      if (args.input_path.back() == '/')
+        args.input_path.pop_back();
     }
     // if the switch is given, parameter(s) corresponding to the switch is
     // expected

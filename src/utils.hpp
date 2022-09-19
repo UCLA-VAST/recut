@@ -3425,7 +3425,6 @@ load_tile(const CoordBBox &bbox, const std::string &dir) {
   return dense;
 }
 
-<<<<<<< HEAD
 auto get_unique_fn = [](std::string probe_name) {
   // make sure its a clean write
   while (fs::exists(probe_name)) {
