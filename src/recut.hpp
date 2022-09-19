@@ -2920,11 +2920,6 @@ void Recut<image_t>::partition_components(
           component_roots, args->min_window_um, args->output_type == "labels",
           args->expand_window_um);
 
-      // build windowed mask grid
-      // auto mask_grid =
-      // openvdb::gridPtrCast<openvdb::MaskGrid>(window_grids.back());
-      // add_mask_to_image_grid(image_grid, mask_grid);
-
       // write the first passed window
       auto window_fn = write_output_windows<ImgGrid::Ptr>(
           image_grid, component_dir_fn, component_log, index,
@@ -2934,39 +2929,20 @@ void Recut<image_t>::partition_components(
       // if outputting crops/windows, offset SWCs coords to match window
       bbox = window_bbox;
 
-      if (args->output_type == "labels") {
-        auto accessor = image_grid->getAccessor();
-        for (auto iter = image_grid->beginValueOn(); iter; ++iter) {
-          auto coord = iter.getCoord();
-          auto val = accessor.getValue(coord);
-          if (val > 0) {
-            accessor.setValue(coord, 255);
-          }
-        }
-
-        // write the first passed window as a binarized grid
-        auto window_fn = write_output_windows<ImgGrid::Ptr>(
-            image_grid, component_dir_fn, component_log, index,
-            /*output_vdb*/ false, /*paged*/ args->output_type != "labels",
-            window_bbox, /*channel*/ 1);
-      } else {
-
-        // for all other windows passed, skipping channel 0 since already
-        // processed above
-        rng::for_each(
-            window_grids | rv::enumerate | rv::tail,
-            [&](const auto window_gridp) {
-              auto [channel, window_grid] = window_gridp;
-              auto mask_grid =
-                  openvdb::gridPtrCast<openvdb::MaskGrid>(window_grid);
-              // write to disk
-              write_output_windows(mask_grid, component_dir_fn, component_log,
-                                   index,
-                                   /*output_vdb*/ false,
-                                   /*paged*/ args->output_type != "labels",
-                                   window_bbox, channel);
-            });
-      }
+      // for all other windows passed, skipping channel 0 since already
+      // processed above
+      rng::for_each(window_grids | rv::enumerate | rv::tail,
+                    [&](const auto window_gridp) {
+                      auto [channel, window_grid] = window_gridp;
+                      auto mask_grid =
+                          openvdb::gridPtrCast<openvdb::MaskGrid>(window_grid);
+                      // write to disk
+                      write_output_windows(
+                          mask_grid, component_dir_fn, component_log, index,
+                          /*output_vdb*/ false,
+                          /*paged*/ args->output_type != "labels", window_bbox,
+                          channel);
+                    });
 
       // skip components that are 0s in the original image
       auto mm = vto::minMax(valued_window_grid->tree());

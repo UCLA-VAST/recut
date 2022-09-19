@@ -3425,6 +3425,7 @@ load_tile(const CoordBBox &bbox, const std::string &dir) {
   return dense;
 }
 
+<<<<<<< HEAD
 auto get_unique_fn = [](std::string probe_name) {
   // make sure its a clean write
   while (fs::exists(probe_name)) {
@@ -3561,4 +3562,15 @@ auto create_root_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
                new_grid_coord(center.x(), center.y(), center.z()), radius);
          }) |
          rng::to_vector;
+};
+
+auto binarize_uint8_grid = [](auto image_grid) {
+  auto accessor = image_grid->getAccessor();
+  for (auto iter = image_grid->beginValueOn(); iter; ++iter) {
+    auto coord = iter.getCoord();
+    auto val = accessor.getValue(coord);
+    if (val > 0) {
+      accessor.setValue(coord, 255);
+    }
+  }
 };
