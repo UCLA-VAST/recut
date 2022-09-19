@@ -258,6 +258,18 @@ def precision_recall():
         for lab_fn in FN_list:
             f.write(f"lab: {lab_fn}\n")
             
+    # make a directory to save all the FNs marker files
+    path_FN_markers = path_result / 'FN_markers'
+    path_FN_markers.mkdir(exist_ok = True)
+    
+    for FN in FN_list:
+        FN_x = FN[0]
+        FN_y = FN[1]
+        FN_z = FN[2]    
+        with open(path_FN_markers/f"marker_{FN_x}_{FN_y}_{FN_z}_{int(round(RADII,0))}", 'w') as marker_file:
+            marker_file.write("# x,y,z,radius\n")
+            marker_file.write(f"{FN_x},{FN_y},{FN_z},{RADII}")
+        
      # generate histogram and cdf for TP and FP
     plot_his_cdf(inference_coord_radii_list, FP_coord_radii_list)
 
@@ -426,14 +438,12 @@ if __name__ == "__main__":
     
     # get precision & recall
     precision_recall()
-    
    
     
-
-## for testing purpose
-# label, label_with_radii = gather_markers('C:\\Users\\yanyanming77\\Desktop\\precision_recall\\6xmini\\soma_recut')
-# inference, inference_with_radii = gather_markers('C:\\Users\\yanyanming77\\Desktop\\precision_recall\\6xmini\\seeds')
-# path = Path("C:\\Users\\yanyanming77\\Desktop\\precision_recall\\6xmini")
+# # for testing purpose
+# label, label_with_radii = gather_markers('C:\\Users\\yanyanming77\\Desktop\\precision_recall\\marker_truth_full')
+# inference, inference_with_radii = gather_markers('C:\\Users\\yanyanming77\\Desktop\\precision_recall\\marker_ms_full')
+# path = Path("C:\\Users\\yanyanming77\\Desktop\\precision_recall")
 # path_result = path/f'result_run_{current_time}'
 # path_result.mkdir(exist_ok = True)
     
