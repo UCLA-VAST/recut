@@ -2240,8 +2240,7 @@ auto find_or_assign = [](std::array<double, 3> swc_coord,
 // http://www.neuronland.org/NLMorphologyConverter/MorphologyFormats/SWC/Spec.html
 // https://github.com/HumanBrainProject/swcPlus/blob/master/SWCplus_specification.html
 auto print_swc_line = [](std::array<double, 3> swc_coord, bool is_root,
-                         uint8_t radius,
-                         std::array<double, 3> parent_coord,
+                         uint8_t radius, std::array<double, 3> parent_coord,
                          CoordBBox bbox, std::ofstream &out,
                          auto &coord_to_swc_id, std::array<float, 3> voxel_size,
                          bool bbox_adjust = true, bool is_eswc = false) {
@@ -3531,34 +3530,58 @@ auto write_seeds = [](std::string run_dir,
   });
 };
 
-auto create_root_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
-                            EnlargedPointDataGrid::Ptr topology_grid) {
-  return components | rv::filter([topology_grid](auto component) {
-           auto bbox = component->evalActiveVoxelBoundingBox();
-           auto center = bbox.getCenter();
-           auto coord_center =
-               new_grid_coord(center.x(), center.y(), center.z());
-           auto leaf = topology_grid->tree().probeLeaf(coord_center);
-           try {
-             if (leaf) {
-               return leaf->beginIndexVoxel(coord_center)
-                          ? true
-                          : false; // remove if outside the surface
-             } else {
-               return false;
-             }
-           } catch (...) {
-             return false;
+// center by bbox
+auto get_center_of_grid = [](openvdb::FloatGrid::Ptr component) -> GridCoord {
+  auto bbox = component->evalActiveVoxelBoundingBox();
+  auto center = bbox.getCenter();
+  return new_grid_coord(center.x(), center.y(), center.z());
+};
+
+auto is_coordinate_active = [](EnlargedPointDataGrid::Ptr topology_grid,
+                               GridCoord coord) {
+  auto leaf = topology_grid->tree().probeLeaf(coord);
+  try {
+    if (leaf) {
+      return leaf->beginIndexVoxel(coord)
+                 ? true
+                 : false; // remove if outside the surface
+    } else {
+      return false;
+    }
+  } catch (...) {
+    return false;
+  }
+};
+
+// Of all connected components, keep those whose central coordinate is an active
+// voxel in the point topology and estimate the radius given the bbox of the
+// component. If roots previously known keep only those components in which the
+// known roots are an active voxel
+auto create_root_pairs =
+    [](std::vector<openvdb::FloatGrid::Ptr> components,
+       EnlargedPointDataGrid::Ptr topology_grid,
+       std::vector<std::pair<GridCoord, uint8_t>> known_roots = {})
+    -> std::vector<std::pair<GridCoord, uint8_t>> {
+  return components | rv::filter([topology_grid, &known_roots](auto component) {
+           if (known_roots.empty()) {
+             auto coord_center = get_center_of_grid(component);
+             return is_coordinate_active(topology_grid, coord_center);
+           } else {
+             // if any known root is an active voxel in this component
+             // then keep this component
+             return rng::any_of(known_roots, [topology_grid](auto root) {
+               auto [coord, radius] = root;
+               return is_coordinate_active(topology_grid, coord);
+             });
            }
          }) |
+         // for all remaining components
          rv::transform([](auto component) {
-           auto bbox = component->evalActiveVoxelBoundingBox();
-           auto dims = bbox.dim();
-           // set the radius to be half the longest dimension
+           auto dims = component->evalActiveVoxelBoundingBox().dim();
+           // estimate radius to be half the longest dimension of the bbox
            auto radius = static_cast<uint8_t>(dims[dims.maxIndex()] / 2);
-           auto center = bbox.getCenter();
-           return std::make_pair(
-               new_grid_coord(center.x(), center.y(), center.z()), radius);
+           auto coord_center = get_center_of_grid(component);
+           return std::make_pair(coord_center, radius);
          }) |
          rng::to_vector;
 };

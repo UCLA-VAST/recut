@@ -23,7 +23,7 @@ void RecutCommandLineArgs::PrintUsage() {
                "'uint8', 'mask' or 'float'\n";
   std::cout << "--output-type        output type img: 'ims', 'tiff' | "
                "VDB: 'point', "
-               "'uint8', 'mask' or 'float' | 'swc', 'eswc', 'labels'\n";
+               "'uint8', 'mask' or 'float' | 'swc', 'eswc', 'labels' | 'seeds'\n";
   // std::cout << "--max                set max image voxel raw value allowed, "
   //"computed automatically when --bg_thresh or --fg-percent are "
   //"specified\n";
@@ -183,7 +183,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         auto arg = std::string(argv[i + 1]);
         if (arg == "float" || arg == "point" || arg == "uint8" ||
             arg == "mask" || arg == "ims" || arg == "tiff" || arg == "eswc" ||
-            arg == "swc" || arg == "labels") {
+            arg == "swc" || arg == "labels" || arg == "seeds") {
           args.output_type = (argv[i + 1]);
           if (arg == "mask" || arg == "float" || arg == "uint8" ||
               arg == "point") {
@@ -191,7 +191,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
           }
         } else {
           cerr << "--output-type option must be one of "
-                  "[float,point,uint8,mask,ims,tiff,swc,eswc,labels]\n";
+                  "[float,point,uint8,mask,ims,tiff,swc,eswc,labels,seeds]\n";
           exit(1);
         }
         ++i;

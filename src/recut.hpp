@@ -2451,11 +2451,6 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
                                "'float', 'point', 'mask', 'uint8' supported");
     }
 
-    if (this->args->input_type == "mask" && !this->args->seed_path.empty()) {
-      throw std::runtime_error(
-          "To pass known --seeds the input should be of type point grid");
-    }
-
     if (this->args->input_type != "mask" && this->args->seed_path.empty()) {
       throw std::runtime_error(
           "For soma segmentation you must pass a raw image or a mask grid. If "
@@ -2468,11 +2463,6 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
 #endif
 
   } else { // converting to a new grid from a raw image
-    if (!args->seed_path.empty()) {
-      throw std::runtime_error(
-          "--seeds is not accepted for inputs of images. User defined seeds "
-          "must be passed with a point VDB");
-    }
     if (args->input_type == "tiff") {
       const auto tif_filenames = get_dir_files(args->input_path, ".tif");
       input_image_lengths = get_tif_dims(tif_filenames);
@@ -3060,8 +3050,9 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
       // setting fg would set background value
       // so only log if it was input without a fg %
       run_log << "Background value, " << +(args->background_thresh) << '\n';
-    } 
-    run_log << "Voxel size, " << args->voxel_size[0] << ',' << args->voxel_size[1] << ',' << args->voxel_size[2] << '\n';
+    }
+    run_log << "Voxel size, " << args->voxel_size[0] << ','
+            << args->voxel_size[1] << ',' << args->voxel_size[2] << '\n';
 #endif
   }
 }
@@ -3139,8 +3130,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     this->input_is_vdb = true;
   }
 
-  if (args->seed_path.empty()) {
-
+  if (this->mask_grid) {
     assertm(this->mask_grid,
             "Mask grid must be set before starting soma segmentation");
 
@@ -3244,17 +3234,19 @@ template <class image_t> void Recut<image_t>::operator()() {
     this->topology_grid = convert_sdf_to_points(masked_sdf, this->image_lengths,
                                                 this->args->foreground_percent);
 
-    root_pairs = create_root_pairs(components, this->topology_grid);
+    // adds all valid markers to roots vector
+    // filters by user input seeds if available
+    root_pairs = create_root_pairs(
+        components, this->topology_grid,
+        process_marker_dir(this->image_offsets, this->image_lengths, 1));
     write_seeds(this->run_dir, root_pairs, this->args->voxel_size);
 
 #ifdef LOG
     run_log << "Seed count, " << root_pairs.size() << '\n';
 #endif
-
-  } else {
-    // adds all valid markers to roots vector and returns
-    root_pairs =
-        process_marker_dir(this->image_offsets, this->image_lengths, 1);
+    if (this->args->output_type == "seeds") {
+      return; // exit
+    }
   }
 
   assertm(!root_pairs.empty(),
