@@ -3514,13 +3514,14 @@ auto write_seeds = [](std::string run_dir,
   rng::for_each(root_pairs, [&](auto root_pair) {
     auto [coord, radius] = root_pair;
     std::ofstream seed_file;
-    seed_file.open(seed_dir + "marker_" +
-                       std::to_string((int)coord.x() * voxel_size[0]) + "_" +
-                       std::to_string((int)coord.y() * voxel_size[1]) + "_" +
-                       std::to_string((int)coord.z() * voxel_size[2]) + "_" +
-                       std::to_string(static_cast<int>(
-                           ((4 * PI) / 3.) * pow(radius * voxel_size[0], 3))),
-                   std::ios::app);
+    seed_file.open(
+        seed_dir + "marker_" +
+            std::to_string(static_cast<int>(coord.x() * voxel_size[0])) + "_" +
+            std::to_string(static_cast<int>(coord.y() * voxel_size[1])) + "_" +
+            std::to_string(static_cast<int>(coord.z() * voxel_size[2])) + "_" +
+            std::to_string(static_cast<int>(((4 * PI) / 3.) *
+                                            pow(radius * voxel_size[0], 3))),
+        std::ios::app);
     seed_file << std::fixed << std::setprecision(SWC_PRECISION);
     seed_file << "#x,y,z,radius in um based of voxel size: [" << voxel_size[0]
               << ',' << voxel_size[1] << ',' << voxel_size[2] << "]\n";
@@ -3562,21 +3563,21 @@ auto create_root_pairs =
        EnlargedPointDataGrid::Ptr topology_grid,
        std::vector<std::pair<GridCoord, uint8_t>> known_roots = {})
     -> std::vector<std::pair<GridCoord, uint8_t>> {
-  return components | rv::filter([topology_grid, &known_roots](auto component) {
+  return components | rv::filter([topology_grid, &known_roots](const auto component) {
            if (known_roots.empty()) {
              auto coord_center = get_center_of_grid(component);
              return is_coordinate_active(topology_grid, coord_center);
            } else {
              // if any known root is an active voxel in this component
              // then keep this component
-             return rng::any_of(known_roots, [=](auto root) {
+             return rng::any_of(known_roots, [&component](const auto &root) {
                auto [coord, radius] = root;
-               return is_coordinate_active(topology_grid, coord) && component->tree().isValueOn(coord);
+               return component->tree().isValueOn(coord);
              });
            }
          }) |
          // for all remaining components
-         rv::transform([](auto component) {
+         rv::transform([](const auto component) {
            auto dims = component->evalActiveVoxelBoundingBox().dim();
            // estimate radius to be half the longest dimension of the bbox
            auto radius = static_cast<uint8_t>(dims[dims.maxIndex()] / 2);
