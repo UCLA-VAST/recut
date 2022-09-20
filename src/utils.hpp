@@ -3569,9 +3569,9 @@ auto create_root_pairs =
            } else {
              // if any known root is an active voxel in this component
              // then keep this component
-             return rng::any_of(known_roots, [topology_grid](auto root) {
+             return rng::any_of(known_roots, [=](auto root) {
                auto [coord, radius] = root;
-               return is_coordinate_active(topology_grid, coord);
+               return is_coordinate_active(topology_grid, coord) && component->tree().isValueOn(coord);
              });
            }
          }) |
