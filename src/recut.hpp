@@ -3240,7 +3240,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     // adds all valid markers to roots vector
     // filters by user input seeds if available
     root_pairs = create_root_pairs(
-        components, this->topology_grid,
+        components, this->topology_grid, this->args->voxel_size,
         process_marker_dir(this->image_offsets, this->image_lengths, 1));
     write_seeds(this->run_dir, root_pairs, this->args->voxel_size);
 

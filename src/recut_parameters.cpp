@@ -21,9 +21,10 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "--input-type         input type img: 'ims', 'tiff' | "
                "VDB: 'point', "
                "'uint8', 'mask' or 'float'\n";
-  std::cout << "--output-type        output type img: 'ims', 'tiff' | "
-               "VDB: 'point', "
-               "'uint8', 'mask' or 'float' | 'swc', 'eswc', 'labels' | 'seeds'\n";
+  std::cout
+      << "--output-type        output type img: 'ims', 'tiff' | "
+         "VDB: 'point', "
+         "'uint8', 'mask' or 'float' | 'swc', 'eswc', 'labels' | 'seeds'\n";
   // std::cout << "--max                set max image voxel raw value allowed, "
   //"computed automatically when --bg_thresh or --fg-percent are "
   //"specified\n";
@@ -43,10 +44,10 @@ void RecutCommandLineArgs::PrintUsage() {
          "along paths, default is set by the anisotropic factor of "
          "--voxel-size\n";
   std::cout
-      << "--image-lengths      [-ie] lengths of subvolume, in x y z order "
+      << "--image-lengths      [-ie] lengths of subvolume as x y z "
          "defaults"
-         " to max range from start to max length in each axis (-1, -1, "
-         "-1)\n";
+         " to max range from start to max length in each axis which could be "
+         "specified by -1 -1 -1\n";
   std::cout << "--bg-thresh          [-bt] all pixels greater than this passed "
                "intensity value are treated as foreground\n";
   std::cout

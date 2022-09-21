@@ -3560,17 +3560,18 @@ auto is_coordinate_active = [](EnlargedPointDataGrid::Ptr topology_grid,
 // known roots are an active voxel
 auto create_root_pairs =
     [](std::vector<openvdb::FloatGrid::Ptr> components,
-       EnlargedPointDataGrid::Ptr topology_grid,
+       EnlargedPointDataGrid::Ptr topology_grid, std::array<float, 3> voxel_size,
        std::vector<std::pair<GridCoord, uint8_t>> known_roots = {})
     -> std::vector<std::pair<GridCoord, uint8_t>> {
-  return components | rv::filter([topology_grid, &known_roots](const auto component) {
+  return components |
+         rv::remove_if([topology_grid, &known_roots](const auto component) {
            if (known_roots.empty()) {
              auto coord_center = get_center_of_grid(component);
-             return is_coordinate_active(topology_grid, coord_center);
+             return !is_coordinate_active(topology_grid, coord_center);
            } else {
-             // if any known root is an active voxel in this component
-             // then keep this component
-             return rng::any_of(known_roots, [&component](const auto &root) {
+             // if no known root is an active voxel in this component
+             // then remove this component
+             return rng::none_of(known_roots, [&component](const auto &root) {
                auto [coord, radius] = root;
                return component->tree().isValueOn(coord);
              });
@@ -3583,6 +3584,14 @@ auto create_root_pairs =
            auto radius = static_cast<uint8_t>(dims[dims.maxIndex()] / 2);
            auto coord_center = get_center_of_grid(component);
            return std::make_pair(coord_center, radius);
+         }) |
+         // narrow band filter the roots by radii
+         // using known statistics of true positives
+         rv::remove_if([voxel_size](const auto &root) {
+           auto [_, radius] = root;
+           auto radius_um = radius * voxel_size[0];
+           return !((radius_um >= MIN_SOMA_RADIUS_UM) &&
+                    (radius_um <= MAX_SOMA_RADIUS_UM));
          }) |
          rng::to_vector;
 };
