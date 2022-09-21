@@ -335,109 +335,128 @@ def plot_his_cdf(inference_coord_radii_list, FP_coord_radii_list):
     xlim_max = max(max(TP_radii), max(FP_radii))
 
     ### generate figures
-    fig, axs = plt.subplots(4, 2, figsize=(15, 15))
+    fig, axs = plt.subplots(4,2, figsize=(15,15))
     # plt.figure(figsize=(15, 15)) 
-
+       
     ### 1,2 plot histograms side by side
     # binwidth=0.5
-    axs[0, 0].hist(TP_radii,
-                   alpha=0.5,  # the transaparency parameter
-                   # bins=np.arange(min(TP_radii), max(TP_radii) + binwidth, binwidth),
-                   label='TP radii',
-                   color='blue',
-                   range=(radii_min, radii_max))
-    axs[0, 0].set_xlim(left=0, right=xlim_max)
-    axs[0, 0].set_ylim(bottom=0)
-    axs[0, 0].legend(loc='upper right')
-    axs[0, 0].set_title("Distribution of radii of TPs")
+    axs[0,0].hist(TP_radii, 
+             alpha=0.5, # the transaparency parameter
+             # bins=np.arange(min(TP_radii), max(TP_radii) + binwidth, binwidth),
+             label='TP radii',
+             color = 'blue',
+             range = (radii_min, radii_max))
+    axs[0,0].set_xlim(left=0, right=xlim_max)
+    axs[0,0].set_ylim(bottom=0)
+    axs[0,0].legend(loc='upper right')
+    axs[0,0].set_xlabel('Radii (um)')
+    axs[0,0].set_ylabel('Frequency')
+    axs[0,0].set_title("Distribution of radii of TPs")
 
     # plt.subplot(3, 2, 2)
-    axs[0, 1].hist(FP_radii,
-                   alpha=0.5,
-                   # bins=np.arange(min(FP_radii), max(FP_radii) + binwidth, binwidth),
-                   label='FP radii',
-                   color='red',
-                   range=(radii_min, radii_max))
-    axs[0, 1].set_xlim(left=0, right=xlim_max)
-    axs[0, 1].set_ylim(bottom=0)
-    axs[0, 1].legend(loc='upper right')
-    axs[0, 1].set_title("Distribution of radii of FPs")
-
+    axs[0,1].hist(FP_radii,
+             alpha=0.5,
+             # bins=np.arange(min(FP_radii), max(FP_radii) + binwidth, binwidth),
+             label='FP radii',
+             color = 'red',
+             range = (radii_min, radii_max))
+    axs[0,1].set_xlim(left=0,right=xlim_max)
+    axs[0,1].set_ylim(bottom=0)
+    axs[0,1].legend(loc='upper right')
+    axs[0,1].set_xlabel('Radii (um)')
+    axs[0,1].set_ylabel('Frequency')
+    axs[0,1].set_title("Distribution of radii of FPs")
+    
     # plt.savefig(path/f"histogram_cdf_{current_time}.pdf", format="pdf", bbox_inches="tight")  
 
     ### 3,4 plot CDFs side by side
     # getting data of the histogram
-    cnt_TP, bins_count_TP = np.histogram(TP_radii, range=(radii_min, radii_max))
-    cnt_FP, bins_count_FP = np.histogram(FP_radii, range=(radii_min, radii_max))
+    cnt_TP, bins_count_TP = np.histogram(TP_radii, range = (radii_min, radii_max))
+    cnt_FP, bins_count_FP = np.histogram(FP_radii, range = (radii_min, radii_max))
     # finding the PDF of the histogram using count values
     pdf_TP = cnt_TP / sum(cnt_TP)
     pdf_FP = cnt_FP / sum(cnt_FP)
-
+      
     # calculate cdf using pdf
     cdf_TP = np.cumsum(pdf_TP)
     cdf_FP = np.cumsum(pdf_FP)
-
+    
     # plotting PDF and CDF
     # plt.plot(bins_count[1:], pdf, color="red", label="PDF")
-    axs[1, 0].plot(bins_count_TP[1:], cdf_TP, label="CDF of TP", color='blue')
-    axs[1, 0].set_xlim(left=0, right=xlim_max)
-    axs[1, 0].set_ylim(bottom=0)
-    axs[1, 0].legend(loc='upper right')
-    axs[1, 0].set_title("CDF of radii of TPs")
+    axs[1,0].plot(bins_count_TP[1:], cdf_TP, label="CDF of TP", color = 'blue')
+    axs[1,0].set_xlim(left=0,right=xlim_max)
+    axs[1,0].set_ylim(bottom=0)
+    axs[1,0].legend(loc='upper right')
+    axs[1,0].set_xlabel('Radii (um)')
+    axs[1,0].set_ylabel('CDF')
+    axs[1,0].set_title("CDF of radii of TPs")
+    
+    axs[1,1].plot(bins_count_FP[1:], cdf_FP, label="CDF of FP", color = 'red')
+    axs[1,1].set_xlim(left=0,right=xlim_max)
+    axs[1,1].set_ylim(bottom=0)
+    axs[1,1].legend(loc='upper right')
+    axs[1,1].set_xlabel('Radii (um)')
+    axs[1,1].set_ylabel('CDF')
+    axs[1,1].set_title("CDF of radii of FPs")
 
-    axs[1, 1].plot(bins_count_FP[1:], cdf_FP, label="CDF of FP", color='red')
-    axs[1, 1].set_xlim(left=0, right=xlim_max)
-    axs[1, 1].set_ylim(bottom=0)
-    axs[1, 1].legend(loc='upper right')
-    axs[1, 1].set_title("CDF of radii of FPs")
 
     ### 5,6 plot scatter plots of TP/FP radii vs. true label radii
-    axs[2, 0].scatter(np.linspace(0, 1, len(TP_radii)), TP_radii, label='TPs', color='blue')
-    axs[2, 0].axhline(y=RADII, linestyle='--', c='green')
-    axs[2, 0].set_ylim(bottom=0, top=radii_max)
-    axs[2, 0].legend(loc='upper right')
-    axs[2, 0].set_title("Distribution of radii of TPs compared to labeld radii")
-
-    axs[2, 1].scatter(np.linspace(0, 1, len(FP_radii)), FP_radii, label='FPs', color='red')
-    axs[2, 1].axhline(y=RADII, linestyle='--', c='green')
-    axs[2, 1].set_ylim(bottom=0, top=radii_max)
-    axs[2, 1].legend(loc='upper right')
-    axs[2, 1].set_title("Distribution of radii of FPs compared to labeld radii")
-
+    axs[2,0].scatter(np.linspace(0,1,len(TP_radii)), TP_radii, label='TPs', color='blue')
+    axs[2,0].axhline(y=RADII, linestyle='--', c='green')
+    axs[2,0].set_ylim(bottom=0, top=radii_max)
+    axs[2,0].legend(loc='upper right')
+    axs[2,0].set_xlabel('Sample')
+    axs[2,0].set_ylabel('Radii (um)')
+    axs[2,0].set_title("Distribution of radii of TPs compared to labels' radii")
+    
+    axs[2,1].scatter(np.linspace(0,1,len(FP_radii)), FP_radii, label='FPs', color='red')
+    axs[2,1].axhline(y=RADII, linestyle='--', c='green')
+    axs[2,1].set_ylim(bottom=0, top=radii_max)
+    axs[2,1].legend(loc='upper right')
+    axs[2,1].set_xlabel('Sample')
+    axs[2,1].set_ylabel('Radii (um)')
+    axs[2,1].set_title("Distribution of radii of FPs compared to labels' radii")
+    
+    
     ### 7,8 plot histogram/CDF overlayed
-    axs[3, 0].hist(TP_radii,
-                   alpha=0.5,  # the transaparency parameter
-                   # bins=np.arange(min(TP_radii), max(TP_radii) + binwidth, binwidth),
-                   label='TP radii',
-                   color='blue',
-                   range=(radii_min, radii_max))
-    axs[3, 0].hist(FP_radii,
-                   alpha=0.5,
-                   # bins=np.arange(min(FP_radii), max(FP_radii) + binwidth, binwidth),
-                   label='FP radii',
-                   color='red',
-                   range=(radii_min, radii_max))
-    axs[3, 0].set_xlim(left=0, right=xlim_max)
-    axs[3, 0].set_ylim(bottom=0)
-    axs[3, 0].legend(loc='upper right')
-    axs[3, 0].set_title('Distribution of radii of TPs vs. FPs')
-
-    axs[3, 1].plot(bins_count_TP[1:], cdf_TP, label="CDF of TP", color='blue')
-    axs[3, 1].plot(bins_count_FP[1:], cdf_FP, label="CDF of FP", color='red')
-    axs[3, 1].set_xlim(left=0, right=xlim_max)
-    axs[3, 1].set_ylim(bottom=0)
-    axs[3, 1].legend(loc='upper right')
-    axs[3, 1].set_title("CDF of radii of TPs vs. FPs")
-    axs[3, 1].text(radii_min, -0.3, f'Two sample t-test:\nstatistic: {tstats}, pval: {pval}')
-    axs[3, 1].text(radii_min, -0.5, summary_stats_TP)
-    axs[3, 1].text(radii_min, -0.8, summary_stats_FP)
-
-    fig.tight_layout(pad=2.5)
+    axs[3,0].hist(TP_radii, 
+             alpha=0.5, # the transaparency parameter
+             # bins=np.arange(min(TP_radii), max(TP_radii) + binwidth, binwidth),
+             label='TP radii',
+             color = 'blue',
+             range = (radii_min, radii_max))
+    axs[3,0].hist(FP_radii,
+             alpha=0.5,
+             # bins=np.arange(min(FP_radii), max(FP_radii) + binwidth, binwidth),
+             label='FP radii',
+             color = 'red',
+             range = (radii_min, radii_max)) 
+    axs[3,0].set_xlim(left=0, right=xlim_max)
+    axs[3,0].set_ylim(bottom=0)
+    axs[3,0].legend(loc='upper right')
+    axs[3,0].set_xlabel('Radii (um)')
+    axs[3,0].set_ylabel('Frequency')
+    axs[3,0].set_title('Distribution of radii of TPs vs. FPs')
+    
+    
+    axs[3,1].plot(bins_count_TP[1:], cdf_TP, label="CDF of TP", color = 'blue')
+    axs[3,1].plot(bins_count_FP[1:], cdf_FP, label="CDF of FP", color = 'red')
+    axs[3,1].set_xlim(left=0, right=xlim_max)
+    axs[3,1].set_ylim(bottom=0)
+    axs[3,1].legend(loc='upper right')
+    axs[3,1].set_xlabel('Radii (um)')
+    axs[3,1].set_ylabel('CDF')
+    axs[3,1].set_title("CDF of radii of TPs vs. FPs")
+    axs[3,1].text(radii_min,-0.3, f'Two sample t-test:\nstatistic: {tstats}, pval: {pval}')
+    axs[3,1].text(radii_min,-0.5, summary_stats_TP)
+    axs[3,1].text(radii_min,-0.8, summary_stats_FP)
+    
+    fig.tight_layout(pad = 2.5)
     plt.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=None, hspace=0.5)
 
     # plt.savefig(path/f"histogram_cdf.pdf", format="pdf")
-    plt.savefig(path_result / f"histogram_cdf_{current_time}.pdf", format="pdf")
-    plt.show()
+    plt.savefig(path_result/f"histogram_cdf_{current_time}.pdf", format="pdf")
+    plt.show()  
 
 
 if __name__ == "__main__":
