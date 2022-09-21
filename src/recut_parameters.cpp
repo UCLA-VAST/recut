@@ -1,7 +1,7 @@
 #include "recut_parameters.hpp"
 
 void RecutCommandLineArgs::PrintUsage() {
-  std::cout << "Basic usage : recut <image file or dir> [--seeds <marker_dir>] "
+  std::cout << "Basic usage : recut <image or r> [--seeds <marker_dir>] "
                "[--type point/uint8/mask/float/ims/tiff] "
                "[-o <output_vdb_file_name>] "
                "[--bkg-thresh <int>] [--fg-percent <double>]\n\n";
@@ -21,18 +21,19 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "--input-type         input type img: 'ims', 'tiff' | "
                "VDB: 'point', "
                "'uint8', 'mask' or 'float'\n";
-  std::cout << "--output-type        output type img: 'ims', 'tiff' | "
-               "VDB: 'point', "
-               "'uint8', 'mask' or 'float' | 'swc', 'eswc', 'labels'\n";
+  std::cout
+      << "--output-type        output type img: 'ims', 'tiff' | "
+         "VDB: 'point', "
+         "'uint8', 'mask' or 'float' | 'swc', 'eswc', 'labels' | 'seeds'\n";
   // std::cout << "--max                set max image voxel raw value allowed, "
   //"computed automatically when --bg_thresh or --fg-percent are "
   //"specified\n";
   // std::cout << "--min                set min image voxel raw value allowed, "
   //"computed automatically when --bg_thresh or --fg-percent are "
   //"specified\n";
-  std::cout << "--channel            [-c] channel number, default 0\n";
-  std::cout << "--resolution-level   [-rl] resolution level default 0 "
-               "(original resolution)\n";
+  // std::cout << "--channel            [-c] channel number, default 0\n";
+  // std::cout << "--resolution-level   [-rl] resolution level default 0 "
+  //"(original resolution)\n";
   // std::cout
   //<< "--image-offsets      [-io] offsets of subvolume, in x y z order "
   //"default 0 0 0\n";
@@ -43,10 +44,10 @@ void RecutCommandLineArgs::PrintUsage() {
          "along paths, default is set by the anisotropic factor of "
          "--voxel-size\n";
   std::cout
-      << "--image-lengths      [-ie] lengths of subvolume, in x y z order "
+      << "--image-lengths      [-ie] lengths of subvolume as x y z "
          "defaults"
-         " to max range from start to max length in each axis (-1, -1, "
-         "-1)\n";
+         " to max range from start to max length in each axis which could be "
+         "specified by -1 -1 -1\n";
   std::cout << "--bg-thresh          [-bt] all pixels greater than this passed "
                "intensity value are treated as foreground\n";
   std::cout
@@ -77,13 +78,22 @@ void RecutCommandLineArgs::PrintUsage() {
          "upsampled (copied) by specified factor, default is 1 i.e. no "
          "upsampling\n";
   std::cout
-      << "--min-window     windows by default only extend to bounding volume "
+      << "--min-window         windows by default only extend to bounding "
+         "volume "
          "of their component, this value specifies the minimum window border "
-         "surrounding seeds, if no um value is passed it will use 75 um\n";
+         "surrounding seeds, if no um value is passed it will use "
+      << MIN_WINDOW_UM << " um\n";
   std::cout
-      << "--expand-window        windows by default only extend to bounding "
+      << "--expand-window      windows by default only extend to bounding "
          "volume of their component, this allows specifying an expansion "
-         "factor around seeds, if no um value is passed it will use 30 um\n";
+         "factor around seeds, if no um value is passed it will use "
+      << EXPAND_WINDOW_UM << " um\n";
+  std::cout << "--open-steps         # of iterations of morphological opening; "
+               "defaults to 5\n";
+  std::cout << "--close-steps        # of iterations of morphological closing; "
+               "defaults to 8\n";
+  std::cout << "--save-vdbs          save intermediate VDB grids during "
+               "reconstruction transformations\n";
   std::cout
       << "--run-app2           for benchmarks and comparisons runs app2 on "
          "the vdb passed to --output-windows\n";
@@ -119,6 +129,8 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
     } else {
       // global volume and channel selection
       args.input_path = argv[1];
+      if (args.input_path.back() == '/')
+        args.input_path.pop_back();
     }
     // if the switch is given, parameter(s) corresponding to the switch is
     // expected
@@ -131,7 +143,6 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--seeds") == 0 ||
                  strcmp(argv[i], "-s") == 0) {
         args.seed_path = argv[i + 1];
-        args.convert_only = false;
         ++i;
       } else if (strcmp(argv[i], "--resolution-level") == 0 ||
                  strcmp(argv[i], "-rl") == 0) {
@@ -173,14 +184,20 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         auto arg = std::string(argv[i + 1]);
         if (arg == "float" || arg == "point" || arg == "uint8" ||
             arg == "mask" || arg == "ims" || arg == "tiff" || arg == "eswc" ||
-            arg == "swc" || arg == "labels") {
+            arg == "swc" || arg == "labels" || arg == "seeds") {
           args.output_type = (argv[i + 1]);
+          if (arg == "mask" || arg == "float" || arg == "uint8" ||
+              arg == "point") {
+            args.convert_only = true;
+          }
         } else {
           cerr << "--output-type option must be one of "
-                  "[float,point,uint8,mask,ims,tiff,swc,eswc,labels]\n";
+                  "[float,point,uint8,mask,ims,tiff,swc,eswc,labels,seeds]\n";
           exit(1);
         }
         ++i;
+      } else if (strcmp(argv[i], "--save-vdbs") == 0) {
+        args.save_vdbs = true;
       } else if (strcmp(argv[i], "--channel") == 0 ||
                  strcmp(argv[i], "-c") == 0) {
         args.channel = atoi(argv[i + 1]);
@@ -222,6 +239,12 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         } else {
           args.min_window_um = EXPAND_WINDOW_UM;
         }
+      } else if (strcmp(argv[i], "--open-steps") == 0) {
+        args.open_steps = atoi(argv[i + 1]);
+        ++i;
+      } else if (strcmp(argv[i], "--close-steps") == 0) {
+        args.close_steps = atoi(argv[i + 1]);
+        ++i;
       } else if (strcmp(argv[i], "--downsample-factor") == 0) {
         args.downsample_factor = atoi(argv[i + 1]);
         ++i;

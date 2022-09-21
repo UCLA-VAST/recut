@@ -17,7 +17,9 @@
 #include <iostream>
 #include <map>
 #include <openvdb/tools/Composite.h>
-#include <openvdb/tools/VolumeToSpheres.h> // for fillWithSpheres
+#include <openvdb/tools/FastSweeping.h>
+#include <openvdb/tools/LevelSetUtil.h>
+#include <openvdb/tools/TopologyToLevelSet.h>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -1978,9 +1980,11 @@ Recut<image_t>::get_tile_thresholds(local_image_t *buffer,
   } else { // if bkg set explicitly and foreground wasn't
     if (this->args->background_thresh >= 0) {
       tile_thresholds->bkg_thresh = this->args->background_thresh;
+    } else {
+      // otherwise: tile_thresholds->bkg_thresh default inits to 0
+      tile_thresholds->bkg_thresh = 0;
     }
   }
-  // otherwise: tile_thresholds->bkg_thresh default inits to 0
 
   if (this->args->convert_only) {
     tile_thresholds->max_int = std::numeric_limits<local_image_t>::max();
@@ -2003,6 +2007,7 @@ Recut<image_t>::get_tile_thresholds(local_image_t *buffer,
     if (!already_set(tile_thresholds->bkg_thresh)) {
       // max and min members will be set
       tile_thresholds->get_max_min(buffer, tile_vertex_size);
+      tile_thresholds->bkg_thresh = tile_thresholds->min_int;
     }
   } else { // both values were set
     // either of these values are signed and default inited -1, casting
@@ -2402,14 +2407,15 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
   this->update_grid = openvdb::BoolGrid::create();
   if (this->input_is_vdb) { // running based of a vdb input
 
-    assertm(!args->convert_only,
-            "Convert only option is not valid from vdb to vdb pass a --seeds "
-            "directory to start reconstructions");
+    // assertm(!args->convert_only,
+    //"Convert only option is not valid from vdb to vdb pass a --seeds "
+    //"directory to start reconstructions");
 
     auto timer = high_resolution_timer();
     auto base_grid = read_vdb_file(args->input_path);
 
-    if (this->args->input_type == "float") {
+    if (base_grid->isType<openvdb::FloatGrid>()) {
+      this->args->input_type = "float";
       this->input_grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
       // copy topology (bit-mask actives) to the topology grid
       // this->topology_grid =
@@ -2424,13 +2430,33 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
       //"did no match");
       auto [lengths, _] = get_metadata(input_grid);
       input_image_lengths = lengths;
-    } else if (this->args->input_type == "point") {
+      append_attributes(this->topology_grid);
+    } else if (base_grid->isType<EnlargedPointDataGrid>()) {
+      this->args->input_type = "point";
       this->topology_grid =
           openvdb::gridPtrCast<EnlargedPointDataGrid>(base_grid);
       auto [lengths, _] = get_metadata(topology_grid);
       input_image_lengths = lengths;
+      append_attributes(this->topology_grid);
+    } else if (base_grid->isType<openvdb::MaskGrid>()) {
+      this->args->input_type = "mask";
+      this->mask_grid = openvdb::gridPtrCast<openvdb::MaskGrid>(base_grid);
+      auto [lengths, _] = get_metadata(mask_grid);
+      input_image_lengths = lengths;
+    } else if (base_grid->isType<ImgGrid>()) {
+      throw std::runtime_error(
+          "VDB grid type 'uint8' not yet supported as an input image");
+    } else {
+      throw std::runtime_error("VDB grid type not recognized, only type "
+                               "'float', 'point', 'mask', 'uint8' supported");
     }
-    append_attributes(this->topology_grid);
+
+    if (this->args->input_type != "mask" && this->args->seed_path.empty()) {
+      throw std::runtime_error(
+          "For soma segmentation you must pass a raw image or a mask grid. If "
+          "you start reconstruction from float or point you must also specify "
+          "a seeds path");
+    }
 
 #ifdef LOG
     // cout << "Read grid in: " << timer.elapsed() << " s\n";
@@ -2562,7 +2588,10 @@ template <class image_t> void Recut<image_t>::initialize() {
   // TODO move this clipping up to the read step for faster performance on sub
   // grids
   if (this->input_is_vdb) {
-    this->topology_grid->clip(this->image_bbox);
+    if (args->input_type == "mask")
+      this->mask_grid->clip(this->image_bbox);
+    else
+      this->topology_grid->clip(this->image_bbox);
   }
 
   // save to globals the actual size of the full image
@@ -2598,16 +2627,7 @@ template <class image_t> void Recut<image_t>::initialize() {
   // set the prune radius if not passed at command line
   // based on the voxel size
   if (!this->args->prune_radius) {
-    float maxx, minx = this->args->voxel_size[0];
-    for (int i = 1; i < 3; ++i) {
-      auto current = this->args->voxel_size[i];
-      if (maxx < current)
-        maxx = current;
-      if (current < minx)
-        minx = current;
-    }
-    // round to nearest int
-    this->args->prune_radius = static_cast<uint16_t>((maxx / minx) + .5);
+    this->args->prune_radius = anisotropic_factor(this->args->voxel_size);
 #ifdef LOG
     if (!this->args->convert_only) {
       std::cout << "--prune-radius was set to: "
@@ -2808,6 +2828,9 @@ void Recut<image_t>::partition_components(
     auto pruned_markers = advantra_prune(
         markers, /*prune_radius*/ this->args->prune_radius.value(),
         coord_to_idx);
+    if (pruned_markers.empty()) {
+      return; // skip
+    }
 
     // is a fresh run_dir
     auto component_dir_fn =
@@ -2948,19 +2971,7 @@ void Recut<image_t>::partition_components(
       }
     });
 
-    auto write_soma_locs = [](auto component_roots,
-                              std::string component_dir_fn) {
-      auto fn = component_dir_fn + "/soma-coords.txt";
-      std::ofstream soma_of;
-      soma_of.open(fn);
-      rng::for_each(component_roots, [&soma_of](auto coordp) {
-        auto [coord, radius] = coordp;
-        soma_of << coord.x() << ' ' << coord.y() << ' ' << coord.z() << '\n';
-      });
-      soma_of.close();
-    };
-
-    write_soma_locs(component_roots, component_dir_fn);
+    write_seeds(component_dir_fn, component_roots, this->args->voxel_size);
 
     std::cout << "Component " << index << " complete and safe to open\n";
   }; // for each component
@@ -3001,67 +3012,26 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
   if (this->args->convert_only) {
     // reassign output_name from the default
     if (this->args->output_name == "out.vdb") {
-      auto convert_fn_vdb = [this](const std::string &name, auto split_char) {
-        auto dir_path =
-            name | rv::split('/') | rng::to<std::vector<std::string>>();
-        auto file_name = name;
-        std::string parent = "";
-        if (dir_path.size() > 1) { // is a full path
-          file_name = dir_path.back();
-          parent = name | rv::split('/') | rv::drop_last(1) | rv::join('/') |
-                   rng::to<std::string>();
-        }
-        auto stripped = file_name | rv::split(split_char) | rv::drop_last(1) |
-                        rv::join | rng::to<std::string>();
-        stripped += "-ch" + std::to_string(this->args->channel);
-        stripped += "-" + this->args->output_type;
-        std::ostringstream out;
-        out.precision(3);
-        out << std::fixed << this->args->foreground_percent;
-        stripped += "-fgpct-" + out.str();
-        stripped += "-zoff" + std::to_string(args->image_offsets.z());
-        stripped += ".vdb";
-        stripped = dir_path.size() > 1 ? parent + "/" + stripped : stripped;
-        return stripped;
-      };
-
-      if (args->input_type == "ims") {
-#ifndef USE_HDF5
-        throw std::runtime_error("HDF5 dependency required for input type ims");
-#endif
-        this->args->output_name = convert_fn_vdb(args->input_path, '.');
-      }
-
-      if (args->input_type == "tiff") {
-        const auto tif_filenames = get_dir_files(args->input_path, ".tif");
-        this->args->output_name = convert_fn_vdb(tif_filenames[0], '_');
-      }
+      this->args->output_name = get_output_name(args);
     }
 
     this->run_dir = ".";
     this->log_fn = this->run_dir + "/" + this->args->output_name + "-log-" +
-                   std::to_string(args->user_thread_count) + ".txt";
+                   std::to_string(args->user_thread_count) + ".csv";
 #ifdef LOG
     std::ofstream convert_log(this->log_fn);
     convert_log << "Thread count, " << args->user_thread_count << '\n';
     convert_log << "Original voxel count, "
                 << coord_prod_accum(this->image_lengths) << '\n';
 #endif
+
+    // Reconstructing volume:
   } else {
-    auto get_unique_fn = [](std::string probe_name) {
-      // make sure its a clean write
-      while (fs::exists(probe_name)) {
-        auto l =
-            probe_name | rv::split('-') | rng::to<std::vector<std::string>>();
-        l.back() = std::to_string(std::stoi(l.back()) + 1);
-        probe_name = l | rv::join('-') | rng::to<std::string>();
-      }
-      return probe_name;
-    };
     this->run_dir = get_unique_fn("./run-1");
     this->log_fn = this->run_dir + "/log.csv";
     fs::create_directories(run_dir);
 #ifdef LOG
+    std::cout << "All outputs will be written to: " << this->run_dir << '\n';
     std::ofstream run_log(log_fn);
     run_log << "Thread count, " << args->user_thread_count << '\n';
     run_log << "Prune radius, " << args->prune_radius.value() << '\n';
@@ -3072,6 +3042,20 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << '\n';
     run_log << "Original voxel count, " << coord_prod_accum(this->image_lengths)
             << '\n';
+    run_log << "Close steps, " << args->close_steps << '\n';
+    run_log << "Open steps, " << args->open_steps << '\n';
+    if (args->foreground_percent >= 0) {
+      std::ostringstream out;
+      out.precision(3);
+      out << std::fixed << args->foreground_percent;
+      run_log << "fg %, " + out.str() << '\n';
+    } else if (args->background_thresh >= 0) {
+      // setting fg would set background value
+      // so only log if it was input without a fg %
+      run_log << "Background value, " << +(args->background_thresh) << '\n';
+    }
+    run_log << "Voxel size, " << args->voxel_size[0] << ','
+            << args->voxel_size[1] << ',' << args->voxel_size[2] << '\n';
 #endif
   }
 }
@@ -3079,25 +3063,31 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
 template <class image_t> void Recut<image_t>::operator()() {
 
   if (!args->second_grid.empty()) {
+    // simply combine the passed grids then exit program immediately
     combine_grids(args->input_path, args->second_grid, this->args->output_name);
     return;
   }
 
+  // process the input args and parameters
   this->initialize();
 
   start_run_dir_and_logs();
 
+  std::vector<std::pair<GridCoord, uint8_t>> root_pairs;
+
   // if point.vdb was not already set by input
   if (!this->input_is_vdb) {
-    if (!args->convert_only) {
-      if (this->args->output_type != "point") {
-        throw std::runtime_error(
-            "If running reconstruction, output type must be type point");
-      }
-    }
-    convert_topology();
+    // if (!args->convert_only) {
+    // if (this->args->output_type != "point") {
+    // throw std::runtime_error(
+    //"If running reconstruction, output type must be type point");
+    //}
+    //}
 
     if (args->convert_only) {
+      // converts to whatever output_type specifies
+      convert_topology();
+
       openvdb::GridPtrVec grids;
       if (args->output_type == "float") {
         print_grid_metadata(this->input_grid);
@@ -3115,22 +3105,157 @@ template <class image_t> void Recut<image_t>::operator()() {
       write_vdb_file(grids, this->args->output_name);
       // no more work to do, exiting
       return;
+
+    } else { // fully reconstruct the image
+
+      auto final_output_type = args->output_type;
+
+      // temporarily set output type to create necessary grids
+      if (args->seed_path.empty()) {
+        // if generating seeds then convert to mask first
+        args->output_type = "mask";
+        convert_topology();
+        // sets to this->mask_grid instead of reading from file
+      } else {
+        args->output_type = "point";
+        convert_topology();
+        append_attributes(this->topology_grid);
+      }
+
+      // reset it
+      args->output_type = final_output_type;
     }
 
     // set the z tile lengths to equallying whole image for reconstruction
     this->tile_lengths[2] = this->image_lengths[2];
     update_hierarchical_dims(this->tile_lengths);
-    append_attributes(this->topology_grid);
     // assume starting from VDB for rest of run
     this->input_is_vdb = true;
   }
 
+  if (this->mask_grid) {
+    assertm(this->mask_grid,
+            "Mask grid must be set before starting soma segmentation");
+
+    if (args->save_vdbs) {
+      // write out topology
+      openvdb::GridPtrVec grids;
+      grids.push_back(this->mask_grid);
+      write_vdb_file(grids, this->run_dir + "/mask.vdb");
+    }
+
+    auto timer = high_resolution_timer();
+
+    // mask grids are a fog volume of sparse active values in space
+    // change the fog volume into an SDF by holding values on the border between
+    // active an inactive voxels
+    // the new SDF wraps (dilates by 1) the original active voxels, and
+    // additionally holds values across the interface of the surface
+    //
+    // this function additionally adds a morphological closing step such that
+    // holes and valleys in the SDF are filled
+    auto closed_sdf_grid =
+        vto::topologyToLevelSet(*this->mask_grid, /*halfwidth*/ 1,
+                                /*closingwidth*/ args->close_steps);
+
+#ifdef LOG
+    std::ofstream run_log;
+    run_log.open(log_fn, std::ios::app);
+    run_log << "Closing, " << timer.elapsed() << '\n';
+    run_log << "Closing voxel count, " << closed_sdf_grid->activeVoxelCount()
+            << '\n';
+#endif
+
+    if (args->save_vdbs) {
+      // write out topology
+      openvdb::GridPtrVec grids;
+      grids.push_back(closed_sdf_grid);
+      write_vdb_file(grids, this->run_dir + "/closed_sdf.vdb");
+    }
+
+    timer.restart();
+
+    // TODO find enclosed regions and log
+
+    // define the filter for the morphological operations to the level set
+    // morpho operations can only occur on SDF level sets, not on FOG topologies
+    auto opened_sdf_grid = closed_sdf_grid->deepCopy();
+    auto filter = std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(
+        *opened_sdf_grid);
+    filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
+    filter->setTemporalScheme(openvdb::math::TVD_RK1);
+    filter->offset(args->open_steps);
+    filter->offset(-args->open_steps);
+
+    // these morphological operations may nullify the values stored in the SDF
+    // vto::erodeActiveValues(opened_sdf_grid->tree(), args->open_steps);
+    // vto::dilateActiveValues(opened_sdf_grid->tree(), args->open_steps);
+
+#ifdef LOG
+    run_log << "Opening, " << timer.elapsed() << '\n';
+    run_log << "Open voxel count, " << opened_sdf_grid->activeVoxelCount()
+            << '\n';
+    timer.restart();
+#endif
+
+    if (args->save_vdbs) {
+      // write out topology
+      openvdb::GridPtrVec grids;
+      grids.push_back(opened_sdf_grid);
+      write_vdb_file(grids, this->run_dir + "/opened_sdf.vdb");
+    }
+
+    // rebuild SDF values?
+
+    // sdf segment
+    std::vector<openvdb::FloatGrid::Ptr> components;
+    // vto:segmentSDF(*opened_sdf_grid, components);
+    vto::segmentActiveVoxels(*opened_sdf_grid, components);
+
+#ifdef LOG
+    run_log << "Segment, " << timer.elapsed() << '\n';
+#endif
+
+    // build full SDF by extending known somas into reachable neurites
+    // or use SDFInteriorMask
+    timer.restart();
+    auto masked_sdf = vto::maskSdf(*opened_sdf_grid, *closed_sdf_grid);
+#ifdef LOG
+    run_log << "Mask SDF, " << timer.elapsed() << '\n';
+    run_log << "Masked SDF voxel count, " << masked_sdf->activeVoxelCount()
+            << '\n';
+    run_log.close();
+#endif
+
+    //if (args->save_vdbs) {
+      //// write out topology
+      //openvdb::GridPtrVec grids;
+      //grids.push_back(masked_sdf);
+      //write_vdb_file(grids, this->run_dir + "/connected_sdf.vdb");
+    //}
+
+    this->topology_grid = convert_sdf_to_points(masked_sdf, this->image_lengths,
+                                                this->args->foreground_percent);
+
+    // adds all valid markers to roots vector
+    // filters by user input seeds if available
+    root_pairs = create_root_pairs(
+        components, this->topology_grid, this->args->voxel_size,
+        process_marker_dir(this->image_offsets, this->image_lengths, 1));
+    write_seeds(this->run_dir, root_pairs, this->args->voxel_size);
+
+#ifdef LOG
+    run_log << "Seed count, " << root_pairs.size() << '\n';
+#endif
+    if (this->args->output_type == "seeds") {
+      return; // exit
+    }
+  }
+
+  assertm(!root_pairs.empty(),
+          "Root pairs must be set before beginning reconstruction");
   assertm(this->topology_grid,
           "Topology grid must be set before starting reconstruction");
-
-  // adds all valid markers to roots vector and returns
-  auto root_pairs =
-      process_marker_dir(this->image_offsets, this->image_lengths, 1);
 
   initialize_globals(this->grid_tile_size, this->tile_block_size);
 

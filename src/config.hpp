@@ -76,14 +76,14 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 
 #define SWC_MIN_LINE 110
 #define SOMA_PRUNE_RADIUS 1.6
+#define MIN_SOMA_RADIUS_UM 3
+#define MAX_SOMA_RADIUS_UM std::numeric_limits<int>::max()
 #define MAX_SOMA_PER_COMPONENT std::numeric_limits<int>::max()
 #define MIN_Z_DEPTH 30
 // euclidean voxel path distance of branches to prune
 #define MIN_BRANCH_LENGTH 20
 #define MIN_WINDOW_UM 150
 #define EXPAND_WINDOW_UM 30
-// the value to add for on bits when merging a mask grid with a image grid
-#define PIXEL_VAL_MASK 64
 #define SWC_PRECISION 3
 
 // Below are deprecated or are not (yet) affecting behavior:

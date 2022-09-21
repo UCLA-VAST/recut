@@ -578,8 +578,10 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
 
     if (nYi->nbr.size() == 0) {
       ++no_neighbor_count;
-      if (nYi->parent == nullptr)
-        throw std::runtime_error("parent is also invalid");
+      if (nYi->parent == nullptr) {
+        std::cerr << "Non-fatal error: parent is also invalid... skipping component\n";
+        return std::vector<MyMarker*>();
+      }
       // cout << "nXi coord " << nX[ci]->x << ',' << nX[ci]->y << ',' <<
       // nX[ci]->z << '\n'; cout << "nYi coord " << nYi->x << ',' << nYi->y <<
       // ',' << nYi->z << '\n'; cout << "  parent coord " << nYi->parent->x <<

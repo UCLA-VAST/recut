@@ -18,6 +18,7 @@
 #include <openvdb/tools/Dense.h> // copyToDense
 #include <queue>
 #include <stdlib.h> // ultoa
+#include <string>
 #include <tiffio.h>
 #include <variant>
 
@@ -2239,16 +2240,19 @@ auto find_or_assign = [](std::array<double, 3> swc_coord,
 // http://www.neuronland.org/NLMorphologyConverter/MorphologyFormats/SWC/Spec.html
 // https://github.com/HumanBrainProject/swcPlus/blob/master/SWCplus_specification.html
 auto print_swc_line = [](std::array<double, 3> swc_coord, bool is_root,
-                         uint8_t radius,
-                         const std::array<double, 3> parent_coord,
+                         uint8_t radius, std::array<double, 3> parent_coord,
                          CoordBBox bbox, std::ofstream &out,
                          auto &coord_to_swc_id, std::array<float, 3> voxel_size,
                          bool bbox_adjust = true, bool is_eswc = false) {
   std::ostringstream line;
 
   if (bbox_adjust) { // implies output window crops is set
-    swc_coord = {swc_coord[0] - bbox.min().x(), swc_coord[1] - bbox.min().y(),
-                 swc_coord[2] - bbox.min().z()};
+    swc_coord = {swc_coord[0] - static_cast<double>(bbox.min().x()),
+                 swc_coord[1] - static_cast<double>(bbox.min().y()),
+                 swc_coord[2] - static_cast<double>(bbox.min().z())};
+    parent_coord = {parent_coord[0] - static_cast<double>(bbox.min().x()),
+                    parent_coord[1] - static_cast<double>(bbox.min().y()),
+                    parent_coord[2] - static_cast<double>(bbox.min().z())};
   }
 
   // CoordBBox uses extents inclusively, but we want exclusive bbox
@@ -3419,6 +3423,178 @@ load_tile(const CoordBBox &bbox, const std::string &dir) {
 #endif
   return dense;
 }
+
+auto get_unique_fn = [](std::string probe_name) {
+  // make sure its a clean write
+  while (fs::exists(probe_name)) {
+    auto l = probe_name | rv::split('-') | rng::to<std::vector<std::string>>();
+    l.back() = std::to_string(std::stoi(l.back()) + 1);
+    probe_name = l | rv::join('-') | rng::to<std::string>();
+  }
+  return probe_name;
+};
+
+auto convert_fn_vdb = [](const std::string &name, auto split_char,
+                         auto args) -> std::string {
+  auto dir_path = name | rv::split('/') | rng::to<std::vector<std::string>>();
+  auto file_name = name;
+  std::string parent = "";
+  if (dir_path.size() > 1) { // is a full path
+    file_name = dir_path.back();
+    parent = name | rv::split('/') | rv::drop_last(1) | rv::join('/') |
+             rng::to<std::string>();
+  }
+  std::string stripped = file_name | rv::split(split_char) | rv::drop_last(1) |
+                         rv::join(split_char) | rng::to<std::string>();
+  stripped += "-ch" + std::to_string(args->channel);
+  stripped += "-" + args->output_type;
+
+  if (args->foreground_percent >= 0) {
+    std::ostringstream out;
+    out.precision(3);
+    out << std::fixed << args->foreground_percent;
+    stripped += "-fgpct-" + out.str();
+  }
+  // stripped += "-zoff" + std::to_string(args->image_offsets.z());
+  stripped += ".vdb";
+  stripped = dir_path.size() > 1 ? parent + "/" + stripped : stripped;
+  return stripped;
+};
+
+auto get_output_name = [](RecutCommandLineArgs *args) -> std::string {
+  if (args->input_type == "ims") {
+#ifndef USE_HDF5
+    throw std::runtime_error("HDF5 dependency required for input type ims");
+#endif
+    return convert_fn_vdb(args->input_path, '.', args);
+  }
+
+  if (args->input_type == "tiff") {
+    const auto tif_filenames = get_dir_files(args->input_path, ".tif");
+    return convert_fn_vdb(tif_filenames[0], '_', args);
+  }
+  return std::string("out.vdb");
+};
+
+auto convert_sdf_to_points = [](auto sdf, auto image_lengths,
+                                auto foreground_percent) {
+  std::vector<PositionT> positions;
+  for (auto iter = sdf->cbeginValueOn(); iter.test(); ++iter) {
+    auto coord = iter.getCoord();
+    positions.push_back(PositionT(coord.x(), coord.y(), coord.z()));
+  }
+
+  auto topology_grid = create_point_grid(positions, image_lengths,
+                                         get_transform(), foreground_percent);
+  append_attributes(topology_grid);
+  return topology_grid;
+};
+
+auto anisotropic_factor = [](auto voxel_size) {
+  float maxx, minx = voxel_size[0];
+  for (int i = 1; i < 3; ++i) {
+    auto current = voxel_size[i];
+    if (maxx < current)
+      maxx = current;
+    if (current < minx)
+      minx = current;
+  }
+  // round to nearest int
+  return static_cast<uint16_t>((maxx / minx) + .5);
+};
+
+// write seed/roots to disk
+auto write_seeds = [](std::string run_dir,
+                      std::vector<std::pair<GridCoord, uint8_t>> root_pairs,
+                      std::array<float, 3> voxel_size) {
+  // start seeds directory
+  std::string seed_dir = run_dir + "/seeds/";
+  fs::create_directories(seed_dir);
+
+  rng::for_each(root_pairs, [&](auto root_pair) {
+    auto [coord, radius] = root_pair;
+    std::ofstream seed_file;
+    seed_file.open(
+        seed_dir + "marker_" +
+            std::to_string(static_cast<int>(coord.x() * voxel_size[0])) + "_" +
+            std::to_string(static_cast<int>(coord.y() * voxel_size[1])) + "_" +
+            std::to_string(static_cast<int>(coord.z() * voxel_size[2])) + "_" +
+            std::to_string(static_cast<int>(((4 * PI) / 3.) *
+                                            pow(radius * voxel_size[0], 3))),
+        std::ios::app);
+    seed_file << std::fixed << std::setprecision(SWC_PRECISION);
+    seed_file << "#x,y,z,radius in um based of voxel size: [" << voxel_size[0]
+              << ',' << voxel_size[1] << ',' << voxel_size[2] << "]\n";
+    seed_file << voxel_size[0] * coord.x() << ',' << voxel_size[0] * coord.y()
+              << ',' << voxel_size[0] * coord.z() << ','
+              << +(radius * voxel_size[0]) << '\n';
+  });
+};
+
+// center by bbox
+auto get_center_of_grid = [](openvdb::FloatGrid::Ptr component) -> GridCoord {
+  auto bbox = component->evalActiveVoxelBoundingBox();
+  auto center = bbox.getCenter();
+  return new_grid_coord(center.x(), center.y(), center.z());
+};
+
+auto is_coordinate_active = [](EnlargedPointDataGrid::Ptr topology_grid,
+                               GridCoord coord) {
+  auto leaf = topology_grid->tree().probeLeaf(coord);
+  try {
+    if (leaf) {
+      return leaf->beginIndexVoxel(coord)
+                 ? true
+                 : false; // remove if outside the surface
+    } else {
+      return false;
+    }
+  } catch (...) {
+    return false;
+  }
+};
+
+// Of all connected components, keep those whose central coordinate is an active
+// voxel in the point topology and estimate the radius given the bbox of the
+// component. If roots previously known keep only those components in which the
+// known roots are an active voxel
+auto create_root_pairs =
+    [](std::vector<openvdb::FloatGrid::Ptr> components,
+       EnlargedPointDataGrid::Ptr topology_grid, std::array<float, 3> voxel_size,
+       std::vector<std::pair<GridCoord, uint8_t>> known_roots = {})
+    -> std::vector<std::pair<GridCoord, uint8_t>> {
+  return components |
+         rv::remove_if([topology_grid, &known_roots](const auto component) {
+           if (known_roots.empty()) {
+             auto coord_center = get_center_of_grid(component);
+             return !is_coordinate_active(topology_grid, coord_center);
+           } else {
+             // if no known root is an active voxel in this component
+             // then remove this component
+             return rng::none_of(known_roots, [&component](const auto &root) {
+               auto [coord, radius] = root;
+               return component->tree().isValueOn(coord);
+             });
+           }
+         }) |
+         // for all remaining components
+         rv::transform([](const auto component) {
+           auto dims = component->evalActiveVoxelBoundingBox().dim();
+           // estimate radius to be half the longest dimension of the bbox
+           auto radius = static_cast<uint8_t>(dims[dims.maxIndex()] / 2);
+           auto coord_center = get_center_of_grid(component);
+           return std::make_pair(coord_center, radius);
+         }) |
+         // narrow band filter the roots by radii
+         // using known statistics of true positives
+         rv::remove_if([voxel_size](const auto &root) {
+           auto [_, radius] = root;
+           auto radius_um = radius * voxel_size[0];
+           return !((radius_um >= MIN_SOMA_RADIUS_UM) &&
+                    (radius_um <= MAX_SOMA_RADIUS_UM));
+         }) |
+         rng::to_vector;
+};
 
 auto binarize_uint8_grid = [](auto image_grid) {
   auto accessor = image_grid->getAccessor();
