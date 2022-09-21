@@ -2828,6 +2828,9 @@ void Recut<image_t>::partition_components(
     auto pruned_markers = advantra_prune(
         markers, /*prune_radius*/ this->args->prune_radius.value(),
         coord_to_idx);
+    if (pruned_markers.empty()) {
+      return; // skip
+    }
 
     // is a fresh run_dir
     auto component_dir_fn =
@@ -3224,12 +3227,12 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log.close();
 #endif
 
-    if (args->save_vdbs) {
-      // write out topology
-      openvdb::GridPtrVec grids;
-      grids.push_back(masked_sdf);
-      write_vdb_file(grids, this->run_dir + "/connected_sdf.vdb");
-    }
+    //if (args->save_vdbs) {
+      //// write out topology
+      //openvdb::GridPtrVec grids;
+      //grids.push_back(masked_sdf);
+      //write_vdb_file(grids, this->run_dir + "/connected_sdf.vdb");
+    //}
 
     this->topology_grid = convert_sdf_to_points(masked_sdf, this->image_lengths,
                                                 this->args->foreground_percent);
