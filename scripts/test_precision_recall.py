@@ -17,22 +17,7 @@ from datetime import datetime
 from numpy import ndarray, array
 from numpy.linalg import norm
 from typing import List, Tuple
-
-# define threshold for deciding close or not
-# set as 1/4 of the chosen radius by default
-
-# RADIUS = 25.6 / 2
-# DISTANCE_THRESH = 0.25 * RADIUS * 2
-
-DISTANCE_THRESH = 12.8
-print("distance threshold: ", DISTANCE_THRESH)
-# DISTANCE_THRESH = 0
-
-# radii of the label (um)
-RADII = DISTANCE_THRESH
-
-time_now = datetime.now()
-current_time = time_now.strftime("%H:%M:%S").replace(':', '_')
+from tqdm import tqdm
 
 
 def gather_markers(seeds_path):
@@ -57,7 +42,11 @@ def gather_markers(seeds_path):
     return markers, markers_with_radii
 
 
-def euc_distance(soma_labels: list, soma_inferences: list, voxel_sizes: ndarray = array([1, 1, 1], dtype=float)):
+def euc_distance(
+        soma_labels: List[Tuple[int, int, int]],
+        soma_inferences: List[Tuple[int, int, int]],
+        voxel_sizes: ndarray = array([1, 1, 1], dtype=float)
+):
     """
     a function to calculate euclidean distance between inferences and known ground truth points
 
@@ -72,20 +61,20 @@ def euc_distance(soma_labels: list, soma_inferences: list, voxel_sizes: ndarray 
 
     -------
 
-    returns
+    :return:
         a list of tuples of the euclidean distances between each one of inferences and all known ground truth points
     """
 
     # shortest distance to truth for each inferenced soma
-    euc_dist = []
     soma_inferences_xyz = array(soma_inferences)
     soma_labels_xyz = array(soma_labels)
-    for soma_inf_xyz in soma_inferences_xyz:
-        each_dist = tuple((norm((soma_inf_xyz - soma_lab_xyz) * voxel_sizes) for soma_lab_xyz in soma_labels_xyz))
-        euc_dist.append(each_dist)
-
-    # print(euc_dist)
-    # print(len(euc_dist))
+    euc_dist = list(tqdm(
+        map(lambda inf_xyz: tuple((norm((inf_xyz - lab_xyz) * voxel_sizes) for lab_xyz in soma_labels_xyz)),
+            soma_inferences_xyz),
+        desc="distance calculation",
+        unit="inference",
+        total=len(soma_inferences_xyz)
+    ))
     return euc_dist
 
 
@@ -98,15 +87,11 @@ def is_match(euc_dist: List[Tuple[int, ...]]):
         The tuple members corresponds to each element in the labels list
     ---
 
-    return
+    :return:
         a list of tuples indicating match/non-match for each pair based on the threshold;
         1: match, 0: not-match
     """
 
-    # euc_dist = euc_distance(label, inference)
-    # print("distance to each truth: ", distances)
-    # print(type(distances))
-    # print(distances)
     match_list = []
     for soma_inf in euc_dist:
         soma_inf_lst = list(soma_inf)
@@ -120,20 +105,19 @@ def precision_recall():
     calculate the precision and recall, and print them out
 
     """
-    euc_dist = euc_distance(label, inference)
-    match = is_match(euc_dist)  # all matches and unmatches
-
-    TP, FP, FN = 0, 0, 0
+    euc_dists = euc_distance(label, inference,
+                            voxel_sizes=array([args.voxel_size_x, args.voxel_size_y, args.voxel_size_z], dtype=float))
+    matches = is_match(euc_dists)  # all matches and unmatches
 
     # if two identical macthes, only remain the one with the lowest Euclidean distance as the match
     # and set others to 0 (non-match)
-    euc_dist = [list(ele) for ele in euc_dist]  # temporarily convert to list of lists
-    match = [list(ele) for ele in match]
+    euc_dist = [list(ele) for ele in euc_dists]  # temporarily convert to list of lists
+    match = [list(ele) for ele in matches]
 
     ### capture the case of multiple inferences that have maches to the same soma label
     ### only keep the match with closest Euc dist as real match, set others to non-match
-    inx1_all = [i for i in range(0, len(label))]
-    for inx1 in inx1_all:
+    # inx1_all = [i for i in range(0, len(label))]
+    for inx1 in range(0, len(label)):
         # print("inx1: ", inx1)
         minval = min([euc_dist[i][inx1] for i, ele in enumerate(euc_dist)])
         # print("minval: ", minval)
@@ -153,8 +137,8 @@ def precision_recall():
                 if euc_dist[i][indx1] > minval:
                     match[i][indx1] = 0
 
-    euc_dist = [tuple(ele) for ele in euc_dist]  # convert back to list of tuples
-    match = [tuple(ele) for ele in match]
+    euc_dist = [list(ele) for ele in euc_dists]  # temporarily convert to list of lists
+    match = [list(ele) for ele in matches]
 
     ### validate for each element in match, there is as many as one '1'
     sanity_list = []
@@ -184,7 +168,7 @@ def precision_recall():
             ind_lab = soma_inf_match_lst.index(1)
 
             # get the euc dist for the match
-            closest_dist = euc_dist[i][ind_lab]
+            closest_dist = euc_dists[i][ind_lab]
 
             # print("index in inference {}, index in label {}".format(ind_inf, ind_lab))
             # print("match:\ninference: {}, label: {}, shortest dist: {}".format(inference[ind_inf], label[ind_lab], closest_dist))
@@ -218,9 +202,9 @@ def precision_recall():
         if e not in inference_coord_list:
             FP_list.append(e)
             FP_coord_radii_list.append(inference_with_radii[i])
-            min_dist = min(euc_dist[i])
+            min_dist = min(euc_dists[i])
 
-            min_dist_indx = euc_dist[i].index(min_dist)
+            min_dist_indx = euc_dists[i].index(min_dist)
             closest_label = label[min_dist_indx]
 
             FP_closest_label_list.append(closest_label)
@@ -232,7 +216,7 @@ def precision_recall():
 
     precision = TP / (TP + FP)
     recall = TP / (TP + FN)
-    print(f"Precision: {precision}, Recall: {recall},\n"
+    print(f"Precision TP / (TP + FP): {precision*100:.2f}%, \nRecall TP / (TP + FN): {recall*100:.2f}%,\n"
           f"Total number of true labels: {n_pairs}, Total number of inferences: {len(match)}")
 
     # save matched pairs and all information of this run to a txt file
@@ -241,7 +225,7 @@ def precision_recall():
         f.write(f"Distance threshold: {DISTANCE_THRESH}\n")
         # f.write(f"Number of duplicate match of true labels: {num_dup_match}\n")
         f.write(f"TP: {TP}, FP: {FP}, FN: {FN}\n")
-        f.write(f"Precision: {precision}, Recall: {recall}\n")
+        f.write(f"Precision: {precision*100:.2f}%, Recall: {recall*100:.2f}%\n")
         f.write(f"Total number of true labels: {n_pairs}, Total number of inferences: {len(match)}\n")
         f.write("\nAll matched pairs: \n")
         for inf, lab, dist in zip(inference_coord_list, label_coord_list, closest_dist_list):
@@ -268,6 +252,7 @@ def precision_recall():
             marker_file.write("# x,y,z,radius\n")
             marker_file.write(f"{FN_x},{FN_y},{FN_z},{RADII}")
 
+    # generate and ano file for visualization in TeraFly
     FP_df = pd.DataFrame(FP_list, columns=("x", "y", "z"))
     FP_df["comment"] = "FP"
     FP_df["volsize"] = 4/3 * np.pi * array([ele[3] for ele in FP_coord_radii_list])**3
@@ -301,24 +286,34 @@ def precision_recall():
         ano_file.write("APOFILE=test.ano.apo\n")
         ano_file.write("SWCFILE=test.ano.eswc\n")
 
+    df.to_csv(path_result/"test.csv", index_label="n")
     # generate histogram and cdf for TP and FP
     plot_his_cdf(inference_coord_radii_list, FP_coord_radii_list)
 
 
-### define a function to plot the histogram and CDF for TPs and FPs
 def plot_his_cdf(inference_coord_radii_list, FP_coord_radii_list):
+    """
+    a function to plot the histogram and CDF for TPs and FPs
+    :param inference_coord_radii_list:
+    :param FP_coord_radii_list:
+    :return:
+    """
     TP_radii = np.array([ele[3] for ele in inference_coord_radii_list])
     FP_radii = np.array([ele[3] for ele in FP_coord_radii_list])
 
     radii_min = min(min(TP_radii), min(FP_radii))
     radii_max = max(max(TP_radii), max(FP_radii))
 
-    summary_stats_TP = "Summary statistics for TP radii:\nmean: {:.2f}, std: {:.2f},\nmin: {:.2f}, 25%: {:.2f}, median: {:.2f}, 75%: {:.2f}, max: {:.2f}" \
-        .format(np.mean(TP_radii), np.std(TP_radii), np.min(TP_radii), np.percentile(TP_radii, 25), np.median(TP_radii),
-                np.percentile(TP_radii, 75), np.max(TP_radii))
-    summary_stats_FP = "Summary statistics for FP radii:\nmean: {:.2f}, std: {:.2f},\nmin: {:.2f}, 25%: {:.2f}, median: {:.2f}, 75%: {:.2f}, max: {:.2f}" \
-        .format(np.mean(FP_radii), np.std(FP_radii), np.min(FP_radii), np.percentile(FP_radii, 25), np.median(FP_radii),
-                np.percentile(FP_radii, 75), np.max(FP_radii))
+    summary_stats_TP = f"Summary statistics for TP radii:\n" \
+                       f"mean: {np.mean(TP_radii):.2f}, std: {np.std(TP_radii):.2f},\n" \
+                       f"min: {np.min(TP_radii):.2f}, 25%: {np.percentile(TP_radii, 25):.2f}, " \
+                       f"median: {np.median(TP_radii):.2f}, 75%: {np.percentile(TP_radii, 75):.2f}, " \
+                       f"max: {np.max(TP_radii):.2f}"
+    summary_stats_FP = f"Summary statistics for FP radii:\n" \
+                       f"mean: {np.mean(FP_radii):.2f}, std: {np.std(FP_radii):.2f},\n" \
+                       f"min: {np.min(FP_radii):.2f}, 25%: {np.percentile(FP_radii, 25):.2f}, " \
+                       f"median: {np.median(FP_radii):.2f}, 75%: {np.percentile(FP_radii, 75):.2f}, " \
+                       f"max: {np.max(FP_radii):.2f}"
 
     ### add ttest
     # if equal variance/not equal vairance (division compared to 4)
@@ -446,29 +441,38 @@ def plot_his_cdf(inference_coord_radii_list, FP_coord_radii_list):
 
 
 if __name__ == "__main__":
+    time_now = datetime.now()
+    current_time = time_now.strftime("%H:%M:%S").replace(':', '_')
     # args
     parser = argparse.ArgumentParser()
     parser.add_argument('labeled_path', help="input path for labeled soma location")
     parser.add_argument('inferenced_path', help="input path for inferenced soma location")
+    parser.add_argument("--distance_threshold", type=float, default=12.8,
+                        help="a minimum allowed distance between inferences and ground truth in µm "
+                             "to consider them a match.")
+    parser.add_argument("--voxel_size_x", type=float, default=1, help="x voxel size in µm.")
+    parser.add_argument("--voxel_size_y", type=float, default=1, help="y voxel size in µm.")
+    parser.add_argument("--voxel_size_z", type=float, default=1, help="z voxel size in µm.")
     args = parser.parse_args()
+
+    DISTANCE_THRESH = args.distance_threshold
+    print(f"distance threshold: {DISTANCE_THRESH} µm\n"
+          f"voxel_sizes: x={args.voxel_size_x}, y={args.voxel_size_y}, z={args.voxel_size_z} µm")
+    # radii of the label (um)
+    RADII = DISTANCE_THRESH
 
     labeled_path = args.labeled_path
     inferenced_path = Path(args.inferenced_path)
+
+    # directory that stores the precision & recall summary file and the plots
+    path_result = inferenced_path.parent / f"result_run_{current_time}"
+    path_result.mkdir(exist_ok=True)
 
     # gather markers
     label, label_with_radii = gather_markers(labeled_path)
     inference, inference_with_radii = gather_markers(inferenced_path)
 
-    # print(label[:10])
-    # print(inference[:10])
-    # print(euc_distance(label[:10], inference[:10]))
-    # exit()
-
-    # directory that stores the precision&recall summary file and the plots
-    path_result = inferenced_path.parent / f"result_run_{current_time}"
-    path_result.mkdir(exist_ok=True)
-
-    # get precision & recall
+    # calculate precision & recall
     precision_recall()
 
 # # for testing purpose
