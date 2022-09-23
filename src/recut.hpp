@@ -1975,7 +1975,7 @@ Recut<image_t>::get_tile_thresholds(local_image_t *buffer,
     tile_thresholds->bkg_thresh = bkg_threshold<local_image_t>(
         buffer, tile_vertex_size, (this->args->foreground_percent) / 100);
 #ifdef LOG
-    std::cout << "bkg_thresh in " << timer.elapsed() << " s\n";
+    //std::cout << "bkg_thresh in " << timer.elapsed() << " s\n";
 #endif
   } else { // if bkg set explicitly and foreground wasn't
     if (this->args->background_thresh >= 0) {

@@ -3446,7 +3446,7 @@ auto convert_fn_vdb = [](const std::string &name, auto split_char,
   }
   std::string stripped = file_name | rv::split(split_char) | rv::drop_last(1) |
                          rv::join(split_char) | rng::to<std::string>();
-  stripped += "-ch" + std::to_string(args->channel);
+  //stripped += "-ch" + std::to_string(args->channel);
   stripped += "-" + args->output_type;
 
   if (args->foreground_percent >= 0) {
@@ -3455,7 +3455,8 @@ auto convert_fn_vdb = [](const std::string &name, auto split_char,
     out << std::fixed << args->foreground_percent;
     stripped += "-fgpct-" + out.str();
   }
-  // stripped += "-zoff" + std::to_string(args->image_offsets.z());
+  if (args->image_offsets.z())
+    stripped += "-zoff" + std::to_string(args->image_offsets.z());
   stripped += ".vdb";
   stripped = dir_path.size() > 1 ? parent + "/" + stripped : stripped;
   return stripped;

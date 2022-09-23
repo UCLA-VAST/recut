@@ -34,9 +34,8 @@ void RecutCommandLineArgs::PrintUsage() {
   // std::cout << "--channel            [-c] channel number, default 0\n";
   // std::cout << "--resolution-level   [-rl] resolution level default 0 "
   //"(original resolution)\n";
-  // std::cout
-  //<< "--image-offsets      [-io] offsets of subvolume, in x y z order "
-  //"default 0 0 0\n";
+  std::cout << "--image-offsets      [-io] offsets of subvolume, in x y z order "
+         "default 0 0 0\n";
   std::cout << "--voxel-size         um lengths of voxel in x y z order "
                "default 1.0 1.0 1.0 determines prune radius\n";
   std::cout

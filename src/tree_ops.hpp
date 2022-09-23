@@ -268,9 +268,8 @@ auto write_swc = [](std::vector<MyMarker *> &tree,
     // orderinfo,name,comment
     apo_file << ",,,";
     // z,y,x
-    apo_file << voxel_size[2] * marker->z << ','
-             << voxel_size[0] * marker->x << ','
-             << voxel_size[1] * marker->y << ',';
+    apo_file << voxel_size[2] * marker->z << ',' << voxel_size[0] * marker->x
+             << ',' << voxel_size[1] * marker->y << ',';
     // pixmax,intensity,sdev,
     apo_file << "0.,0.,0.,";
     // volsize
@@ -579,8 +578,9 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
     if (nYi->nbr.size() == 0) {
       ++no_neighbor_count;
       if (nYi->parent == nullptr) {
-        std::cerr << "Non-fatal error: parent is also invalid... skipping component\n";
-        return std::vector<MyMarker*>();
+        std::cerr << "Non-fatal error: parent is also invalid... skipping "
+                     "component\n";
+        return 1; // error code
       }
       // cout << "nXi coord " << nX[ci]->x << ',' << nX[ci]->y << ',' <<
       // nX[ci]->z << '\n'; cout << "nYi coord " << nYi->x << ',' << nYi->y <<
@@ -590,6 +590,7 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
 
     // nYi.type = Node::AXON; // enforce type
     nY.push_back(nYi);
+    return 0;
   };
 
   //// add soma nodes as independent groups at the beginning
@@ -609,7 +610,8 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
     if (nX[ci]->type != 0)
       continue; // skip unless it's a root/soma
 
-    check_node(ci);
+    if (check_node(ci))
+      return std::vector<MyMarker *>(); // error exit
   }
 
   // add remaining nodes
@@ -619,7 +621,8 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
     if (X2Y[ci] != -1)
       continue; // skip if it was added to a group already
 
-    check_node(ci);
+    if (check_node(ci))
+      return std::vector<MyMarker *>(); // error exit
   }
 
   // once complete mapping is established, update the indices from
