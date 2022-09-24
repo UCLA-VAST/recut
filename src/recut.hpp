@@ -137,9 +137,8 @@ public:
   void prune_branch();
   void convert_topology();
 
-  void
-  partition_components(std::vector<std::pair<GridCoord, uint8_t>> root_pairs,
-                       bool prune);
+  void partition_components(
+      std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> seeds, bool prune);
 
   void initialize_globals(const VID_t &grid_tile_size,
                           const VID_t &tile_block_size);
@@ -260,13 +259,13 @@ public:
   void update_hierarchical_dims(const GridCoord &tile_lengths);
   inline VID_t sub_block_to_block_id(VID_t iblock, VID_t jblock, VID_t kblock);
   template <class Container> void setup_radius(Container &fifo);
-  void
-  activate_vids(EnlargedPointDataGrid::Ptr grid,
-                const std::vector<std::pair<GridCoord, uint8_t>> &roots,
-                const std::string stage,
-                std::map<GridCoord, std::deque<VertexAttr>> &fifo,
-                std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo);
-  std::vector<std::pair<GridCoord, uint8_t>>
+  void activate_vids(
+      EnlargedPointDataGrid::Ptr grid,
+      const std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> &roots,
+      const std::string stage,
+      std::map<GridCoord, std::deque<VertexAttr>> &fifo,
+      std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo);
+  std::vector<std::tuple<GridCoord, uint8_t, uint64_t>>
   process_marker_dir(const GridCoord grid_offsets, const GridCoord grid_lengths,
                      int marker_base);
   void set_parent_non_branch(const VID_t tile_id, const VID_t block_id,
@@ -363,9 +362,9 @@ OffsetCoord Recut<image_t>::v_to_off(VID_t tile_id, VID_t block_id,
   return coord_mod(v_to_img_coord(tile_id, block_id, v), this->block_lengths);
 }
 
-// adds all markers to root_pairs
+// adds all markers to seeds
 template <class image_t>
-std::vector<std::pair<GridCoord, uint8_t>>
+std::vector<std::tuple<GridCoord, uint8_t, uint64_t>>
 Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
                                    const GridCoord grid_lengths,
                                    int marker_base) {
@@ -389,51 +388,47 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
   }
 
   // gather all markers within directory
-  auto inmarkers = std::vector<MyMarker>();
-  rng::for_each(
-      fs::directory_iterator(args->seed_path),
-      [&inmarkers, this, marker_base](auto marker_file) {
-        std::stringstream fn(marker_file.path().filename());
-        const auto full_marker_name =
-            args->seed_path + marker_file.path().filename().string();
-        auto markers = readMarker_file(full_marker_name, marker_base);
-        assertm(markers.size() == 1, "only 1 marker file per soma");
+  auto seeds = std::vector<std::tuple<GridCoord, uint8_t, uint64_t>>();
 
-        if (markers[0].radius == 0) {
-          std::string mass; // mass is the last number of the file name
-          while (std::getline(fn, mass, '_')) {
-          }
-          assertm(!mass.empty(), "can not deduce radius size of input marker");
-          markers[0].radius =
-              static_cast<int>(std::cbrt(std::stoi(mass) / (4 * PI / 3)));
-        }
-#ifdef FULL_PRINT
-        cout << "Read marker assigning radius: " << markers[0].radius << '\n';
-#endif
+  rng::for_each(fs::directory_iterator(args->seed_path), [this, marker_base,
+                                                          &seeds](
+                                                             auto marker_file) {
+    std::string fn(marker_file.path().filename());
+    const auto full_marker_name =
+        args->seed_path + marker_file.path().filename().string();
+    auto markers = readMarker_file(full_marker_name, marker_base);
+    assertm(markers.size() == 1, "only 1 marker file per soma");
+    auto marker = markers[0];
 
-        inmarkers.insert(inmarkers.end(), markers.begin(), markers.end());
-      });
+    auto numbers = fn | rv::split('_') | rng::to<std::vector<std::string>>();
+    if (numbers.size() != 5)
+      throw std::runtime_error("Marker file names must be in format marker_x_y_z_volume");
+    //while (std::getline(fn, str_volume, '_')) {
+    //}
+    // volume is the last number of the file name
+    uint64_t volume = std::stoull(numbers.back());
 
-  // transform to <coord, radius> of all somas/roots
-  auto roots = inmarkers | rv::transform([this](auto marker) {
-                 return std::pair{
-                     // ones() + GridCoord(marker.x / args->downsample_factor,
-                     // marker.y / args->downsample_factor,
-                     // upsample_idx(args->upsample_z, marker.z)),
-                     GridCoord(marker.x, marker.y, marker.z),
-                     static_cast<uint8_t>(marker.radius)};
-               }) |
-               rng::to_vector;
+    if (marker.radius == 0) {
+      marker.radius = static_cast<int>(std::cbrt(volume) / (4 * PI / 3));
+    }
 
-  auto filtered_roots =
-      roots | rv::remove_if([this, &local_bbox](auto coord_radius) {
-        auto [coord, radius] = coord_radius;
+    seeds.push_back(std::make_tuple(
+        // ones() + GridCoord(marker.x / args->downsample_factor,
+        // marker.y / args->downsample_factor,
+        // upsample_idx(args->upsample_z, marker.z)),
+        GridCoord(marker.x, marker.y, marker.z),
+        static_cast<uint8_t>(marker.radius), volume));
+  });
+
+  auto filtered_seeds =
+      seeds | rv::remove_if([this, &local_bbox](auto seed) {
+        auto [coord, _, __] = seed;
         if (local_bbox.isInside(coord)) {
           if (this->topology_grid->tree().isValueOn(coord)) {
             return false;
           } else {
 #ifdef FULL_PRINT
-            cout << "Warning: root at " << coord << " in image bbox "
+            cout << "Warning: seed at " << coord << " in image bbox "
                  << local_bbox
                  << " is not selected in the segmentation so it is "
                     "ignored. "
@@ -443,7 +438,7 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
           }
         } else {
 #ifdef FULL_PRINT
-          cout << "Warning: root at " << coord << " in image bbox "
+          cout << "Warning: seed at " << coord << " in image bbox "
                << local_bbox
                << " is not within the images bounding box so it is "
                   "ignored\n";
@@ -454,12 +449,12 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
       rng::to_vector;
 
 #ifdef LOG
-  cout << "Only " << filtered_roots.size() << " of " << roots.size()
+  cout << "Only " << filtered_seeds.size() << " of " << seeds.size()
        << " seeds in directory have an active voxel and are connected to a "
           "component in the provided image\n";
 #endif
 
-  return filtered_roots;
+  return filtered_seeds;
 }
 
 // activates
@@ -479,38 +474,37 @@ void Recut<image_t>::setup_radius(Container &fifo) {
 template <class image_t>
 void Recut<image_t>::activate_vids(
     EnlargedPointDataGrid::Ptr grid,
-    const std::vector<std::pair<GridCoord, uint8_t>> &roots,
+    const std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> &seeds,
     const std::string stage, std::map<GridCoord, std::deque<VertexAttr>> &fifo,
     std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo) {
 
-  assertm(!(roots.empty()), "Must have at least one root");
+  assertm(!(seeds.empty()), "Must have at least one seed");
 
   // Iterate over leaf nodes that contain topology (active)
-  // checking for roots within them
+  // checking for seed within them
   for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
     auto leaf_bbox = leaf_iter->getNodeBoundingBox();
     // std::cout << "Leaf BBox: " << leaf_bbox << '\n';
 
     // FILTER for those in this leaf
-    auto leaf_roots =
-        roots |
-        rv::transform([](auto coord_radius) { return coord_radius.first; }) |
+    auto leaf_seed_coords =
+        seeds |
+        rv::transform([](const auto &seed) { return std::get<0>(seed); }) |
         rv::remove_if([&leaf_bbox](GridCoord coord) {
           return !leaf_bbox.isInside(coord);
         }) |
         rng::to_vector;
 
-    if (leaf_roots.empty())
+    if (leaf_seed_coords.empty())
       continue;
 
     this->active_tiles[0] = true;
-    // print_iter_name(leaf_roots, "\troots");
 
     // Set Values
     auto update_leaf = this->update_grid->tree().probeLeaf(leaf_bbox.min());
     assertm(update_leaf, "Update must have a corresponding leaf");
 
-    rng::for_each(leaf_roots, [&update_leaf](auto coord) {
+    rng::for_each(leaf_seed_coords, [&update_leaf](auto coord) {
       // this only adds to update_grid if the root happens
       // to be on a boundary
       set_if_active(update_leaf, coord);
@@ -535,7 +529,7 @@ void Recut<image_t>::activate_vids(
 
     if (stage == "connected" || stage == "value") {
 
-      rng::for_each(leaf_roots, [&](auto coord) {
+      rng::for_each(leaf_seed_coords, [&](auto coord) {
         auto ind = leaf_iter->beginIndexVoxel(coord);
         if (this->args->input_type == "float") {
           assertm(this->input_grid->tree().isValueOn(coord),
@@ -566,10 +560,10 @@ void Recut<image_t>::activate_vids(
 
     } else if (stage == "prune") {
 
-      rng::for_each(leaf_roots, [&](auto coord) {
+      rng::for_each(leaf_seed_coords, [&](auto coord) {
         auto ind = leaf_iter->beginIndexVoxel(coord);
         assertm(ind,
-                "All root coords must be filtered with respect to topology");
+                "All seed coords must be filtered with respect to topology");
         auto offsets = coord_mod(coord, temp_coord);
         set_prune_visited(flags_handle, ind);
         fifo[leaf_iter->origin()].emplace_back(
@@ -1975,7 +1969,7 @@ Recut<image_t>::get_tile_thresholds(local_image_t *buffer,
     tile_thresholds->bkg_thresh = bkg_threshold<local_image_t>(
         buffer, tile_vertex_size, (this->args->foreground_percent) / 100);
 #ifdef LOG
-    //std::cout << "bkg_thresh in " << timer.elapsed() << " s\n";
+    // std::cout << "bkg_thresh in " << timer.elapsed() << " s\n";
 #endif
   } else { // if bkg set explicitly and foreground wasn't
     if (this->args->background_thresh >= 0) {
@@ -2731,7 +2725,7 @@ template <class image_t> void Recut<image_t>::prune_radii() {
 
 template <class image_t>
 void Recut<image_t>::partition_components(
-    std::vector<std::pair<GridCoord, uint8_t>> root_pairs, bool prune) {
+    std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> seeds, bool prune) {
 
   openvdb::GridPtrVec grids;
 #ifdef LOG
@@ -2779,7 +2773,7 @@ void Recut<image_t>::partition_components(
   cout << "Finished grid reads\n";
 #endif
 
-  auto process_component = [this, &root_pairs,
+  auto process_component = [this, &seeds,
                             &window_grids](const auto component_pair) {
     auto [index, component] = component_pair;
     // all grid transforms across are consistent across recut, so enforce
@@ -2788,19 +2782,19 @@ void Recut<image_t>::partition_components(
     auto bbox = component->evalActiveVoxelBoundingBox();
 
     // filter all roots within this component
-    auto component_roots =
-        root_pairs | rv::remove_if([&component](const auto &coord_radius) {
-          auto [coord, radius] = coord_radius;
-          return !component->tree().isValueOn(coord);
-        }) |
-        rng::to_vector;
+    auto component_seeds = seeds |
+                           rv::remove_if([&component](const auto &seed) {
+                             auto [coord, radius, _] = seed;
+                             return !component->tree().isValueOn(coord);
+                           }) |
+                           rng::to_vector;
 
     std::string prefix = "";
-    if (component_roots.size() > 1) {
+    if (component_seeds.size() > 1) {
       prefix = "a-multi-";
     }
 
-    if (component_roots.size() > MAX_SOMA_PER_COMPONENT) {
+    if (component_seeds.size() > MAX_SOMA_PER_COMPONENT) {
       return; // skip
     }
 
@@ -2844,7 +2838,7 @@ void Recut<image_t>::partition_components(
     component_log.open(component_log_fn);
     component_log << std::fixed << std::setprecision(6);
     component_log << "Thread count, " << args->user_thread_count << '\n';
-    component_log << "Soma count, " << component_roots.size() << '\n';
+    component_log << "Soma count, " << component_seeds.size() << '\n';
     component_log << "Component count, " << markers.size() << '\n';
     component_log << "TC count, " << pruned_markers.size() << '\n';
     component_log << "TC, " << timer.elapsed() << '\n';
@@ -2859,8 +2853,8 @@ void Recut<image_t>::partition_components(
 
     timer.restart();
     if (!is_cluster_self_contained(cluster)) {
-      // throw std::runtime_error("Extracted cluster not self contained");
-      std::cout << "Warning: extracted cluster not self contained, skipping " +
+      std::cerr << "Non fatal error: extracted cluster not self contained, "
+                   "skipping " +
                        std::to_string(index)
                 << '\n';
       return; // skip this component
@@ -2910,7 +2904,7 @@ void Recut<image_t>::partition_components(
           openvdb::gridPtrCast<ImgGrid>(window_grids.front());
       auto [valued_window_grid, window_bbox] = create_window_grid(
           image_grid, component, component_log, args->voxel_size,
-          component_roots, args->min_window_um, args->output_type == "labels",
+          component_seeds, args->min_window_um, args->output_type == "labels",
           args->expand_window_um);
 
       // write the first passed window
@@ -2951,7 +2945,7 @@ void Recut<image_t>::partition_components(
         }
 
         // for comparison/benchmark/testing purposes
-        run_app2(valued_window_grid, component_roots, component_dir_fn, index,
+        run_app2(valued_window_grid, component_seeds, component_dir_fn, index,
                  this->args->min_branch_length, component_log,
                  args->window_grid_paths.empty());
       }
@@ -2971,7 +2965,7 @@ void Recut<image_t>::partition_components(
       }
     });
 
-    write_seeds(component_dir_fn, component_roots, this->args->voxel_size);
+    write_seeds(component_dir_fn, component_seeds, this->args->voxel_size);
 
     std::cout << "Component " << index << " complete and safe to open\n";
   }; // for each component
@@ -2993,7 +2987,7 @@ void Recut<image_t>::partition_components(
     run_log << "TC+TP, " << global_timer.elapsed() << '\n';
   }
   run_log << "Aggregated prune, " << total_timer.elapsed() << '\n';
-  run_log << "Neuron count, " << root_pairs.size() << '\n';
+  run_log << "Neuron count, " << seeds.size() << '\n';
 #endif
 }
 
@@ -3073,7 +3067,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   start_run_dir_and_logs();
 
-  std::vector<std::pair<GridCoord, uint8_t>> root_pairs;
+  std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> seeds;
 
   // if point.vdb was not already set by input
   if (!this->input_is_vdb) {
@@ -3227,11 +3221,11 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log.close();
 #endif
 
-    //if (args->save_vdbs) {
-      //// write out topology
-      //openvdb::GridPtrVec grids;
-      //grids.push_back(masked_sdf);
-      //write_vdb_file(grids, this->run_dir + "/connected_sdf.vdb");
+    // if (args->save_vdbs) {
+    //// write out topology
+    // openvdb::GridPtrVec grids;
+    // grids.push_back(masked_sdf);
+    // write_vdb_file(grids, this->run_dir + "/connected_sdf.vdb");
     //}
 
     this->topology_grid = convert_sdf_to_points(masked_sdf, this->image_lengths,
@@ -3239,20 +3233,20 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     // adds all valid markers to roots vector
     // filters by user input seeds if available
-    root_pairs = create_root_pairs(
+    seeds = create_seed_pairs(
         components, this->topology_grid, this->args->voxel_size,
         process_marker_dir(this->image_offsets, this->image_lengths, 1));
-    write_seeds(this->run_dir, root_pairs, this->args->voxel_size);
+    write_seeds(this->run_dir, seeds, this->args->voxel_size);
 
 #ifdef LOG
-    run_log << "Seed count, " << root_pairs.size() << '\n';
+    run_log << "Seed count, " << seeds.size() << '\n';
 #endif
     if (this->args->output_type == "seeds") {
       return; // exit
     }
   }
 
-  assertm(!root_pairs.empty(),
+  assertm(!seeds.empty(),
           "Root pairs must be set before beginning reconstruction");
   assertm(this->topology_grid,
           "Topology grid must be set before starting reconstruction");
@@ -3264,7 +3258,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   {
     // starting from the roots connected stage saves all surface vertices into
     // fifo
-    this->activate_vids(this->topology_grid, root_pairs, stage, this->map_fifo,
+    this->activate_vids(this->topology_grid, seeds, stage, this->map_fifo,
                         this->connected_map);
     // first stage of the pipeline
     this->update(stage, map_fifo);
@@ -3276,10 +3270,10 @@ template <class image_t> void Recut<image_t>::operator()() {
     this->setup_radius(map_fifo);
     this->update(stage, map_fifo);
     // redefine soma radii based off info read in original files
-    adjust_soma_radii(root_pairs, this->topology_grid);
+    adjust_soma_radii(seeds, this->topology_grid);
   }
 
-  partition_components(root_pairs, false);
+  partition_components(seeds, false);
 
   // old prune strategy
   //{
@@ -3287,7 +3281,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   //// create final list of vertices
   // if (true) {
   // stage = "prune";
-  // this->activate_vids(this->topology_grid, root_pairs, stage,
+  // this->activate_vids(this->topology_grid, seeds, stage,
   // this->map_fifo, this->connected_map); this->update(stage, map_fifo);
   //// make all unpruned trace a back to a root
   //// any time you remove a node you need to ensure tree validity
