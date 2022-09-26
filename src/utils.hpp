@@ -239,17 +239,15 @@ VID_t get_central_coord(int grid_size) {
 
 VID_t get_central_vid(int grid_size) {
   auto coord = get_central_coord(grid_size);
-  auto root_vid =
-      (VID_t)coord * grid_size * grid_size + coord * grid_size + coord;
-  return root_vid; // place at center
+  auto vid = (VID_t)coord * grid_size * grid_size + coord * grid_size + coord;
+  return vid; // place at center
 }
 
 VID_t get_central_diag_vid(int grid_size) {
   auto coord = get_central_coord(grid_size);
   coord++; // add 1 to all x, y, z
-  auto root_vid =
-      (VID_t)coord * grid_size * grid_size + coord * grid_size + coord;
-  return root_vid; // place at center diag
+  auto vid = (VID_t)coord * grid_size * grid_size + coord * grid_size + coord;
+  return vid; // place at center diag
 }
 
 MyMarker *get_central_root(int grid_size) {
@@ -1442,19 +1440,23 @@ RecutCommandLineArgs get_args(int grid_size, int tile_length, int block_size,
 }
 
 void write_marker(VID_t x, VID_t y, VID_t z, unsigned int radius,
-                  std::string fn) {
+                  std::string fn, GridCoord voxel_size) {
   auto print = false;
 #ifdef LOG
   print = true;
 #endif
 
   bool rerun = false;
+  auto volume = ((4 * PI) / 3.) * pow(radius, 3);
   if (!fs::exists(fn) || rerun) {
     fs::remove_all(fn); // make sure it's an overwrite
     if (print)
       cout << "      Delete old: " << fn << '\n';
     fs::create_directories(fn);
-    fn = fn + "/marker";
+    fn = fn + "/marker_" + std::to_string(static_cast<int>(x * voxel_size[0])) +
+         "_" + std::to_string(static_cast<int>(y * voxel_size[1])) + "_" +
+         std::to_string(static_cast<int>(z * voxel_size[2])) + "_" +
+         std::to_string(static_cast<int>(volume));
     std::ofstream mf;
     mf.open(fn);
     mf << "# x,y,z,radius\n";
@@ -2587,17 +2589,17 @@ std::vector<MyMarker *> convert_to_markers(EnlargedPointDataGrid::Ptr grid,
 // appropriate to rewrite with these more accurate radii values before a prune
 // step
 auto adjust_soma_radii =
-    [](const std::vector<std::pair<GridCoord, uint8_t>> &roots,
+    [](const std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> &seeds,
        EnlargedPointDataGrid::Ptr grid) -> EnlargedPointDataGrid::Ptr {
-  assertm(roots.size() > 0, "passed roots is empty");
-  rng::for_each(roots, [grid](const auto &coord_radius) {
-    const auto [coord, radius] = coord_radius;
+  assertm(seeds.size() > 0, "passed seeds is empty");
+  rng::for_each(seeds, [grid](const auto &seed) {
+    const auto [coord, radius, _] = seed;
     const auto leaf = grid->tree().probeLeaf(coord);
 
     // sanity checks
-    assertm(leaf, "corresponding leaf of passed root must be active");
+    assertm(leaf, "corresponding leaf of passed seed must be active");
     auto ind = leaf->beginIndexVoxel(coord);
-    assertm(ind, "corresponding voxel of passed root must be active");
+    assertm(ind, "corresponding voxel of passed seed must be active");
     assertm(radius, "passed radii value of 0 is invalid");
 
     // modify the radius value
@@ -2961,12 +2963,11 @@ void add_mask_to_image_grid(ImgGrid::Ptr image_grid, GridT mask_grid) {
 // topology_grid : holds the topology of the neuron cluster in question
 // values copied in topology and written to tiff
 template <typename GridT>
-std::pair<ImgGrid::Ptr, CoordBBox>
-create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
-                   std::ofstream &component_log,
-                   std::array<float, 3> voxel_size,
-                   std::vector<std::pair<GridCoord, uint8_t>> component_roots,
-                   int min_window_um, bool labels, float expand_window_um = 0) {
+std::pair<ImgGrid::Ptr, CoordBBox> create_window_grid(
+    ImgGrid::Ptr valued_grid, GridT component_grid,
+    std::ofstream &component_log, std::array<float, 3> voxel_size,
+    std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> component_seeds,
+    int min_window_um, bool labels, float expand_window_um = 0) {
 
   assertm(valued_grid, "Must have input grid set to run output_windows_");
   // if an expanded crop is requested, the actual image values outside of the
@@ -2974,20 +2975,18 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
   // to a bounding volume
   auto bbox = component_grid->evalActiveVoxelBoundingBox();
 
-  rng::for_each(component_roots, [&](auto root) {
+  rng::for_each(component_seeds, [&](const auto &seed) {
     rng::for_each(rv::iota(0, 3), [&](auto i) {
-      auto [root_coord, radius] = root;
+      auto [coord, radius, _] = seed;
       auto extent_um =
           min_window_um + radius * voxel_size[i] + expand_window_um;
 
       // find a possible min/max in coordinate space
       auto old_min = bbox.min()[i];
-      auto new_min =
-          static_cast<int>(root_coord[i] - extent_um / voxel_size[i]);
+      auto new_min = static_cast<int>(coord[i] - extent_um / voxel_size[i]);
 
       auto old_max = bbox.max()[i];
-      auto new_max =
-          static_cast<int>(root_coord[i] - extent_um / voxel_size[i]);
+      auto new_max = static_cast<int>(coord[i] - extent_um / voxel_size[i]);
 
       // if the new_min or max would expand the bbox then keep it
       bbox.min()[i] = std::min(old_min, new_min);
@@ -2996,11 +2995,11 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
   });
 
   if (labels) {
-    // choose the first root if there are multiple
-    auto [root_coord, radius] = component_roots[0];
+    // choose the first seed if there are multiple
+    auto [coord, radius, _] = component_seeds[0];
 
-    bbox.min()[2] = root_coord.z() - radius;
-    bbox.max()[2] = root_coord.z() + radius;
+    bbox.min()[2] = coord.z() - radius;
+    bbox.max()[2] = coord.z() + radius;
   }
 
   vb::BBoxd clipBox(bbox.min().asVec3d(), bbox.max().asVec3d());
@@ -3446,7 +3445,7 @@ auto convert_fn_vdb = [](const std::string &name, auto split_char,
   }
   std::string stripped = file_name | rv::split(split_char) | rv::drop_last(1) |
                          rv::join(split_char) | rng::to<std::string>();
-  //stripped += "-ch" + std::to_string(args->channel);
+  // stripped += "-ch" + std::to_string(args->channel);
   stripped += "-" + args->output_type;
 
   if (args->foreground_percent >= 0) {
@@ -3504,33 +3503,37 @@ auto anisotropic_factor = [](auto voxel_size) {
   return static_cast<uint16_t>((maxx / minx) + .5);
 };
 
-// write seed/roots to disk
-auto write_seeds = [](std::string run_dir,
-                      std::vector<std::pair<GridCoord, uint8_t>> root_pairs,
-                      std::array<float, 3> voxel_size) {
-  // start seeds directory
-  std::string seed_dir = run_dir + "/seeds/";
-  fs::create_directories(seed_dir);
+// write seed/somas to disk
+auto write_seeds =
+    [](std::string run_dir,
+       std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> seeds,
+       std::array<float, 3> voxel_size) {
+      // start seeds directory
+      std::string seed_dir = run_dir + "/seeds/";
+      fs::create_directories(seed_dir);
 
-  rng::for_each(root_pairs, [&](auto root_pair) {
-    auto [coord, radius] = root_pair;
-    std::ofstream seed_file;
-    seed_file.open(
-        seed_dir + "marker_" +
-            std::to_string(static_cast<int>(coord.x() * voxel_size[0])) + "_" +
-            std::to_string(static_cast<int>(coord.y() * voxel_size[1])) + "_" +
-            std::to_string(static_cast<int>(coord.z() * voxel_size[2])) + "_" +
-            std::to_string(static_cast<int>(((4 * PI) / 3.) *
-                                            pow(radius * voxel_size[0], 3))),
-        std::ios::app);
-    seed_file << std::fixed << std::setprecision(SWC_PRECISION);
-    seed_file << "#x,y,z,radius in um based of voxel size: [" << voxel_size[0]
-              << ',' << voxel_size[1] << ',' << voxel_size[2] << "]\n";
-    seed_file << voxel_size[0] * coord.x() << ',' << voxel_size[0] * coord.y()
-              << ',' << voxel_size[0] * coord.z() << ','
-              << +(radius * voxel_size[0]) << '\n';
-  });
-};
+      rng::for_each(seeds, [&](const auto &seed) {
+        auto [coord, radius, volume] = seed;
+        std::ofstream seed_file;
+        seed_file.open(
+            seed_dir + "marker_" +
+                std::to_string(static_cast<int>(coord.x() * voxel_size[0])) +
+                "_" +
+                std::to_string(static_cast<int>(coord.y() * voxel_size[1])) +
+                "_" +
+                std::to_string(static_cast<int>(coord.z() * voxel_size[2])) +
+                "_" + std::to_string(static_cast<int>(volume)),
+            std::ios::app);
+        seed_file << std::fixed << std::setprecision(SWC_PRECISION);
+        seed_file << "#x,y,z,radius in um based of voxel size: ["
+                  << voxel_size[0] << ',' << voxel_size[1] << ','
+                  << voxel_size[2] << "]\n";
+        seed_file << voxel_size[0] * coord.x() << ','
+                  << voxel_size[0] * coord.y() << ','
+                  << voxel_size[0] * coord.z() << ','
+                  << +(radius * voxel_size[0]) << '\n';
+      });
+    };
 
 // center by bbox
 auto get_center_of_grid = [](openvdb::FloatGrid::Ptr component) -> GridCoord {
@@ -3557,45 +3560,47 @@ auto is_coordinate_active = [](EnlargedPointDataGrid::Ptr topology_grid,
 
 // Of all connected components, keep those whose central coordinate is an active
 // voxel in the point topology and estimate the radius given the bbox of the
-// component. If roots previously known keep only those components in which the
-// known roots are an active voxel
-auto create_root_pairs =
+// component. If passing known seeds, then filter all components to only those
+// components which contain the passed seed
+auto create_seed_pairs =
     [](std::vector<openvdb::FloatGrid::Ptr> components,
-       EnlargedPointDataGrid::Ptr topology_grid, std::array<float, 3> voxel_size,
-       std::vector<std::pair<GridCoord, uint8_t>> known_roots = {})
-    -> std::vector<std::pair<GridCoord, uint8_t>> {
-  return components |
-         rv::remove_if([topology_grid, &known_roots](const auto component) {
-           if (known_roots.empty()) {
-             auto coord_center = get_center_of_grid(component);
-             return !is_coordinate_active(topology_grid, coord_center);
-           } else {
-             // if no known root is an active voxel in this component
-             // then remove this component
-             return rng::none_of(known_roots, [&component](const auto &root) {
-               auto [coord, radius] = root;
-               return component->tree().isValueOn(coord);
-             });
-           }
-         }) |
-         // for all remaining components
-         rv::transform([](const auto component) {
-           auto dims = component->evalActiveVoxelBoundingBox().dim();
-           // estimate radius to be half the longest dimension of the bbox
-           auto radius = static_cast<uint8_t>(dims[dims.maxIndex()] / 2);
-           auto coord_center = get_center_of_grid(component);
-           return std::make_pair(coord_center, radius);
-         }) |
-         // narrow band filter the roots by radii
-         // using known statistics of true positives
-         rv::remove_if([voxel_size](const auto &root) {
-           auto [_, radius] = root;
-           auto radius_um = radius * voxel_size[0];
-           return !((radius_um >= MIN_SOMA_RADIUS_UM) &&
-                    (radius_um <= MAX_SOMA_RADIUS_UM));
-         }) |
-         rng::to_vector;
-};
+       EnlargedPointDataGrid::Ptr topology_grid,
+       std::array<float, 3> voxel_size,
+       std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> known_seeds = {}) {
+      return components |
+             rv::remove_if([topology_grid, &known_seeds](const auto component) {
+               if (known_seeds.empty()) {
+                 auto coord_center = get_center_of_grid(component);
+                 return !is_coordinate_active(topology_grid, coord_center);
+               } else {
+                 // if no known seed is an active voxel in this component
+                 // then remove this component
+                 return rng::none_of(
+                     known_seeds, [&component](const auto &known_seed) {
+                       auto [coord, _, __] = known_seed;
+                       return component->tree().isValueOn(coord);
+                     });
+               }
+             }) |
+             // for all remaining components
+             rv::transform([](const auto component) {
+               auto dims = component->evalActiveVoxelBoundingBox().dim();
+               // estimate radius to be half the longest dimension of the bbox
+               auto radius = static_cast<uint8_t>(dims[dims.maxIndex()] / 2);
+               auto coord_center = get_center_of_grid(component);
+               return std::make_tuple(coord_center, radius,
+                                      component->activeVoxelCount());
+             }) |
+             // narrow band filter the seeds by radii
+             // using known statistics of true positives
+             rv::remove_if([voxel_size](const auto &seed) {
+               auto [_, radius, __] = seed;
+               auto radius_um = radius * voxel_size[0];
+               return !((radius_um >= MIN_SOMA_RADIUS_UM) &&
+                        (radius_um <= MAX_SOMA_RADIUS_UM));
+             }) |
+             rng::to_vector;
+    };
 
 auto binarize_uint8_grid = [](auto image_grid) {
   auto accessor = image_grid->getAccessor();

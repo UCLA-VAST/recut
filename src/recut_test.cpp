@@ -266,7 +266,7 @@ TEST(VDB, InitializeGlobals) {
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto root_coords =
+  auto seeds =
       recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
 
@@ -416,10 +416,9 @@ TEST(VDB, IntegrateUpdateGrid) {
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto root_coords =
+  auto seeds =
       recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
-  // recut.activate_vids(root_coords, "connected", recut.map_fifo);
   auto update_accessor = recut.update_grid->getAccessor();
   auto topology_accessor = recut.topology_grid->getConstAccessor();
 
@@ -558,12 +557,12 @@ TEST(VDB, ActivateVids) {
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto root_coords =
+  auto seeds =
       recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
 
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
 
-  recut.activate_vids(recut.topology_grid, root_coords, "connected",
+  recut.activate_vids(recut.topology_grid, seeds, "connected",
                       recut.map_fifo, recut.connected_map);
 
   if (print_all) {
@@ -576,7 +575,7 @@ TEST(VDB, ActivateVids) {
   ASSERT_FALSE(recut.connected_map[GridCoord(0)].empty());
 
   GridCoord root(3, 3, 3);
-  ASSERT_EQ(root, root_coords[0].first) << root_coords[0].first;
+  ASSERT_EQ(root, std::get<0>(seeds[0])) << std::get<0>(seeds[0]);
   auto leaf_iter = recut.topology_grid->tree().probeLeaf(root);
   auto ind = leaf_iter->beginIndexVoxel(root);
   ASSERT_TRUE(leaf_iter->isValueOn(root));
@@ -613,7 +612,7 @@ TEST(VDB, DISABLED_PriorityQueue) {
                /* type =*/"float"); // priority queue must have type float
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto root_coords =
+  auto seeds =
       recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
 
   // TODO switch this to a more formal method
@@ -629,7 +628,7 @@ TEST(VDB, DISABLED_PriorityQueue) {
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
 
   auto stage = "value";
-  recut.activate_vids(recut.topology_grid, root_coords, stage, recut.map_fifo,
+  recut.activate_vids(recut.topology_grid, seeds, stage, recut.map_fifo,
                       recut.connected_map);
   recut.update(stage, recut.map_fifo);
 
@@ -683,9 +682,9 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
                        /* type =*/"point");
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto root_coords =
+  auto seeds =
       recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
-  cout << "root " << root_coords[0].first << '\n';
+  cout << "root " << std::get<0>(seeds[0]) << '\n';
 
   // TODO switch this to a more formal method
   // set the topology_grid mainly from file for this test
@@ -700,7 +699,7 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
 
   auto stage = "value";
-  recut.activate_vids(recut.topology_grid, root_coords, stage, recut.map_fifo,
+  recut.activate_vids(recut.topology_grid, seeds, stage, recut.map_fifo,
                       recut.connected_map);
   recut.update(stage, recut.map_fifo);
 
@@ -775,7 +774,7 @@ TEST(Utils, AdjustSomaRadii) {
                /* type =*/"float"); // priority queue must have type float
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto root_coords =
+  auto seeds =
       recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
 
   // TODO switch this to a more formal method
@@ -789,8 +788,8 @@ TEST(Utils, AdjustSomaRadii) {
   append_attributes(recut.topology_grid);
 
   // check all root radii are 0
-  rng::for_each(root_coords, [&recut](const auto &coord_radius) {
-    const auto [coord, radius] = coord_radius;
+  rng::for_each(seeds, [&recut](const auto &seed) {
+    const auto [coord, radius,_] = seed;
     const auto leaf = recut.topology_grid->tree().probeLeaf(coord);
     assertm(leaf, "corresponding leaf of passed root must be active");
     auto ind = leaf->beginIndexVoxel(coord);
@@ -804,11 +803,11 @@ TEST(Utils, AdjustSomaRadii) {
     ASSERT_EQ(previous_radius, 0);
   });
 
-  adjust_soma_radii(root_coords, recut.topology_grid);
+  adjust_soma_radii(seeds, recut.topology_grid);
 
   // check all root radii have been changed
-  rng::for_each(root_coords, [&recut](const auto &coord_radius) {
-    const auto [coord, radius] = coord_radius;
+  rng::for_each(seeds, [&recut](const auto &seed) {
+    const auto [coord, radius,_] = seed;
     const auto leaf = recut.topology_grid->tree().probeLeaf(coord);
     assertm(leaf, "corresponding leaf of passed root must be active");
     auto ind = leaf->beginIndexVoxel(coord);
@@ -955,11 +954,11 @@ TEST(VDB, Connected) {
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto root_coords =
+  auto seeds =
       recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
   auto stage = "connected";
-  recut.activate_vids(recut.topology_grid, root_coords, stage, recut.map_fifo,
+  recut.activate_vids(recut.topology_grid, seeds, stage, recut.map_fifo,
                       recut.connected_map);
   recut.update(stage, recut.map_fifo);
 
@@ -1159,7 +1158,7 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         fn_marker = fn_marker + std::to_string((int)slt_pct);
         // fn_marker = fn_marker + delim;
         // record the root
-        write_marker(x, y, z, radius, fn_marker);
+        write_marker(x, y, z, radius, fn_marker, ones());
 
         auto image_dir = base + "/test_images/";
         image_dir = image_dir + std::to_string(grid_size);
@@ -1896,7 +1895,7 @@ TEST(CheckGlobals, DISABLED_AllFifo) {
 
 // auto leaf = recut.topology_grid->probeLeaf();
 //{
-// auto root_ind = leaf.beginIndexVoxel(root_coords[0].first);
+// auto root_ind = leaf.beginIndexVoxel(seeds[0].first);
 // ASSERT_FALSE(root_ind);
 //}
 
@@ -1918,7 +1917,7 @@ TEST(CheckGlobals, DISABLED_AllFifo) {
 //}
 
 //{
-// auto root_ind = leaf.beginIndexVoxel(root_coords[0].first);
+// auto root_ind = leaf.beginIndexVoxel(seeds[0].first);
 // ASSERT_TRUE(root_ind);
 //}
 
@@ -2023,7 +2022,7 @@ TEST(Update, EachStageIteratively) {
 
             auto recut = Recut<uint16_t>(args);
             recut.initialize();
-            auto root_coords = recut.process_marker_dir(recut.image_offsets,
+            auto seeds = recut.process_marker_dir(recut.image_offsets,
                                                         recut.image_lengths, 0);
 
             if (print_all) {
@@ -2040,7 +2039,7 @@ TEST(Update, EachStageIteratively) {
               auto stage = "connected";
               recut.initialize_globals(recut.grid_tile_size,
                                        recut.tile_block_size);
-              recut.activate_vids(recut.topology_grid, root_coords, "connected",
+              recut.activate_vids(recut.topology_grid, seeds, "connected",
                                   recut.map_fifo, recut.connected_map);
               recut.update(stage, recut.map_fifo);
               if (print_all) {
@@ -2221,9 +2220,9 @@ TEST(Update, EachStageIteratively) {
                 // convert roots into markers (vector)
                 std::vector<MyMarker *> root_markers;
                 if (tcase == 6) {
-                  auto coords = root_coords |
-                                rv::transform([](auto coord_radius) {
-                                  return coord_radius.first;
+                  auto coords = seeds |
+                                rv::transform([](auto seed) {
+                                  return std::get<0>(seed);
                                 }) |
                                 rng::to_vector;
                   root_markers = coords_to_markers(coords);
@@ -2267,7 +2266,7 @@ TEST(Update, EachStageIteratively) {
                 auto stage = std::string{"prune"};
                 recut.initialize_globals(recut.grid_tile_size,
                                          recut.tile_block_size);
-                recut.activate_vids(recut.topology_grid, root_coords, stage,
+                recut.activate_vids(recut.topology_grid, seeds, stage,
                                     recut.map_fifo, recut.connected_map);
                 recut.update(stage, recut.map_fifo);
 
