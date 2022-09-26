@@ -14,13 +14,13 @@ import matplotlib.pyplot as plt
 import scipy.stats as stats
 from pathlib import Path
 from datetime import datetime
-from numpy import ndarray, array
+from numpy import ndarray, array, cbrt
 from numpy.linalg import norm
 from typing import List, Tuple
 from tqdm import tqdm
 
 
-def gather_markers(seeds_path):
+def gather_markers(seeds_path, min_radius=None):
     """a function to retrieve xyz and radius"""
     markers = []
     markers_with_radii = []
@@ -35,7 +35,9 @@ def gather_markers(seeds_path):
             if 'marker_' in file:
                 x, y, z, volume = [int(i) for i in file.split('_')[1:]]
                 # print(x,y,z,volume)
-                radius = np.cbrt(volume * 3 / (4 * np.pi))
+                radius = cbrt(volume * 3 / (4 * np.pi))
+                if min_radius and radius < min_radius:
+                    continue
                 coord = (x - adjust, y - adjust, z - adjust)
                 markers.append((coord[0], coord[1], coord[2]))
                 markers_with_radii.append((coord[0], coord[1], coord[2], radius))
@@ -69,7 +71,7 @@ def euc_distance(
     soma_inferences_xyz = array(soma_inferences)
     soma_labels_xyz = array(soma_labels)
     euc_dist = list(tqdm(
-        map(lambda inf_xyz: tuple((norm((inf_xyz - lab_xyz) * voxel_sizes) for lab_xyz in soma_labels_xyz)),
+        map(lambda inf_xyz: tuple((norm((soma_labels_xyz - inf_xyz) * voxel_sizes, axis=1))),
             soma_inferences_xyz),
         desc="distance calculation",
         unit="inference",
