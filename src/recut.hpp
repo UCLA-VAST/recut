@@ -3104,17 +3104,17 @@ template <class image_t> void Recut<image_t>::operator()() {
 
       auto final_output_type = args->output_type;
 
-      // temporarily set output type to create necessary grids
-      if (args->seed_path.empty()) {
+      //// temporarily set output type to create necessary grids
+      //if (args->seed_path.empty()) {
         // if generating seeds then convert to mask first
         args->output_type = "mask";
         convert_topology();
         // sets to this->mask_grid instead of reading from file
-      } else {
-        args->output_type = "point";
-        convert_topology();
-        append_attributes(this->topology_grid);
-      }
+      //} else {
+        //args->output_type = "point";
+        //convert_topology();
+        //append_attributes(this->topology_grid);
+      //}
 
       // reset it
       args->output_type = final_output_type;
@@ -3202,9 +3202,11 @@ template <class image_t> void Recut<image_t>::operator()() {
     // rebuild SDF values?
 
     // sdf segment
-    std::vector<openvdb::FloatGrid::Ptr> components;
+    std::vector<openvdb::BoolGrid::Ptr> components;
+    //std::vector<openvdb::FloatGrid::Ptr> components;
     // vto:segmentSDF(*opened_sdf_grid, components);
-    vto::segmentActiveVoxels(*opened_sdf_grid, components);
+    //vto::segmentActiveVoxels(*opened_sdf_grid, components);
+    vto::extractActiveVoxelSegmentMasks(*opened_sdf_grid, components);
 
 #ifdef LOG
     run_log << "Segment, " << timer.elapsed() << '\n';
@@ -3218,7 +3220,6 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log << "Mask SDF, " << timer.elapsed() << '\n';
     run_log << "Masked SDF voxel count, " << masked_sdf->activeVoxelCount()
             << '\n';
-    run_log.close();
 #endif
 
     // if (args->save_vdbs) {

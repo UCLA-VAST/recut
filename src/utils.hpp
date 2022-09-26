@@ -3536,7 +3536,7 @@ auto write_seeds =
     };
 
 // center by bbox
-auto get_center_of_grid = [](openvdb::FloatGrid::Ptr component) -> GridCoord {
+auto get_center_of_grid = [](auto component) -> GridCoord {
   auto bbox = component->evalActiveVoxelBoundingBox();
   auto center = bbox.getCenter();
   return new_grid_coord(center.x(), center.y(), center.z());
@@ -3563,23 +3563,30 @@ auto is_coordinate_active = [](EnlargedPointDataGrid::Ptr topology_grid,
 // component. If passing known seeds, then filter all components to only those
 // components which contain the passed seed
 auto create_seed_pairs =
-    [](std::vector<openvdb::FloatGrid::Ptr> components,
+    [](std::vector<openvdb::BoolGrid::Ptr> components,
        EnlargedPointDataGrid::Ptr topology_grid,
        std::array<float, 3> voxel_size,
        std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> known_seeds = {}) {
       return components |
              rv::remove_if([topology_grid, &known_seeds](const auto component) {
+               auto coord_center = get_center_of_grid(component);
                if (known_seeds.empty()) {
-                 auto coord_center = get_center_of_grid(component);
                  return !is_coordinate_active(topology_grid, coord_center);
                } else {
                  // if no known seed is an active voxel in this component
                  // then remove this component
-                 return rng::none_of(
-                     known_seeds, [&component](const auto &known_seed) {
-                       auto [coord, _, __] = known_seed;
-                       return component->tree().isValueOn(coord);
-                     });
+                 return rng::none_of(known_seeds,
+                                     [&component](const auto &known_seed) {
+                                       auto [coord, _, __] = known_seed;
+                                       return component->tree().isValueOn(
+                                           coord);
+                                     })
+                            ? true // remove it.
+                            // Else if the resulting coord_center of this
+                            // component is inactive in the point topology
+                            // remove this component anyway
+                            : !is_coordinate_active(topology_grid,
+                                                    coord_center);
                }
              }) |
              // for all remaining components
