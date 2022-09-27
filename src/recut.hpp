@@ -3148,38 +3148,47 @@ template <class image_t> void Recut<image_t>::operator()() {
     //
     // this function additionally adds a morphological closing step such that
     // holes and valleys in the SDF are filled
-    auto closed_sdf_grid =
-        vto::topologyToLevelSet(*this->mask_grid, /*halfwidth*/ 1,
-                                /*closingwidth*/ args->close_steps);
+    auto sdf_grid =
+        vto::topologyToLevelSet(*this->mask_grid, 1, 0);
 
 #ifdef LOG
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
     run_log << "Closing, " << timer.elapsed() << '\n';
-    run_log << "Closing voxel count, " << closed_sdf_grid->activeVoxelCount()
+    run_log << "Closing voxel count, " << sdf_grid->activeVoxelCount()
             << '\n';
 #endif
 
     if (args->save_vdbs) {
       // write out topology
       openvdb::GridPtrVec grids;
-      grids.push_back(closed_sdf_grid);
-      write_vdb_file(grids, this->run_dir + "/closed_sdf.vdb");
+      grids.push_back(sdf_grid);
+      write_vdb_file(grids, this->run_dir + "/sdf.vdb");
     }
 
     timer.restart();
 
     // TODO find enclosed regions and log
+    // TODO is it possible to do opening and closing using only one filter to reduce RAM usage?
+    // TODO make sure to free memory after soma detection
 
     // define the filter for the morphological operations to the level set
     // morpho operations can only occur on SDF level sets, not on FOG topologies
+    auto closed_sdf_grid = sdf_grid->deepCopy();
+    auto close_filter = std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(*closed_sdf_grid);
+    close_filter->setSpatialScheme(openvdb::math::HJWENO5_BIAS);//FIRST_BIAS
+    close_filter->setTemporalScheme(openvdb::math::TVD_RK1);
+    // erode then dilate --> morphological closing
+    close_filter->offset(-args->close_steps);//negative offset means erode
+    close_filter->offset(args->close_steps);//positive offset means dilate
+
     auto opened_sdf_grid = closed_sdf_grid->deepCopy();
-    auto filter = std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(
-        *opened_sdf_grid);
-    filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
+    auto filter = std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(*opened_sdf_grid);
+    filter->setSpatialScheme(openvdb::math::HJWENO5_BIAS);//FIRST_BIAS
     filter->setTemporalScheme(openvdb::math::TVD_RK1);
-    filter->offset(args->open_steps);
-    filter->offset(-args->open_steps);
+    // dilate then erode --> morphological opening
+    filter->offset(args->open_steps); //positive offset means dilate
+    filter->offset(-args->open_steps); //negative offset means erode
 
     // these morphological operations may nullify the values stored in the SDF
     // vto::erodeActiveValues(opened_sdf_grid->tree(), args->open_steps);
