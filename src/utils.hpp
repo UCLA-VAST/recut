@@ -16,6 +16,7 @@
 #include <openvdb/tools/Clip.h>
 #include <openvdb/tools/Composite.h>
 #include <openvdb/tools/Dense.h> // copyToDense
+#include <openvdb/tools/LevelSetUtil.h> // sdfSegment, sdfToFogVolume
 #include <queue>
 #include <stdlib.h> // ultoa
 #include <string>
@@ -379,23 +380,19 @@ auto create_vdb_mask(EnlargedPointDataGrid::Ptr grid,
 // only values strictly greater than bkg_thresh are valid
 template <typename T>
 void print_vdb_mask(T vdb_accessor, const GridCoord &lengths,
-                    const int bkg_thresh = -1) {
-  cout << "print_vdb_mask(): \n";
-  for (int z = 0; z < lengths[2]; z++) {
+                    const GridCoord &offsets = {0, 0, 0}) {
+  for (int z = offsets.z(); z < offsets.z() + lengths[2]; z++) {
     cout << "y | Z=" << z << '\n';
     for (int x = 0; x < 2 * lengths[0] + 4; x++) {
       cout << "-";
     }
     cout << '\n';
-    for (int y = 0; y < lengths[1]; y++) {
+    for (int y = offsets.y(); y < offsets.y() + lengths[1]; y++) {
       cout << y << " | ";
-      for (int x = 0; x < lengths[0]; x++) {
+      for (int x = offsets.x(); x < offsets.x() + lengths[0]; x++) {
         openvdb::Coord xyz(x, y, z);
         auto val = vdb_accessor.isValueOn(xyz);
         if (val) {
-          // if ((bkg_thresh > -1) && (val <= bkg_thresh)) {
-          // cout << "- ";
-          //} else {
           cout << val << " ";
           //}
         } else {
@@ -3563,30 +3560,44 @@ auto is_coordinate_active = [](EnlargedPointDataGrid::Ptr topology_grid,
 // component. If passing known seeds, then filter all components to only those
 // components which contain the passed seed
 auto create_seed_pairs =
-    [](std::vector<openvdb::BoolGrid::Ptr> components,
+    [](std::vector<openvdb::FloatGrid::Ptr> components,
        EnlargedPointDataGrid::Ptr topology_grid,
        std::array<float, 3> voxel_size,
        std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> known_seeds = {}) {
+      //rng::for_each(known_seeds, [](auto seed) {
+        //std::cout << "Known " << std::get<0>(seed) << '\n';
+      //});
       return components |
-             rv::remove_if([topology_grid, &known_seeds](const auto component) {
+             rv::remove_if([topology_grid,
+                            &known_seeds](const auto component) {
+               openvdb::v9_1::tools::sdfToFogVolume(*component);
                auto coord_center = get_center_of_grid(component);
-               if (known_seeds.empty()) {
-                 return !is_coordinate_active(topology_grid, coord_center);
+               //std::cout << "Component: "
+                         //<< component->evalActiveVoxelBoundingBox()
+                         //<< " voxel count: " << component->activeVoxelCount()
+                         //<< '\n';
+               //std::cout << "  center: " << coord_center << '\n';
+               //print_vdb_mask(component->getConstAccessor(),
+                              //component->evalActiveVoxelBoundingBox().dim(),
+                              //component->evalActiveVoxelBoundingBox().min());
+
+               if (is_coordinate_active(topology_grid, coord_center)) {
+                 //std::cout << "    center is active\n";
+                 if (known_seeds.empty()) {
+                   return false; // keep
+                 } else {
+                   // if no known seed is an active voxel in this
+                   // component then remove this component
+                   return rng::none_of(
+                       known_seeds, [&component](const auto &known_seed) {
+                         auto [coord, _, __] = known_seed;
+                         //if (component->tree().isValueOn(coord))
+                           //std::cout << "        seed: " << coord << " is on\n";
+                         return component->getConstAccessor().isValueOn(coord);
+                       });
+                 }
                } else {
-                 // if no known seed is an active voxel in this component
-                 // then remove this component
-                 return rng::none_of(known_seeds,
-                                     [&component](const auto &known_seed) {
-                                       auto [coord, _, __] = known_seed;
-                                       return component->tree().isValueOn(
-                                           coord);
-                                     })
-                            ? true // remove it.
-                            // Else if the resulting coord_center of this
-                            // component is inactive in the point topology
-                            // remove this component anyway
-                            : !is_coordinate_active(topology_grid,
-                                                    coord_center);
+                 return true; // remove
                }
              }) |
              // for all remaining components

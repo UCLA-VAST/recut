@@ -18,7 +18,6 @@
 #include <map>
 #include <openvdb/tools/Composite.h>
 #include <openvdb/tools/FastSweeping.h>
-#include <openvdb/tools/LevelSetUtil.h>
 #include <openvdb/tools/TopologyToLevelSet.h>
 #include <set>
 #include <sstream>
@@ -3109,6 +3108,7 @@ template <class image_t> void Recut<image_t>::operator()() {
         // if generating seeds then convert to mask first
         args->output_type = "mask";
         convert_topology();
+        assertm(this->mask_grid, "Mask grid not properly set");
         // sets to this->mask_grid instead of reading from file
       //} else {
         //args->output_type = "point";
@@ -3173,17 +3173,13 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     // define the filter for the morphological operations to the level set
     // morpho operations can only occur on SDF level sets, not on FOG topologies
-    auto opened_sdf_grid = closed_sdf_grid->deepCopy();
+    openvdb::FloatGrid::Ptr opened_sdf_grid = closed_sdf_grid->deepCopy();
     auto filter = std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(
         *opened_sdf_grid);
     filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
     filter->setTemporalScheme(openvdb::math::TVD_RK1);
     filter->offset(args->open_steps);
     filter->offset(-args->open_steps);
-
-    // these morphological operations may nullify the values stored in the SDF
-    // vto::erodeActiveValues(opened_sdf_grid->tree(), args->open_steps);
-    // vto::dilateActiveValues(opened_sdf_grid->tree(), args->open_steps);
 
 #ifdef LOG
     run_log << "Opening, " << timer.elapsed() << '\n';
@@ -3202,11 +3198,11 @@ template <class image_t> void Recut<image_t>::operator()() {
     // rebuild SDF values?
 
     // sdf segment
-    std::vector<openvdb::BoolGrid::Ptr> components;
-    //std::vector<openvdb::FloatGrid::Ptr> components;
-    // vto:segmentSDF(*opened_sdf_grid, components);
-    //vto::segmentActiveVoxels(*opened_sdf_grid, components);
-    vto::extractActiveVoxelSegmentMasks(*opened_sdf_grid, components);
+    std::vector<openvdb::FloatGrid::Ptr> components;
+    openvdb::v9_1::tools::segmentSDF(*opened_sdf_grid, components);
+#ifdef LOG
+    run_log << "Initial seed count, " << seeds.size() << '\n';
+#endif
 
 #ifdef LOG
     run_log << "Segment, " << timer.elapsed() << '\n';
@@ -3236,7 +3232,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     // filters by user input seeds if available
     seeds = create_seed_pairs(
         components, this->topology_grid, this->args->voxel_size,
-        process_marker_dir(this->image_offsets, this->image_lengths, 1));
+        process_marker_dir(this->image_offsets, this->image_lengths, 0));
     write_seeds(this->run_dir, seeds, this->args->voxel_size);
 
 #ifdef LOG
