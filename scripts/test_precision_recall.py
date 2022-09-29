@@ -20,7 +20,7 @@ from typing import List, Tuple
 from tqdm import tqdm
 
 
-def gather_markers(seeds_path, min_radius=None):
+def gather_markers(seeds_path, max_radius=None, min_radius=None):
     """a function to retrieve xyz and radius"""
     markers = []
     markers_with_radii = []
@@ -36,6 +36,8 @@ def gather_markers(seeds_path, min_radius=None):
                 x, y, z, volume = [int(i) for i in file.split('_')[1:]]
                 # print(x,y,z,volume)
                 radius = cbrt(volume * 3 / (4 * np.pi))
+                if max_radius and radius > max_radius:
+                    continue
                 if min_radius and radius < min_radius:
                     continue
                 coord = (x - adjust, y - adjust, z - adjust)
@@ -471,6 +473,10 @@ if __name__ == "__main__":
     parser.add_argument("--distance_threshold", type=float, default=12.8,
                         help="a minimum allowed distance between inferences and ground truth in µm "
                              "to consider them a match.")
+    parser.add_argument("--radii_max_threshold", type=float, default=None,
+                        help="a maximum allowed radii for inferences for filtering purpose.")
+    parser.add_argument("--radii_min_threshold", type=float, default=None,
+                        help="a minimum allowed radii for inferences for filtering purpose.")
     parser.add_argument("--voxel_size_x", type=float, default=1, help="x voxel size in µm.")
     parser.add_argument("--voxel_size_y", type=float, default=1, help="y voxel size in µm.")
     parser.add_argument("--voxel_size_z", type=float, default=1, help="z voxel size in µm.")
@@ -491,7 +497,8 @@ if __name__ == "__main__":
 
     # gather markers
     label, label_with_radii = gather_markers(labeled_path)
-    inference, inference_with_radii = gather_markers(inferenced_path)
+    inference, inference_with_radii = gather_markers(
+        inferenced_path, max_radius=args.radii_max_threshold, min_radius=args.radii_min_threshold)
 
     # calculate precision & recall
     precision_recall()
