@@ -3148,7 +3148,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     //
     // this function additionally adds a morphological closing step such that
     // holes and valleys in the SDF are filled
-    auto sdf_grid = vto::topologyToLevelSet(*this->mask_grid, 1, 1);
+    auto sdf_grid = vto::topologyToLevelSet(*this->mask_grid, 1, 0);
 
 #ifdef LOG
     std::ofstream run_log;
@@ -3168,34 +3168,26 @@ template <class image_t> void Recut<image_t>::operator()() {
     timer.restart();
 
     // TODO find enclosed regions and log
-    // TODO is it possible to do opening and closing using only one filter to reduce RAM usage?
-    // TODO make sure to free memory after soma detection
 
     // define the filter for the morphological operations to the level set
     // morpho operations can only occur on SDF level sets, not on FOG topologies
-    auto closed_sdf_grid = sdf_grid->deepCopy();
-    auto close_filter = std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(*closed_sdf_grid);
-    close_filter->setSpatialScheme(openvdb::math::HJWENO5_BIAS);//FIRST_BIAS
-    close_filter->setTemporalScheme(openvdb::math::TVD_RK1);
-    // erode then dilate --> morphological closing
-    close_filter->offset(-args->close_steps);//negative offset means erode
-    close_filter->offset(args->close_steps);//positive offset means dilate
-
-    auto opened_sdf_grid = closed_sdf_grid->deepCopy();
-    auto filter = std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(*opened_sdf_grid);
-    filter->setSpatialScheme(openvdb::math::HJWENO5_BIAS);//FIRST_BIAS
+    auto filter = std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(*sdf_grid);
+    // first order morphological operations --> openvdb::math::FIRST_BIAS
+    // fifth order morphological operations --> openvdb::math::HJWENO5_BIAS
+    filter->setSpatialScheme(openvdb::math::HJWENO5_BIAS);
     filter->setTemporalScheme(openvdb::math::TVD_RK1);
-    // dilate then erode --> morphological opening
-    filter->offset(args->open_steps); //positive offset means dilate
-    filter->offset(-args->open_steps); //negative offset means erode
+    // erode then dilate --> morphological closing
+    filter->offset(-args->close_steps); // negative offset means dilate
+    filter->offset(args->close_steps); // positive offset means erode
+    auto closed_sdf_grid = sdf_grid->deepCopy();
 
-    // these morphological operations may nullify the values stored in the SDF
-    // vto::erodeActiveValues(opened_sdf_grid->tree(), args->open_steps);
-    // vto::dilateActiveValues(opened_sdf_grid->tree(), args->open_steps);
+    // dilate then erode --> morphological opening
+    filter->offset(args->open_steps); // positive offset means erode
+    filter->offset(-args->open_steps); // negative offset means dilate
 
 #ifdef LOG
     run_log << "Opening, " << timer.elapsed() << '\n';
-    run_log << "Open voxel count, " << opened_sdf_grid->activeVoxelCount()
+    run_log << "Open voxel count, " << sdf_grid->activeVoxelCount()
             << '\n';
     timer.restart();
 #endif
@@ -3203,7 +3195,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     if (args->save_vdbs) {
       // write out topology
       openvdb::GridPtrVec grids;
-      grids.push_back(opened_sdf_grid);
+      grids.push_back(sdf_grid);
       write_vdb_file(grids, this->run_dir + "/opened_sdf.vdb");
     }
 
@@ -3211,8 +3203,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     // sdf segment
     std::vector<openvdb::FloatGrid::Ptr> components;
-    // vto:segmentSDF(*opened_sdf_grid, components);
-    vto::segmentActiveVoxels(*opened_sdf_grid, components);
+    vto::segmentActiveVoxels(*sdf_grid, components);
 
 #ifdef LOG
     run_log << "Segment, " << timer.elapsed() << '\n';
@@ -3221,7 +3212,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     // build full SDF by extending known somas into reachable neurites
     // or use SDFInteriorMask
     timer.restart();
-    auto masked_sdf = vto::maskSdf(*opened_sdf_grid, *sdf_grid);
+    auto masked_sdf = vto::maskSdf(*sdf_grid, *closed_sdf_grid);
 #ifdef LOG
     run_log << "Mask SDF, " << timer.elapsed() << '\n';
     run_log << "Masked SDF voxel count, " << masked_sdf->activeVoxelCount()
