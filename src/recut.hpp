@@ -3148,8 +3148,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     //
     // this function additionally adds a morphological closing step such that
     // holes and valleys in the SDF are filled
-    auto sdf_grid =
-        vto::topologyToLevelSet(*this->mask_grid, 1, 0);
+    auto sdf_grid = vto::topologyToLevelSet(*this->mask_grid, 1, 1);
 
 #ifdef LOG
     std::ofstream run_log;
@@ -3222,7 +3221,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     // build full SDF by extending known somas into reachable neurites
     // or use SDFInteriorMask
     timer.restart();
-    auto masked_sdf = vto::maskSdf(*opened_sdf_grid, *closed_sdf_grid);
+    auto masked_sdf = vto::maskSdf(*opened_sdf_grid, *sdf_grid);
 #ifdef LOG
     run_log << "Mask SDF, " << timer.elapsed() << '\n';
     run_log << "Masked SDF voxel count, " << masked_sdf->activeVoxelCount()
