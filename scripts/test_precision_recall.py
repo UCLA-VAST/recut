@@ -3,7 +3,7 @@
 """
 Script for calculating precision and recall for soma detection model
 Last updated on Tue Sep 13
-@author: Ming Yan
+@author: Ming Yan & Keivan Moradi
 """
 
 import os
@@ -470,7 +470,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('labeled_path', help="input path for labeled soma location")
     parser.add_argument('inferenced_path', help="input path for inferenced soma location")
-    parser.add_argument("--distance_threshold", type=float, default=12.8,
+    parser.add_argument("--distance_threshold", type=float, default=15,
                         help="a minimum allowed distance between inferences and ground truth in µm "
                              "to consider them a match.")
     parser.add_argument("--radii_max_threshold", type=float, default=None,
