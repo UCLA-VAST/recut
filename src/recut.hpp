@@ -389,35 +389,35 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
   // gather all markers within directory
   auto seeds = std::vector<std::tuple<GridCoord, uint8_t, uint64_t>>();
 
-  rng::for_each(fs::directory_iterator(args->seed_path), [this, marker_base,
-                                                          &seeds](
-                                                             auto marker_file) {
-    std::string fn(marker_file.path().filename());
-    const auto full_marker_name =
-        args->seed_path + marker_file.path().filename().string();
-    auto markers = readMarker_file(full_marker_name, marker_base);
-    assertm(markers.size() == 1, "only 1 marker file per soma");
-    auto marker = markers[0];
+  rng::for_each(
+      fs::directory_iterator(args->seed_path),
+      [this, marker_base, &seeds](auto marker_file) {
+        std::string fn(marker_file.path().filename());
+        const auto full_marker_name =
+            args->seed_path + marker_file.path().filename().string();
+        auto markers = readMarker_file(full_marker_name, marker_base);
+        assertm(markers.size() == 1, "only 1 marker file per soma");
+        auto marker = markers[0];
 
-    auto numbers = fn | rv::split('_') | rng::to<std::vector<std::string>>();
-    if (numbers.size() != 5)
-      throw std::runtime_error("Marker file names must be in format marker_x_y_z_volume");
-    //while (std::getline(fn, str_volume, '_')) {
-    //}
-    // volume is the last number of the file name
-    uint64_t volume = std::stoull(numbers.back());
+        auto numbers =
+            fn | rv::split('_') | rng::to<std::vector<std::string>>();
+        if (numbers.size() != 5)
+          throw std::runtime_error(
+              "Marker file names must be in format marker_x_y_z_volume");
+        //  volume is the last number of the file name
+        uint64_t volume = std::stoull(numbers.back());
 
-    if (marker.radius == 0) {
-      marker.radius = static_cast<int>(std::cbrt(volume) / (4 * PI / 3));
-    }
+        if (marker.radius == 0) {
+          marker.radius = static_cast<int>(std::cbrt(volume) / (4 * PI / 3));
+        }
 
-    seeds.push_back(std::make_tuple(
-        // ones() + GridCoord(marker.x / args->downsample_factor,
-        // marker.y / args->downsample_factor,
-        // upsample_idx(args->upsample_z, marker.z)),
-        GridCoord(marker.x, marker.y, marker.z),
-        static_cast<uint8_t>(marker.radius), volume));
-  });
+        seeds.push_back(std::make_tuple(
+            // ones() + GridCoord(marker.x / args->downsample_factor,
+            // marker.y / args->downsample_factor,
+            // upsample_idx(args->upsample_z, marker.z)),
+            GridCoord(marker.x, marker.y, marker.z),
+            static_cast<uint8_t>(marker.radius), volume));
+      });
 
   auto filtered_seeds =
       seeds | rv::remove_if([this, &local_bbox](auto seed) {
@@ -3104,16 +3104,16 @@ template <class image_t> void Recut<image_t>::operator()() {
       auto final_output_type = args->output_type;
 
       //// temporarily set output type to create necessary grids
-      //if (args->seed_path.empty()) {
-        // if generating seeds then convert to mask first
-        args->output_type = "mask";
-        convert_topology();
-        assertm(this->mask_grid, "Mask grid not properly set");
-        // sets to this->mask_grid instead of reading from file
+      // if (args->seed_path.empty()) {
+      //  if generating seeds then convert to mask first
+      args->output_type = "mask";
+      convert_topology();
+      assertm(this->mask_grid, "Mask grid not properly set");
+      // sets to this->mask_grid instead of reading from file
       //} else {
-        //args->output_type = "point";
-        //convert_topology();
-        //append_attributes(this->topology_grid);
+      // args->output_type = "point";
+      // convert_topology();
+      // append_attributes(this->topology_grid);
       //}
 
       // reset it
@@ -3201,7 +3201,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     std::vector<openvdb::FloatGrid::Ptr> components;
     openvdb::v9_1::tools::segmentSDF(*opened_sdf_grid, components);
 #ifdef LOG
-    run_log << "Initial seed count, " << seeds.size() << '\n';
+    run_log << "Initial seed count, " << components.size() << '\n';
 #endif
 
 #ifdef LOG
@@ -3218,12 +3218,12 @@ template <class image_t> void Recut<image_t>::operator()() {
             << '\n';
 #endif
 
-    // if (args->save_vdbs) {
-    //// write out topology
-    // openvdb::GridPtrVec grids;
-    // grids.push_back(masked_sdf);
-    // write_vdb_file(grids, this->run_dir + "/connected_sdf.vdb");
-    //}
+    if (args->save_vdbs) {
+      // write out topology
+      openvdb::GridPtrVec grids;
+      grids.push_back(masked_sdf);
+      write_vdb_file(grids, this->run_dir + "/connected_sdf.vdb");
+    }
 
     this->topology_grid = convert_sdf_to_points(masked_sdf, this->image_lengths,
                                                 this->args->foreground_percent);

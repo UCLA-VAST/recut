@@ -15,7 +15,7 @@
 #include <math.h>
 #include <openvdb/tools/Clip.h>
 #include <openvdb/tools/Composite.h>
-#include <openvdb/tools/Dense.h> // copyToDense
+#include <openvdb/tools/Dense.h>        // copyToDense
 #include <openvdb/tools/LevelSetUtil.h> // sdfSegment, sdfToFogVolume
 #include <queue>
 #include <stdlib.h> // ultoa
@@ -3475,6 +3475,7 @@ auto get_output_name = [](RecutCommandLineArgs *args) -> std::string {
 
 auto convert_sdf_to_points = [](auto sdf, auto image_lengths,
                                 auto foreground_percent) {
+  openvdb::v9_1::tools::sdfToFogVolume(*sdf);
   std::vector<PositionT> positions;
   for (auto iter = sdf->cbeginValueOn(); iter.test(); ++iter) {
     auto coord = iter.getCoord();
@@ -3564,60 +3565,46 @@ auto create_seed_pairs =
        EnlargedPointDataGrid::Ptr topology_grid,
        std::array<float, 3> voxel_size,
        std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> known_seeds = {}) {
-      //rng::for_each(known_seeds, [](auto seed) {
-        //std::cout << "Known " << std::get<0>(seed) << '\n';
-      //});
-      return components |
-             rv::remove_if([topology_grid,
-                            &known_seeds](const auto component) {
-               openvdb::v9_1::tools::sdfToFogVolume(*component);
-               auto coord_center = get_center_of_grid(component);
-               //std::cout << "Component: "
-                         //<< component->evalActiveVoxelBoundingBox()
-                         //<< " voxel count: " << component->activeVoxelCount()
-                         //<< '\n';
-               //std::cout << "  center: " << coord_center << '\n';
-               //print_vdb_mask(component->getConstAccessor(),
-                              //component->evalActiveVoxelBoundingBox().dim(),
-                              //component->evalActiveVoxelBoundingBox().min());
+      std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> seeds;
+      for (auto component : components) {
+        // make sure the center is on with respect to the topology
+        // otherwise remove it
+        openvdb::v9_1::tools::sdfToFogVolume(*component);
+        auto coord_center = get_center_of_grid(component);
+        if (is_coordinate_active(topology_grid, coord_center)) {
+          if (!known_seeds.empty()) {
+            // if no known seed is an active voxel in this
+            // component then remove this component
+            if (rng::none_of(known_seeds, [&component](const auto &known_seed) {
+                  auto [coord, _, __] = known_seed;
+                  if (component->tree().isValueOn(coord))
+                  return component->getConstAccessor().isValueOn(coord);
+                }))
+              continue;
+          }
+        } else {
+          continue;
+        }
 
-               if (is_coordinate_active(topology_grid, coord_center)) {
-                 //std::cout << "    center is active\n";
-                 if (known_seeds.empty()) {
-                   return false; // keep
-                 } else {
-                   // if no known seed is an active voxel in this
-                   // component then remove this component
-                   return rng::none_of(
-                       known_seeds, [&component](const auto &known_seed) {
-                         auto [coord, _, __] = known_seed;
-                         //if (component->tree().isValueOn(coord))
-                           //std::cout << "        seed: " << coord << " is on\n";
-                         return component->getConstAccessor().isValueOn(coord);
-                       });
-                 }
-               } else {
-                 return true; // remove
-               }
-             }) |
-             // for all remaining components
-             rv::transform([](const auto component) {
-               auto dims = component->evalActiveVoxelBoundingBox().dim();
-               // estimate radius to be half the longest dimension of the bbox
-               auto radius = static_cast<uint8_t>(dims[dims.maxIndex()] / 2);
-               auto coord_center = get_center_of_grid(component);
-               return std::make_tuple(coord_center, radius,
-                                      component->activeVoxelCount());
-             }) |
-             // narrow band filter the seeds by radii
-             // using known statistics of true positives
-             rv::remove_if([voxel_size](const auto &seed) {
-               auto [_, radius, __] = seed;
-               auto radius_um = radius * voxel_size[0];
-               return !((radius_um >= MIN_SOMA_RADIUS_UM) &&
-                        (radius_um <= MAX_SOMA_RADIUS_UM));
-             }) |
-             rng::to_vector;
+        // estimate radius
+        auto dims = component->evalActiveVoxelBoundingBox().dim();
+        // estimate radius to be half the longest dimension of the bbox
+        auto radius = static_cast<uint8_t>(dims[dims.maxIndex()] / 2);
+        auto radius_um = radius * voxel_size[0];
+
+        // filter if radius is below
+        if (((radius_um >= MIN_SOMA_RADIUS_UM) &&
+             (radius_um <= MAX_SOMA_RADIUS_UM))) {
+          // place remaining in vector
+          seeds.emplace_back(coord_center, radius,
+                             component->activeVoxelCount());
+        }
+      }
+      return seeds;
+
+      rng::for_each(known_seeds, [](auto seed) {
+        std::cout << "Known " << std::get<0>(seed) << '\n';
+      });
     };
 
 auto binarize_uint8_grid = [](auto image_grid) {
