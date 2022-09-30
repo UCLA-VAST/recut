@@ -3153,9 +3153,10 @@ template <class image_t> void Recut<image_t>::operator()() {
 #ifdef LOG
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
-    run_log << "Closing, " << timer.elapsed() << '\n';
-    run_log << "Closing voxel count, " << sdf_grid->activeVoxelCount()
-            << '\n';
+    run_log << "SomaDetection, " << "Open(3)+Close(" << args->close_steps << ")+Open(" << args->open_steps << ")\n";
+    run_log << "filter, 5th order\n";
+    run_log << "Closing, " << timer.elapsed() << "\n";
+    run_log << "Closing voxel count, " << sdf_grid->activeVoxelCount() << "\n";
 #endif
 
     if (args->save_vdbs) {
@@ -3177,11 +3178,21 @@ template <class image_t> void Recut<image_t>::operator()() {
     filter->setSpatialScheme(openvdb::math::HJWENO5_BIAS);
     filter->setTemporalScheme(openvdb::math::TVD_RK1);
     // erode then dilate --> morphological closing
-    filter->offset(-args->close_steps); // negative offset means dilate
-    filter->offset(args->close_steps); // positive offset means erode
+    // dilate then erode --> morphological opening
+    // negative offset means dilate
+    // positive offset means erode
+
+    // open a bit to denoise specifically in brain surfaces
+    filter->offset(3);
+    filter->offset(-3);
+
+    // close to fill the holes inside somata where cell nuclei used to be
+    filter->offset(-args->close_steps);
+    filter->offset(args->close_steps);
+    // save a copy at this stage to preserve soma shape
     auto closed_sdf_grid = sdf_grid->deepCopy();
 
-    // dilate then erode --> morphological opening
+    // open again to filter axons and dendrites
     filter->offset(args->open_steps); // positive offset means erode
     filter->offset(-args->open_steps); // negative offset means dilate
 
