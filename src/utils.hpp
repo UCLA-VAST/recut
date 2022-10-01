@@ -3577,8 +3577,7 @@ auto create_seed_pairs =
             // component then remove this component
             if (rng::none_of(known_seeds, [&component](const auto &known_seed) {
                   auto [coord, _, __] = known_seed;
-                  if (component->tree().isValueOn(coord))
-                  return component->getConstAccessor().isValueOn(coord);
+                  return component->tree().isValueOn(coord);
                 }))
               continue;
           }
@@ -3601,10 +3600,6 @@ auto create_seed_pairs =
         }
       }
       return seeds;
-
-      rng::for_each(known_seeds, [](auto seed) {
-        std::cout << "Known " << std::get<0>(seed) << '\n';
-      });
     };
 
 auto binarize_uint8_grid = [](auto image_grid) {
