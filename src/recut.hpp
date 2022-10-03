@@ -3148,12 +3148,17 @@ template <class image_t> void Recut<image_t>::operator()() {
     //
     // this function additionally adds a morphological closing step such that
     // holes and valleys in the SDF are filled
+    std::cout << "starting soma detection:\n";
+    std::cout << "\tmask to sdf step\n";
     auto sdf_grid = vto::topologyToLevelSet(*this->mask_grid, 1, 0);
 
 #ifdef LOG
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
-    run_log << "SomaDetection, " << "Open(3)+Close(" << args->close_steps << ")+Open(" << args->open_steps << ")\n";
+    run_log << "Soma Detection, ";
+      run_log << "Open(" << args->open_denoise << ")+";
+      run_log << "Close(" << args->close_steps << ")+";
+      run_log << "Open(" << args->open_steps << ")\n";
     run_log << "filter, 5th order\n";
     run_log << "Closing, " << timer.elapsed() << "\n";
     run_log << "Closing voxel count, " << sdf_grid->activeVoxelCount() << "\n";
@@ -3183,18 +3188,25 @@ template <class image_t> void Recut<image_t>::operator()() {
     // positive offset means erode
 
     // open a bit to denoise specifically in brain surfaces
-    filter->offset(3);
-    filter->offset(-3);
+    if (args->open_denoise > 0) {
+      std::cout << "\topen step: iterations = " << args->open_denoise << "\n";
+      filter->offset(args->open_denoise);
+      filter->offset(-args->open_denoise);
+    }
 
     // close to fill the holes inside somata where cell nuclei used to be
+    std::cout << "\tclose step: iterations = " << args->close_steps << "\n";
     filter->offset(-args->close_steps);
     filter->offset(args->close_steps);
     // save a copy at this stage to preserve soma shape
     auto closed_sdf_grid = sdf_grid->deepCopy();
 
     // open again to filter axons and dendrites
-    filter->offset(args->open_steps); // positive offset means erode
-    filter->offset(-args->open_steps); // negative offset means dilate
+    if (args->open_steps > 0) {
+      std::cout << "\topen step: iterations = " << args->open_steps << "\n";
+      filter->offset(args->open_steps);  // positive offset means erode
+      filter->offset(-args->open_steps); // negative offset means dilate
+    }
 
 #ifdef LOG
     run_log << "Opening, " << timer.elapsed() << '\n';

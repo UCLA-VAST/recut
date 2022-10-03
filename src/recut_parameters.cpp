@@ -36,7 +36,7 @@ void RecutCommandLineArgs::PrintUsage() {
   //"(original resolution)\n";
   std::cout << "--image-offsets      [-io] offsets of subvolume, in x y z order "
          "default 0 0 0\n";
-  std::cout << "--voxel-size         um lengths of voxel in x y z order "
+  std::cout << "--voxel-size         µm lengths of voxel in x y z order "
                "default 1.0 1.0 1.0 determines prune radius\n";
   std::cout
       << "--prune-radius       larger values decrease node sampling density "
@@ -81,16 +81,21 @@ void RecutCommandLineArgs::PrintUsage() {
          "volume "
          "of their component, this value specifies the minimum window border "
          "surrounding seeds, if no um value is passed it will use "
-      << MIN_WINDOW_UM << " um\n";
+      << MIN_WINDOW_UM << " µm\n";
   std::cout
       << "--expand-window      windows by default only extend to bounding "
          "volume of their component, this allows specifying an expansion "
          "factor around seeds, if no um value is passed it will use "
-      << EXPAND_WINDOW_UM << " um\n";
-  std::cout << "--open-steps         # of iterations of morphological opening; "
-               "defaults to 5\n";
-  std::cout << "--close-steps        # of iterations of morphological closing; "
-               "defaults to 8\n";
+      << EXPAND_WINDOW_UM << " µm\n";
+  std::cout << "--open-denoise       1st morphological opening iterations "
+               "to denoise image before soma detection; "
+               "defaults to 5 and disabled by passing 0 or a negative value.\n";
+  std::cout << "--close-steps        morphological closing iterations "
+               "to fill existing voids inside somata; "
+               "defaults to 8.\n";
+  std::cout << "--open-steps         2nd morphological opening iterations "
+               "to clear neurites and keep somata in the image only; "
+               "defaults to 8 and disabled by passing 0 or a negative value.\n";
   std::cout << "--save-vdbs          save intermediate VDB grids during "
                "reconstruction transformations\n";
   std::cout
@@ -238,6 +243,9 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         } else {
           args.min_window_um = EXPAND_WINDOW_UM;
         }
+      } else if (strcmp(argv[i], "--open-denoise") == 0) {
+        args.open_denoise = atoi(argv[i + 1]);
+        ++i;
       } else if (strcmp(argv[i], "--open-steps") == 0) {
         args.open_steps = atoi(argv[i + 1]);
         ++i;
