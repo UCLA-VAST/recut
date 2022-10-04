@@ -3148,23 +3148,27 @@ template <class image_t> void Recut<image_t>::operator()() {
     //
     // this function additionally adds a morphological closing step such that
     // holes and valleys in the SDF are filled
-    auto closed_sdf_grid =
-        vto::topologyToLevelSet(*this->mask_grid, /*halfwidth*/ 1,
-                                /*closingwidth*/ args->close_steps);
+    std::cout << "starting soma detection:\n";
+    std::cout << "\tmask to sdf step\n";
+    auto sdf_grid = vto::topologyToLevelSet(*this->mask_grid, 1, 0);
 
 #ifdef LOG
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
-    run_log << "Closing, " << timer.elapsed() << '\n';
-    run_log << "Closing voxel count, " << closed_sdf_grid->activeVoxelCount()
-            << '\n';
+    run_log << "Soma Detection, ";
+      run_log << "Open(" << args->open_denoise << ")+";
+      run_log << "Close(" << args->close_steps << ")+";
+      run_log << "Open(" << args->open_steps << ")\n";
+    run_log << "filter, 5th order\n";
+    run_log << "Closing, " << timer.elapsed() << "\n";
+    run_log << "Closing voxel count, " << sdf_grid->activeVoxelCount() << "\n";
 #endif
 
     if (args->save_vdbs) {
       // write out topology
       openvdb::GridPtrVec grids;
-      grids.push_back(closed_sdf_grid);
-      write_vdb_file(grids, this->run_dir + "/closed_sdf.vdb");
+      grids.push_back(sdf_grid);
+      write_vdb_file(grids, this->run_dir + "/sdf.vdb");
     }
 
     timer.restart();
@@ -3174,16 +3178,40 @@ template <class image_t> void Recut<image_t>::operator()() {
     // define the filter for the morphological operations to the level set
     // morpho operations can only occur on SDF level sets, not on FOG topologies
     openvdb::FloatGrid::Ptr opened_sdf_grid = closed_sdf_grid->deepCopy();
-    auto filter = std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(
-        *opened_sdf_grid);
-    filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
+    auto filter = std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(*sdf_grid);
+    // first order morphological operations --> openvdb::math::FIRST_BIAS
+    // fifth order morphological operations --> openvdb::math::HJWENO5_BIAS
+    filter->setSpatialScheme(openvdb::math::HJWENO5_BIAS);
     filter->setTemporalScheme(openvdb::math::TVD_RK1);
-    filter->offset(args->open_steps);
-    filter->offset(-args->open_steps);
+    // erode then dilate --> morphological closing
+    // dilate then erode --> morphological opening
+    // negative offset means dilate
+    // positive offset means erode
+
+    // open a bit to denoise specifically in brain surfaces
+    if (args->open_denoise > 0) {
+      std::cout << "\topen step: iterations = " << args->open_denoise << "\n";
+      filter->offset(args->open_denoise);
+      filter->offset(-args->open_denoise);
+    }
+
+    // close to fill the holes inside somata where cell nuclei used to be
+    std::cout << "\tclose step: iterations = " << args->close_steps << "\n";
+    filter->offset(-args->close_steps);
+    filter->offset(args->close_steps);
+    // save a copy at this stage to preserve soma shape
+    auto closed_sdf_grid = sdf_grid->deepCopy();
+
+    // open again to filter axons and dendrites
+    if (args->open_steps > 0) {
+      std::cout << "\topen step: iterations = " << args->open_steps << "\n";
+      filter->offset(args->open_steps);  // positive offset means erode
+      filter->offset(-args->open_steps); // negative offset means dilate
+    }
 
 #ifdef LOG
     run_log << "Opening, " << timer.elapsed() << '\n';
-    run_log << "Open voxel count, " << opened_sdf_grid->activeVoxelCount()
+    run_log << "Open voxel count, " << sdf_grid->activeVoxelCount()
             << '\n';
     timer.restart();
 #endif
@@ -3191,27 +3219,20 @@ template <class image_t> void Recut<image_t>::operator()() {
     if (args->save_vdbs) {
       // write out topology
       openvdb::GridPtrVec grids;
-      grids.push_back(opened_sdf_grid);
+      grids.push_back(sdf_grid);
       write_vdb_file(grids, this->run_dir + "/opened_sdf.vdb");
     }
 
-    // rebuild SDF values?
-
-    // sdf segment
     std::vector<openvdb::FloatGrid::Ptr> components;
     openvdb::v9_1::tools::segmentSDF(*opened_sdf_grid, components);
 #ifdef LOG
     run_log << "Initial seed count, " << components.size() << '\n';
-#endif
-
-#ifdef LOG
     run_log << "Segment, " << timer.elapsed() << '\n';
 #endif
 
     // build full SDF by extending known somas into reachable neurites
-    // or use SDFInteriorMask
     timer.restart();
-    auto masked_sdf = vto::maskSdf(*opened_sdf_grid, *closed_sdf_grid);
+    auto masked_sdf = vto::maskSdf(*sdf_grid, *closed_sdf_grid);
 #ifdef LOG
     run_log << "Mask SDF, " << timer.elapsed() << '\n';
     run_log << "Masked SDF voxel count, " << masked_sdf->activeVoxelCount()

@@ -77,7 +77,7 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 #define SWC_MIN_LINE 110
 #define SOMA_PRUNE_RADIUS 1.6
 #define MIN_SOMA_RADIUS_UM 3
-#define MAX_SOMA_RADIUS_UM std::numeric_limits<int>::max()
+#define MAX_SOMA_RADIUS_UM 18 // std::numeric_limits<int>::max()
 #define MAX_SOMA_PER_COMPONENT std::numeric_limits<int>::max()
 #define MIN_Z_DEPTH 30
 // euclidean voxel path distance of branches to prune

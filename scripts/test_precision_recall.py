@@ -3,7 +3,7 @@
 """
 Script for calculating precision and recall for soma detection model
 Last updated on Tue Sep 13
-@author: Ming Yan
+@author: Ming Yan & Keivan Moradi
 """
 
 import os
@@ -14,13 +14,13 @@ import matplotlib.pyplot as plt
 import scipy.stats as stats
 from pathlib import Path
 from datetime import datetime
-from numpy import ndarray, array
+from numpy import ndarray, array, cbrt
 from numpy.linalg import norm
 from typing import List, Tuple
 from tqdm import tqdm
 
 
-def gather_markers(seeds_path):
+def gather_markers(seeds_path, max_radius=None, min_radius=None):
     """a function to retrieve xyz and radius"""
     markers = []
     markers_with_radii = []
@@ -35,7 +35,11 @@ def gather_markers(seeds_path):
             if 'marker_' in file:
                 x, y, z, volume = [int(i) for i in file.split('_')[1:]]
                 # print(x,y,z,volume)
-                radius = np.cbrt(volume * 3 / (4 * np.pi))
+                radius = cbrt(volume * 3 / (4 * np.pi))
+                if max_radius and radius > max_radius:
+                    continue
+                if min_radius and radius < min_radius:
+                    continue
                 coord = (x - adjust, y - adjust, z - adjust)
                 markers.append((coord[0], coord[1], coord[2]))
                 markers_with_radii.append((coord[0], coord[1], coord[2], radius))
@@ -69,7 +73,7 @@ def euc_distance(
     soma_inferences_xyz = array(soma_inferences)
     soma_labels_xyz = array(soma_labels)
     euc_dist = list(tqdm(
-        map(lambda inf_xyz: tuple((norm((inf_xyz - lab_xyz) * voxel_sizes) for lab_xyz in soma_labels_xyz)),
+        map(lambda inf_xyz: tuple((norm((soma_labels_xyz - inf_xyz) * voxel_sizes, axis=1))),
             soma_inferences_xyz),
         desc="distance calculation",
         unit="inference",
@@ -466,9 +470,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('labeled_path', help="input path for labeled soma location")
     parser.add_argument('inferenced_path', help="input path for inferenced soma location")
-    parser.add_argument("--distance_threshold", type=float, default=12.8,
+    parser.add_argument("--distance_threshold", type=float, default=15,
                         help="a minimum allowed distance between inferences and ground truth in µm "
                              "to consider them a match.")
+    parser.add_argument("--radii_max_threshold", type=float, default=None,
+                        help="a maximum allowed radii for inferences for filtering purpose.")
+    parser.add_argument("--radii_min_threshold", type=float, default=None,
+                        help="a minimum allowed radii for inferences for filtering purpose.")
     parser.add_argument("--voxel_size_x", type=float, default=1, help="x voxel size in µm.")
     parser.add_argument("--voxel_size_y", type=float, default=1, help="y voxel size in µm.")
     parser.add_argument("--voxel_size_z", type=float, default=1, help="z voxel size in µm.")
@@ -489,7 +497,8 @@ if __name__ == "__main__":
 
     # gather markers
     label, label_with_radii = gather_markers(labeled_path)
-    inference, inference_with_radii = gather_markers(inferenced_path)
+    inference, inference_with_radii = gather_markers(
+        inferenced_path, max_radius=args.radii_max_threshold, min_radius=args.radii_min_threshold)
 
     # calculate precision & recall
     precision_recall()
