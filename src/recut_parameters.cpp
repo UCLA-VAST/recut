@@ -89,13 +89,13 @@ void RecutCommandLineArgs::PrintUsage() {
       << EXPAND_WINDOW_UM << " µm\n";
   std::cout << "--open-denoise       1st morphological opening iterations "
                "to denoise image before soma detection; "
-               "defaults to 5 and disabled by passing 0 or a negative value.\n";
+               "defaults to 0 (no-opening)\n";
   std::cout << "--close-steps        morphological closing iterations "
                "to fill existing voids inside somata; "
                "defaults to 8.\n";
   std::cout << "--open-steps         2nd morphological opening iterations "
                "to clear neurites and keep somata in the image only; "
-               "defaults to 8 and disabled by passing 0 or a negative value.\n";
+               "defaults to 5 and disabled by passing 0 (no-opening)\n";
   std::cout << "--save-vdbs          save intermediate VDB grids during "
                "reconstruction transformations\n";
   std::cout

@@ -2265,7 +2265,6 @@ void Recut<image_t>::update(std::string stage, Container &fifo) {
 #endif
   }
 
-#ifdef LOG
   cout << "Finished stage: " << stage << '\n';
   cout << "Finished total updating within " << timer.elapsed() << " sec \n";
 
@@ -2282,7 +2281,6 @@ void Recut<image_t>::update(std::string stage, Container &fifo) {
     run_log.open(log_fn, std::ios::app);
     run_log << stage_acr << ", " << timer.elapsed() << '\n';
   }
-#endif
 
 } // end update()
 
@@ -2738,7 +2736,6 @@ void Recut<image_t>::partition_components(
   auto float_grid = copy_selected(this->topology_grid);
   cout << "Topo to float " << global_timer.elapsed() << '\n';
 
-#ifdef LOG
   auto total_timer = high_resolution_timer();
   {
     VID_t selected_count = float_grid->activeVoxelCount();
@@ -2748,7 +2745,6 @@ void Recut<image_t>::partition_components(
     run_log << "Selected, " << selected_count << '\n';
     assertm(selected_count, "active voxels in float grid must be > 0");
   }
-#endif
 
   // aggregate disjoint connected components
   global_timer.restart();
@@ -2978,7 +2974,6 @@ void Recut<image_t>::partition_components(
     grids.push_back(this->topology_grid);
     write_vdb_file(grids, "final-point-grid.vdb");
   }
-#ifdef LOG
   std::ofstream run_log;
   run_log.open(log_fn, std::ios::app);
   // only log this if it isn't occluded by app2 and window write times
@@ -2987,7 +2982,6 @@ void Recut<image_t>::partition_components(
   }
   run_log << "Aggregated prune, " << total_timer.elapsed() << '\n';
   run_log << "Neuron count, " << seeds.size() << '\n';
-#endif
 }
 
 template <class image_t> void Recut<image_t>::convert_topology() {
@@ -3023,7 +3017,6 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
     this->run_dir = get_unique_fn("./run-1");
     this->log_fn = this->run_dir + "/log.csv";
     fs::create_directories(run_dir);
-#ifdef LOG
     std::cout << "All outputs will be written to: " << this->run_dir << '\n';
     std::ofstream run_log(log_fn);
     run_log << "Thread count, " << args->user_thread_count << '\n';
@@ -3035,6 +3028,7 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << '\n';
     run_log << "Original voxel count, " << coord_prod_accum(this->image_lengths)
             << '\n';
+    run_log << "Open denoise, " << args->open_denoise << '\n';
     run_log << "Close steps, " << args->close_steps << '\n';
     run_log << "Open steps, " << args->open_steps << '\n';
     if (args->foreground_percent >= 0) {
@@ -3049,7 +3043,6 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
     }
     run_log << "Voxel size, " << args->voxel_size[0] << ','
             << args->voxel_size[1] << ',' << args->voxel_size[2] << '\n';
-#endif
   }
 }
 
@@ -3148,21 +3141,17 @@ template <class image_t> void Recut<image_t>::operator()() {
     //
     // this function additionally adds a morphological closing step such that
     // holes and valleys in the SDF are filled
+#ifdef LOG
     std::cout << "starting soma detection:\n";
     std::cout << "\tmask to sdf step\n";
-    auto sdf_grid = vto::topologyToLevelSet(*this->mask_grid, 1, 0);
-
-#ifdef LOG
+#endif
+    // technically it is modified by closing by 1 which has a very minimal effect
+    // this API does not allow 0 closing 
+    auto unmodified_sdf_grid = vto::topologyToLevelSet(*this->mask_grid, 1, 0);
+    auto sdf_grid = unmodified_sdf_grid->deepCopy();
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
-    run_log << "Soma Detection, ";
-      run_log << "Open(" << args->open_denoise << ")+";
-      run_log << "Close(" << args->close_steps << ")+";
-      run_log << "Open(" << args->open_steps << ")\n";
-    run_log << "filter, 5th order\n";
-    run_log << "Closing, " << timer.elapsed() << "\n";
-    run_log << "Closing voxel count, " << sdf_grid->activeVoxelCount() << "\n";
-#endif
+    run_log << "Topology voxel count, " << sdf_grid->activeVoxelCount() << '\n';
 
     if (args->save_vdbs) {
       // write out topology
@@ -3171,50 +3160,54 @@ template <class image_t> void Recut<image_t>::operator()() {
       write_vdb_file(grids, this->run_dir + "/sdf.vdb");
     }
 
-    timer.restart();
-
     // TODO find enclosed regions and log
 
     // define the filter for the morphological operations to the level set
     // morpho operations can only occur on SDF level sets, not on FOG topologies
-    openvdb::FloatGrid::Ptr opened_sdf_grid = closed_sdf_grid->deepCopy();
-    auto filter = std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(*sdf_grid);
-    // first order morphological operations --> openvdb::math::FIRST_BIAS
-    // fifth order morphological operations --> openvdb::math::HJWENO5_BIAS
-    filter->setSpatialScheme(openvdb::math::HJWENO5_BIAS);
-    filter->setTemporalScheme(openvdb::math::TVD_RK1);
+    // the morphological ops with filter below mutate sdf_grid in place
     // erode then dilate --> morphological closing
     // dilate then erode --> morphological opening
     // negative offset means dilate
     // positive offset means erode
+    auto filter =
+        std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(*sdf_grid);
+    // first order morphological operations --> openvdb::math::FIRST_BIAS
+    // fifth order morphological operations --> openvdb::math::HJWENO5_BIAS
+    filter->setSpatialScheme(openvdb::math::HJWENO5_BIAS);
+    filter->setTemporalScheme(openvdb::math::TVD_RK1);
 
     // open a bit to denoise specifically in brain surfaces
     if (args->open_denoise > 0) {
-      std::cout << "\topen step: iterations = " << args->open_denoise << "\n";
+#ifdef LOG
+      std::cout << "\tdenoise open step: iterations = " << args->open_denoise << "\n";
+#endif
       filter->offset(args->open_denoise);
       filter->offset(-args->open_denoise);
     }
 
     // close to fill the holes inside somata where cell nuclei used to be
+#ifdef LOG
     std::cout << "\tclose step: iterations = " << args->close_steps << "\n";
+#endif
+    timer.restart();
     filter->offset(-args->close_steps);
     filter->offset(args->close_steps);
+    run_log << "Closing, " << timer.elapsed() << '\n';
+    run_log << "Closed voxel count, " << sdf_grid->activeVoxelCount() << '\n';
     // save a copy at this stage to preserve soma shape
-    auto closed_sdf_grid = sdf_grid->deepCopy();
 
     // open again to filter axons and dendrites
     if (args->open_steps > 0) {
+#ifdef LOG
       std::cout << "\topen step: iterations = " << args->open_steps << "\n";
+#endif
+      timer.restart();
       filter->offset(args->open_steps);  // positive offset means erode
       filter->offset(-args->open_steps); // negative offset means dilate
     }
 
-#ifdef LOG
     run_log << "Opening, " << timer.elapsed() << '\n';
-    run_log << "Open voxel count, " << sdf_grid->activeVoxelCount()
-            << '\n';
-    timer.restart();
-#endif
+    run_log << "Opened voxel count, " << sdf_grid->activeVoxelCount() << '\n';
 
     if (args->save_vdbs) {
       // write out topology
@@ -3224,20 +3217,17 @@ template <class image_t> void Recut<image_t>::operator()() {
     }
 
     std::vector<openvdb::FloatGrid::Ptr> components;
-    openvdb::v9_1::tools::segmentSDF(*opened_sdf_grid, components);
-#ifdef LOG
+    timer.restart();
+    openvdb::v9_1::tools::segmentSDF(*sdf_grid, components);
     run_log << "Initial seed count, " << components.size() << '\n';
     run_log << "Segment, " << timer.elapsed() << '\n';
-#endif
 
     // build full SDF by extending known somas into reachable neurites
     timer.restart();
-    auto masked_sdf = vto::maskSdf(*sdf_grid, *closed_sdf_grid);
-#ifdef LOG
+    auto masked_sdf = vto::maskSdf(*sdf_grid, *unmodified_sdf_grid);
     run_log << "Mask SDF, " << timer.elapsed() << '\n';
     run_log << "Masked SDF voxel count, " << masked_sdf->activeVoxelCount()
             << '\n';
-#endif
 
     if (args->save_vdbs) {
       // write out topology
@@ -3256,9 +3246,7 @@ template <class image_t> void Recut<image_t>::operator()() {
         process_marker_dir(this->image_offsets, this->image_lengths, 0));
     write_seeds(this->run_dir, seeds, this->args->voxel_size);
 
-#ifdef LOG
     run_log << "Seed count, " << seeds.size() << '\n';
-#endif
     if (this->args->output_type == "seeds") {
       return; // exit
     }

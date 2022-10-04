@@ -23,7 +23,7 @@ public:
         window_grid_paths(std::vector<std::string>()),
         second_grid(std::string()), upsample_z(1), downsample_factor(1),
         max_intensity(-1), min_intensity(-1), expand_window_um(0.),
-        min_window_um(0.), open_denoise(5), close_steps(8), open_steps(8),
+        min_window_um(0.), open_denoise(0), close_steps(8), open_steps(5),
         voxel_size({1., 1., 1.}), save_vdbs(false) {}
 
   static void PrintUsage();

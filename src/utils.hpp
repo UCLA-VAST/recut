@@ -3566,6 +3566,8 @@ auto create_seed_pairs =
        std::array<float, 3> voxel_size,
        std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> known_seeds = {}) {
       std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> seeds;
+      auto removed_by_inactivity = 0;
+      auto removed_by_radii = 0;
       for (auto component : components) {
         // make sure the center is on with respect to the topology
         // otherwise remove it
@@ -3582,6 +3584,7 @@ auto create_seed_pairs =
               continue;
           }
         } else {
+          ++removed_by_inactivity;
           continue;
         }
 
@@ -3597,8 +3600,12 @@ auto create_seed_pairs =
           // place remaining in vector
           seeds.emplace_back(coord_center, radius,
                              component->activeVoxelCount());
+        } else {
+          ++removed_by_radii;
         }
       }
+      std::cout << "Removed by inactivity " << removed_by_inactivity << '\n';
+      std::cout << "Removed by radii " << removed_by_radii << '\n';
       return seeds;
     };
 
