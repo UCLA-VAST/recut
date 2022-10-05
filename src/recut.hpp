@@ -3143,6 +3143,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     // holes and valleys in the SDF are filled
 #ifdef LOG
     std::cout << "starting soma detection:\n";
+    std::cout << "\tmin allowed radius is " << MIN_SOMA_RADIUS_UM << " µm\n";
+    std::cout << "\tmax allowed radius is " << MAX_SOMA_RADIUS_UM << " µm\n";
     std::cout << "\tmask to sdf step\n";
 #endif
     // technically it is modified by closing by 1 which has a very minimal effect
@@ -3151,6 +3153,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     auto sdf_grid = unmodified_sdf_grid->deepCopy();
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
+    run_log << "MIN_SOMA_RADIUS_UM, " << MIN_SOMA_RADIUS_UM << '\n';
+    run_log << "MAX_SOMA_RADIUS_UM, " << MAX_SOMA_RADIUS_UM << '\n';
     run_log << "Topology voxel count, " << sdf_grid->activeVoxelCount() << '\n';
 
     if (args->save_vdbs) {
@@ -3173,7 +3177,7 @@ template <class image_t> void Recut<image_t>::operator()() {
         std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(*sdf_grid);
     // first order morphological operations --> openvdb::math::FIRST_BIAS
     // fifth order morphological operations --> openvdb::math::HJWENO5_BIAS
-    filter->setSpatialScheme(openvdb::math::HJWENO5_BIAS);
+    filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
     filter->setTemporalScheme(openvdb::math::TVD_RK1);
 
     // open a bit to denoise specifically in brain surfaces
@@ -3185,7 +3189,7 @@ template <class image_t> void Recut<image_t>::operator()() {
       filter->offset(-args->open_denoise);
     }
 
-    // close to fill the holes inside somata where cell nuclei used to be
+    // close to fill the holes inside somata where cell nuclei is
 #ifdef LOG
     std::cout << "\tclose step: iterations = " << args->close_steps << "\n";
 #endif
@@ -3194,7 +3198,6 @@ template <class image_t> void Recut<image_t>::operator()() {
     filter->offset(args->close_steps);
     run_log << "Closing, " << timer.elapsed() << '\n';
     run_log << "Closed voxel count, " << sdf_grid->activeVoxelCount() << '\n';
-    // save a copy at this stage to preserve soma shape
 
     // open again to filter axons and dendrites
     if (args->open_steps > 0) {
