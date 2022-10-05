@@ -2152,10 +2152,9 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
         dense_tile, tile_thresholds, histogram);
 
     active_tiles[tile_id] = false;
-#ifdef LOG
+#ifdef LOG_FULL
     std::cout << "Completed tile " << tile_id + 1 << " of " << grid_tile_size
               << " in " << tile_timer.elapsed() << " s\n";
-    //" converted in " << (tile_timer.elapsed() - convert_start) <<
 #endif
   } else {
     // note openvdb::initialize() must have been called before this point
