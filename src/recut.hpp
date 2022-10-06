@@ -2969,10 +2969,8 @@ void Recut<image_t>::partition_components(
   arena.execute(
       [&] { tbb::parallel_for_each(enum_components, process_component); });
 
-  if (output_topology) {
-    grids.push_back(this->topology_grid);
-    write_vdb_file(grids, "final-point-grid.vdb");
-  }
+  if (output_topology) 
+    write_vdb_file({this->topology_grid}, "final-point-grid.vdb");
   std::ofstream run_log;
   run_log.open(log_fn, std::ios::app);
   // only log this if it isn't occluded by app2 and window write times
@@ -3123,12 +3121,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     assertm(this->mask_grid,
             "Mask grid must be set before starting soma segmentation");
 
-    if (args->save_vdbs) {
-      // write out topology
-      openvdb::GridPtrVec grids;
-      grids.push_back(this->mask_grid);
-      write_vdb_file(grids, this->run_dir + "/mask.vdb");
-    }
+    if (args->save_vdbs) 
+      write_vdb_file({this->mask_grid}, this->run_dir + "/mask.vdb");
 
     auto timer = high_resolution_timer();
 
@@ -3146,8 +3140,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     std::cout << "\tmax allowed radius is " << MAX_SOMA_RADIUS_UM << " µm\n";
     std::cout << "\tmask to sdf step\n";
 #endif
-    // technically it is modified by closing by 1 which has a very minimal effect
-    // this API does not allow 0 closing 
+    // technically it is modified by closing by 1 which has a very minimal
+    // effect this API does not allow 0 closing
     auto unmodified_sdf_grid = vto::topologyToLevelSet(*this->mask_grid, 1, 0);
     auto sdf_grid = unmodified_sdf_grid->deepCopy();
     std::ofstream run_log;
@@ -3156,12 +3150,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log << "MAX_SOMA_RADIUS_UM, " << MAX_SOMA_RADIUS_UM << '\n';
     run_log << "Topology voxel count, " << sdf_grid->activeVoxelCount() << '\n';
 
-    if (args->save_vdbs) {
-      // write out topology
-      openvdb::GridPtrVec grids;
-      grids.push_back(sdf_grid);
-      write_vdb_file(grids, this->run_dir + "/sdf.vdb");
-    }
+    if (args->save_vdbs) 
+      write_vdb_file({sdf_grid}, this->run_dir + "/sdf.vdb");
 
     // TODO find enclosed regions and log
 
@@ -3182,7 +3172,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     // open a bit to denoise specifically in brain surfaces
     if (args->open_denoise > 0) {
 #ifdef LOG
-      std::cout << "\tdenoise open step: iterations = " << args->open_denoise << "\n";
+      std::cout << "\tdenoise open step: iterations = " << args->open_denoise
+                << "\n";
 #endif
       filter->offset(args->open_denoise);
       filter->offset(-args->open_denoise);
@@ -3197,6 +3188,9 @@ template <class image_t> void Recut<image_t>::operator()() {
     filter->offset(args->close_steps);
     run_log << "Closing, " << timer.elapsed() << '\n';
     run_log << "Closed voxel count, " << sdf_grid->activeVoxelCount() << '\n';
+    auto closed_sdf = sdf_grid->deepCopy();
+    if (args->save_vdbs) 
+      write_vdb_file({closed_sdf}, this->run_dir + "/closed_sdf.vdb");
 
     // open again to filter axons and dendrites
     if (args->open_steps > 0) {
@@ -3211,12 +3205,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log << "Opening, " << timer.elapsed() << '\n';
     run_log << "Opened voxel count, " << sdf_grid->activeVoxelCount() << '\n';
 
-    if (args->save_vdbs) {
-      // write out topology
-      openvdb::GridPtrVec grids;
-      grids.push_back(sdf_grid);
-      write_vdb_file(grids, this->run_dir + "/opened_sdf.vdb");
-    }
+    if (args->save_vdbs) 
+      write_vdb_file({sdf_grid}, this->run_dir + "/opened_sdf.vdb");
 
     std::vector<openvdb::FloatGrid::Ptr> components;
     timer.restart();
@@ -3226,20 +3216,19 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     // build full SDF by extending known somas into reachable neurites
     timer.restart();
-    auto masked_sdf = vto::maskSdf(*sdf_grid, *unmodified_sdf_grid);
+    auto masked_sdf = vto::maskSdf(*sdf_grid, *closed_sdf);
     run_log << "Mask SDF, " << timer.elapsed() << '\n';
     run_log << "Masked SDF voxel count, " << masked_sdf->activeVoxelCount()
             << '\n';
 
-    if (args->save_vdbs) {
-      // write out topology
-      openvdb::GridPtrVec grids;
-      grids.push_back(masked_sdf);
-      write_vdb_file(grids, this->run_dir + "/connected_sdf.vdb");
-    }
+    if (args->save_vdbs) 
+      write_vdb_file({masked_sdf}, this->run_dir + "/connected_sdf.vdb");
 
     this->topology_grid = convert_sdf_to_points(masked_sdf, this->image_lengths,
                                                 this->args->foreground_percent);
+
+    if (args->save_vdbs)
+      write_vdb_file({this->topology_grid}, this->run_dir + "/point.vdb");
 
     // adds all valid markers to roots vector
     // filters by user input seeds if available
