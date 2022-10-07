@@ -1111,7 +1111,6 @@ void write_vdb_file(openvdb::GridPtrVec vdb_grids, std::string fp = "") {
 
   auto timer = new high_resolution_timer();
   openvdb::io::File vdb_file(fp);
-  cout << "start write of vdb\n";
   vdb_file.write(vdb_grids);
   vdb_file.close();
 
@@ -3565,8 +3564,8 @@ auto is_coordinate_active = [](EnlargedPointDataGrid::Ptr topology_grid,
 auto create_seed_pairs =
     [](std::vector<openvdb::FloatGrid::Ptr> components,
        EnlargedPointDataGrid::Ptr topology_grid,
-       std::array<float, 3> voxel_size,
-       float min_radius_um, float max_radius_um,
+       std::array<float, 3> voxel_size, float min_radius_um,
+       float max_radius_um,
        std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> known_seeds = {}) {
       std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> seeds;
       auto removed_by_inactivity = 0;
@@ -3582,24 +3581,28 @@ auto create_seed_pairs =
         auto sphere = spheres[0];
         auto coord_center = GridCoord(sphere[0], sphere[1], sphere[2]);
 
-        if (!known_seeds.empty()) {
-          // convert to fog so that isValueOn returns whether it is within the
-          openvdb::v9_1::tools::sdfToFogVolume(*component);
-          // component if no known seed is an active voxel in this component
-          // then remove this component
-          if (rng::none_of(known_seeds, [&component](const auto &known_seed) {
-                auto [coord, _, __] = known_seed;
-                return component->tree().isValueOn(coord);
-              }))
-            continue;
+        if (is_coordinate_active(topology_grid, coord_center)) {
+          if (!known_seeds.empty()) {
+            // convert to fog so that isValueOn returns whether it is within the
+            openvdb::v9_1::tools::sdfToFogVolume(*component);
+            // component if no known seed is an active voxel in this component
+            // then remove this component
+            if (rng::none_of(known_seeds, [&component](const auto &known_seed) {
+                  auto [coord, _, __] = known_seed;
+                  return component->tree().isValueOn(coord);
+                }))
+              continue;
+          }
+        } else {
+          ++removed_by_inactivity;
+          continue;
         }
 
         auto radius = static_cast<uint8_t>(sphere[3]);
         auto radius_um = radius * voxel_size[0];
 
         // filter if radius is below
-        if (((radius_um >= min_radius_um) &&
-             (radius_um <= max_radius_um))) {
+        if (((radius_um >= min_radius_um) && (radius_um <= max_radius_um))) {
           // place remaining in vector
           seeds.emplace_back(coord_center, radius,
                              component->activeVoxelCount());
@@ -3610,6 +3613,9 @@ auto create_seed_pairs =
 #ifdef LOG
       std::cout << "\tseeds removed by radii min and max criteria "
                 << removed_by_radii << '\n';
+      if (removed_by_inactivity)
+        std::cerr << "\tWarning: seeds removed by inactivity "
+                  << removed_by_inactivity << '\n';
 #endif
       return seeds;
     };
