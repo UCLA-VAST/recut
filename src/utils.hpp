@@ -1115,8 +1115,8 @@ void write_vdb_file(openvdb::GridPtrVec vdb_grids, std::string fp = "") {
   vdb_file.close();
 
 #ifdef LOG
-  cout << "Finished write whole grid in: " << timer->elapsed() << " sec\n";
-  cout << "Wrote output to " << fp << '\n';
+  //cout << "Finished write whole grid in: " << timer->elapsed() << " sec\n";
+  std::cout << "\tWrote to " << fp << '\n';
 #endif
 }
 
@@ -3475,7 +3475,8 @@ auto get_output_name = [](RecutCommandLineArgs *args) -> std::string {
 
 auto convert_sdf_to_points = [](auto sdf, auto image_lengths,
                                 auto foreground_percent) {
-  openvdb::v9_1::tools::sdfToFogVolume(*sdf);
+  //openvdb::v9_1::tools::sdfToFogVolume(*sdf);
+  //write_vdb_file({sdf}, "fog.vdb");
   std::vector<PositionT> positions;
   for (auto iter = sdf->cbeginValueOn(); iter.test(); ++iter) {
     auto coord = iter.getCoord();
