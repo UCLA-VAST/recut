@@ -15,8 +15,9 @@
 #include <math.h>
 #include <openvdb/tools/Clip.h>
 #include <openvdb/tools/Composite.h>
-#include <openvdb/tools/Dense.h>        // copyToDense
-#include <openvdb/tools/LevelSetUtil.h> // sdfSegment, sdfToFogVolume
+#include <openvdb/tools/Dense.h>           // copyToDense
+#include <openvdb/tools/LevelSetUtil.h>    // sdfSegment, sdfToFogVolume
+#include <openvdb/tools/VolumeToSpheres.h> // fillWithSpheres
 #include <queue>
 #include <stdlib.h> // ultoa
 #include <string>
@@ -1115,7 +1116,7 @@ void write_vdb_file(openvdb::GridPtrVec vdb_grids, std::string fp = "") {
   vdb_file.close();
 
 #ifdef LOG
-  //cout << "Finished write whole grid in: " << timer->elapsed() << " sec\n";
+  // cout << "Finished write whole grid in: " << timer->elapsed() << " sec\n";
   std::cout << "\tWrote to " << fp << '\n';
 #endif
 }
@@ -3475,8 +3476,8 @@ auto get_output_name = [](RecutCommandLineArgs *args) -> std::string {
 
 auto convert_sdf_to_points = [](auto sdf, auto image_lengths,
                                 auto foreground_percent) {
-  //openvdb::v9_1::tools::sdfToFogVolume(*sdf);
-  //write_vdb_file({sdf}, "fog.vdb");
+  // openvdb::v9_1::tools::sdfToFogVolume(*sdf);
+  // write_vdb_file({sdf}, "fog.vdb");
   std::vector<PositionT> positions;
   for (auto iter = sdf->cbeginValueOn(); iter.test(); ++iter) {
     auto coord = iter.getCoord();
@@ -3570,29 +3571,29 @@ auto create_seed_pairs =
       auto removed_by_inactivity = 0;
       auto removed_by_radii = 0;
       for (auto component : components) {
-        // make sure the center is on with respect to the topology
-        // otherwise remove it
-        openvdb::v9_1::tools::sdfToFogVolume(*component);
-        auto coord_center = get_center_of_grid(component);
-        if (is_coordinate_active(topology_grid, coord_center)) {
-          if (!known_seeds.empty()) {
-            // if no known seed is an active voxel in this
-            // component then remove this component
-            if (rng::none_of(known_seeds, [&component](const auto &known_seed) {
-                  auto [coord, _, __] = known_seed;
-                  return component->tree().isValueOn(coord);
-                }))
-              continue;
-          }
-        } else {
-          ++removed_by_inactivity;
-          continue;
+        std::vector<openvdb::Vec4s> spheres;
+        // it's possible to force this function to return spheres with a certain
+        // range of radii but we'd rather see what the raw radii it returns for
+        // now and let the min and max radii filter them
+        vto::fillWithSpheres(*component, spheres,
+                             /*min, max total count of spheres allowed*/ {1, 1},
+                             /*overlapping*/ false);
+        auto sphere = spheres[0];
+        auto coord_center = GridCoord(sphere[0], sphere[1], sphere[2]);
+
+        if (!known_seeds.empty()) {
+          // convert to fog so that isValueOn returns whether it is within the
+          openvdb::v9_1::tools::sdfToFogVolume(*component);
+          // component if no known seed is an active voxel in this component
+          // then remove this component
+          if (rng::none_of(known_seeds, [&component](const auto &known_seed) {
+                auto [coord, _, __] = known_seed;
+                return component->tree().isValueOn(coord);
+              }))
+            continue;
         }
 
-        // estimate radius
-        auto dims = component->evalActiveVoxelBoundingBox().dim();
-        // estimate radius to be half the longest dimension of the bbox
-        auto radius = static_cast<uint8_t>(dims[dims.maxIndex()] / 2);
+        auto radius = static_cast<uint8_t>(sphere[3]);
         auto radius_um = radius * voxel_size[0];
 
         // filter if radius is below
@@ -3606,8 +3607,6 @@ auto create_seed_pairs =
         }
       }
 #ifdef LOG
-      std::cout << "\tseeds removed by inactivity "
-                << removed_by_inactivity << '\n';
       std::cout << "\tseeds removed by radii min and max criteria "
                 << removed_by_radii << '\n';
 #endif
