@@ -3604,8 +3604,12 @@ auto create_seed_pairs =
           ++removed_by_radii;
         }
       }
-      std::cout << "Removed by inactivity " << removed_by_inactivity << '\n';
-      std::cout << "Removed by radii " << removed_by_radii << '\n';
+#ifdef LOG
+      std::cout << "\tseeds removed by inactivity "
+                << removed_by_inactivity << '\n';
+      std::cout << "\tseeds removed by radii min and max criteria "
+                << removed_by_radii << '\n';
+#endif
       return seeds;
     };
 

@@ -96,6 +96,10 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "--open-steps         2nd morphological opening iterations "
                "to clear neurites and keep somata in the image only; "
                "defaults to 5 and disabled by passing 0 (no-opening)\n";
+  std::cout << "--order              morphological operations (open/close) "
+               "order. An integer between 1 to 5 that defines the mathematical "
+               "complexity (order) of operations. "
+               "defaults to 1.\n";
   std::cout << "--save-vdbs          save intermediate VDB grids during "
                "reconstruction transformations\n";
   std::cout
@@ -252,6 +256,14 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--close-steps") == 0) {
         args.close_steps = atoi(argv[i + 1]);
         ++i;
+      } else if (strcmp(argv[i], "--order") == 0) {
+        args.morphological_operations_order = atoi(argv[i + 1]);
+        ++i;
+        if (args.morphological_operations_order < 1 ||
+            args.morphological_operations_order > 5) {
+          std::cerr << "--order should be between 1 to 5!\n";
+          exit(1);
+        }
       } else if (strcmp(argv[i], "--downsample-factor") == 0) {
         args.downsample_factor = atoi(argv[i + 1]);
         ++i;
@@ -277,7 +289,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         args.run_app2 = true;
         ++i;
       } else {
-        std::cout << "unknown option \"" << argv[i] << "\"  ...exiting\n\n";
+        std::cerr << "unknown option \"" << argv[i] << "\"  ...exiting\n\n";
         RecutCommandLineArgs::PrintUsage();
         exit(1);
       }

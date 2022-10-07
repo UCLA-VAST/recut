@@ -2620,6 +2620,10 @@ template <class image_t> void Recut<image_t>::initialize() {
   if (!this->args->prune_radius) {
     this->args->prune_radius = anisotropic_factor(this->args->voxel_size);
 #ifdef LOG
+    std::cout << "voxel sizes:"
+              << " x=" << this->args->voxel_size[0]
+              << " y=" << this->args->voxel_size[1]
+              << " z=" << this->args->voxel_size[2] << "\n";
     if (!this->args->convert_only) {
       std::cout << "--prune-radius was set to: "
                 << this->args->prune_radius.value()
@@ -3142,7 +3146,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     // this function additionally adds a morphological closing step such that
     // holes and valleys in the SDF are filled
 #ifdef LOG
-    std::cout << "starting soma detection:\n";
+    std::cout << "starting seed (soma) detection:\n";
     std::cout << "\tmin allowed radius is " << MIN_SOMA_RADIUS_UM << " µm\n";
     std::cout << "\tmax allowed radius is " << MAX_SOMA_RADIUS_UM << " µm\n";
     std::cout << "\tmask to sdf step\n";
@@ -3175,29 +3179,64 @@ template <class image_t> void Recut<image_t>::operator()() {
     // positive offset means erode
     auto filter =
         std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(*sdf_grid);
-    // first order morphological operations --> openvdb::math::FIRST_BIAS
-    // fifth order morphological operations --> openvdb::math::HJWENO5_BIAS
-    filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
+
+    switch(args->morphological_operations_order) {
+      case 1:
+        std::cout << "\t1st order morphological operations\n";
+        filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
+        break;
+      case 2:
+        std::cout << "\t2nd order morphological operations\n";
+        filter->setSpatialScheme(openvdb::math::SECOND_BIAS);
+        break;
+      case 3:
+        std::cout << "\t3rd order morphological operations\n";
+        filter->setSpatialScheme(openvdb::math::THIRD_BIAS);
+        break;
+      case 4:
+        std::cout << "\t4th order morphological operations\n";
+        filter->setSpatialScheme(openvdb::math::WENO5_BIAS);
+        break;
+      case 5:
+        std::cout << "\t5th order morphological operations\n";
+        filter->setSpatialScheme(openvdb::math::HJWENO5_BIAS);
+        break;
+      default:
+        std::cout << "\tunexpected value for argument --order "
+                  << args->morphological_operations_order << "\n"
+                  << "\t1st order morphological operations\n";
+        filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
+    }
     filter->setTemporalScheme(openvdb::math::TVD_RK1);
+    run_log << "order, " << args->morphological_operations_order << '\n';
 
     // open a bit to denoise specifically in brain surfaces
     if (args->open_denoise > 0) {
 #ifdef LOG
-      std::cout << "\tdenoise open step: iterations = " << args->open_denoise << "\n";
+      std::cout << "\topen denoise step: iterations = " << args->open_denoise
+                << "\n";
 #endif
+      timer.restart();
       filter->offset(args->open_denoise);
       filter->offset(-args->open_denoise);
+      run_log << "open denoise elapsed time, " << timer.elapsed() << "\n";
+    } else {
+      run_log << "open denoise elapsed time, 0\n";
     }
+    run_log << "open denoise iterations, " << args->open_denoise << '\n';
+    run_log << "open denoise voxel count, " << sdf_grid->activeVoxelCount()
+            << '\n';
 
-    // close to fill the holes inside somata where cell nuclei is
+    // close to fill the holes inside somata where cell nuclei are
 #ifdef LOG
     std::cout << "\tclose step: iterations = " << args->close_steps << "\n";
 #endif
     timer.restart();
     filter->offset(-args->close_steps);
     filter->offset(args->close_steps);
-    run_log << "Closing, " << timer.elapsed() << '\n';
-    run_log << "Closed voxel count, " << sdf_grid->activeVoxelCount() << '\n';
+    run_log << "Closing elapsed time, " << timer.elapsed() << "\n";
+    run_log << "Closing iterations, " << args->close_steps << "\n";
+    run_log << "Closed voxel count, " << sdf_grid->activeVoxelCount() << "\n";
 
     // open again to filter axons and dendrites
     if (args->open_steps > 0) {
@@ -3205,12 +3244,14 @@ template <class image_t> void Recut<image_t>::operator()() {
       std::cout << "\topen step: iterations = " << args->open_steps << "\n";
 #endif
       timer.restart();
-      filter->offset(args->open_steps);  // positive offset means erode
-      filter->offset(-args->open_steps); // negative offset means dilate
+      filter->offset(args->open_steps);
+      filter->offset(-args->open_steps);
+      run_log << "Opening elapsed time, " << timer.elapsed() << "\n";
+    } else {
+      run_log << "Opening elapsed time, 0\n";
     }
-
-    run_log << "Opening, " << timer.elapsed() << '\n';
-    run_log << "Opened voxel count, " << sdf_grid->activeVoxelCount() << '\n';
+    run_log << "Opening iterations, " << args->open_steps << "\n";
+    run_log << "Opened voxel count, " << sdf_grid->activeVoxelCount() << "\n";
 
     if (args->save_vdbs) {
       // write out topology
@@ -3222,15 +3263,15 @@ template <class image_t> void Recut<image_t>::operator()() {
     std::vector<openvdb::FloatGrid::Ptr> components;
     timer.restart();
     openvdb::v9_1::tools::segmentSDF(*sdf_grid, components);
-    run_log << "Initial seed count, " << components.size() << '\n';
-    run_log << "Segment, " << timer.elapsed() << '\n';
+    run_log << "Initial seed count, " << components.size() << "\n";
+    run_log << "Segment, " << timer.elapsed() << "\n";
 
     // build full SDF by extending known somas into reachable neurites
     timer.restart();
     auto masked_sdf = vto::maskSdf(*sdf_grid, *unmodified_sdf_grid);
-    run_log << "Mask SDF, " << timer.elapsed() << '\n';
+    run_log << "Mask SDF elapsed time, " << timer.elapsed() << "\n";
     run_log << "Masked SDF voxel count, " << masked_sdf->activeVoxelCount()
-            << '\n';
+            << "\n";
 
     if (args->save_vdbs) {
       // write out topology
@@ -3249,7 +3290,7 @@ template <class image_t> void Recut<image_t>::operator()() {
         process_marker_dir(this->image_offsets, this->image_lengths, 0));
     write_seeds(this->run_dir, seeds, this->args->voxel_size);
 
-    run_log << "Seed count, " << seeds.size() << '\n';
+    run_log << "Seed count, " << seeds.size() << "\n";
     if (this->args->output_type == "seeds") {
       return; // exit
     }

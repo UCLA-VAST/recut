@@ -24,6 +24,7 @@ public:
         second_grid(std::string()), upsample_z(1), downsample_factor(1),
         max_intensity(-1), min_intensity(-1), expand_window_um(0.),
         min_window_um(0.), open_denoise(0), close_steps(8), open_steps(5),
+        morphological_operations_order(1),
         voxel_size({1., 1., 1.}), save_vdbs(false) {}
 
   static void PrintUsage();
@@ -51,7 +52,7 @@ public:
   std::vector<std::string> window_grid_paths;
   uint16_t user_thread_count, min_branch_length, resolution_level,
       channel, upsample_z, downsample_factor,
-      open_denoise, open_steps, close_steps;
+      open_denoise, open_steps, close_steps, morphological_operations_order;
   int background_thresh, max_intensity, min_intensity, tcase;
   double foreground_percent, slt_pct;
   float min_window_um, expand_window_um;
