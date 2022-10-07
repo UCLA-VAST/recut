@@ -82,8 +82,8 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 #define MIN_Z_DEPTH 30
 // euclidean voxel path distance of branches to prune
 #define MIN_BRANCH_LENGTH 20
-#define MIN_WINDOW_UM 150
-#define EXPAND_WINDOW_UM 30
+#define MIN_WINDOW_UM 150.0
+#define EXPAND_WINDOW_UM 30.0
 #define SWC_PRECISION 3
 
 // Below are deprecated or are not (yet) affecting behavior:

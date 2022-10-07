@@ -101,9 +101,11 @@ void RecutCommandLineArgs::PrintUsage() {
                "complexity (order) of operations. "
                "defaults to 1.\n";
   std::cout << "--min-radius         min allowed radius of the soma in µm. "
-               "used in the soma detection phase. defaults to 3 µm.\n";
+               "used in the soma detection phase. defaults to "
+            << MIN_SOMA_RADIUS_UM << " µm.\n";
   std::cout << "--max-radius         max allowed radius of the soma in µm. "
-               "used in the soma detection phase. defaults to 18 µm.\n";
+               "used in the soma detection phase. defaults to "
+            << MAX_SOMA_RADIUS_UM << " 18 µm.\n";
   std::cout << "--save-vdbs          save intermediate VDB grids during "
                "reconstruction transformations\n";
   std::cout
@@ -241,15 +243,11 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         if ((i + 1 < argc) && (argv[i + 1][0] != '-')) {
           args.min_window_um = atof(argv[i + 1]);
           ++i;
-        } else {
-          args.min_window_um = MIN_WINDOW_UM;
         }
       } else if (strcmp(argv[i], "--expand-window") == 0) {
         if ((i + 1 < argc) && (argv[i + 1][0] != '-')) {
           args.expand_window_um = atof(argv[i + 1]);
           ++i;
-        } else {
-          args.min_window_um = EXPAND_WINDOW_UM;
         }
       } else if (strcmp(argv[i], "--open-denoise") == 0) {
         args.open_denoise = atoi(argv[i + 1]);
