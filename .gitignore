@@ -2,6 +2,7 @@ logs/
 lib/
 log*
 build*/
+cmake-build-debug/
 tags
 include
 *.ipynb_checkpoints

@@ -26,7 +26,7 @@ public:
         expand_window_um(0.), min_window_um(0.),
         open_denoise(0), close_steps(8), open_steps(5),
         morphological_operations_order(1),
-        min_radius_um(3.), max_radius_um(18.),
+        min_radius_um(MIN_SOMA_RADIUS_UM), max_radius_um(MAX_SOMA_RADIUS_UM),
         voxel_size({1., 1., 1.}), save_vdbs(false) {}
 
   static void PrintUsage();
