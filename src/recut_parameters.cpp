@@ -100,6 +100,10 @@ void RecutCommandLineArgs::PrintUsage() {
                "order. An integer between 1 to 5 that defines the mathematical "
                "complexity (order) of operations. "
                "defaults to 1.\n";
+  std::cout << "--min-radius         min allowed radius of the soma in µm. "
+               "used in the soma detection phase. defaults to 3 µm.\n";
+  std::cout << "--max-radius         max allowed radius of the soma in µm. "
+               "used in the soma detection phase. defaults to 18 µm.\n";
   std::cout << "--save-vdbs          save intermediate VDB grids during "
                "reconstruction transformations\n";
   std::cout
@@ -262,6 +266,20 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         if (args.morphological_operations_order < 1 ||
             args.morphological_operations_order > 5) {
           std::cerr << "--order should be between 1 to 5!\n";
+          exit(1);
+        }
+      } else if (strcmp(argv[i], "--min-radius") == 0) {
+        args.min_radius_um = atoi(argv[i + 1]);
+        ++i;
+        if (args.min_radius_um <= 0) {
+          std::cerr << "--min-radius should be a positive float!\n";
+          exit(1);
+        }
+      } else if (strcmp(argv[i], "--max-radius") == 0) {
+        args.max_radius_um = atoi(argv[i + 1]);
+        ++i;
+        if (args.max_radius_um <= 0) {
+          std::cerr << "--max-radius should be a positive float!\n";
           exit(1);
         }
       } else if (strcmp(argv[i], "--downsample-factor") == 0) {

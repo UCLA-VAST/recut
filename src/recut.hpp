@@ -3141,8 +3141,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     // holes and valleys in the SDF are filled
 #ifdef LOG
     std::cout << "starting seed (soma) detection:\n";
-    std::cout << "\tmin allowed radius is " << MIN_SOMA_RADIUS_UM << " µm\n";
-    std::cout << "\tmax allowed radius is " << MAX_SOMA_RADIUS_UM << " µm\n";
+    std::cout << "\tmin allowed radius is " << args->min_radius_um << " µm\n";
+    std::cout << "\tmax allowed radius is " << args->max_radius_um << " µm\n";
     std::cout << "\tmask to sdf step\n";
 #endif
     // technically it is modified by closing by 1 which has a very minimal
@@ -3151,8 +3151,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     auto sdf_grid = unmodified_sdf_grid->deepCopy();
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
-    run_log << "MIN_SOMA_RADIUS_UM, " << MIN_SOMA_RADIUS_UM << '\n';
-    run_log << "MAX_SOMA_RADIUS_UM, " << MAX_SOMA_RADIUS_UM << '\n';
+    run_log << "min allowed soma radius in µm, " << args->min_radius_um << '\n';
+    run_log << "max allowed soma radius in µm, " << args->max_radius_um << '\n';
     run_log << "Topology voxel count, " << sdf_grid->activeVoxelCount() << '\n';
 
     if (args->save_vdbs)
@@ -3276,6 +3276,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     // filters by user input seeds if available
     seeds = create_seed_pairs(
         components, this->topology_grid, this->args->voxel_size,
+        this->args->min_radius_um, this->args->max_radius_um,
         process_marker_dir(this->image_offsets, this->image_lengths, 0));
     write_seeds(this->run_dir, seeds, this->args->voxel_size);
 

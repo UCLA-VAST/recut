@@ -3498,7 +3498,7 @@ auto anisotropic_factor = [](auto voxel_size) {
     if (current < minx)
       minx = current;
   }
-  // round to nearest int
+  // round to the nearest int
   return static_cast<uint16_t>((maxx / minx) + .5);
 };
 
@@ -3565,6 +3565,7 @@ auto create_seed_pairs =
     [](std::vector<openvdb::FloatGrid::Ptr> components,
        EnlargedPointDataGrid::Ptr topology_grid,
        std::array<float, 3> voxel_size,
+       float min_radius_um, float max_radius_um,
        std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> known_seeds = {}) {
       std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> seeds;
       auto removed_by_inactivity = 0;
@@ -3596,8 +3597,8 @@ auto create_seed_pairs =
         auto radius_um = radius * voxel_size[0];
 
         // filter if radius is below
-        if (((radius_um >= MIN_SOMA_RADIUS_UM) &&
-             (radius_um <= MAX_SOMA_RADIUS_UM))) {
+        if (((radius_um >= min_radius_um) &&
+             (radius_um <= max_radius_um))) {
           // place remaining in vector
           seeds.emplace_back(coord_center, radius,
                              component->activeVoxelCount());
