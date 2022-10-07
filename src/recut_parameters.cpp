@@ -269,14 +269,14 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
           exit(1);
         }
       } else if (strcmp(argv[i], "--min-radius") == 0) {
-        args.min_radius_um = atoi(argv[i + 1]);
+        args.min_radius_um = atof(argv[i + 1]);
         ++i;
         if (args.min_radius_um <= 0) {
           std::cerr << "--min-radius should be a positive float!\n";
           exit(1);
         }
       } else if (strcmp(argv[i], "--max-radius") == 0) {
-        args.max_radius_um = atoi(argv[i + 1]);
+        args.max_radius_um = atof(argv[i + 1]);
         ++i;
         if (args.max_radius_um <= 0) {
           std::cerr << "--max-radius should be a positive float!\n";
