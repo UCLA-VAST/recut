@@ -12,7 +12,7 @@ def gather_markers(path):
             name = os.path.join(root, file)
             if 'marker_' in file:
                 x, y, z, volume = file.split('_')[1:]
-                radius = volume ....
+                radius = volume # ....
                 coord = (int(x) - adjust, int(y) - adjust, int(z) - adjust)
                 markers.append(coord[[0], coord[1], coord[2], radius)
     return markers

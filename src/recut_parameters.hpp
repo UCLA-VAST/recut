@@ -23,10 +23,10 @@ public:
         window_grid_paths(std::vector<std::string>()),
         second_grid(std::string()), upsample_z(1), downsample_factor(1),
         max_intensity(-1), min_intensity(-1),
-        expand_window_um(0.), min_window_um(0.),
+        expand_window_um(EXPAND_WINDOW_UM), min_window_um(MIN_WINDOW_UM),
         open_denoise(0), close_steps(8), open_steps(5),
         morphological_operations_order(1),
-        min_radius_um(3.), max_radius_um(18.),
+        min_radius_um(MIN_SOMA_RADIUS_UM), max_radius_um(MAX_SOMA_RADIUS_UM),
         voxel_size({1., 1., 1.}), save_vdbs(false) {}
 
   static void PrintUsage();
