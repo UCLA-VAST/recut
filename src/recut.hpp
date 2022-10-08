@@ -363,7 +363,7 @@ OffsetCoord Recut<image_t>::v_to_off(VID_t tile_id, VID_t block_id,
 
 // adds all markers to seeds
 template <class image_t>
-std::vector<std::tuple<GridCoord, uint8_t, uint64_t>>
+std::vector<std::tuple<GridCoord, unsigned char, uint64_t>>
 Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
                                    const GridCoord grid_lengths,
                                    int marker_base) {
@@ -387,7 +387,7 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
   }
 
   // gather all markers within directory
-  auto seeds = std::vector<std::tuple<GridCoord, uint8_t, uint64_t>>();
+  auto seeds = std::vector<std::tuple<GridCoord, unsigned char, uint64_t>>();
 
   rng::for_each(
       fs::directory_iterator(args->seed_path),
@@ -408,7 +408,7 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
         uint64_t volume = std::stoull(numbers.back());
 
         if (marker.radius == 0) {
-          marker.radius = static_cast<int>(std::cbrt(volume) / (4 * PI / 3));
+          marker.radius = static_cast<unsigned char>(std::cbrt(volume) / (4/3 * PI) + 0.5);
         }
 
         seeds.push_back(std::make_tuple(
@@ -416,7 +416,7 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
             // marker.y / args->downsample_factor,
             // upsample_idx(args->upsample_z, marker.z)),
             GridCoord(marker.x, marker.y, marker.z),
-            static_cast<uint8_t>(marker.radius), volume));
+            static_cast<unsigned char>(marker.radius + 0.5), volume));
       });
 
   auto filtered_seeds =

@@ -3564,16 +3564,17 @@ auto is_coordinate_active = [](EnlargedPointDataGrid::Ptr topology_grid,
 auto create_seed_pairs =
     [](std::vector<openvdb::FloatGrid::Ptr> components,
        EnlargedPointDataGrid::Ptr topology_grid,
-       std::array<float, 3> voxel_size, float min_radius_um,
+       std::array<float, 3> voxel_size,
+       float min_radius_um,
        float max_radius_um,
-       std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> known_seeds = {}) {
-      std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> seeds;
+       std::vector<std::tuple<GridCoord, unsigned char, uint64_t>> known_seeds = {}) {
+      std::vector<std::tuple<GridCoord, unsigned char, uint64_t>> seeds;
       auto removed_by_inactivity = 0;
       auto removed_by_radii = 0;
       for (auto component : components) {
         std::vector<openvdb::Vec4s> spheres;
         // it's possible to force this function to return spheres with a certain
-        // range of radii but we'd rather see what the raw radii it returns for
+        // range of radii, but we'd rather see what the raw radii it returns for
         // now and let the min and max radii filter them
         vto::fillWithSpheres(*component, spheres,
                              /*min, max total count of spheres allowed*/ {1, 1},
@@ -3598,14 +3599,19 @@ auto create_seed_pairs =
           continue;
         }
 
-        auto radius = static_cast<uint8_t>(sphere[3]);
-        auto radius_um = radius * voxel_size[0];
+        // sphere[3] is of type float
+        // radius should be of unsigned char type
+        // unsigned char type is an 8-bit unsigned integer between 0 and 255
+        auto radius = static_cast<unsigned char>(sphere[3]+0.5);
+        // TODO: consider replacing this with
+        //  sphere[3] * sqrt(voxel_size[0]^2+voxel_size[1]^2+voxel_size[2]^2)?
+        auto radius_um = sphere[3] * voxel_size[0];
 
         // filter if radius is below
-        if (((radius_um >= min_radius_um) && (radius_um <= max_radius_um))) {
+        if (min_radius_um <= radius_um && radius_um <= max_radius_um) {
           // place remaining in vector
-          seeds.emplace_back(coord_center, radius,
-                             component->activeVoxelCount());
+          seeds.emplace_back(
+              coord_center, radius, component->activeVoxelCount());
         } else {
           ++removed_by_radii;
         }
