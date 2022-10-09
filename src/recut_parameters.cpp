@@ -105,7 +105,7 @@ void RecutCommandLineArgs::PrintUsage() {
             << MIN_SOMA_RADIUS_UM << " µm.\n";
   std::cout << "--max-radius         max allowed radius of the soma in µm. "
                "used in the soma detection phase. defaults to "
-            << MAX_SOMA_RADIUS_UM << " 18 µm.\n";
+            << MAX_SOMA_RADIUS_UM << " µm.\n";
   std::cout << "--save-vdbs          save intermediate VDB grids during "
                "reconstruction transformations\n";
   std::cout
@@ -269,7 +269,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--min-radius") == 0) {
         args.min_radius_um = atof(argv[i + 1]);
         ++i;
-        if (args.min_radius_um <= 0) {
+        if (args.min_radius_um < 0) {
           std::cerr << "--min-radius should be a positive float!\n";
           exit(1);
         }
