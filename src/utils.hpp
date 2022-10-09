@@ -3579,6 +3579,10 @@ auto create_seed_pairs =
         vto::fillWithSpheres(*component, spheres,
                              /*min, max total count of spheres allowed*/ {1, 1},
                              /*overlapping*/ false);
+        if (spheres.size() != 1) {
+          ++removed_by_inactivity;
+          continue;
+        }
         auto sphere = spheres[0];
         auto coord_center = GridCoord(sphere[0], sphere[1], sphere[2]);
 
