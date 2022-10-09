@@ -3553,10 +3553,22 @@ auto is_coordinate_active = [](EnlargedPointDataGrid::Ptr topology_grid,
   }
 };
 
-// Of all connected components, keep those whose central coordinate is an active
-// voxel in the point topology and estimate the radius given the bbox of the
-// component. If passing known seeds, then filter all components to only those
-// components which contain the passed seed
+// take a volume in image space (pixel) units
+// and adjust it to an approximate coverage in
+// world space (um^3) units
+// this works for iso or aniso voxel sizes
+// the adjustment would be exact for cubes
+// for spheres its probably close enough
+auto adjust_volume_by_voxel_size =
+    [](uint64_t volume, std::array<float, 3> voxel_size) -> uint64_t {
+  return static_cast<float>(volume) * voxel_size[0] * voxel_size[1] *
+         voxel_size[2];
+};
+
+// Of all connected components, keep those whose central coordinate is an
+// active voxel in the point topology and estimate the radius given the
+// bbox of the component. If passing known seeds, then filter all
+// components to only those components which contain the passed seed
 auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
                             EnlargedPointDataGrid::Ptr topology_grid,
                             std::array<float, 3> voxel_size,
@@ -3567,9 +3579,9 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
   auto removed_by_radii = 0;
   for (auto component : components) {
     std::vector<openvdb::Vec4s> spheres;
-    // it's possible to force this function to return spheres with a certain
-    // range of radii, but we'd rather see what the raw radii it returns for
-    // now and let the min and max radii filter them
+    // it's possible to force this function to return spheres with a
+    // certain range of radii, but we'd rather see what the raw radii
+    // it returns for now and let the min and max radii filter them
     vto::fillWithSpheres(*component, spheres,
                          /*min, max total count of spheres allowed*/ {1, 1},
                          /*overlapping*/ false);
@@ -3582,10 +3594,11 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
 
     if (is_coordinate_active(topology_grid, coord_center)) {
       if (!known_seeds.empty()) {
-        // convert to fog so that isValueOn returns whether it is within the
+        // convert to fog so that isValueOn returns whether it is
+        // within the
         openvdb::v9_1::tools::sdfToFogVolume(*component);
-        // component if no known seed is an active voxel in this component
-        // then remove this component
+        // component if no known seed is an active voxel in this
+        // component then remove this component
         if (rng::none_of(known_seeds, [&component](const auto &known_seed) {
               return component->tree().isValueOn(known_seed.coord);
             }))
@@ -3596,16 +3609,23 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
       continue;
     }
 
-    auto radius_um =
-        sphere[3] * sqrt(pow(voxel_size[0], 2) + pow(voxel_size[1], 2) +
-                         pow(voxel_size[2], 2));
+    // the radius is calculated by the distance of the center point
+    // to the nearest surface point voxel sizes can be anisotropic,
+    // and in such cases the radii is likely set by the distance (in
+    // voxels) along the lowest resolution (largest voxel length)
+    // dimension Example for a voxel size of [.2, .2, 1], if the
+    // radius returned was 3, it would be the actual radii_um is 3 um
+    // along the z-dimension therefore scale with the voxel dimension
+    // with the largest length
+    auto radius_um = sphere[3] * voxel_size[voxel_size.maxIndex()];
 
     if (min_radius_um <= radius_um && radius_um <= max_radius_um) {
       // sphere[3] is of type float
       // round to nearest 8-bit unsigned integer between 0 and 255
       auto radius = static_cast<uint8_t>(sphere[3] + 0.5);
       seeds.emplace_back(coord_center, radius, radius_um,
-                         component->activeVoxelCount());
+                         adjust_volume_by_voxel_size(
+                             component->activeVoxelCount(), voxel_size));
     } else {
       ++removed_by_radii;
     }
