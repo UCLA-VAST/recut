@@ -3139,8 +3139,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 #endif
     // technically it is modified by closing by 1 which has a very minimal
     // effect this API does not allow 0 closing
-    auto unmodified_sdf_grid = vto::topologyToLevelSet(*this->mask_grid, 1, 0);
-    auto sdf_grid = unmodified_sdf_grid->deepCopy();
+    auto sdf_grid = vto::topologyToLevelSet(*this->mask_grid, 1, 0);
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
     run_log << "min allowed soma radius in µm, " << args->min_radius_um << '\n';
