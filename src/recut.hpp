@@ -136,8 +136,7 @@ public:
   void prune_branch();
   void convert_topology();
 
-  void partition_components(
-      std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> seeds, bool prune);
+  void partition_components(std::vector<Seed> seeds, bool prune);
 
   void initialize_globals(const VID_t &grid_tile_size,
                           const VID_t &tile_block_size);
@@ -258,15 +257,14 @@ public:
   void update_hierarchical_dims(const GridCoord &tile_lengths);
   inline VID_t sub_block_to_block_id(VID_t iblock, VID_t jblock, VID_t kblock);
   template <class Container> void setup_radius(Container &fifo);
-  void activate_vids(
-      EnlargedPointDataGrid::Ptr grid,
-      const std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> &roots,
-      const std::string stage,
-      std::map<GridCoord, std::deque<VertexAttr>> &fifo,
-      std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo);
-  std::vector<std::tuple<GridCoord, uint8_t, uint64_t>>
-  process_marker_dir(const GridCoord grid_offsets, const GridCoord grid_lengths,
-                     int marker_base);
+  void
+  activate_vids(EnlargedPointDataGrid::Ptr grid, const std::vector<Seed> &roots,
+                const std::string stage,
+                std::map<GridCoord, std::deque<VertexAttr>> &fifo,
+                std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo);
+  std::vector<Seed> process_marker_dir(const GridCoord grid_offsets,
+                                       const GridCoord grid_lengths,
+                                       int marker_base);
   void set_parent_non_branch(const VID_t tile_id, const VID_t block_id,
                              VertexAttr *dst, VertexAttr *potential_new_parent);
 };
@@ -363,7 +361,7 @@ OffsetCoord Recut<image_t>::v_to_off(VID_t tile_id, VID_t block_id,
 
 // adds all markers to seeds
 template <class image_t>
-std::vector<std::tuple<GridCoord, unsigned char, uint64_t>>
+std::vector<Seed>
 Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
                                    const GridCoord grid_lengths,
                                    int marker_base) {
@@ -387,47 +385,46 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
   }
 
   // gather all markers within directory
-  auto seeds = std::vector<std::tuple<GridCoord, unsigned char, uint64_t>>();
+  auto seeds = std::vector<Seed>();
 
-  rng::for_each(
-      fs::directory_iterator(args->seed_path),
-      [this, marker_base, &seeds](auto marker_file) {
-        std::string fn(marker_file.path().filename());
-        const auto full_marker_name =
-            args->seed_path + marker_file.path().filename().string();
-        auto markers = readMarker_file(full_marker_name, marker_base);
-        assertm(markers.size() == 1, "only 1 marker file per soma");
-        auto marker = markers[0];
+  rng::for_each(fs::directory_iterator(args->seed_path), [this, marker_base,
+                                                          &seeds](
+                                                             auto marker_file) {
+    std::string fn(marker_file.path().filename());
+    const auto full_marker_name =
+        args->seed_path + marker_file.path().filename().string();
+    auto markers = readMarker_file(full_marker_name, marker_base);
+    assertm(markers.size() == 1, "only 1 marker file per soma");
+    auto marker = markers[0];
 
-        auto numbers =
-            fn | rv::split('_') | rng::to<std::vector<std::string>>();
-        if (numbers.size() != 5)
-          throw std::runtime_error(
-              "Marker file names must be in format marker_x_y_z_volume");
-        //  volume is the last number of the file name
-        uint64_t volume = std::stoull(numbers.back());
+    auto numbers = fn | rv::split('_') | rng::to<std::vector<std::string>>();
+    if (numbers.size() != 5)
+      throw std::runtime_error(
+          "Marker file names must be in format marker_x_y_z_volume");
+    //  volume is the last number of the file name
+    uint64_t volume = std::stoull(numbers.back());
 
-        if (marker.radius == 0) {
-          marker.radius = static_cast<unsigned char>(std::cbrt(volume) / (4/3 * PI) + 0.5);
-        }
+    if (marker.radius == 0) {
+      marker.radius =
+          static_cast<unsigned char>(std::cbrt(volume) / (4 / 3 * PI) + 0.5);
+    }
 
-        seeds.push_back(std::make_tuple(
-            // ones() + GridCoord(marker.x / args->downsample_factor,
-            // marker.y / args->downsample_factor,
-            // upsample_idx(args->upsample_z, marker.z)),
-            GridCoord(marker.x, marker.y, marker.z),
-            static_cast<unsigned char>(marker.radius + 0.5), volume));
-      });
+    // ones() + GridCoord(marker.x / args->downsample_factor,
+    // marker.y / args->downsample_factor,
+    // upsample_idx(args->upsample_z, marker.z)),
+    seeds.emplace_back(GridCoord(marker.x, marker.y, marker.z),
+                       static_cast<uint8_t>(marker.radius + 0.5),
+                       marker.radius, volume);
+  });
 
   auto filtered_seeds =
       seeds | rv::remove_if([this, &local_bbox](auto seed) {
-        auto [coord, _, __] = seed;
-        if (local_bbox.isInside(coord)) {
-          if (this->topology_grid->tree().isValueOn(coord)) {
+        if (local_bbox.isInside(seed.coord)) {
+          if (this->topology_grid->tree().isValueOn(seed.coord)) {
             return false;
           } else {
 #ifdef FULL_PRINT
-            cout << "Warning: seed at " << coord << " in image bbox "
+            cout << "Warning: seed at " << seed.coord << " in image bbox "
                  << local_bbox
                  << " is not selected in the segmentation so it is "
                     "ignored. "
@@ -437,7 +434,7 @@ Recut<image_t>::process_marker_dir(const GridCoord grid_offsets,
           }
         } else {
 #ifdef FULL_PRINT
-          cout << "Warning: seed at " << coord << " in image bbox "
+          cout << "Warning: seed at " << seed.coord << " in image bbox "
                << local_bbox
                << " is not within the images bounding box so it is "
                   "ignored\n";
@@ -472,8 +469,7 @@ void Recut<image_t>::setup_radius(Container &fifo) {
 
 template <class image_t>
 void Recut<image_t>::activate_vids(
-    EnlargedPointDataGrid::Ptr grid,
-    const std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> &seeds,
+    EnlargedPointDataGrid::Ptr grid, const std::vector<Seed> &seeds,
     const std::string stage, std::map<GridCoord, std::deque<VertexAttr>> &fifo,
     std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo) {
 
@@ -486,13 +482,11 @@ void Recut<image_t>::activate_vids(
     // std::cout << "Leaf BBox: " << leaf_bbox << '\n';
 
     // FILTER for those in this leaf
-    auto leaf_seed_coords =
-        seeds |
-        rv::transform([](const auto &seed) { return std::get<0>(seed); }) |
-        rv::remove_if([&leaf_bbox](GridCoord coord) {
-          return !leaf_bbox.isInside(coord);
-        }) |
-        rng::to_vector;
+    auto leaf_seed_coords = seeds | rv::transform(&Seed::coord) |
+                            rv::remove_if([&leaf_bbox](GridCoord coord) {
+                              return !leaf_bbox.isInside(coord);
+                            }) |
+                            rng::to_vector;
 
     if (leaf_seed_coords.empty())
       continue;
@@ -2725,8 +2719,7 @@ template <class image_t> void Recut<image_t>::prune_radii() {
 }
 
 template <class image_t>
-void Recut<image_t>::partition_components(
-    std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> seeds, bool prune) {
+void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 
   openvdb::GridPtrVec grids;
 #ifdef LOG
@@ -2783,8 +2776,7 @@ void Recut<image_t>::partition_components(
     // filter all roots within this component
     auto component_seeds = seeds |
                            rv::remove_if([&component](const auto &seed) {
-                             auto [coord, radius, _] = seed;
-                             return !component->tree().isValueOn(coord);
+                             return !component->tree().isValueOn(seed.coord);
                            }) |
                            rng::to_vector;
 
@@ -3061,7 +3053,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   start_run_dir_and_logs();
 
-  std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> seeds;
+  std::vector<Seed> seeds;
 
   // if point.vdb was not already set by input
   if (!this->input_is_vdb) {
@@ -3170,32 +3162,32 @@ template <class image_t> void Recut<image_t>::operator()() {
     auto filter =
         std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(*sdf_grid);
 
-    switch(args->morphological_operations_order) {
-      case 1:
-        std::cout << "\t1st order morphological operations\n";
-        filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
-        break;
-      case 2:
-        std::cout << "\t2nd order morphological operations\n";
-        filter->setSpatialScheme(openvdb::math::SECOND_BIAS);
-        break;
-      case 3:
-        std::cout << "\t3rd order morphological operations\n";
-        filter->setSpatialScheme(openvdb::math::THIRD_BIAS);
-        break;
-      case 4:
-        std::cout << "\t4th order morphological operations\n";
-        filter->setSpatialScheme(openvdb::math::WENO5_BIAS);
-        break;
-      case 5:
-        std::cout << "\t5th order morphological operations\n";
-        filter->setSpatialScheme(openvdb::math::HJWENO5_BIAS);
-        break;
-      default:
-        std::cout << "\tunexpected value for argument --order "
-                  << args->morphological_operations_order << "\n"
-                  << "\t1st order morphological operations\n";
-        filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
+    switch (args->morphological_operations_order) {
+    case 1:
+      std::cout << "\t1st order morphological operations\n";
+      filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
+      break;
+    case 2:
+      std::cout << "\t2nd order morphological operations\n";
+      filter->setSpatialScheme(openvdb::math::SECOND_BIAS);
+      break;
+    case 3:
+      std::cout << "\t3rd order morphological operations\n";
+      filter->setSpatialScheme(openvdb::math::THIRD_BIAS);
+      break;
+    case 4:
+      std::cout << "\t4th order morphological operations\n";
+      filter->setSpatialScheme(openvdb::math::WENO5_BIAS);
+      break;
+    case 5:
+      std::cout << "\t5th order morphological operations\n";
+      filter->setSpatialScheme(openvdb::math::HJWENO5_BIAS);
+      break;
+    default:
+      std::cout << "\tunexpected value for argument --order "
+                << args->morphological_operations_order << "\n"
+                << "\t1st order morphological operations\n";
+      filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
     }
     filter->setTemporalScheme(openvdb::math::TVD_RK1);
     run_log << "order, " << args->morphological_operations_order << '\n';

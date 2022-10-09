@@ -324,8 +324,8 @@ bool fastmarching_tree(std::vector<MyMarker *> roots, vector<MyMarker> &target,
       if (inimg1d[i] < min_int)
         min_int = inimg1d[i];
     }
-    //cout << "max_int: " << max_int << '\n';
-    //cout << "min_int: " << min_int << '\n';
+    // cout << "max_int: " << max_int << '\n';
+    // cout << "min_int: " << min_int << '\n';
   }
 
   assertm(max_int != 0, "max_int can't be zero");
@@ -1651,12 +1651,12 @@ bool marker_to_swc_file(std::string swc_file,
   return true;
 }
 
-// component_with_values and component_seeds are in global image coordinate frame
+// component_with_values and component_seeds are in global image coordinate
+// frame
 template <typename ValuedGrid>
 void run_app2(ValuedGrid component_with_values,
-              std::vector<std::tuple<GridCoord, uint8_t, uint64_t>> component_seeds,
-              std::string component_dir_fn, int index, int min_branch_length,
-              std::ofstream& component_log,
+              std::vector<Seed> component_seeds, std::string component_dir_fn,
+              int index, int min_branch_length, std::ofstream &component_log,
               bool global_bbox_adjust = false) {
   // the bkg_thresh is 0 for vdb to dense
   uint16_t bkg_thresh = 0;
@@ -1664,10 +1664,10 @@ void run_app2(ValuedGrid component_with_values,
 
   auto component_markers =
       component_seeds | rv::transform([](auto &seed) {
-        auto [coord, radius,_] = seed;
-        auto marker = new MyMarker(static_cast<double>(coord.x()),
-                                   static_cast<double>(coord.y()),
-                                   static_cast<double>(coord.z()), radius);
+        auto marker =
+            new MyMarker(static_cast<double>(seed.coord.x()),
+                         static_cast<double>(seed.coord.y()),
+                         static_cast<double>(seed.coord.z()), seed.radius_um);
         marker->type = 0; // mark as a root
         return marker;
       }) |
@@ -1715,14 +1715,14 @@ void run_app2(ValuedGrid component_with_values,
   }
 
   // print
-  auto app2_fn = component_dir_fn + "/app2-component-" + std::to_string(index) + ".swc";
+  auto app2_fn =
+      component_dir_fn + "/app2-component-" + std::to_string(index) + ".swc";
   if (component_seeds.size() < 2) {
-      auto coord = std::get<0>(component_seeds.front());
-      app2_fn = component_dir_fn + "/app2-tree-with-soma-xyz-" + 
-                  std::to_string(coord.x()) + '-' +
-                  std::to_string(coord.y()) + '-' +
-                  std::to_string(coord.z()) + ".swc";
-
+    auto seed = component_seeds.front();
+    app2_fn = component_dir_fn + "/app2-tree-with-soma-xyz-" +
+              std::to_string(seed.coord.x()) + '-' +
+              std::to_string(seed.coord.y()) + '-' +
+              std::to_string(seed.coord.z()) + ".swc";
   }
   marker_to_swc_file(app2_fn, app2_output_tree_prune);
 #ifdef LOG

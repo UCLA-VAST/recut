@@ -575,7 +575,7 @@ TEST(VDB, ActivateVids) {
   ASSERT_FALSE(recut.connected_map[GridCoord(0)].empty());
 
   GridCoord root(3, 3, 3);
-  ASSERT_EQ(root, std::get<0>(seeds[0])) << std::get<0>(seeds[0]);
+  ASSERT_EQ(root, seeds[0].coord);
   auto leaf_iter = recut.topology_grid->tree().probeLeaf(root);
   auto ind = leaf_iter->beginIndexVoxel(root);
   ASSERT_TRUE(leaf_iter->isValueOn(root));
@@ -684,7 +684,7 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
   recut.initialize();
   auto seeds =
       recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
-  cout << "root " << std::get<0>(seeds[0]) << '\n';
+  cout << "root " << seeds[0].coord << '\n';
 
   // TODO switch this to a more formal method
   // set the topology_grid mainly from file for this test
@@ -789,10 +789,9 @@ TEST(Utils, AdjustSomaRadii) {
 
   // check all root radii are 0
   rng::for_each(seeds, [&recut](const auto &seed) {
-    const auto [coord, radius,_] = seed;
-    const auto leaf = recut.topology_grid->tree().probeLeaf(coord);
+    const auto leaf = recut.topology_grid->tree().probeLeaf(seed.coord);
     assertm(leaf, "corresponding leaf of passed root must be active");
-    auto ind = leaf->beginIndexVoxel(coord);
+    auto ind = leaf->beginIndexVoxel(seed.coord);
     assertm(ind, "corresponding voxel of passed root must be active");
 
     // modify the radius value
@@ -807,10 +806,9 @@ TEST(Utils, AdjustSomaRadii) {
 
   // check all root radii have been changed
   rng::for_each(seeds, [&recut](const auto &seed) {
-    const auto [coord, radius,_] = seed;
-    const auto leaf = recut.topology_grid->tree().probeLeaf(coord);
+    const auto leaf = recut.topology_grid->tree().probeLeaf(seed.coord);
     assertm(leaf, "corresponding leaf of passed root must be active");
-    auto ind = leaf->beginIndexVoxel(coord);
+    auto ind = leaf->beginIndexVoxel(seed.coord);
     assertm(ind, "corresponding voxel of passed root must be active");
 
     // modify the radius value
@@ -2221,9 +2219,7 @@ TEST(Update, EachStageIteratively) {
                 std::vector<MyMarker *> root_markers;
                 if (tcase == 6) {
                   auto coords = seeds |
-                                rv::transform([](auto seed) {
-                                  return std::get<0>(seed);
-                                }) |
+                                rv::transform(&Seed::coord) |
                                 rng::to_vector;
                   root_markers = coords_to_markers(coords);
                 } else {
