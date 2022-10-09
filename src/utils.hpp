@@ -82,7 +82,7 @@ auto min_max = [](std::array<float, 3> arr) -> std::pair<float, float> {
     if (current < minx)
       minx = current;
   }
-  //return std::make_pair<float, float>(minx, maxx>);
+  // return std::make_pair<float, float>(minx, maxx>);
   return {minx, maxx};
 };
 
@@ -3161,6 +3161,35 @@ GridTypePtr merge_grids(std::vector<GridTypePtr> grids) {
   return final_grid;
 }
 
+// Warning this can not clip mask.vdb files
+// which is why SDFs are used
+openvdb::FloatGrid::Ptr clip_by_seed(openvdb::FloatGrid::Ptr grid,
+                                     std::vector<Seed> seeds,
+                                     float max_radius_um,
+                                     std::array<float, 3> voxel_size) {
+  auto min_max_pair = min_max(voxel_size);
+  // convert from world space (um) to image space (pixels)
+  // these are the offsets around the coordinate to keep
+  auto offset = GridCoord(max_radius_um / min_max_pair.second);
+
+  // parallelize
+  //std::vector<openvdb::FloatGrid::Ptr> component_grids;
+  //auto enum_components = seeds | rv::enumerate | rng::to_vector;
+  //tbb::task_arena arena(args->user_thread_count);
+  //arena.execute(
+      //[&] { tbb::parallel_for_each(enum_components, process_component); });
+
+  auto component_grids = seeds |
+                         rv::transform([grid, &offset](const Seed &seed) {
+                           vb::BBoxd clipBox((seed.coord - offset).asVec3d(),
+                                             (seed.coord + offset).asVec3d());
+                           return vto::clip(*grid, clipBox);
+                         }) |
+                         rng::to_vector;
+
+  return merge_grids(component_grids);
+}
+
 void write_marker_files(std::vector<MyMarker *> component_markers,
                         std::string component_dir_fn) {
   rng::for_each(component_markers, [&component_dir_fn](const auto marker) {
@@ -3502,7 +3531,7 @@ auto convert_sdf_to_points = [](auto sdf, auto image_lengths,
   return topology_grid;
 };
 
-auto anisotropic_factor = [](std::array<float,3> voxel_size) {
+auto anisotropic_factor = [](std::array<float, 3> voxel_size) {
   auto min_max_pair = min_max(voxel_size);
   // round to the nearest int
   return static_cast<uint16_t>((min_max_pair.second / min_max_pair.first) + .5);
@@ -3530,8 +3559,8 @@ auto write_seeds = [](std::string run_dir, std::vector<Seed> seeds,
     seed_file << "#x,y,z,radius in um based of voxel size: [" << voxel_size[0]
               << ',' << voxel_size[1] << ',' << voxel_size[2] << "]\n";
     seed_file << voxel_size[0] * seed.coord.x() << ','
-              << voxel_size[0] * seed.coord.y() << ','
-              << voxel_size[0] * seed.coord.z() << ',' << seed.radius_um
+              << voxel_size[1] * seed.coord.y() << ','
+              << voxel_size[2] * seed.coord.z() << ',' << seed.radius_um
               << '\n';
   });
 };
@@ -3570,6 +3599,47 @@ auto adjust_volume_by_voxel_size =
   return static_cast<float>(volume) * voxel_size[0] * voxel_size[1] *
          voxel_size[2];
 };
+
+std::vector<Seed>
+filter_seeds_by_points(EnlargedPointDataGrid::Ptr topology_grid,
+                       std::vector<Seed> seeds) {
+
+  // auto local_bbox =
+  // openvdb::math::CoordBBox(grid_offsets, grid_offsets + grid_lengths);
+
+  auto filtered_seeds =
+      seeds | rv::remove_if([topology_grid](auto seed) {
+        // if (local_bbox.isInside(seed.coord)) {
+        if (topology_grid->tree().isValueOn(seed.coord)) {
+          return false;
+        } else {
+#ifdef FULL_PRINT
+          cout << "Warning: seed at " << seed.coord
+               << " is not selected in the segmentation so it is "
+                  "ignored. "
+                  "May indicate the image and marker directories are  "
+                  "mismatched or major inaccuracies in segmentation\n ";
+#endif
+        }
+        //} else {
+        //#ifdef FULL_PRINT
+        // cout << "Warning: seed at " << seed.coord << " in image bbox "
+        //<< local_bbox
+        //<< " is not within the images bounding box so it is "
+        //"ignored\n";
+        //#endif
+        //}
+        return true; // remove it
+      }) |
+      rng::to_vector;
+
+#ifdef LOG
+  cout << "Only " << filtered_seeds.size() << " of " << seeds.size()
+       << " seeds in directory have an active voxel and are connected to a "
+          "component in the provided image\n";
+#endif
+  return filtered_seeds;
+}
 
 // Of all connected components, keep those whose central coordinate is an
 // active voxel in the point topology and estimate the radius given the

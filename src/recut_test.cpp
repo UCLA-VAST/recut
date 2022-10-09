@@ -267,7 +267,7 @@ TEST(VDB, InitializeGlobals) {
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
   auto seeds =
-      recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
+      recut.process_marker_dir(0);
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
 
   auto update_accessor = recut.update_grid->getConstAccessor();
@@ -417,7 +417,7 @@ TEST(VDB, IntegrateUpdateGrid) {
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
   auto seeds =
-      recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
+      recut.process_marker_dir(0);
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
   auto update_accessor = recut.update_grid->getAccessor();
   auto topology_accessor = recut.topology_grid->getConstAccessor();
@@ -558,7 +558,7 @@ TEST(VDB, ActivateVids) {
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
   auto seeds =
-      recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
+      recut.process_marker_dir(0);
 
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
 
@@ -613,7 +613,7 @@ TEST(VDB, DISABLED_PriorityQueue) {
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
   auto seeds =
-      recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
+      recut.process_marker_dir(0);
 
   // TODO switch this to a more formal method
   // set the topology_grid mainly from file for this test
@@ -683,7 +683,7 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
   auto seeds =
-      recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
+      recut.process_marker_dir(0);
   cout << "root " << seeds[0].coord << '\n';
 
   // TODO switch this to a more formal method
@@ -775,7 +775,7 @@ TEST(Utils, AdjustSomaRadii) {
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
   auto seeds =
-      recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
+      recut.process_marker_dir(0);
 
   // TODO switch this to a more formal method
   // set the topology_grid mainly from file for this test
@@ -953,7 +953,7 @@ TEST(VDB, Connected) {
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
   auto seeds =
-      recut.process_marker_dir(recut.image_offsets, recut.image_lengths, 0);
+      recut.process_marker_dir(0);
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
   auto stage = "connected";
   recut.activate_vids(recut.topology_grid, seeds, stage, recut.map_fifo,
@@ -2020,8 +2020,7 @@ TEST(Update, EachStageIteratively) {
 
             auto recut = Recut<uint16_t>(args);
             recut.initialize();
-            auto seeds = recut.process_marker_dir(recut.image_offsets,
-                                                        recut.image_lengths, 0);
+            auto seeds = recut.process_marker_dir(0);
 
             if (print_all) {
               std::cout << "ground truth image grid" << endl;
