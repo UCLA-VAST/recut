@@ -73,6 +73,19 @@ auto ones = []() { return new_grid_coord(1, 1, 1); };
 
 auto zeros_off = []() { return new_offset_coord(0, 0, 0); };
 
+auto min_max = [](std::array<float, 3> arr) -> std::pair<float, float> {
+  float maxx, minx = arr[0];
+  for (int i = 1; i < 3; ++i) {
+    auto current = arr[i];
+    if (maxx < current)
+      maxx = current;
+    if (current < minx)
+      minx = current;
+  }
+  //return std::make_pair<float, float>(minx, maxx>);
+  return {minx, maxx};
+};
+
 auto coord_invert = [](auto coord) {
   return new_offset_coord(-coord[0], -coord[1], -coord[2]);
 };
@@ -3489,17 +3502,10 @@ auto convert_sdf_to_points = [](auto sdf, auto image_lengths,
   return topology_grid;
 };
 
-auto anisotropic_factor = [](auto voxel_size) {
-  float maxx, minx = voxel_size[0];
-  for (int i = 1; i < 3; ++i) {
-    auto current = voxel_size[i];
-    if (maxx < current)
-      maxx = current;
-    if (current < minx)
-      minx = current;
-  }
+auto anisotropic_factor = [](std::array<float,3> voxel_size) {
+  auto min_max_pair = min_max(voxel_size);
   // round to the nearest int
-  return static_cast<uint16_t>((maxx / minx) + .5);
+  return static_cast<uint16_t>((min_max_pair.second / min_max_pair.first) + .5);
 };
 
 // write seed/somas to disk
@@ -3617,7 +3623,7 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
     // radius returned was 3, it would be the actual radii_um is 3 um
     // along the z-dimension therefore scale with the voxel dimension
     // with the largest length
-    auto radius_um = sphere[3] * voxel_size[voxel_size.maxIndex()];
+    auto radius_um = sphere[3] * min_max(voxel_size).second;
 
     if (min_radius_um <= radius_um && radius_um <= max_radius_um) {
       // sphere[3] is of type float
