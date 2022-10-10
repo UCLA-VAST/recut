@@ -298,8 +298,7 @@ auto write_swc = [](
 
     std::ofstream eswc_file;
     eswc_file.open(eswc_file_path);
-    eswc_file << "# Crop windows bounding volume: " << bbox << '\n'
-              << "# id type_id x y z radius parent_id"
+    eswc_file << "# id type_id x y z radius parent_id"
               << " seg_id level mode timestamp TFresindex\n";
 
     rng::for_each(tree, [&](const auto marker) {
