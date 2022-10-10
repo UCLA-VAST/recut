@@ -18,6 +18,7 @@ from numpy import ndarray, array, cbrt
 from numpy.linalg import norm
 from typing import List, Tuple
 from tqdm import tqdm
+from pandas import read_csv
 
 
 def gather_markers(seeds_path, max_radius=None, min_radius=None):
@@ -30,19 +31,19 @@ def gather_markers(seeds_path, max_radius=None, min_radius=None):
         # print("dir: ", dir_)
         # print("files: ", files)
         for file in files:
-            file = file.replace('.000000', '').replace('.txt', '')
-            # name = os.path.join(root, file)
             if 'marker_' in file:
-                x, y, z, volume = [int(i) for i in file.split('_')[1:]]
+                x, y, z, radius_um = read_csv(Path(root)/file, names=("x", "y", "z", "radius_um"), skiprows=1).loc[0, :].values.tolist()
+                file = file.replace('.000000', '').replace('.txt', '')
+                #x, y, z, volume = [int(i) for i in file.split('_')[1:]]
                 # print(x,y,z,volume)
-                radius = cbrt(volume * 3 / (4 * np.pi))
-                if max_radius and radius > max_radius:
+                # radius_um = cbrt(volume * 3 / (4 * np.pi))
+                if max_radius and radius_um > max_radius:
                     continue
-                if min_radius and radius < min_radius:
+                if min_radius and radius_um < min_radius:
                     continue
                 coord = (x - adjust, y - adjust, z - adjust)
                 markers.append((coord[0], coord[1], coord[2]))
-                markers_with_radii.append((coord[0], coord[1], coord[2], radius))
+                markers_with_radii.append((coord[0], coord[1], coord[2], radius_um))
     return markers, markers_with_radii
 
 
