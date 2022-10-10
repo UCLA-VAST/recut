@@ -3527,12 +3527,14 @@ auto write_seeds = [](std::string run_dir, std::vector<Seed> seeds,
             "_" + std::to_string(static_cast<int>(seed.volume)),
         std::ios::app);
     seed_file << std::fixed << std::setprecision(SWC_PRECISION);
-    seed_file << "#x,y,z,radius in um based of voxel size: [" << voxel_size[0]
-              << ',' << voxel_size[1] << ',' << voxel_size[2] << "]\n";
+    seed_file << "#x,y,z,radius in um based of voxel size: ["
+              << voxel_size[0] << ','
+              << voxel_size[1] << ','
+              << voxel_size[2] << "]\n";
     seed_file << voxel_size[0] * seed.coord.x() << ','
               << voxel_size[0] * seed.coord.y() << ','
-              << voxel_size[0] * seed.coord.z() << ',' << seed.radius_um
-              << '\n';
+              << voxel_size[0] * seed.coord.z() << ','
+              << seed.radius_um << '\n';
   });
 };
 
@@ -3583,6 +3585,7 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
   std::vector<Seed> seeds;
   auto removed_by_inactivity = 0;
   auto removed_by_radii = 0;
+  auto max_voxel_size = min_max(voxel_size).second;
   for (auto component : components) {
     std::vector<openvdb::Vec4s> spheres;
     // it's possible to force this function to return spheres with a
@@ -3618,16 +3621,17 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
     // the radius is calculated by the distance of the center point
     // to the nearest surface point voxel sizes can be anisotropic,
     // and in such cases the radii is likely set by the distance (in
-    // voxels) along the lowest resolution (largest voxel length)
+    // voxels) along the lowest resolution (the largest voxel length)
     // dimension Example for a voxel size of [.2, .2, 1], if the
     // radius returned was 3, it would be the actual radii_um is 3 um
     // along the z-dimension therefore scale with the voxel dimension
     // with the largest length
-    auto radius_um = sphere[3] * min_max(voxel_size).second;
-
+    auto radius_um = sphere[3] * max_voxel_size;
+    if (radius_um > max_radius_um || !radius_um)
+      std::cout << radius_um << " ";
     if (min_radius_um <= radius_um && radius_um <= max_radius_um) {
       // sphere[3] is of type float
-      // round to nearest 8-bit unsigned integer between 0 and 255
+      // round to the nearest 8-bit unsigned integer between 0 and 255
       auto radius = static_cast<uint8_t>(sphere[3] + 0.5);
       seeds.emplace_back(coord_center, radius, radius_um,
                          adjust_volume_by_voxel_size(
