@@ -32,9 +32,10 @@ def gather_markers(seeds_path, max_radius=None, min_radius=None):
         # print("files: ", files)
         for file in files:
             if 'marker_' in file:
-                x, y, z, radius_um = read_csv(Path(root)/file, names=("x", "y", "z", "radius_um"), skiprows=1).loc[0, :].values.tolist()
-                file = file.replace('.000000', '').replace('.txt', '')
-                #x, y, z, volume = [int(i) for i in file.split('_')[1:]]
+                x, y, z, radius_um = read_csv(
+                    Path(root)/file, names=("x", "y", "z", "radius_um"), skiprows=1).loc[0, :].values.tolist()
+                # file = file.replace('.000000', '').replace('.txt', '')
+                # x, y, z, volume = [int(i) for i in file.split('_')[1:]]
                 # print(x,y,z,volume)
                 # radius_um = cbrt(volume * 3 / (4 * np.pi))
                 if max_radius and radius_um > max_radius:
@@ -42,8 +43,8 @@ def gather_markers(seeds_path, max_radius=None, min_radius=None):
                 if min_radius and radius_um < min_radius:
                     continue
                 coord = (x - adjust, y - adjust, z - adjust)
-                markers.append((coord[0], coord[1], coord[2]))
-                markers_with_radii.append((coord[0], coord[1], coord[2], radius_um))
+                markers.append(coord)
+                markers_with_radii.append(coord + (radius_um, ))
     return markers, markers_with_radii
 
 
