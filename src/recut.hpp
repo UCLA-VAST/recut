@@ -1984,7 +1984,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
                              T3 &float_grids, T4 &mask_grids, std::string stage,
                              HistV &histogram) {
 
-  // only start tiles that have active processing to do
+  // only start with tiles that have active processing to do
   if (!active_tiles[tile_id]) {
     return;
   }
@@ -2023,7 +2023,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
       else if (bits_per_sample == 16)
         dense_tile = load_tile<uint16_t>(tile_bbox, args->input_path);
       else
-        throw std::runtime_error("TIFF bits per sample not supported");
+        throw std::runtime_error("Only 8-bits and 16-bits TIFF are supported");
     }
 
     ThreshV tile_thresholds;
