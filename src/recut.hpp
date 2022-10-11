@@ -2583,9 +2583,8 @@ template <class image_t> void Recut<image_t>::initialize() {
               << " y=" << this->args->voxel_size[1]
               << " z=" << this->args->voxel_size[2] << "\n";
     if (!this->args->convert_only) {
-      std::cout << "--prune-radius was set to: "
-                << this->args->prune_radius.value()
-                << " by calculating the anisotropic factor of --voxel-size\n";
+      std::cout << "prune radius: " << this->args->prune_radius.value()
+                << " . Calculated by the anisotropic factor of voxel sizes.\n";
     }
 #endif
   }
