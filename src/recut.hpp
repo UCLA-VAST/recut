@@ -1984,7 +1984,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
                              T3 &float_grids, T4 &mask_grids, std::string stage,
                              HistV &histogram) {
 
-  // only start tiles that have active processing to do
+  // only start with tiles that have active processing to do
   if (!active_tiles[tile_id]) {
     return;
   }
@@ -2023,7 +2023,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
       else if (bits_per_sample == 16)
         dense_tile = load_tile<uint16_t>(tile_bbox, args->input_path);
       else
-        throw std::runtime_error("TIFF bits per sample not supported");
+        throw std::runtime_error("Only 8-bits and 16-bits TIFF are supported");
     }
 
     ThreshV tile_thresholds;
@@ -2583,9 +2583,8 @@ template <class image_t> void Recut<image_t>::initialize() {
               << " y=" << this->args->voxel_size[1]
               << " z=" << this->args->voxel_size[2] << "\n";
     if (!this->args->convert_only) {
-      std::cout << "--prune-radius was set to: "
-                << this->args->prune_radius.value()
-                << " by calculating the anisotropic factor of --voxel-size\n";
+      std::cout << "prune radius: " << this->args->prune_radius.value()
+                << " . Calculated by the anisotropic factor of voxel sizes.\n";
     }
 #endif
   }
@@ -3217,6 +3216,9 @@ template <class image_t> void Recut<image_t>::operator()() {
     if (args->save_vdbs)
       write_vdb_file({sdf_grid}, this->run_dir + "/opened_sdf.vdb");
 
+#ifdef LOG
+    std::cout << "\tsegmentation step\n";
+#endif
     std::vector<openvdb::FloatGrid::Ptr> components;
     timer.restart();
     openvdb::v9_1::tools::segmentSDF(*sdf_grid, components);
@@ -3224,6 +3226,9 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log << "Segment, " << timer.elapsed() << "\n";
 
     // build full SDF by extending known somas into reachable neurites
+#ifdef LOG
+    std::cout << "\tmasking step\n";
+#endif
     timer.restart();
     auto masked_sdf = vto::maskSdf(*sdf_grid, *closed_sdf);
     run_log << "Mask SDF elapsed time, " << timer.elapsed() << "\n";
@@ -3233,6 +3238,9 @@ template <class image_t> void Recut<image_t>::operator()() {
     if (args->save_vdbs)
       write_vdb_file({masked_sdf}, this->run_dir + "/connected_sdf.vdb");
 
+#ifdef LOG
+    std::cout << "\tSDF to point step\n";
+#endif
     this->topology_grid = convert_sdf_to_points(masked_sdf, this->image_lengths,
                                                 this->args->foreground_percent);
 
@@ -3241,9 +3249,15 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     // adds all valid markers to roots vector
     // filters by user input seeds if available
+#ifdef LOG
+    std::cout << "\tcreate seed pairs step\n";
+#endif
     seeds = create_seed_pairs(components, this->topology_grid,
                               this->args->voxel_size, this->args->min_radius_um,
                               this->args->max_radius_um, known_seeds);
+#ifdef LOG
+    std::cout << "\twriting seeds step\n";
+#endif
     write_seeds(this->run_dir, seeds, this->args->voxel_size);
 
     run_log << "Seed count, " << seeds.size() << "\n";

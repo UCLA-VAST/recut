@@ -2283,8 +2283,9 @@ auto print_swc_line = [](std::array<double, 3> swc_coord, bool is_root,
   line << std::fixed << std::setprecision(SWC_PRECISION);
 
   // coordinates
-  line << voxel_size[0] * swc_coord[0] << ' ' << voxel_size[1] * swc_coord[1]
-       << ' ' << voxel_size[2] * swc_coord[2] << ' ';
+  line << voxel_size[0] * swc_coord[0] << ' '
+       << voxel_size[1] * swc_coord[1] << ' '
+       << voxel_size[2] * swc_coord[2] << ' ';
 
   // radius, already been adjsuted to voxel size
   line << static_cast<float>(radius) << ' ';
