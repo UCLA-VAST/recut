@@ -3108,6 +3108,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log << "min allowed soma radius in µm, " << args->min_radius_um << '\n';
     run_log << "max allowed soma radius in µm, " << args->max_radius_um << '\n';
     run_log << "Topology voxel count, " << sdf_grid->activeVoxelCount() << '\n';
+    run_log.flush();
 
     // collects user passed seeds if any
     auto known_seeds = process_marker_dir(0);
@@ -3182,6 +3183,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log << "open denoise iterations, " << args->open_denoise << '\n';
     run_log << "open denoise voxel count, " << sdf_grid->activeVoxelCount()
             << '\n';
+    run_log.flush();
 
     // close to fill the holes inside somata where cell nuclei are
 #ifdef LOG
@@ -3193,6 +3195,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log << "Closing elapsed time, " << timer.elapsed() << "\n";
     run_log << "Closing iterations, " << args->close_steps << "\n";
     run_log << "Closed voxel count, " << sdf_grid->activeVoxelCount() << "\n";
+    run_log.flush();
 
     auto closed_sdf = sdf_grid->deepCopy();
     if (args->save_vdbs)
@@ -3212,6 +3215,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     }
     run_log << "Opening iterations, " << args->open_steps << "\n";
     run_log << "Opened voxel count, " << sdf_grid->activeVoxelCount() << "\n";
+    run_log.flush();
 
     if (args->save_vdbs)
       write_vdb_file({sdf_grid}, this->run_dir + "/opened_sdf.vdb");
@@ -3234,6 +3238,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log << "Mask SDF elapsed time, " << timer.elapsed() << "\n";
     run_log << "Masked SDF voxel count, " << masked_sdf->activeVoxelCount()
             << "\n";
+    run_log.flush();
 
     if (args->save_vdbs)
       write_vdb_file({masked_sdf}, this->run_dir + "/connected_sdf.vdb");
