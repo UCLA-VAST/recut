@@ -3216,6 +3216,9 @@ template <class image_t> void Recut<image_t>::operator()() {
     if (args->save_vdbs)
       write_vdb_file({sdf_grid}, this->run_dir + "/opened_sdf.vdb");
 
+#ifdef LOG
+    std::cout << "\tsegmentation step\n";
+#endif
     std::vector<openvdb::FloatGrid::Ptr> components;
     timer.restart();
     openvdb::v9_1::tools::segmentSDF(*sdf_grid, components);
@@ -3223,6 +3226,9 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log << "Segment, " << timer.elapsed() << "\n";
 
     // build full SDF by extending known somas into reachable neurites
+#ifdef LOG
+    std::cout << "\tmasking step\n";
+#endif
     timer.restart();
     auto masked_sdf = vto::maskSdf(*sdf_grid, *closed_sdf);
     run_log << "Mask SDF elapsed time, " << timer.elapsed() << "\n";
@@ -3232,6 +3238,9 @@ template <class image_t> void Recut<image_t>::operator()() {
     if (args->save_vdbs)
       write_vdb_file({masked_sdf}, this->run_dir + "/connected_sdf.vdb");
 
+#ifdef LOG
+    std::cout << "\tSDF to point step\n";
+#endif
     this->topology_grid = convert_sdf_to_points(masked_sdf, this->image_lengths,
                                                 this->args->foreground_percent);
 
@@ -3240,9 +3249,15 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     // adds all valid markers to roots vector
     // filters by user input seeds if available
+#ifdef LOG
+    std::cout << "\tcreate seed pairs step\n";
+#endif
     seeds = create_seed_pairs(components, this->topology_grid,
                               this->args->voxel_size, this->args->min_radius_um,
                               this->args->max_radius_um, known_seeds);
+#ifdef LOG
+    std::cout << "\twriting seeds step\n";
+#endif
     write_seeds(this->run_dir, seeds, this->args->voxel_size);
 
     run_log << "Seed count, " << seeds.size() << "\n";
