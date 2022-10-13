@@ -2703,6 +2703,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     run_log.open(log_fn, std::ios::app);
     run_log << "Active, " << this->topology_grid->activeVoxelCount() << '\n';
     run_log << "Selected, " << selected_count << '\n';
+    run_log.flush();
     assertm(selected_count, "active voxels in float grid must be > 0");
   }
 
@@ -2795,7 +2796,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     component_log << "Soma count, " << component_seeds.size() << '\n';
     component_log << "Component count, " << markers.size() << '\n';
     component_log << "TC count, " << pruned_markers.size() << '\n';
-    component_log << "TC, " << timer.elapsed() << '\n';
+    component_log << "TC elapsed time, " << timer.elapsed() << '\n';
 #endif
 
     timer.restart();
@@ -3227,7 +3228,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     timer.restart();
     openvdb::v9_1::tools::segmentSDF(*sdf_grid, components);
     run_log << "Initial seed count, " << components.size() << "\n";
-    run_log << "Segment, " << timer.elapsed() << "\n";
+    run_log << "segmentation elapsed time, " << timer.elapsed() << "\n";
 
     // build full SDF by extending known somas into reachable neurites
 #ifdef LOG
