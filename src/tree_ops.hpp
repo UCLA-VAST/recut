@@ -221,13 +221,10 @@ auto partition_cluster = [](const std::vector<MyMarker *> &cluster) {
 };
 
 // assumes tree passed is sorted root at front of tree
-auto write_swc = [](
-                     std::vector<MyMarker *> &tree,
-                     std::array<float, 3> voxel_size,
-                     std::string component_dir_fn = ".",
-                     CoordBBox bbox = {},
-                     bool bbox_adjust = false,
-                     bool is_eswc = false) {
+auto write_swc = [](std::vector<MyMarker *> &tree,
+                    std::array<float, 3> voxel_size,
+                    std::string component_dir_fn = ".", CoordBBox bbox = {},
+                    bool bbox_adjust = false, bool is_eswc = false) {
   auto root = tree.front();
   if (root->type)
     throw std::runtime_error("First marker of tree must be a root (type 0)");
@@ -248,10 +245,10 @@ auto write_swc = [](
   rng::for_each(tree, [&](const auto marker) {
     auto coord = std::array<double, 3>{marker->x, marker->y, marker->z};
     auto is_root = marker->type == 0;
-    auto parent_coord = is_root ? coord : std::array<double, 3>{
-                                              marker->parent->x,
-                                              marker->parent->y,
-                                              marker->parent->z};
+    auto parent_coord =
+        is_root ? coord
+                : std::array<double, 3>{marker->parent->x, marker->parent->y,
+                                        marker->parent->z};
     // expects an offset to a parent
     print_swc_line(coord, is_root, marker->radius, parent_coord, bbox, swc_file,
                    coord_to_swc_id, voxel_size, bbox_adjust, false);
@@ -265,7 +262,8 @@ auto write_swc = [](
     std::ofstream ano_file;
     ano_file.open(swc_base + ".ano");
     ano_file << "APOFILE=" << apo_file_name_base << "\n";
-    ano_file << "SWCFILE=" << file_name_base + ".ano.eswc" << "\n";
+    ano_file << "SWCFILE=" << file_name_base + ".ano.eswc"
+             << "\n";
     ano_file.close();
 
     auto marker = tree[0];
@@ -284,9 +282,8 @@ auto write_swc = [](
     // orderinfo,name,comment
     apo_file << ",,,";
     // z,x,y
-    apo_file << voxel_size[2] * marker->z << ','
-             << voxel_size[0] * marker->x << ','
-             << voxel_size[1] * marker->y << ',';
+    apo_file << voxel_size[2] * marker->z << ',' << voxel_size[0] * marker->x
+             << ',' << voxel_size[1] * marker->y << ',';
     // pixmax,intensity,sdev,
     apo_file << "0.,0.,0.,";
     // volsize
@@ -304,14 +301,13 @@ auto write_swc = [](
     rng::for_each(tree, [&](const auto marker) {
       auto coord = std::array<double, 3>{marker->x, marker->y, marker->z};
       auto is_root = marker->type == 0;
-      auto parent_coord = is_root ? coord : std::array<double, 3>{
-                                                marker->parent->x,
-                                                marker->parent->y,
-                                                marker->parent->z};
+      auto parent_coord =
+          is_root ? coord
+                  : std::array<double, 3>{marker->parent->x, marker->parent->y,
+                                          marker->parent->z};
       // expects an offset to a parent
-      print_swc_line(
-          coord, is_root, marker->radius, parent_coord, bbox, eswc_file,
-          coord_to_swc_id, voxel_size, bbox_adjust, true);
+      print_swc_line(coord, is_root, marker->radius, parent_coord, bbox,
+                     eswc_file, coord_to_swc_id, voxel_size, bbox_adjust, true);
     });
   }
 };
@@ -515,7 +511,7 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
   // nX[0].corr = FLT_MAX; // so that the dummy node gets index 0 again, larges
   // correlation
   vector<long> indices(nX.size());
-  for (long i = 0; i < indices.size(); ++i)
+  for (VID_t i = 0; i < indices.size(); ++i)
     indices[i] = i;
   // TODO sort by float value if possible
   // sort(indices.begin(), indices.end(), CompareIndicesByNodeCorrVal(&nX));
@@ -558,7 +554,7 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
         X2Y[nbr_idx] = nY.size();
 
         // modifies marker to have a set of marker nbs
-        for (int k = 0; k < nX[nbr_idx]->nbr.size(); ++k) {
+        for (VID_t k = 0; k < nX[nbr_idx]->nbr.size(); ++k) {
           nYi->nbr.push_back(
               nX[nbr_idx]
                   ->nbr[k]); // append the neighbours of the group members
@@ -617,7 +613,7 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
   //}
 
   // add soma nodes first
-  for (long i = 0; i < indices.size(); ++i) {
+  for (VID_t i = 0; i < indices.size(); ++i) {
     long ci = indices[i];
 
     if (nX[ci]->type != 0)
@@ -628,7 +624,7 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
   }
 
   // add remaining nodes
-  for (long i = 0; i < indices.size(); ++i) {
+  for (VID_t i = 0; i < indices.size(); ++i) {
     long ci = indices[i];
 
     if (X2Y[ci] != -1)
@@ -641,8 +637,8 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
   // once complete mapping is established, update the indices from
   // the original linear index to the new sparse group index according
   // to the X2Y idx map vector
-  for (int i = 1; i < nY.size(); ++i) {
-    for (int nbr_idx = 0; nbr_idx < nY[i]->nbr.size(); ++nbr_idx) {
+  for (VID_t i = 1; i < nY.size(); ++i) {
+    for (VID_t nbr_idx = 0; nbr_idx < nY[i]->nbr.size(); ++nbr_idx) {
       nY[i]->nbr[nbr_idx] = X2Y[nY[i]->nbr[nbr_idx]];
     }
   }
@@ -678,7 +674,7 @@ extract_trees(std::vector<MyMarker *> nlist,
   vector<int> nmap(nlist.size());
   vector<int> parent(nlist.size());
 
-  for (int i = 0; i < nlist.size(); ++i) {
+  for (VID_t i = 0; i < nlist.size(); ++i) {
     dist[i] = INT_MAX;
     nmap[i] = -1;   // indexing in output tree
     parent[i] = -1; // parent index in current tree
@@ -693,7 +689,7 @@ extract_trees(std::vector<MyMarker *> nlist,
   int seed;
 
   auto get_undiscovered2 = [](std::vector<int> dist) -> int {
-    for (int i = 1; i < dist.size(); i++) {
+    for (VID_t i = 1; i < dist.size(); i++) {
       if (dist[i] == INT_MAX) {
         return i;
       }
@@ -734,7 +730,7 @@ extract_trees(std::vector<MyMarker *> nlist,
         auto nbrs = nlist[curr]->nbr;
         auto min_idx = 0;
         auto min_element = nbrs[min_idx];
-        for (int i = 0; i < nbrs.size(); ++i) {
+        for (VID_t i = 0; i < nbrs.size(); ++i) {
           if (nbrs[i] < min_element) {
             min_element = nbrs[i];
           }
@@ -749,7 +745,7 @@ extract_trees(std::vector<MyMarker *> nlist,
       ++nodesInTree;
 
       // for each node adjacent to current
-      for (int nbr_idx = 0; nbr_idx < nlist[curr]->nbr.size(); nbr_idx++) {
+      for (VID_t nbr_idx = 0; nbr_idx < nlist[curr]->nbr.size(); nbr_idx++) {
 
         int adj = nlist[curr]->nbr[nbr_idx];
 

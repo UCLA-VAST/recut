@@ -5,7 +5,7 @@ template <class image_t> struct TileThresholds {
   image_t min_int;
   image_t bkg_thresh;
   const std::vector<double> givals{
-    22026.5, 20368,   18840.3, 17432.5, 16134.8, 14938.4, 13834.9, 12816.8,
+      22026.5, 20368,   18840.3, 17432.5, 16134.8, 14938.4, 13834.9, 12816.8,
       11877.4, 11010.2, 10209.4, 9469.8,  8786.47, 8154.96, 7571.17, 7031.33,
       6531.99, 6069.98, 5642.39, 5246.52, 4879.94, 4540.36, 4225.71, 3934.08,
       3663.7,  3412.95, 3180.34, 2964.5,  2764.16, 2578.14, 2405.39, 2244.9,
@@ -42,23 +42,24 @@ template <class image_t> struct TileThresholds {
   TileThresholds<image_t>() {}
 
   TileThresholds<image_t>(image_t max_int, image_t min_int, image_t bkg_thresh)
-    : max_int(max_int), min_int(min_int), bkg_thresh(bkg_thresh) {}
+      : max_int(max_int), min_int(min_int), bkg_thresh(bkg_thresh) {}
 
   friend std::ostream &operator<<(std::ostream &os, const TileThresholds &tt) {
-    os << "[max: " << tt.max_int << ", min: " << tt.min_int << ", bkg_thresh: " << tt.bkg_thresh << ']';
+    os << "[max: " << tt.max_int << ", min: " << tt.min_int
+       << ", bkg_thresh: " << tt.bkg_thresh << ']';
     return os;
   }
 
   double calc_weight(image_t pixel) const {
     std::ostringstream err;
-    //cout << +( pixel ) << '\n';
-    //cout << +( this->max_int) << '\n';
+    // cout << +( pixel ) << '\n';
+    // cout << +( this->max_int) << '\n';
     assertm(pixel <= this->max_int, "pixel can not exceed max int");
     assertm(pixel >= this->min_int, "pixel can not be below min int");
     // max and min set as double to align with look up table for value
     // estimation
     auto idx = (int)((pixel - static_cast<double>(this->min_int)) /
-        static_cast<double>(this->max_int) * 255);
+                     static_cast<double>(this->max_int) * 255);
     assertm(idx < 256, "givals index can not exceed 255");
     assertm(idx >= 0, "givals index negative");
     return this->givals[idx];
@@ -71,14 +72,14 @@ template <class image_t> struct TileThresholds {
     // GI parameter min_int, max_int
     buffer_t local_max = 0; // maximum intensity, used in GI
     buffer_t local_min = std::numeric_limits<buffer_t>::max(); // max value
-    //#pragma omp parallel for reduction(max:local_max)
-    for (auto i = 0; i < tile_vertex_size; i++) {
+    // #pragma omp parallel for reduction(max:local_max)
+    for (VID_t i = 0; i < tile_vertex_size; i++) {
       if (img[i] > local_max) {
         local_max = img[i];
       }
     }
-    //#pragma omp parallel for reduction(min:local_min)
-    for (auto i = 0; i < tile_vertex_size; i++) {
+    // #pragma omp parallel for reduction(min:local_min)
+    for (VID_t i = 0; i < tile_vertex_size; i++) {
       if (img[i] < local_min) {
         local_min = img[i];
         // cout << "local_min" << +local_min << '\n';

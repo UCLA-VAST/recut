@@ -74,7 +74,8 @@ auto ones = []() { return new_grid_coord(1, 1, 1); };
 auto zeros_off = []() { return new_offset_coord(0, 0, 0); };
 
 auto min_max = [](std::array<float, 3> arr) -> std::pair<float, float> {
-  float maxx, minx = arr[0];
+  float maxx = arr[0];
+  float minx = arr[0];
   for (int i = 1; i < 3; ++i) {
     auto current = arr[i];
     if (maxx < current)
@@ -754,7 +755,7 @@ template <typename image_t> void print_image(image_t *inimg1d, VID_t size) {
 // Note this test is on a single pixel width path through
 // the domain, thus it's an extremely hard test to pass
 // not even original fastmarching can
-// recover all of the original pixels
+// recover all the original pixels
 template <typename image_t>
 VID_t trace_mesh_image(VID_t id, image_t *inimg1d, const VID_t desired_selected,
                        int grid_size) {
@@ -1195,11 +1196,11 @@ VID_t create_image(int tcase, image_t *inimg1d, int grid_size,
           double R = sqrt(x * x + y * y + z * z);
           found_barrier_region = false;
           std::vector<double> Rvecs = {.15, .25, .35, .45};
-          for (int ri = 0; ri < Rvecs.size(); ri++) {
+          for (std::vector<double>::size_type ri = 0; ri < Rvecs.size(); ri++) {
             double Rvec = Rvecs[ri];
             bool condition0, condition1;
             condition0 = condition1 = false;
-            if (Rvec < R < Rvec + w) {
+            if (Rvec < R && R < Rvec + w) {
               condition0 = true;
             }
             if (ri == 0) {
@@ -1322,7 +1323,7 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
 
   for (auto &xi : x) {
     for (auto &yi : y) {
-      for (int zi; zi < grid_size; zi++) {
+      for (int zi=0; zi < grid_size; zi++) {
         int index = int(xi + yi * grid_size + zi * grid_size * grid_size);
         if (inimg1d[index] != 1) {
           inimg1d[index] = 1; // set to max
@@ -1334,7 +1335,7 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
 
   for (auto &xi : x) {
     for (auto &zi : z) {
-      for (int yi; yi < grid_size; yi++) {
+      for (int yi=0; yi < grid_size; yi++) {
         int index = int(xi + yi * grid_size + zi * grid_size * grid_size);
         if (inimg1d[index] != 1) {
           inimg1d[index] = 1; // set to max
@@ -1346,7 +1347,7 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
 
   for (auto &yi : y) {
     for (auto &zi : z) {
-      for (int xi; xi < grid_size; xi++) {
+      for (int xi=0; xi < grid_size; xi++) {
         int index = int(xi + yi * grid_size + zi * grid_size * grid_size);
         if (inimg1d[index] != 1) {
           inimg1d[index] = 1; // set to max
@@ -2283,9 +2284,8 @@ auto print_swc_line = [](std::array<double, 3> swc_coord, bool is_root,
   line << std::fixed << std::setprecision(SWC_PRECISION);
 
   // coordinates
-  line << voxel_size[0] * swc_coord[0] << ' '
-       << voxel_size[1] * swc_coord[1] << ' '
-       << voxel_size[2] * swc_coord[2] << ' ';
+  line << voxel_size[0] * swc_coord[0] << ' ' << voxel_size[1] * swc_coord[1]
+       << ' ' << voxel_size[2] * swc_coord[2] << ' ';
 
   // radius, already been adjsuted to voxel size
   line << static_cast<float>(radius) << ' ';
@@ -2448,7 +2448,7 @@ void check_nbr(vector<MyMarker *> &nX) {
                      nX[i]->nbr.end());
 
     // remove self linkages
-    int pos =
+    long int pos =
         find(nX[i]->nbr.begin(), nX[i]->nbr.end(), i) - nX[i]->nbr.begin();
     if (pos >= 0 && pos < nX[i]->nbr.size())
       nX[i]->nbr.erase(nX[i]->nbr.begin() + pos); // remove at pos
@@ -2459,7 +2459,7 @@ void check_nbr(vector<MyMarker *> &nX) {
     for (VID_t j = 0; j < nX[i]->nbr.size(); ++j) {
       if (i != j) {
         bool fnd = false;
-        for (int k = 0; k < nX[nX[i]->nbr[j]]->nbr.size(); ++k) {
+        for (VID_t k = 0; k < nX[nX[i]->nbr[j]]->nbr.size(); ++k) {
           if (nX[nX[i]->nbr[j]]->nbr[k] == i) {
             fnd = true;
             break;
@@ -3149,7 +3149,7 @@ GridTypePtr merge_grids(std::vector<GridTypePtr> grids) {
   if (grids.size() < 1)
     throw std::runtime_error("Can't merge empty grids");
 
-  for (int i = 0; i < (grids.size() - 1); ++i) {
+  for (VID_t i = 0; i < (grids.size() - 1); ++i) {
     grids[i + 1]->tree().merge(grids[i]->tree(),
                                vb::MERGE_ACTIVE_STATES_AND_NODES);
     // alternate method:
@@ -3174,11 +3174,11 @@ openvdb::FloatGrid::Ptr clip_by_seed(openvdb::FloatGrid::Ptr grid,
   auto offset = GridCoord(max_radius_um / min_max_pair.second);
 
   // parallelize
-  //std::vector<openvdb::FloatGrid::Ptr> component_grids;
-  //auto enum_components = seeds | rv::enumerate | rng::to_vector;
-  //tbb::task_arena arena(args->user_thread_count);
-  //arena.execute(
-      //[&] { tbb::parallel_for_each(enum_components, process_component); });
+  // std::vector<openvdb::FloatGrid::Ptr> component_grids;
+  // auto enum_components = seeds | rv::enumerate | rng::to_vector;
+  // tbb::task_arena arena(args->user_thread_count);
+  // arena.execute(
+  //[&] { tbb::parallel_for_each(enum_components, process_component); });
 
   auto component_grids = seeds |
                          rv::transform([grid, &offset](const Seed &seed) {
@@ -3557,10 +3557,8 @@ auto write_seeds = [](std::string run_dir, std::vector<Seed> seeds,
             "_" + std::to_string(static_cast<int>(seed.volume)),
         std::ios::app);
     seed_file << std::fixed << std::setprecision(SWC_PRECISION);
-    seed_file << "#x,y,z,radius in um based of voxel size: ["
-              << voxel_size[0] << ','
-              << voxel_size[1] << ','
-              << voxel_size[2] << "]\n";
+    seed_file << "#x,y,z,radius in um based of voxel size: [" << voxel_size[0]
+              << ',' << voxel_size[1] << ',' << voxel_size[2] << "]\n";
     seed_file << voxel_size[0] * seed.coord.x() << ','
               << voxel_size[1] * seed.coord.y() << ','
               << voxel_size[2] * seed.coord.z() << ',' << seed.radius_um
@@ -3625,12 +3623,12 @@ filter_seeds_by_points(EnlargedPointDataGrid::Ptr topology_grid,
 #endif
         }
         //} else {
-        //#ifdef FULL_PRINT
+        // #ifdef FULL_PRINT
         // cout << "Warning: seed at " << seed.coord << " in image bbox "
         //<< local_bbox
         //<< " is not within the images bounding box so it is "
         //"ignored\n";
-        //#endif
+        // #endif
         //}
         return true; // remove it
       }) |

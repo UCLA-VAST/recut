@@ -28,7 +28,9 @@
 #include <unistd.h>
 #include <unordered_set>
 
-template <typename... Ts> struct Overload : Ts... { using Ts::operator()...; };
+template <typename... Ts> struct Overload : Ts... {
+  using Ts::operator()...;
+};
 template <class... Ts> Overload(Ts...) -> Overload<Ts...>;
 
 using ThreshV =
@@ -1256,7 +1258,7 @@ void Recut<image_t>::integrate_update_grid(
 }
 
 template <class image_t> void Recut<image_t>::activate_all_tiles() {
-  for (auto tile_id = 0; tile_id < grid_tile_size; ++tile_id) {
+  for (VID_t tile_id = 0; tile_id < grid_tile_size; ++tile_id) {
     active_tiles[tile_id] = true;
   }
 }
@@ -1270,7 +1272,7 @@ template <class image_t> bool Recut<image_t>::are_tiles_finished() {
 #ifdef LOG_FULL
   cout << "Tiles active: ";
 #endif
-  for (auto tile_id = 0; tile_id < grid_tile_size; ++tile_id) {
+  for (VID_t tile_id = 0; tile_id < grid_tile_size; ++tile_id) {
     if (active_tiles[tile_id]) {
       tot_active++;
 #ifdef LOG_FULL
@@ -1326,9 +1328,9 @@ bool Recut<image_t>::any_fifo_active(
   // if (tot_active == 0) {
   // return true;
   //} else {
-  //#ifdef LOG_FULL
+  // #ifdef LOG_FULL
   // cout << '\n' << tot_active << " total blocks active" << '\n';
-  //#endif
+  // #endif
   // return false;
   //}
 }
@@ -2040,10 +2042,10 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
 
     auto convert_start = tile_timer.elapsed();
 
-    //#ifdef FULL_PRINT
-    // cout << "print_image\n";
-    // print_image_3D(dense_tile->data(), tile_bbox.dim());
-    //#endif
+    // #ifdef FULL_PRINT
+    //  cout << "print_image\n";
+    //  print_image_3D(dense_tile->data(), tile_bbox.dim());
+    // #endif
 
     // visit type of buffer uint8/uint16
     // TODO pass to lambda by ref where appropriate
@@ -2655,9 +2657,9 @@ template <class image_t> void Recut<image_t>::adjust_parent() {
 
 // if (this->out.is_open())
 // this->out.close();
-//#ifdef LOG
+// #ifdef LOG
 // cout << "Wrote output to " << swc_path << '\n';
-//#endif
+// #endif
 //}
 
 template <class image_t> void Recut<image_t>::prune_branch() {
@@ -3253,8 +3255,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     if (args->save_vdbs)
       write_vdb_file({this->topology_grid}, this->run_dir + "/point.vdb");
 
-    // adds all valid markers to roots vector
-    // filters by user input seeds if available
+      // adds all valid markers to roots vector
+      // filters by user input seeds if available
 #ifdef LOG
     std::cout << "\tcreate seed pairs step\n";
 #endif

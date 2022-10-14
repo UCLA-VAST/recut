@@ -5,12 +5,14 @@ void RecutCommandLineArgs::PrintUsage() {
                "[--type point/uint8/mask/float/ims/tiff] "
                "[-o <output_vdb_file_name>] "
                "[--bkg-thresh <int>] [--fg-percent <double>]\n\n";
-  //"[--image-offsets <int> [<int>] [<int>]] "
+  /*
+  "[--image-offsets <int> [<int>] [<int>]] "
   "[--image-lengths <int> [<int>] [<int>]] "
   "[--channel <int>] "
   "[--resolution-level <int>] "
   "\nNote: neurite+soma images are binarized and do not need bkg-thresh or "
   "fg-percent specified";
+   */
 
   std::cout << "<image file or dir>  file or directory of input image(s)\n";
   std::cout << "--seeds              directory of files which represent known "
@@ -54,7 +56,7 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout
       << "--fg-percent         [-fp] auto calculate a bg-thresh value closest "
          "to the passed "
-         "foreground \% between (0-100], overriding any --bg-thresh args. "
+         "foreground % between (0-100], overriding any --bg-thresh args. "
          "Value of .08 yields ~8 in 10,000 voxels "
          "as foreground per z-plane\n";
   // std::cout << "--prune              [-pr] prune 0 false, 1 true; defaults to
