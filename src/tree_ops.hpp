@@ -221,13 +221,10 @@ auto partition_cluster = [](const std::vector<MyMarker *> &cluster) {
 };
 
 // assumes tree passed is sorted root at front of tree
-auto write_swc = [](
-                     std::vector<MyMarker *> &tree,
-                     std::array<float, 3> voxel_size,
-                     std::string component_dir_fn = ".",
-                     CoordBBox bbox = {},
-                     bool bbox_adjust = false,
-                     bool is_eswc = false) {
+auto write_swc = [](std::vector<MyMarker *> &tree,
+                    std::array<float, 3> voxel_size,
+                    std::string component_dir_fn = ".", CoordBBox bbox = {},
+                    bool bbox_adjust = false, bool is_eswc = false) {
   auto root = tree.front();
   if (root->type)
     throw std::runtime_error("First marker of tree must be a root (type 0)");
@@ -248,10 +245,10 @@ auto write_swc = [](
   rng::for_each(tree, [&](const auto marker) {
     auto coord = std::array<double, 3>{marker->x, marker->y, marker->z};
     auto is_root = marker->type == 0;
-    auto parent_coord = is_root ? coord : std::array<double, 3>{
-                                              marker->parent->x,
-                                              marker->parent->y,
-                                              marker->parent->z};
+    auto parent_coord =
+        is_root ? coord
+                : std::array<double, 3>{marker->parent->x, marker->parent->y,
+                                        marker->parent->z};
     // expects an offset to a parent
     print_swc_line(coord, is_root, marker->radius, parent_coord, bbox, swc_file,
                    coord_to_swc_id, voxel_size, bbox_adjust, false);
@@ -265,7 +262,8 @@ auto write_swc = [](
     std::ofstream ano_file;
     ano_file.open(swc_base + ".ano");
     ano_file << "APOFILE=" << apo_file_name_base << "\n";
-    ano_file << "SWCFILE=" << file_name_base + ".ano.eswc" << "\n";
+    ano_file << "SWCFILE=" << file_name_base + ".ano.eswc"
+             << "\n";
     ano_file.close();
 
     auto marker = tree[0];
@@ -284,9 +282,8 @@ auto write_swc = [](
     // orderinfo,name,comment
     apo_file << ",,,";
     // z,x,y
-    apo_file << voxel_size[2] * marker->z << ','
-             << voxel_size[0] * marker->x << ','
-             << voxel_size[1] * marker->y << ',';
+    apo_file << voxel_size[2] * marker->z << ',' << voxel_size[0] * marker->x
+             << ',' << voxel_size[1] * marker->y << ',';
     // pixmax,intensity,sdev,
     apo_file << "0.,0.,0.,";
     // volsize
@@ -304,14 +301,13 @@ auto write_swc = [](
     rng::for_each(tree, [&](const auto marker) {
       auto coord = std::array<double, 3>{marker->x, marker->y, marker->z};
       auto is_root = marker->type == 0;
-      auto parent_coord = is_root ? coord : std::array<double, 3>{
-                                                marker->parent->x,
-                                                marker->parent->y,
-                                                marker->parent->z};
+      auto parent_coord =
+          is_root ? coord
+                  : std::array<double, 3>{marker->parent->x, marker->parent->y,
+                                          marker->parent->z};
       // expects an offset to a parent
-      print_swc_line(
-          coord, is_root, marker->radius, parent_coord, bbox, eswc_file,
-          coord_to_swc_id, voxel_size, bbox_adjust, true);
+      print_swc_line(coord, is_root, marker->radius, parent_coord, bbox,
+                     eswc_file, coord_to_swc_id, voxel_size, bbox_adjust, true);
     });
   }
 };
