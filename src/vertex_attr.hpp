@@ -93,7 +93,7 @@ struct VertexAttr {
     descript << '\n';
     descript << "state:";
     for (int i = 7; i >= 0; i--) {
-      descript << edge_state.test(i) ? "1" : "0";
+      descript << (edge_state.test(i) ? "1" : "0");
     }
     descript << '\n';
     descript << "label:" + std::to_string(label());
@@ -109,7 +109,9 @@ struct VertexAttr {
 
   /* returns whether this vertex has had its radius updated from the default max
    */
-  bool valid_radius() const { return radius != std::numeric_limits<uint8_t>::max(); }
+  bool valid_radius() const {
+    return radius != std::numeric_limits<uint8_t>::max();
+  }
 
   void set_parent(OffsetCoord coord) {
     this->parent[0] = coord[0];

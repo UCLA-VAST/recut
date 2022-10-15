@@ -6,9 +6,9 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <sstream>
 #include <vector>
-#include <optional>
 
 class RecutCommandLineArgs {
 public:
@@ -25,9 +25,9 @@ public:
         max_intensity(-1), min_intensity(-1),
         expand_window_um(EXPAND_WINDOW_UM), min_window_um(MIN_WINDOW_UM),
         open_denoise(0), close_steps(8), open_steps(5),
-        morphological_operations_order(1),
-        min_radius_um(MIN_SOMA_RADIUS_UM), max_radius_um(MAX_SOMA_RADIUS_UM),
-        voxel_size({1., 1., 1.}), save_vdbs(false) {}
+        morphological_operations_order(1), min_radius_um(MIN_SOMA_RADIUS_UM),
+        max_radius_um(MAX_SOMA_RADIUS_UM), voxel_size({1., 1., 1.}),
+        save_vdbs(false) {}
 
   static void PrintUsage();
   std::string MetaString();
@@ -52,9 +52,9 @@ public:
   std::string input_path, input_type, output_type, output_name, seed_path,
       second_grid;
   std::vector<std::string> window_grid_paths;
-  uint16_t user_thread_count, min_branch_length, resolution_level,
-      channel, upsample_z, downsample_factor,
-      open_denoise, open_steps, close_steps, morphological_operations_order;
+  uint16_t user_thread_count, min_branch_length, resolution_level, channel,
+      upsample_z, downsample_factor, open_denoise, open_steps, close_steps,
+      morphological_operations_order;
   int background_thresh, max_intensity, min_intensity, tcase;
   double foreground_percent, slt_pct;
   float min_window_um, expand_window_um, min_radius_um, max_radius_um;

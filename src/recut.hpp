@@ -28,7 +28,9 @@
 #include <unistd.h>
 #include <unordered_set>
 
-template <typename... Ts> struct Overload : Ts... { using Ts::operator()...; };
+template <typename... Ts> struct Overload : Ts... {
+  using Ts::operator()...;
+};
 template <class... Ts> Overload(Ts...) -> Overload<Ts...>;
 
 using ThreshV =
@@ -1256,7 +1258,7 @@ void Recut<image_t>::integrate_update_grid(
 }
 
 template <class image_t> void Recut<image_t>::activate_all_tiles() {
-  for (auto tile_id = 0; tile_id < grid_tile_size; ++tile_id) {
+  for (VID_t tile_id = 0; tile_id < grid_tile_size; ++tile_id) {
     active_tiles[tile_id] = true;
   }
 }
@@ -1270,7 +1272,7 @@ template <class image_t> bool Recut<image_t>::are_tiles_finished() {
 #ifdef LOG_FULL
   cout << "Tiles active: ";
 #endif
-  for (auto tile_id = 0; tile_id < grid_tile_size; ++tile_id) {
+  for (VID_t tile_id = 0; tile_id < grid_tile_size; ++tile_id) {
     if (active_tiles[tile_id]) {
       tot_active++;
 #ifdef LOG_FULL
@@ -1326,9 +1328,9 @@ bool Recut<image_t>::any_fifo_active(
   // if (tot_active == 0) {
   // return true;
   //} else {
-  //#ifdef LOG_FULL
+  // #ifdef LOG_FULL
   // cout << '\n' << tot_active << " total blocks active" << '\n';
-  //#endif
+  // #endif
   // return false;
   //}
 }
@@ -2040,10 +2042,10 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
 
     auto convert_start = tile_timer.elapsed();
 
-    //#ifdef FULL_PRINT
-    // cout << "print_image\n";
-    // print_image_3D(dense_tile->data(), tile_bbox.dim());
-    //#endif
+    // #ifdef FULL_PRINT
+    //  cout << "print_image\n";
+    //  print_image_3D(dense_tile->data(), tile_bbox.dim());
+    // #endif
 
     // visit type of buffer uint8/uint16
     // TODO pass to lambda by ref where appropriate
@@ -2655,9 +2657,9 @@ template <class image_t> void Recut<image_t>::adjust_parent() {
 
 // if (this->out.is_open())
 // this->out.close();
-//#ifdef LOG
+// #ifdef LOG
 // cout << "Wrote output to " << swc_path << '\n';
-//#endif
+// #endif
 //}
 
 template <class image_t> void Recut<image_t>::prune_branch() {
@@ -2703,6 +2705,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     run_log.open(log_fn, std::ios::app);
     run_log << "Active, " << this->topology_grid->activeVoxelCount() << '\n';
     run_log << "Selected, " << selected_count << '\n';
+    run_log.flush();
     assertm(selected_count, "active voxels in float grid must be > 0");
   }
 
@@ -2795,7 +2798,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     component_log << "Soma count, " << component_seeds.size() << '\n';
     component_log << "Component count, " << markers.size() << '\n';
     component_log << "TC count, " << pruned_markers.size() << '\n';
-    component_log << "TC, " << timer.elapsed() << '\n';
+    component_log << "TC elapsed time, " << timer.elapsed() << '\n';
 #endif
 
     timer.restart();
@@ -3108,6 +3111,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log << "min allowed soma radius in µm, " << args->min_radius_um << '\n';
     run_log << "max allowed soma radius in µm, " << args->max_radius_um << '\n';
     run_log << "Topology voxel count, " << sdf_grid->activeVoxelCount() << '\n';
+    run_log.flush();
 
     // collects user passed seeds if any
     auto known_seeds = process_marker_dir(0);
@@ -3182,6 +3186,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log << "open denoise iterations, " << args->open_denoise << '\n';
     run_log << "open denoise voxel count, " << sdf_grid->activeVoxelCount()
             << '\n';
+    run_log.flush();
 
     // close to fill the holes inside somata where cell nuclei are
 #ifdef LOG
@@ -3193,6 +3198,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log << "Closing elapsed time, " << timer.elapsed() << "\n";
     run_log << "Closing iterations, " << args->close_steps << "\n";
     run_log << "Closed voxel count, " << sdf_grid->activeVoxelCount() << "\n";
+    run_log.flush();
 
     auto closed_sdf = sdf_grid->deepCopy();
     if (args->save_vdbs)
@@ -3212,6 +3218,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     }
     run_log << "Opening iterations, " << args->open_steps << "\n";
     run_log << "Opened voxel count, " << sdf_grid->activeVoxelCount() << "\n";
+    run_log.flush();
 
     if (args->save_vdbs)
       write_vdb_file({sdf_grid}, this->run_dir + "/opened_sdf.vdb");
@@ -3223,7 +3230,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     timer.restart();
     openvdb::v9_1::tools::segmentSDF(*sdf_grid, components);
     run_log << "Initial seed count, " << components.size() << "\n";
-    run_log << "Segment, " << timer.elapsed() << "\n";
+    run_log << "segmentation elapsed time, " << timer.elapsed() << "\n";
 
     // build full SDF by extending known somas into reachable neurites
 #ifdef LOG
@@ -3234,6 +3241,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log << "Mask SDF elapsed time, " << timer.elapsed() << "\n";
     run_log << "Masked SDF voxel count, " << masked_sdf->activeVoxelCount()
             << "\n";
+    run_log.flush();
 
     if (args->save_vdbs)
       write_vdb_file({masked_sdf}, this->run_dir + "/connected_sdf.vdb");
@@ -3247,8 +3255,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     if (args->save_vdbs)
       write_vdb_file({this->topology_grid}, this->run_dir + "/point.vdb");
 
-    // adds all valid markers to roots vector
-    // filters by user input seeds if available
+      // adds all valid markers to roots vector
+      // filters by user input seeds if available
 #ifdef LOG
     std::cout << "\tcreate seed pairs step\n";
 #endif

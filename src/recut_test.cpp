@@ -195,7 +195,7 @@ template <typename T, typename T2> void check_parents(T markers, T2 grid_size) {
 
 void check_image_error(uint16_t *inimg1d, uint16_t *baseline, uint16_t *check,
                        int grid_size, VID_t selected, double &error_rate) {
-  auto tol_sz = grid_size * grid_size * grid_size;
+  VID_t tol_sz = grid_size * grid_size * grid_size;
   VID_t total_valid = 0;
   VID_t error_sum = 0;
   for (VID_t i = 0; i < tol_sz; i++) {
@@ -266,8 +266,7 @@ TEST(VDB, InitializeGlobals) {
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto seeds =
-      recut.process_marker_dir(0);
+  auto seeds = recut.process_marker_dir(0);
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
 
   auto update_accessor = recut.update_grid->getConstAccessor();
@@ -416,8 +415,7 @@ TEST(VDB, IntegrateUpdateGrid) {
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto seeds =
-      recut.process_marker_dir(0);
+  auto seeds = recut.process_marker_dir(0);
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
   auto update_accessor = recut.update_grid->getAccessor();
   auto topology_accessor = recut.topology_grid->getConstAccessor();
@@ -557,13 +555,12 @@ TEST(VDB, ActivateVids) {
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto seeds =
-      recut.process_marker_dir(0);
+  auto seeds = recut.process_marker_dir(0);
 
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
 
-  recut.activate_vids(recut.topology_grid, seeds, "connected",
-                      recut.map_fifo, recut.connected_map);
+  recut.activate_vids(recut.topology_grid, seeds, "connected", recut.map_fifo,
+                      recut.connected_map);
 
   if (print_all) {
     print_vdb_mask(recut.topology_grid->getConstAccessor(), grid_extents);
@@ -612,8 +609,7 @@ TEST(VDB, DISABLED_PriorityQueue) {
                /* type =*/"float"); // priority queue must have type float
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto seeds =
-      recut.process_marker_dir(0);
+  auto seeds = recut.process_marker_dir(0);
 
   // TODO switch this to a more formal method
   // set the topology_grid mainly from file for this test
@@ -682,8 +678,7 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
                        /* type =*/"point");
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto seeds =
-      recut.process_marker_dir(0);
+  auto seeds = recut.process_marker_dir(0);
   cout << "root " << seeds[0].coord << '\n';
 
   // TODO switch this to a more formal method
@@ -774,8 +769,7 @@ TEST(Utils, AdjustSomaRadii) {
                /* type =*/"float"); // priority queue must have type float
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto seeds =
-      recut.process_marker_dir(0);
+  auto seeds = recut.process_marker_dir(0);
 
   // TODO switch this to a more formal method
   // set the topology_grid mainly from file for this test
@@ -861,7 +855,7 @@ TEST(TreeOps, FixTrifurcations) {
   tree.push_back(f);
 
   if (write_swc_disk)
-    write_swc(tree, {1,1,1});
+    write_swc(tree, {1, 1, 1});
 
   auto fixed_tree = fix_trifurcations(tree);
   ASSERT_TRUE(is_cluster_self_contained(fixed_tree));
@@ -884,7 +878,7 @@ TEST(TreeOps, FixTrifurcations) {
 
   for (auto fixed_tree : fixed_trees) {
     if (write_swc_disk) {
-      write_swc(fixed_tree, {1,1,1});
+      write_swc(fixed_tree, {1, 1, 1});
     }
     ASSERT_TRUE(tree_is_sorted(fixed_tree));
   }
@@ -952,8 +946,7 @@ TEST(VDB, Connected) {
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto seeds =
-      recut.process_marker_dir(0);
+  auto seeds = recut.process_marker_dir(0);
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
   auto stage = "connected";
   recut.activate_vids(recut.topology_grid, seeds, stage, recut.map_fifo,
@@ -1003,9 +996,9 @@ TEST(VDB, Connected) {
 // auto tcase = 7;
 // double slt_pct = 100;
 // bool print_all = false;
-//#ifdef LOG_FULL
+// #ifdef LOG_FULL
 //// print_all = false;
-//#endif
+// #endif
 //// auto str_path = get_data_dir();
 //// auto fn = str_path + "/test_convert_only.vdb";
 // auto fn = "test_convert_only.vdb";
@@ -1089,9 +1082,9 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
   // tcase 5 is deprecated
   std::vector<int> grid_sizes = {2, 4, 8, 16, 24};
 
-  //#ifdef TEST_ALL_BENCHMARKS
-  // grid_sizes = {2, 4, 8, 16, 32, 64, 128, 256, 512};
-  //#endif
+  // #ifdef TEST_ALL_BENCHMARKS
+  //  grid_sizes = {2, 4, 8, 16, 32, 64, 128, 256, 512};
+  // #endif
 
   std::vector<int> testcases = {7, 5, 4, 3, 2, 1, 0};
   std::vector<double> selected_percents = {1, 10, 50, 100};
@@ -1304,7 +1297,7 @@ TEST(VDB, ConvertMaskVDBToDense) {
 
   // check all match
   auto active_count = 0;
-  for (int i = 0; i < volume; ++i) {
+  for (VID_t i = 0; i < volume; ++i) {
     if (check_dense.getValue(i))
       ++active_count;
   }
@@ -1348,7 +1341,7 @@ TEST(Install, DISABLED_ConvertVDBToDense) {
 
   // check all match
   auto active_count = 0;
-  for (int i = 0; i < volume; ++i) {
+  for (VID_t i = 0; i < volume; ++i) {
     if (check_dense.getValue(i))
       ++active_count;
   }
@@ -1548,7 +1541,6 @@ TEST(Install, DISABLED_ImageReadWrite) {
 
     ASSERT_NO_FATAL_FAILURE(
         check_image_equality(inimg1d, check->data(), volume));
-
   }
 }
 
@@ -2050,7 +2042,7 @@ TEST(Update, EachStageIteratively) {
                 auto total = 0;
                 if (false) {
                   std::cout << "All surface vids: \n";
-                  for (const auto inner : recut.map_fifo) {
+                  for (const auto &inner : recut.map_fifo) {
                     std::cout << " Block " << inner.first << '\n';
                     for (auto &vertex : inner.second) {
                       total++;
@@ -2173,7 +2165,7 @@ TEST(Update, EachStageIteratively) {
                 // check against is_sequential_run recut radii run
                 if (is_sequential_run) {
                   // is_sequential_run needs to always be run first
-                  for (int vid = 0; vid < tol_sz; ++vid) {
+                  for (VID_t vid = 0; vid < tol_sz; ++vid) {
                     auto coord = id_to_coord(vid, recut.image_lengths);
                     if (recut.topology_grid->tree().isValueOn(coord)) {
                       auto leaf =
@@ -2217,9 +2209,8 @@ TEST(Update, EachStageIteratively) {
                 // convert roots into markers (vector)
                 std::vector<MyMarker *> root_markers;
                 if (tcase == 6) {
-                  auto coords = seeds |
-                                rv::transform(&Seed::coord) |
-                                rng::to_vector;
+                  auto coords =
+                      seeds | rv::transform(&Seed::coord) | rng::to_vector;
                   root_markers = coords_to_markers(coords);
                 } else {
                   root_markers = {get_central_root(grid_size)};
