@@ -3688,8 +3688,10 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
         // component then remove this component
         if (rng::none_of(known_seeds, [&component](const auto &known_seed) {
               return component->tree().isValueOn(known_seed.coord);
-            }))
+            })) {
+          ++removed_by_inactivity;
           continue;
+        }
       }
     } else {
       ++removed_by_inactivity;
