@@ -12,6 +12,8 @@ if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set(CMAKE_INSTALL_PREFIX "/usr/local" CACHE PATH "..." FORCE)
 endif ()
 
+set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS} -frecord-gcc-switches -march=native -O2 -g -ggdb3")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS} -frecord-gcc-switches -march=native -O2 -g -ggdb3")
 # set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS} -frecord-gcc-switches -fprofile-arcs -ftest-coverage -march=native -O2 -Wall -Wpedantic -Wextra -g -ggdb3 -Wno-unused")
 # set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS} -frecord-gcc-switches -fprofile-arcs -ftest-coverage -march=native -O2 -Wall -Wpedantic -Wextra -g -ggdb3 -Wno-unused")
 # set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS} -frecord-gcc-switches -march=native -fomit-frame-pointer -O3 -mfpmath=both -flto -DNDEBUG")
