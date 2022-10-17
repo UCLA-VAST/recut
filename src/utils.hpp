@@ -1323,7 +1323,7 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
 
   for (auto &xi : x) {
     for (auto &yi : y) {
-      for (int zi=0; zi < grid_size; zi++) {
+      for (int zi = 0; zi < grid_size; zi++) {
         int index = int(xi + yi * grid_size + zi * grid_size * grid_size);
         if (inimg1d[index] != 1) {
           inimg1d[index] = 1; // set to max
@@ -1335,7 +1335,7 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
 
   for (auto &xi : x) {
     for (auto &zi : z) {
-      for (int yi=0; yi < grid_size; yi++) {
+      for (int yi = 0; yi < grid_size; yi++) {
         int index = int(xi + yi * grid_size + zi * grid_size * grid_size);
         if (inimg1d[index] != 1) {
           inimg1d[index] = 1; // set to max
@@ -1347,7 +1347,7 @@ VID_t lattice_grid(VID_t start, uint16_t *inimg1d, int line_per_dim,
 
   for (auto &yi : y) {
     for (auto &zi : z) {
-      for (int xi=0; xi < grid_size; xi++) {
+      for (int xi = 0; xi < grid_size; xi++) {
         int index = int(xi + yi * grid_size + zi * grid_size * grid_size);
         if (inimg1d[index] != 1) {
           inimg1d[index] = 1; // set to max
@@ -3179,6 +3179,7 @@ openvdb::FloatGrid::Ptr clip_by_seed(openvdb::FloatGrid::Ptr grid,
   // tbb::task_arena arena(args->user_thread_count);
   // arena.execute(
   //[&] { tbb::parallel_for_each(enum_components, process_component); });
+  auto timer = high_resolution_timer();
 
   auto component_grids = seeds |
                          rv::transform([grid, &offset](const Seed &seed) {
@@ -3187,8 +3188,16 @@ openvdb::FloatGrid::Ptr clip_by_seed(openvdb::FloatGrid::Ptr grid,
                            return vto::clip(*grid, clipBox);
                          }) |
                          rng::to_vector;
+#ifdef LOG
+  std::cout << "\tFinished seed clip in " << timer.elapsed() << '\n';
+#endif
+  timer.restart();
 
-  return merge_grids(component_grids);
+  auto merged = merge_grids(component_grids);
+#ifdef LOG
+  std::cout << "\tFinished seed merge in " << timer.elapsed() << '\n';
+#endif
+  return merged;
 }
 
 void write_marker_files(std::vector<MyMarker *> component_markers,
