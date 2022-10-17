@@ -3183,7 +3183,6 @@ template <class image_t> void Recut<image_t>::operator()() {
     } else {
       run_log << "open denoise elapsed time, 0\n";
     }
-    run_log << "open denoise iterations, " << args->open_denoise << '\n';
     run_log << "open denoise voxel count, " << sdf_grid->activeVoxelCount()
             << '\n';
     run_log.flush();
@@ -3196,7 +3195,6 @@ template <class image_t> void Recut<image_t>::operator()() {
     filter->offset(-args->close_steps);
     filter->offset(args->close_steps);
     run_log << "Closing elapsed time, " << timer.elapsed() << "\n";
-    run_log << "Closing iterations, " << args->close_steps << "\n";
     run_log << "Closed voxel count, " << sdf_grid->activeVoxelCount() << "\n";
     run_log.flush();
 
@@ -3216,7 +3214,6 @@ template <class image_t> void Recut<image_t>::operator()() {
     } else {
       run_log << "Opening elapsed time, 0\n";
     }
-    run_log << "Opening iterations, " << args->open_steps << "\n";
     run_log << "Opened voxel count, " << sdf_grid->activeVoxelCount() << "\n";
     run_log.flush();
 

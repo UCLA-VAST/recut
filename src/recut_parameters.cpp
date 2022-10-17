@@ -89,13 +89,13 @@ void RecutCommandLineArgs::PrintUsage() {
          "volume of their component, this allows specifying an expansion "
          "factor around seeds, if no um value is passed it will use "
       << EXPAND_WINDOW_UM << " µm\n";
-  std::cout << "--open-denoise       1st morphological opening iterations "
+  std::cout << "--open-denoise       1st morphological opening level "
                "to denoise image before soma detection; "
                "defaults to 0 (no-opening)\n";
-  std::cout << "--close-steps        morphological closing iterations "
+  std::cout << "--close-steps        morphological closing level "
                "to fill existing voids inside somata; "
                "defaults to 8.\n";
-  std::cout << "--open-steps         2nd morphological opening iterations "
+  std::cout << "--open-steps         2nd morphological opening level "
                "to clear neurites and keep somata in the image only; "
                "defaults to 5 and disabled by passing 0 (no-opening)\n";
   std::cout << "--order              morphological operations (open/close) "
@@ -252,13 +252,13 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
           ++i;
         }
       } else if (strcmp(argv[i], "--open-denoise") == 0) {
-        args.open_denoise = atoi(argv[i + 1]);
+        args.open_denoise = atof(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--open-steps") == 0) {
-        args.open_steps = atoi(argv[i + 1]);
+        args.open_steps = atof(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--close-steps") == 0) {
-        args.close_steps = atoi(argv[i + 1]);
+        args.close_steps = atof(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--order") == 0) {
         args.morphological_operations_order = atoi(argv[i + 1]);
