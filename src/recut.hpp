@@ -2611,7 +2611,7 @@ bool Recut<image_t>::filter_by_label(VertexAttr *v, bool accept_tombstone) {
     assertm(false, "can't accept a vertex with a radii < 1");
   }
   return true;
-};
+}
 
 template <class image_t> void Recut<image_t>::adjust_parent() {
 
@@ -3084,10 +3084,12 @@ template <class image_t> void Recut<image_t>::operator()() {
     assertm(this->mask_grid,
             "Mask grid must be set before starting soma segmentation");
 
-    if (args->save_vdbs)
+    if (args->save_vdbs && args->input_type != "mask")
       write_vdb_file({this->mask_grid}, this->run_dir + "/mask.vdb");
 
     auto timer = high_resolution_timer();
+    std::ofstream run_log;
+    run_log.open(log_fn, std::ios::app);
 
     // mask grids are a fog volume of sparse active values in space
     // change the fog volume into an SDF by holding values on the border between
@@ -3099,17 +3101,14 @@ template <class image_t> void Recut<image_t>::operator()() {
     // holes and valleys in the SDF are filled
 #ifdef LOG
     std::cout << "starting seed (soma) detection:\n";
-    std::cout << "\tmin allowed radius is " << args->min_radius_um << " µm\n";
-    std::cout << "\tmax allowed radius is " << args->max_radius_um << " µm\n";
     std::cout << "\tmask to sdf step\n";
 #endif
     // technically it is modified by closing by 1 which has a very minimal
     // effect this API does not allow 0 closing
+    timer.restart();
     auto sdf_grid = vto::topologyToLevelSet(*this->mask_grid, 1, 0);
-    std::ofstream run_log;
-    run_log.open(log_fn, std::ios::app);
-    run_log << "min allowed soma radius in µm, " << args->min_radius_um << '\n';
-    run_log << "max allowed soma radius in µm, " << args->max_radius_um << '\n';
+    run_log << "Mask to SDF conversion time, " << timer.elapsed() << '\n';
+    run_log << "Topology voxel count, " << sdf_grid->activeVoxelCount() << '\n';
     run_log << "Topology voxel count, " << sdf_grid->activeVoxelCount() << '\n';
     run_log.flush();
 
@@ -3173,7 +3172,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     // open a bit to denoise specifically in brain surfaces
     if (args->open_denoise > 0) {
 #ifdef LOG
-      std::cout << "\topen denoise step: iterations = " << args->open_denoise
+      std::cout << "\topen denoise step: open = " << args->open_denoise
                 << "\n";
 #endif
       timer.restart();
@@ -3189,7 +3188,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     // close to fill the holes inside somata where cell nuclei are
 #ifdef LOG
-    std::cout << "\tclose step: iterations = " << args->close_steps << "\n";
+    std::cout << "\tclose step: close = " << args->close_steps << "\n";
 #endif
     timer.restart();
     filter->offset(-args->close_steps);
@@ -3205,7 +3204,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     // open again to filter axons and dendrites
     if (args->open_steps > 0) {
 #ifdef LOG
-      std::cout << "\topen step: iterations = " << args->open_steps << "\n";
+      std::cout << "\topen step: open = " << args->open_steps << "\n";
 #endif
       timer.restart();
       filter->offset(args->open_steps);
@@ -3226,8 +3225,9 @@ template <class image_t> void Recut<image_t>::operator()() {
     std::vector<openvdb::FloatGrid::Ptr> components;
     timer.restart();
     openvdb::v9_1::tools::segmentSDF(*sdf_grid, components);
-    run_log << "Initial seed count, " << components.size() << "\n";
     run_log << "segmentation elapsed time, " << timer.elapsed() << "\n";
+    run_log << "Initial seed count, " << components.size() << "\n";
+    run_log.flush();
 
     // build full SDF by extending known somas into reachable neurites
 #ifdef LOG
@@ -3235,7 +3235,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 #endif
     timer.restart();
     auto masked_sdf = vto::maskSdf(*sdf_grid, *closed_sdf);
-    run_log << "Mask SDF elapsed time, " << timer.elapsed() << "\n";
+    run_log << "Masked SDF masking time, " << timer.elapsed() << "\n";
     run_log << "Masked SDF voxel count, " << masked_sdf->activeVoxelCount()
             << "\n";
     run_log.flush();
@@ -3256,15 +3256,22 @@ template <class image_t> void Recut<image_t>::operator()() {
       // filters by user input seeds if available
 #ifdef LOG
     std::cout << "\tcreate seed pairs step\n";
+    std::cout << "\tmin allowed radius is " << args->min_radius_um << " µm\n";
+    std::cout << "\tmax allowed radius is " << args->max_radius_um << " µm\n";
 #endif
+    run_log << "min allowed soma radius in µm, " << args->min_radius_um << '\n';
+    run_log << "max allowed soma radius in µm, " << args->max_radius_um << '\n';
+    run_log.flush();
+    timer.restart();
     seeds = create_seed_pairs(components, this->topology_grid,
                               this->args->voxel_size, this->args->min_radius_um,
                               this->args->max_radius_um, known_seeds);
 #ifdef LOG
-    std::cout << "\twriting seeds step\n";
+    std::cout << "\tsaving seed coordinates to file ...\n";
 #endif
     write_seeds(this->run_dir, seeds, this->args->voxel_size);
 
+    run_log << "create seed pairs elapsed time, " << timer.elapsed() << "\n";
     run_log << "Seed count, " << seeds.size() << "\n";
     if (this->args->output_type == "seeds") {
       return; // exit
