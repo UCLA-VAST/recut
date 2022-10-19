@@ -12,6 +12,7 @@
 #include <ctime>   // for srand
 #include <filesystem>
 #include <hdf5.h>
+#include <iomanip> //std::setw()
 #include <math.h>
 #include <openvdb/tools/Clip.h>
 #include <openvdb/tools/Composite.h>
@@ -19,6 +20,7 @@
 #include <openvdb/tools/LevelSetUtil.h>    // sdfSegment, sdfToFogVolume
 #include <openvdb/tools/VolumeToSpheres.h> // fillWithSpheres
 #include <queue>
+#include <sstream>
 #include <stdlib.h> // ultoa
 #include <string>
 #include <tiffio.h>
@@ -224,7 +226,19 @@ struct high_resolution_timer {
   {
     return double(take_time_stamp() - start_time_) * 1e-9;
   }
-
+  auto elapsed_formatted() const // return elapsed time in d:h:m:s
+  {
+    uint64_t t = int(elapsed());
+    unsigned int days = t / 24 / 3600;
+    unsigned short hours = t % (24 * 3600) / 3600;
+    unsigned short minutes = t % 3600 / 60;
+    unsigned short seconds = t % 60;
+    std::stringstream s;
+    s << std::setfill('0') << std::setw(2) << days << ':' << std::setw(2)
+      << hours << ':' << std::setw(2) << minutes << ':' << std::setw(2)
+      << seconds << " d:h:m:s";
+    return s.str();
+  }
   std::uint64_t elapsed_nanoseconds() const {
     return take_time_stamp() - start_time_;
   }
@@ -239,7 +253,7 @@ private:
   std::uint64_t start_time_;
 };
 
-// Note: this is linux specific, other cross platform solutions available:
+// Note: this is linux specific, other cross-platform solutions available:
 //     https://stackoverflow.com/questions/1528298/get-path-of-executable
 std::string get_parent_dir() {
   // fs::path full_path(fs::current_path());
