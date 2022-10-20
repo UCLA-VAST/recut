@@ -187,6 +187,8 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         args.set_image_lengths(lengths);
       } else if (strcmp(argv[i], "--input-type") == 0) {
         auto arg = std::string(argv[i + 1]);
+        std::transform(arg.begin(), arg.end(), arg.begin(),
+                       [](auto c){ return std::tolower(c); });
         if (arg == "float" || arg == "point" || arg == "uint8" ||
             arg == "mask" || arg == "ims" || arg == "tiff") {
           args.input_type = (argv[i + 1]);
@@ -198,6 +200,8 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         ++i;
       } else if (strcmp(argv[i], "--output-type") == 0) {
         auto arg = std::string(argv[i + 1]);
+        std::transform(arg.begin(), arg.end(), arg.begin(),
+                       [](auto c){ return std::tolower(c); });
         if (arg == "float" || arg == "point" || arg == "uint8" ||
             arg == "mask" || arg == "ims" || arg == "tiff" || arg == "eswc" ||
             arg == "swc" || arg == "labels" || arg == "seeds") {

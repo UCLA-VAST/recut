@@ -9,6 +9,7 @@
 #include <optional>
 #include <sstream>
 #include <vector>
+#include <algorithm>
 
 class RecutCommandLineArgs {
 public:
