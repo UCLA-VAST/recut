@@ -2233,13 +2233,15 @@ void Recut<image_t>::update(std::string stage, Container &fifo) {
     if (stage == "convert")
       stage_acr = "VC";
     if (stage == "connected")
-      stage_acr = "CC";
+      stage_acr = "connected components";
     if (stage == "radius")
-      stage_acr = "SDF";
+      stage_acr = "SDF radius";
 
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
-    run_log << stage_acr << ", " << timer.elapsed() << '\n';
+    run_log << "Skeletonization: " << stage_acr << " time, "
+            << timer.elapsed_formatted() << '\n';
+    run_log.flush();
   }
 
 } // end update()
@@ -2692,9 +2694,9 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 #endif
 
   auto global_timer = high_resolution_timer();
-  // this copies only vertices that have already had flags marked as selected
+  // this copies only vertices that have already had flags marked as selected.
   // selected means they are reachable from a known vertex during traversal
-  // in either a connected or value stage
+  // in either a connected or value stage.
   auto float_grid = copy_selected(this->topology_grid);
   cout << "Topo to float " << global_timer.elapsed() << '\n';
 
@@ -2703,8 +2705,10 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     VID_t selected_count = float_grid->activeVoxelCount();
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
-    run_log << "Active, " << this->topology_grid->activeVoxelCount() << '\n';
-    run_log << "Selected, " << selected_count << '\n';
+    run_log << "Skeletonization: topology grid active voxel count, "
+            << this->topology_grid->activeVoxelCount() << '\n';
+    run_log << "Skeletonization: topology grid selected voxel count, "
+            << selected_count << '\n';
     run_log.flush();
     assertm(selected_count, "active voxels in float grid must be > 0");
   }

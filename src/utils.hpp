@@ -2793,9 +2793,8 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
   };
 
   // iterate all active vertices ahead of time so each marker
-  // can have a pointer to it's parent marker
-  // iterate by leaf markers since attributes are stored in chunks
-  // of leaf size
+  // can have a pointer to its parent marker.
+  // iterate by leaf markers since attributes are stored in chunks of leaf size.
   visit_float(component, point_grid, keep_if, establish_marker_set);
 
   // now that a pointer to all desired markers is known
