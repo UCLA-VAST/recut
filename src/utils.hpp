@@ -3672,6 +3672,7 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
                             EnlargedPointDataGrid::Ptr topology_grid,
                             std::array<float, 3> voxel_size,
                             float min_radius_um, float max_radius_um,
+                            std::string output_type,
                             std::vector<Seed> known_seeds = {}) {
   std::vector<Seed> seeds;
   auto removed_by_inactivity = 0;
@@ -3693,7 +3694,11 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
     auto coord_center = GridCoord(sphere[0], sphere[1], sphere[2]);
 
     if (is_coordinate_active(topology_grid, coord_center)) {
-      if (!known_seeds.empty()) {
+      // if this run is only for seed generation and the user also passed in known seeds
+      // then the topology was already clipped around --seeds
+      // therefore allow any components that were found within the clipped region
+      // regardless of whether you can find a corresponding --seeds in them
+      if ((output_type != "seeds") && !known_seeds.empty()) {
         // convert to fog so that isValueOn returns whether it is
         // within the
         openvdb::v9_1::tools::sdfToFogVolume(*component);
