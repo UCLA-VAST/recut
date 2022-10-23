@@ -125,7 +125,7 @@ public:
   // tile specific global data structures
   vector<bool> active_tiles;
   std::filesystem::path run_dir;
-  std::string log_fn;
+  std::filesystem::path log_fn;
 
   Recut(RecutCommandLineArgs &args) : args(&args) {}
 
@@ -2966,10 +2966,7 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
     }
 
     this->run_dir = ".";
-    this->log_fn =
-        (this->run_dir / (this->args->output_name + "-log-" +
-                          std::to_string(args->user_thread_count) + ".csv"))
-            .string();
+    this->log_fn = this->run_dir / (this->args->output_name + "-log-" + std::to_string(args->user_thread_count) + ".csv");
 #ifdef LOG
     std::ofstream convert_log(this->log_fn);
     convert_log << "Thread count, " << args->user_thread_count << '\n';
@@ -2980,7 +2977,7 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
     // Reconstructing volume:
   } else {
     this->run_dir = get_unique_fn((fs::path(".")/"run-1").string());
-    this->log_fn = (this->run_dir / "log.csv").string();
+    this->log_fn = this->run_dir / "log.csv";
     fs::create_directories(run_dir);
     std::cout << "All outputs will be written to: " << this->run_dir << '\n';
     std::ofstream run_log(log_fn);
