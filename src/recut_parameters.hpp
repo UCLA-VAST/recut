@@ -2,14 +2,15 @@
 
 #include "config.hpp"
 #include "markers.h"
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <optional>
 #include <sstream>
 #include <vector>
-#include <algorithm>
 
 class RecutCommandLineArgs {
 public:
@@ -50,12 +51,11 @@ public:
   std::vector<MyMarker *> output_tree;
   GridCoord image_offsets, image_lengths;
 
-  std::string input_path, input_type, output_type, output_name, seed_path,
-      second_grid;
+  std::filesystem::path input_path, seed_path;
+  std::string input_type, output_type, output_name, second_grid;
   std::vector<std::string> window_grid_paths;
   uint16_t user_thread_count, min_branch_length, resolution_level, channel,
-      upsample_z, downsample_factor,
-      morphological_operations_order;
+      upsample_z, downsample_factor, morphological_operations_order;
   int background_thresh, max_intensity, min_intensity, tcase;
   double foreground_percent, slt_pct;
   float min_window_um, expand_window_um, min_radius_um, max_radius_um,

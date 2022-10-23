@@ -4,12 +4,17 @@
 #include <cstdlib> //rand
 #include <ctime>   // for srand
 #include <fcntl.h>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <ranges>
 #include <string>
 #include <tbb/parallel_for.h>
 #include <tuple>
 #include <vector>
+
+namespace rng = ranges;
+namespace rv = ranges::views;
 
 // catch an assertion and auto drop into
 // intractive mode for gdb or rr
@@ -386,7 +391,7 @@ TEST(Histogram, CallAndPrint) {
     auto tcase = 0;
     auto grid_size = 2;
     auto args = get_args(grid_size, grid_size, grid_size, 100, tcase);
-    auto check = read_tiff_dir(args.input_path);
+    auto check = read_tiff_dir(args.input_path.generic_string());
     auto histogram =
         hist(check->data(), args.image_lengths, zeros(), granularity);
     ASSERT_EQ(histogram.size(), 1)
@@ -1041,7 +1046,7 @@ TEST(VDB, ConvertTiffToPoint) {
   auto recut = Recut<uint16_t>(args);
   recut.args->convert_only = true;
 
-  auto tiff_dense = read_tiff_dir(args.input_path);
+  auto tiff_dense = read_tiff_dir(args.input_path.generic_string());
   auto selected = std::accumulate(
       tiff_dense->data(), tiff_dense->data() + tiff_dense->valueCount(), 0);
   if (print_all) {
@@ -1137,27 +1142,21 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         if ((tcase == 4) || (radius < 1))
           radius = 1;
 
-        std::string base(get_data_dir());
-        std::string delim("/");
-        std::string fn_marker(base);
-        fn_marker = fn_marker + "/test_markers/";
-        fn_marker = fn_marker + std::to_string(grid_size);
-        fn_marker = fn_marker + "/tcase";
-        fn_marker = fn_marker + std::to_string(tcase);
-        fn_marker = fn_marker + delim;
-        fn_marker = fn_marker + "slt_pct";
-        fn_marker = fn_marker + std::to_string((int)slt_pct);
+        std::filesystem::path base = get_data_dir();
+        std::filesystem::path fn_marker = base;
+        fn_marker /= "test_markers";
+        fn_marker /= std::to_string(grid_size);
+        fn_marker /= ("tcase" + std::to_string(tcase));
+        fn_marker /= ("slt_pct" + std::to_string((int)slt_pct));
+
         // fn_marker = fn_marker + delim;
         // record the root
         write_marker(x, y, z, radius, fn_marker, ones());
 
-        auto image_dir = base + "/test_images/";
-        image_dir = image_dir + std::to_string(grid_size);
-        image_dir = image_dir + "/tcase";
-        image_dir = image_dir + std::to_string(tcase);
-        image_dir = image_dir + delim;
-        image_dir = image_dir + "slt_pct";
-        image_dir = image_dir + std::to_string((int)slt_pct);
+        auto image_dir = base / "test_images";
+        image_dir /= std::to_string(grid_size);
+        image_dir /= ("tcase" + std::to_string(tcase));
+        image_dir /= ("slt_pct" + std::to_string((int)slt_pct));
 
         VID_t desired_selected;
         desired_selected = tol_sz * (slt_pct / (float)100); // for tcase 4
@@ -1243,14 +1242,14 @@ TEST(Install, DISABLED_CreateImagesMarkers) {
         {
           openvdb::GridPtrVec grids;
           grids.push_back(topology_grid);
-          auto fn = image_dir + "/point.vdb";
+          auto fn = image_dir / "point.vdb";
           write_vdb_file(grids, fn);
         }
 
         {
           openvdb::GridPtrVec grids;
           grids.push_back(float_grid);
-          auto fn = image_dir + "/float.vdb";
+          auto fn = image_dir / "float.vdb";
           write_vdb_file(grids, fn);
         }
 
@@ -1348,11 +1347,14 @@ TEST(Install, DISABLED_ConvertVDBToDense) {
   ASSERT_EQ(active_count, float_grid->activeVoxelCount());
 
   { // planes
-    std::string fn = "./data/test_images/convert-vdb-to-dense-planes";
+    std::filesystem::path fn = ".";
+    fn /= "data";
+    fn /= "test_images";
+    fn /= "convert-vdb-to-dense-planes";
     write_vdb_to_tiff_planes(float_grid, fn);
 
     // check reading value back in
-    fn = fn + "/ch0";
+    fn /= "ch0";
     auto from_file = read_tiff_dir(fn);
 
     if (print) {
@@ -1474,9 +1476,10 @@ TEST(Install, DISABLED_ImageReadWrite) {
   auto volume = coord_prod_accum(lengths);
   auto print_all = false;
 
-  std::string fn(get_data_dir());
+  std::filesystem::path fn = get_data_dir();
   // Warning: do not use directory names postpended with slash
-  fn = fn + "/test_images/ReadWriteTest";
+  fn /= "test_images";
+  fn /= "ReadWriteTest";
   auto image_lengths = GridCoord(grid_size);
   auto image_offsets = GridCoord(0);
   auto bbox = CoordBBox(image_offsets, image_lengths);
@@ -1494,8 +1497,8 @@ TEST(Install, DISABLED_ImageReadWrite) {
 
     write_tiff(inimg1d, fn, grid_extents);
 
-    auto fn_ch0 = fn + "/ch0";
-    auto check = read_tiff_dir(fn_ch0);
+    auto fn_ch0 = fn / "ch0";
+    auto check = read_tiff_dir(fn_ch0.string());
 
     if (print_all) {
       cout << "Read image:\n";
@@ -1511,7 +1514,7 @@ TEST(Install, DISABLED_ImageReadWrite) {
       cout << "second read\n";
     }
 
-    auto check2 = read_tiff_dir(fn_ch0);
+    auto check2 = read_tiff_dir(fn_ch0.string());
     ASSERT_NO_FATAL_FAILURE(
         check_image_equality(inimg1d, check2->data(), volume));
 
@@ -1520,7 +1523,7 @@ TEST(Install, DISABLED_ImageReadWrite) {
 
   // 8 bit
   {
-    fn += "/8";
+    fn /= "8";
     uint8_t *inimg1d = new uint8_t[volume];
     create_image(tcase, inimg1d, grid_size, selected,
                  get_central_vid(grid_size));
@@ -1531,8 +1534,8 @@ TEST(Install, DISABLED_ImageReadWrite) {
 
     write_tiff(inimg1d, fn, grid_extents);
 
-    auto fn_ch0 = fn + "/ch0";
-    auto check = read_tiff_dir<uint8_t>(fn_ch0);
+    auto fn_ch0 = fn / "ch0";
+    auto check = read_tiff_dir<uint8_t>(fn_ch0.string());
 
     if (print_all) {
       cout << "Read image:\n";
@@ -1572,7 +1575,7 @@ TEST(TileThresholds, AllTcases) {
     uint16_t bkg_thresh;
 
     if (tcase == 6) {
-      auto image = read_tiff_dir(args.input_path + "/ch0");
+      auto image = read_tiff_dir((args.input_path / "ch0").string());
       if (print_image) {
         print_image_3D(image->data(), grid_extents);
       }

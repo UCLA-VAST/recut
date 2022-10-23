@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <deque>
 #include <execution>
+#include <filesystem>
 #include <fstream>
 #include <future>
 #include <iostream>
@@ -125,7 +126,7 @@ public:
 
   // tile specific global data structures
   vector<bool> active_tiles;
-  std::string run_dir;
+  std::filesystem::path run_dir;
   std::string log_fn;
 
   Recut(RecutCommandLineArgs &args) : args(&args) {}
@@ -365,17 +366,8 @@ std::vector<Seed> Recut<image_t>::process_marker_dir(int marker_base) {
 
   // input handler
   {
-    if (args->seed_path.empty())
+    if (args->seed_path == "")
       return {};
-
-    // allow either dir or dir/ naming styles
-    if (args->seed_path.back() != '/')
-      args->seed_path = args->seed_path.append("/");
-
-    if (!fs::exists(args->seed_path)) {
-      throw std::runtime_error("Directory passed to --seeds : " +
-                               args->seed_path + " does not exist");
-    }
   }
 
   // gather all markers within directory
@@ -383,33 +375,34 @@ std::vector<Seed> Recut<image_t>::process_marker_dir(int marker_base) {
 
   rng::for_each(
       fs::directory_iterator(args->seed_path),
-      [this, marker_base, &seeds](auto marker_file) {
-        std::string fn(marker_file.path().filename());
-        const auto full_marker_name =
-            args->seed_path + marker_file.path().filename().string();
-        auto markers = readMarker_file(full_marker_name, marker_base);
-        assertm(markers.size() == 1, "only 1 marker file per soma");
-        auto marker = markers[0];
+      [this, marker_base, &seeds](const auto &marker_file) {
+        if (!fs::is_directory(marker_file)) {
+          auto markers =
+              readMarker_file(fs::absolute(marker_file), marker_base);
+          assertm(markers.size() == 1, "only 1 marker file per soma");
+          auto marker = markers[0];
 
-        auto numbers =
-            fn | rv::split('_') | rng::to<std::vector<std::string>>();
-        if (numbers.size() != 5)
-          throw std::runtime_error(
-              "Marker file names must be in format marker_x_y_z_volume");
-        //  volume is the last number of the file name
-        uint64_t volume = std::stoull(numbers.back());
+          std::string fn = marker_file.path().filename().string();
+          auto numbers =
+              fn | rv::split('_') | rng::to<std::vector<std::string>>();
+          if (numbers.size() != 5)
+            throw std::runtime_error(
+                "Marker file names must be in format marker_x_y_z_volume");
+          //  volume is the last number of the file name
+          uint64_t volume = std::stoull(numbers.back());
 
-        if (marker.radius == 0) {
-          marker.radius =
-              static_cast<uint8_t>(std::cbrt(volume) / (4 / 3 * PI) + 0.5);
+          if (marker.radius == 0) {
+            marker.radius =
+                static_cast<uint8_t>(std::cbrt(volume) / (4 / 3 * PI) + 0.5);
+          }
+
+          // ones() + GridCoord(marker.x / args->downsample_factor,
+          // marker.y / args->downsample_factor,
+          // upsample_idx(args->upsample_z, marker.z)),
+          seeds.emplace_back(GridCoord(marker.x, marker.y, marker.z),
+                             static_cast<uint8_t>(marker.radius + 0.5),
+                             marker.radius, volume);
         }
-
-        // ones() + GridCoord(marker.x / args->downsample_factor,
-        // marker.y / args->downsample_factor,
-        // upsample_idx(args->upsample_z, marker.z)),
-        seeds.emplace_back(GridCoord(marker.x, marker.y, marker.z),
-                           static_cast<uint8_t>(marker.radius + 0.5),
-                           marker.radius, volume);
       });
 
 #ifdef LOG
@@ -2011,19 +2004,23 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
 
     if (args->input_type == "ims") {
 #ifdef USE_HDF5
-      dense_tile = load_imaris_tile(args->input_path, tile_bbox,
-                                    args->resolution_level, args->channel);
+      dense_tile =
+          load_imaris_tile(args->input_path.generic_string(), tile_bbox,
+                           args->resolution_level, args->channel);
 #else
       throw std::runtime_error("HDF5 dependency required for input type ims");
 #endif
     }
 
     if (args->input_type == "tiff") {
-      auto bits_per_sample = get_tif_bit_width(args->input_path);
+      auto bits_per_sample =
+          get_tif_bit_width(args->input_path.string());
       if (bits_per_sample == 8)
-        dense_tile = load_tile<uint8_t>(tile_bbox, args->input_path);
+        dense_tile =
+            load_tile<uint8_t>(tile_bbox, args->input_path.generic_string());
       else if (bits_per_sample == 16)
-        dense_tile = load_tile<uint16_t>(tile_bbox, args->input_path);
+        dense_tile =
+            load_tile<uint16_t>(tile_bbox, args->input_path.generic_string());
       else
         throw std::runtime_error("Only 8-bits and 16-bits TIFF are supported");
     }
@@ -2226,7 +2223,8 @@ void Recut<image_t>::update(std::string stage, Container &fifo) {
   }
 
   cout << "Finished stage: " << stage << '\n';
-  cout << "Finished total updating within " << timer.elapsed() << " sec \n";
+  cout << "Finished total updating within " << timer.elapsed_formatted()
+       << '\n';
 
   {
     auto stage_acr = stage; // line up with paper
@@ -2404,7 +2402,7 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
                                "'float', 'point', 'mask', 'uint8' supported");
     }
 
-    if (this->args->input_type != "mask" && this->args->seed_path.empty()) {
+    if (this->args->input_type != "mask" && this->args->seed_path == "") {
       throw std::runtime_error(
           "For soma segmentation you must pass a raw image or a mask grid. If "
           "you start reconstruction from float or point you must also specify "
@@ -2421,8 +2419,9 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
       input_image_lengths = get_tif_dims(tif_filenames);
     } else if (args->input_type == "ims") {
 #ifdef USE_HDF5
-      auto imaris_bbox = imaris_image_bbox(
-          args->input_path, args->resolution_level, args->channel);
+      auto imaris_bbox =
+          imaris_image_bbox(args->input_path.generic_string(),
+                            args->resolution_level, args->channel);
       input_image_lengths = imaris_bbox.dim();
 #else
       throw std::runtime_error("HDF5 dependency required for input type ims");
@@ -2478,7 +2477,7 @@ template <class image_t> void Recut<image_t>::initialize() {
       this->input_is_vdb = false;
       this->args->input_type = "tiff";
     } else {
-      auto path_extension = std::string(fs::path(args->input_path).extension());
+      auto path_extension = args->input_path.extension();
       if (path_extension == ".vdb") {
         this->input_is_vdb = true;
       } else {
@@ -2487,7 +2486,8 @@ template <class image_t> void Recut<image_t>::initialize() {
           this->args->input_type = "ims";
         } else {
           throw std::runtime_error(
-              "Recut does not support single files of type: " + path_extension);
+              "Recut does not support single files of type: " +
+              path_extension.string());
         }
       }
     }
@@ -2698,7 +2698,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
   // selected means they are reachable from a known vertex during traversal
   // in either a connected or value stage.
   auto float_grid = copy_selected(this->topology_grid);
-  cout << "Topo to float " << global_timer.elapsed() << '\n';
+  cout << "Topo to float time " << global_timer.elapsed_formatted() << '\n';
 
   auto total_timer = high_resolution_timer();
   {
@@ -2719,13 +2719,13 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
   vto::segmentActiveVoxels(*float_grid, components);
 #ifdef LOG
   cout << "Segment count: " << components.size() << " in "
-       << global_timer.elapsed() << " s\n";
+       << global_timer.elapsed_formatted() << '\n';
 #endif
-  global_timer.restart();
 
+  global_timer.restart();
   auto output_topology = false;
 
-  // you need to load the passed image grids if you are outputing windows
+  // you need to load the passed image grids if you are outputting windows
   auto window_grids =
       args->window_grid_paths |
       rv::transform([](const auto &gpath) { return read_vdb_file(gpath); }) |
@@ -2789,14 +2789,14 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 
     // is a fresh run_dir
     auto component_dir_fn =
-        this->run_dir + "/" + prefix + "component-" + std::to_string(index);
+        this->run_dir / (prefix + "component-" + std::to_string(index));
     fs::create_directories(component_dir_fn);
 
 #ifdef LOG
     auto component_log_fn =
-        component_dir_fn + "/component-" + std::to_string(index) + "-log.csv";
+        component_dir_fn / ("component-" + std::to_string(index) + "-log.csv");
     std::ofstream component_log;
-    component_log.open(component_log_fn);
+    component_log.open(component_log_fn.string());
     component_log << std::fixed << std::setprecision(6);
     component_log << "Thread count, " << args->user_thread_count << '\n';
     component_log << "Soma count, " << component_seeds.size() << '\n';
@@ -2901,7 +2901,8 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
           // make app2 read the window to get accurate comparison of IO
           read_tiff_paged(window_fn);
 #ifdef LOG
-          component_log << "Read window, " << read_timer.elapsed() << '\n';
+          component_log << "Read window time, "
+                        << read_timer.elapsed_formatted() << '\n';
 #endif
         }
 
@@ -2944,7 +2945,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
   if (!(args->run_app2 || !args->window_grid_paths.empty())) {
     run_log << "TC+TP, " << global_timer.elapsed() << '\n';
   }
-  run_log << "Aggregated prune, " << total_timer.elapsed() << '\n';
+  run_log << "Aggregated prune, " << total_timer.elapsed_formatted() << '\n';
   run_log << "Neuron count, " << seeds.size() << '\n';
 }
 
@@ -2967,8 +2968,10 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
     }
 
     this->run_dir = ".";
-    this->log_fn = this->run_dir + "/" + this->args->output_name + "-log-" +
-                   std::to_string(args->user_thread_count) + ".csv";
+    this->log_fn =
+        (this->run_dir / (this->args->output_name + "-log-" +
+                          std::to_string(args->user_thread_count) + ".csv"))
+            .string();
 #ifdef LOG
     std::ofstream convert_log(this->log_fn);
     convert_log << "Thread count, " << args->user_thread_count << '\n';
@@ -2978,8 +2981,8 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
 
     // Reconstructing volume:
   } else {
-    this->run_dir = get_unique_fn("./run-1");
-    this->log_fn = this->run_dir + "/log.csv";
+    this->run_dir = get_unique_fn((fs::path(".")/"run-1").string());
+    this->log_fn = (this->run_dir / "log.csv").string();
     fs::create_directories(run_dir);
     std::cout << "All outputs will be written to: " << this->run_dir << '\n';
     std::ofstream run_log(log_fn);
@@ -3005,7 +3008,7 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
               << args->background_thresh << '\n';
     }
     run_log << "Output: type, " << args->output_type << '\n';
-    if (args->seed_path.length() > 0) {
+    if (args->seed_path != "") {
       run_log << "Seed detection: Seeds path, " << args->seed_path << '\n';
     }
     run_log << "Seed detection: morphological operations order, "
@@ -3035,7 +3038,8 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   if (!args->second_grid.empty()) {
     // simply combine the passed grids then exit program immediately
-    combine_grids(args->input_path, args->second_grid, this->args->output_name);
+    combine_grids(args->input_path.generic_string(), args->second_grid,
+                  this->args->output_name);
     return;
   }
 
@@ -3110,7 +3114,7 @@ template <class image_t> void Recut<image_t>::operator()() {
             "Mask grid must be set before starting soma segmentation");
 
     if (args->save_vdbs && args->input_type != "mask")
-      write_vdb_file({this->mask_grid}, this->run_dir + "/mask.vdb");
+      write_vdb_file({this->mask_grid}, this->run_dir / "mask.vdb");
 
     auto timer = high_resolution_timer();
     std::ofstream run_log;
@@ -3151,7 +3155,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     }
 
     if (args->save_vdbs)
-      write_vdb_file({sdf_grid}, this->run_dir + "/sdf.vdb");
+      write_vdb_file({sdf_grid}, this->run_dir / "sdf.vdb");
 
     // TODO find enclosed regions and log
 
@@ -3226,7 +3230,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     auto closed_sdf = sdf_grid->deepCopy();
     if (args->save_vdbs)
-      write_vdb_file({closed_sdf}, this->run_dir + "/closed_sdf.vdb");
+      write_vdb_file({closed_sdf}, this->run_dir / "closed_sdf.vdb");
 
     // open again to filter axons and dendrites
     if (args->open_steps > 0) {
@@ -3246,14 +3250,14 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log.flush();
 
     if (args->save_vdbs)
-      write_vdb_file({sdf_grid}, this->run_dir + "/opened_sdf.vdb");
+      write_vdb_file({sdf_grid}, this->run_dir / "opened_sdf.vdb");
 
 #ifdef LOG
     std::cout << "\tsegmentation step\n";
 #endif
     std::vector<openvdb::FloatGrid::Ptr> components;
     timer.restart();
-    openvdb::v9_1::tools::segmentSDF(*sdf_grid, components);
+    openvdb::v9_1::tools::segmentSDF(*sdf_grid, components); // 362,285,313
     run_log << "Seed detection: segmentation time, "
             << timer.elapsed_formatted() << '\n'
             << "Seed detection: initial seed count, " << components.size()
@@ -3273,7 +3277,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log.flush();
 
     if (args->save_vdbs)
-      write_vdb_file({masked_sdf}, this->run_dir + "/connected_sdf.vdb");
+      write_vdb_file({masked_sdf}, this->run_dir / "connected_sdf.vdb");
 
 #ifdef LOG
     std::cout << "\tSDF to point step\n";
@@ -3282,7 +3286,7 @@ template <class image_t> void Recut<image_t>::operator()() {
                                                 this->args->foreground_percent);
 
     if (args->save_vdbs)
-      write_vdb_file({this->topology_grid}, this->run_dir + "/point.vdb");
+      write_vdb_file({this->topology_grid}, this->run_dir / "point.vdb");
 
       // adds all valid markers to roots vector
       // filters by user input seeds if available

@@ -1,5 +1,6 @@
 #include "markers.h"
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -16,10 +17,10 @@
 
 using namespace std;
 
-vector<MyMarker> readMarker_file(string marker_file, int marker_base) {
+vector<MyMarker> readMarker_file(filesystem::path marker_file, int marker_base) {
   vector<MyMarker> markers;
   markers.reserve(1000);
-  ifstream ifs(marker_file.c_str());
+  ifstream ifs(marker_file);
   if (ifs.fail()) {
     cout << " unable to open marker file " << marker_file << endl;
     return markers;

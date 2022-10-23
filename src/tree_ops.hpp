@@ -223,8 +223,9 @@ auto partition_cluster = [](const std::vector<MyMarker *> &cluster) {
 // assumes tree passed is sorted root at front of tree
 auto write_swc = [](std::vector<MyMarker *> &tree,
                     std::array<float, 3> voxel_size,
-                    std::string component_dir_fn = ".", CoordBBox bbox = {},
-                    bool bbox_adjust = false, bool is_eswc = false) {
+                    std::filesystem::path component_dir_fn = ".",
+                    CoordBBox bbox = {}, bool bbox_adjust = false,
+                    bool is_eswc = false) {
   auto root = tree.front();
   if (root->type)
     throw std::runtime_error("First marker of tree must be a root (type 0)");
@@ -234,11 +235,9 @@ auto write_swc = [](std::vector<MyMarker *> &tree,
                         std::to_string(static_cast<int>(root->x)) + '-' +
                         std::to_string(static_cast<int>(root->y)) + '-' +
                         std::to_string(static_cast<int>(root->z));
-  auto swc_base = component_dir_fn + "/" + file_name_base;
-  auto swc_file_path = swc_base + ".swc";
   auto coord_to_swc_id = get_id_map();
   std::ofstream swc_file;
-  swc_file.open(swc_file_path);
+  swc_file.open(component_dir_fn / (file_name_base + ".swc"));
   swc_file << "# Crop windows bounding volume: " << bbox << '\n'
            << "# id type_id x y z radius parent_id\n";
   // iter those marker*
@@ -255,20 +254,15 @@ auto write_swc = [](std::vector<MyMarker *> &tree,
   });
 
   if (is_eswc) {
-    auto eswc_file_path = swc_base + ".ano.eswc";
-    auto apo_file_name_base = file_name_base + ".ano.apo";
-    auto apo_file_name = component_dir_fn + "/" + apo_file_name_base;
-
     std::ofstream ano_file;
-    ano_file.open(swc_base + ".ano");
-    ano_file << "APOFILE=" << apo_file_name_base << "\n";
-    ano_file << "SWCFILE=" << file_name_base + ".ano.eswc"
-             << "\n";
+    ano_file.open(component_dir_fn / (file_name_base + ".ano"));
+    ano_file << "APOFILE=" << file_name_base << ".ano.apo\n"
+             << "SWCFILE=" << file_name_base << ".ano.eswc\n";
     ano_file.close();
 
     auto marker = tree[0];
     std::ofstream apo_file;
-    apo_file.open(apo_file_name);
+    apo_file.open(component_dir_fn / (file_name_base + ".ano.apo"));
     apo_file << std::fixed << std::setprecision(SWC_PRECISION);
     // 56630,,,,2452.761,4745.697,3057.039,
     // 0.000,0.000,0.000,314.159,0.000,,,,0,0,255
@@ -294,7 +288,7 @@ auto write_swc = [](std::vector<MyMarker *> &tree,
     // iter those marker*
 
     std::ofstream eswc_file;
-    eswc_file.open(eswc_file_path);
+    eswc_file.open(component_dir_fn / (file_name_base + ".ano.eswc"));
     eswc_file << "# id type_id x y z radius parent_id"
               << " seg_id level mode timestamp TFresindex\n";
 
