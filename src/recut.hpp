@@ -29,9 +29,7 @@
 #include <unistd.h>
 #include <unordered_set>
 
-template <typename... Ts> struct Overload : Ts... {
-  using Ts::operator()...;
-};
+template <typename... Ts> struct Overload : Ts... { using Ts::operator()...; };
 template <class... Ts> Overload(Ts...) -> Overload<Ts...>;
 
 using ThreshV =
@@ -3298,7 +3296,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     timer.restart();
     seeds = create_seed_pairs(components, this->topology_grid,
                               this->args->voxel_size, this->args->min_radius_um,
-                              this->args->max_radius_um, known_seeds);
+                              this->args->max_radius_um,
+                              this->args->output_type, known_seeds);
 #ifdef LOG
     std::cout << "\tsaving seed coordinates to file ...\n";
 #endif
