@@ -29,7 +29,9 @@
 #include <unistd.h>
 #include <unordered_set>
 
-template <typename... Ts> struct Overload : Ts... { using Ts::operator()...; };
+template <typename... Ts> struct Overload : Ts... {
+  using Ts::operator()...;
+};
 template <class... Ts> Overload(Ts...) -> Overload<Ts...>;
 
 using ThreshV =
@@ -2011,8 +2013,7 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
     }
 
     if (args->input_type == "tiff") {
-      auto bits_per_sample =
-          get_tif_bit_width(args->input_path.string());
+      auto bits_per_sample = get_tif_bit_width(args->input_path.string());
       if (bits_per_sample == 8)
         dense_tile =
             load_tile<uint8_t>(tile_bbox, args->input_path.generic_string());
@@ -2966,7 +2967,9 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
     }
 
     this->run_dir = ".";
-    this->log_fn = this->run_dir / (this->args->output_name + "-log-" + std::to_string(args->user_thread_count) + ".csv");
+    this->log_fn =
+        this->run_dir / (this->args->output_name + "-log-" +
+                         std::to_string(args->user_thread_count) + ".csv");
 #ifdef LOG
     std::ofstream convert_log(this->log_fn);
     convert_log << "Thread count, " << args->user_thread_count << '\n';
@@ -2976,7 +2979,7 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
 
     // Reconstructing volume:
   } else {
-    this->run_dir = get_unique_fn((fs::path(".")/"run-1").string());
+    this->run_dir = get_unique_fn((fs::path(".") / "run-1").string());
     this->log_fn = this->run_dir / "log.csv";
     fs::create_directories(run_dir);
     std::cout << "All outputs will be written to: " << this->run_dir << '\n';
