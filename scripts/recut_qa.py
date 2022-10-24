@@ -2,6 +2,7 @@ import subprocess
 import argparse
 import re
 from test_precision_recall import precision_recall
+from plots import get_hash
 
 def parse_range(string):
     if string.contains('-'):
@@ -30,7 +31,9 @@ def call_recut(**kwargs):
 
     precision_recall(**kwargs)
 
-    # return an object that will be a row of a pandas df for soma_recall, soma_precision, neuron yield, neuron precision, run, git commit, voxel size, for this given run
+    git_hash = get_hash()
+    # TODO return a pandas dataframe with 1 row for this particular run with columns for soma_recall, soma_precision, neuron yield, neuron precision, run dir, git hash, voxel size, for this given run
+    # note that this function will be called multiple times, each run being placed in a new row by the caller
 
 def main():
     parser = argparse.ArgumentParser()
