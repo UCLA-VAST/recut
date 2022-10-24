@@ -7,6 +7,7 @@
 #include <list>
 #include <map>
 #include <iostream>
+#include <filesystem>
 #include <fstream>
 #include <cstdint>
 #include <cassert>
@@ -121,7 +122,7 @@ typedef MyMarker MyNode;
 #define MidMarker(m1, m2) MyMarker(((m1).x + (m2).x)/2.0,((m1).y + (m2).y)/2.0,((m1).z + (m2).z)/2.0)
 
 
-vector<MyMarker> readMarker_file(string marker_file, int marker_base);
+vector<MyMarker> readMarker_file(filesystem::path marker_file, int marker_base);
 bool saveMarker_file(string marker_file, vector<MyMarker> & out_markers);
 bool saveMarker_file(string marker_file, vector<MyMarker> & outmarkers, list<string> & infostring);
 bool saveMarker_file(string marker_file, vector<MyMarker*> & out_markers);

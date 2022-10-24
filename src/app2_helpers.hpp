@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <map>
 #include <set>
 #include <stdlib.h> // abs
@@ -22,6 +23,7 @@
 #endif
 
 using namespace std;
+namespace fs = std::filesystem;
 
 #define INTENSITY_DISTANCE_METHOD 0
 #define __USE_APP_METHOD__
@@ -1623,12 +1625,12 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
   return true;
 }
 
-bool marker_to_swc_file(std::string swc_file,
+bool marker_to_swc_file(fs::path swc_file,
                         std::vector<MyMarker *> &outmarkers) {
   // cout << "marker num = " << outmarkers.size() << ", save swc file to "
   //<< swc_file << endl;
   map<MyMarker *, int> ind;
-  ofstream ofs(swc_file.c_str());
+  ofstream ofs(swc_file);
 
   if (ofs.fail()) {
     cout << "open swc file error" << endl;
@@ -1657,7 +1659,7 @@ bool marker_to_swc_file(std::string swc_file,
 // frame
 template <typename ValuedGrid>
 void run_app2(ValuedGrid component_with_values,
-              std::vector<Seed> component_seeds, std::string component_dir_fn,
+              std::vector<Seed> component_seeds, fs::path component_dir_fn,
               int index, int min_branch_length, std::ofstream &component_log,
               bool global_bbox_adjust = false) {
   // the bkg_thresh is 0 for vdb to dense
@@ -1692,7 +1694,7 @@ void run_app2(ValuedGrid component_with_values,
                     window.bbox().dim()[2],
                     /* cnn_type*/ 1, bkg_thresh);
 #ifdef LOG
-  component_log << "FM, " << timer.elapsed() << '\n';
+  component_log << "Fast Marching time, " << timer.elapsed_formatted() << '\n';
 #endif
 
   // prune run the seq prune from app2 to compare
@@ -1704,7 +1706,7 @@ void run_app2(ValuedGrid component_with_values,
        /*length thresh*/ min_branch_length,
        /*sr_ratio*/ 1. / 3);
 #ifdef LOG
-  component_log << "HP, " << timer.elapsed() << '\n';
+  component_log << "HAPP time, " << timer.elapsed_formatted() << '\n';
 #endif
   timer.restart();
 
@@ -1718,16 +1720,16 @@ void run_app2(ValuedGrid component_with_values,
 
   // print
   auto app2_fn =
-      component_dir_fn + "/app2-component-" + std::to_string(index) + ".swc";
+      component_dir_fn / ("app2-component-" + std::to_string(index) + ".swc");
   if (component_seeds.size() < 2) {
     auto seed = component_seeds.front();
-    app2_fn = component_dir_fn + "/app2-tree-with-soma-xyz-" +
-              std::to_string(seed.coord.x()) + '-' +
-              std::to_string(seed.coord.y()) + '-' +
-              std::to_string(seed.coord.z()) + ".swc";
+    app2_fn = component_dir_fn /
+              ("app2-tree-with-soma-xyz-" + std::to_string(seed.coord.x()) +
+               '-' + std::to_string(seed.coord.y()) + '-' +
+               std::to_string(seed.coord.z()) + ".swc");
   }
   marker_to_swc_file(app2_fn, app2_output_tree_prune);
 #ifdef LOG
-  component_log << "APP write SWC, " << timer.elapsed() << '\n';
+  component_log << "APP write SWC time, " << timer.elapsed_formatted() << '\n';
 #endif
 }

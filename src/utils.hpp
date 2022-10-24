@@ -20,6 +20,7 @@
 #include <openvdb/tools/LevelSetUtil.h>    // sdfSegment, sdfToFogVolume
 #include <openvdb/tools/VolumeToSpheres.h> // fillWithSpheres
 #include <queue>
+#include <ranges>
 #include <sstream>
 #include <stdlib.h> // ultoa
 #include <string>
@@ -255,13 +256,18 @@ private:
 
 // Note: this is linux specific, other cross-platform solutions available:
 //     https://stackoverflow.com/questions/1528298/get-path-of-executable
-std::string get_parent_dir() {
+/*
+auto get_parent_dir() {
   // fs::path full_path(fs::current_path());
   fs::path full_path(fs::canonical("/proc/self/exe"));
-  return fs::canonical(full_path.parent_path().parent_path()).string();
+  return fs::canonical(full_path.parent_path().parent_path());
 }
+*/
 
-std::string get_data_dir() { return CMAKE_INSTALL_DATADIR; }
+auto get_data_dir() {
+  fs::path a = CMAKE_INSTALL_DATADIR;
+  return a;
+}
 
 VID_t get_central_coord(int grid_size) {
   return grid_size / 2 - 1; // place at center
@@ -1089,7 +1095,7 @@ auto append_attributes = [](auto grid) {
   openvdb::points::appendAttribute(grid->tree(), "value", valueAttribute);
 };
 
-auto read_vdb_file(std::string fn, std::string grid_name = "") {
+auto read_vdb_file(fs::path fn, std::string grid_name = "") {
 #ifdef LOG
   // cout << "Reading vdb file: " << fn << " grid: " << grid_name << " ...\n";
 #endif
@@ -1097,7 +1103,7 @@ auto read_vdb_file(std::string fn, std::string grid_name = "") {
     cout << "Input image file does not exist or not found, exiting...\n";
     exit(1);
   }
-  openvdb::io::File file(fn);
+  openvdb::io::File file(fn.string());
   file.open();
   if (grid_name.empty()) {
     grid_name = file.beginName().gridName(); // get the 1st grid
@@ -1115,15 +1121,14 @@ auto read_vdb_file(std::string fn, std::string grid_name = "") {
 // Add the grid pointer to a container.
 // openvdb::GridPtrVec grids;
 // grids.push_back(grid);
-void write_vdb_file(openvdb::GridPtrVec vdb_grids, std::string fp = "") {
-
+void write_vdb_file(openvdb::GridPtrVec vdb_grids, fs::path fp = "") {
   // safety checks
   auto default_fn = "topology.vdb";
-  if (fp.empty()) {
-    fp = get_data_dir() + '/' + default_fn;
+  if (fp == "") {
+    fp = get_data_dir() / default_fn;
   } else {
-    auto dir = fs::path(fp).remove_filename();
-    if (dir.empty() || fs::exists(dir)) {
+    auto dir = fp.parent_path();
+    if (dir == "" || fs::exists(dir)) {
       if (fs::exists(fp)) {
 #ifdef LOG
         std::cout << "Warning: " << fp << " already exists, overwriting...\n";
@@ -1138,7 +1143,7 @@ void write_vdb_file(openvdb::GridPtrVec vdb_grids, std::string fp = "") {
   }
 
   auto timer = new high_resolution_timer();
-  openvdb::io::File vdb_file(fp);
+  openvdb::io::File vdb_file(fp.string());
   vdb_file.write(vdb_grids);
   vdb_file.close();
 
@@ -1385,10 +1390,10 @@ RecutCommandLineArgs get_args(int grid_size, int tile_length, int block_size,
   args.input_type = input_type;
   args.output_type = output_type;
   args.convert_only = false; // default is true from CL
-  auto str_path = get_data_dir();
-  args.seed_path = str_path + "/test_markers/" + std::to_string(grid_size) +
-                   "/tcase" + std::to_string(tcase) + "/slt_pct" +
-                   std::to_string(slt_pct) + "/";
+  fs::path data_dir_path = get_data_dir();
+  args.seed_path = data_dir_path / "test_markers" / std::to_string(grid_size) /
+                   ("tcase" + std::to_string(tcase)) /
+                   ("slt_pct" + std::to_string(slt_pct));
   auto lengths = GridCoord(grid_size);
   args.set_image_lengths(lengths);
   args.set_image_offsets(zeros());
@@ -1421,7 +1426,7 @@ RecutCommandLineArgs get_args(int grid_size, int tile_length, int block_size,
 
     if (const char *env_p = std::getenv("TEST_MARKER")) {
       std::cout << "Using $TEST_MARKER environment variable: " << env_p << '\n';
-      args.seed_path = std::string(env_p);
+      args.seed_path = std::filesystem::path{env_p};
     } else {
       std::cout << "Warning likely fatal must run: export "
                    "TEST_MARKER=\"abs/path/to/marker\" to set the environment "
@@ -1437,17 +1442,18 @@ RecutCommandLineArgs get_args(int grid_size, int tile_length, int block_size,
     // in the update function, this is critical for benchmarking
     args.max_intensity = 2;
     args.min_intensity = 0;
-    auto input_path = str_path + "/test_images/" + std::to_string(grid_size) +
-                      "/tcase" + std::to_string(tcase) + "/slt_pct" +
-                      std::to_string(slt_pct);
+    fs::path input_path = data_dir_path / "test_images" /
+                          std::to_string(grid_size) /
+                          ("tcase" + std::to_string(tcase)) /
+                          ("slt_pct" + std::to_string(slt_pct));
     if (input_is_vdb) {
       if (args.input_type == "point") {
-        args.input_path = input_path + "/point.vdb";
+        args.input_path = input_path / "point.vdb";
       } else if (args.input_type == "float") {
-        args.input_path = input_path + "/float.vdb";
+        args.input_path = input_path / "float.vdb";
       }
     } else {
-      args.input_path = input_path + "/ch0";
+      args.input_path = input_path / "ch0";
     }
   }
 
@@ -1464,8 +1470,8 @@ RecutCommandLineArgs get_args(int grid_size, int tile_length, int block_size,
   return args;
 }
 
-void write_marker(VID_t x, VID_t y, VID_t z, unsigned int radius,
-                  std::string fn, GridCoord voxel_size) {
+void write_marker(VID_t x, VID_t y, VID_t z, unsigned int radius, fs::path fn,
+                  GridCoord voxel_size) {
   auto print = false;
 #ifdef LOG
   print = true;
@@ -1478,12 +1484,12 @@ void write_marker(VID_t x, VID_t y, VID_t z, unsigned int radius,
     if (print)
       cout << "      Delete old: " << fn << '\n';
     fs::create_directories(fn);
-    fn = fn + "/marker_" + std::to_string(static_cast<int>(x * voxel_size[0])) +
-         "_" + std::to_string(static_cast<int>(y * voxel_size[1])) + "_" +
-         std::to_string(static_cast<int>(z * voxel_size[2])) + "_" +
-         std::to_string(static_cast<int>(volume));
+    fn /= ("marker_" + std::to_string(static_cast<int>(x * voxel_size[0])) +
+           "_" + std::to_string(static_cast<int>(y * voxel_size[1])) + "_" +
+           std::to_string(static_cast<int>(z * voxel_size[2])) + "_" +
+           std::to_string(static_cast<int>(volume)));
     std::ofstream mf;
-    mf.open(fn);
+    mf.open(fn.string());
     mf << "# x,y,z,radius\n";
     mf << x << ',' << y << ',' << z << ',' << radius;
     mf.close();
@@ -1720,10 +1726,10 @@ void write_tiff_page(image_t *inimg1d, TIFF *tiff, const GridCoord dims,
 
 // passing a page number >= 0 means write a multipage tiff file
 template <typename image_t>
-void write_single_z_plane(image_t *inimg1d, std::string fn,
+void write_single_z_plane(image_t *inimg1d, fs::path fn,
                           const GridCoord dims) {
 
-  TIFF *tiff = TIFFOpen(fn.c_str(), "w");
+  TIFF *tiff = TIFFOpen(fn.string().c_str(), "w");
   if (!tiff) {
     throw std::runtime_error(
         "ERROR reading (not existent, not accessible or no TIFF file)");
@@ -1738,14 +1744,14 @@ void write_single_z_plane(image_t *inimg1d, std::string fn,
 }
 
 template <typename image_t = uint16_t>
-void write_tiff(image_t *inimg1d, std::string base, const GridCoord dims,
+void write_tiff(image_t *inimg1d, fs::path base, const GridCoord dims,
                 bool rerun = false) {
   auto print = false;
 #ifdef LOG
   print = true;
 #endif
 
-  base = base + "/ch0";
+  base /= "ch0";
   if (!fs::exists(base) || rerun) {
     fs::remove_all(base); // make sure it's an overwrite
     if (print)
@@ -1753,10 +1759,9 @@ void write_tiff(image_t *inimg1d, std::string base, const GridCoord dims,
     fs::create_directories(base);
     for (int z = 0; z < dims[2]; ++z) {
       std::ostringstream fn;
-      fn << base << "/img_" << std::setfill('0') << std::setw(6) << z << ".tif";
+      fn << "img_" << std::setfill('0') << std::setw(6) << z << ".tif";
       VID_t start = z * dims[0] * dims[1];
-
-      write_single_z_plane(&(inimg1d[start]), fn.str(), dims);
+      write_single_z_plane(&(inimg1d[start]), base / fn.str(), dims);
     }
     if (print)
       cout << "      Wrote test images in: " << base << '\n';
@@ -1909,7 +1914,7 @@ read_tiff_paged(const std::string &fn) {
   // return nullptr;
 }
 
-auto get_dir_files = [](const std::string &dir, const std::string &ext) {
+auto get_dir_files = [](const fs::path &dir, const std::string &ext) {
   std::ostringstream os;
   os << "Passed : " << dir;
   if (!(fs::exists(dir) && fs::is_directory(dir))) {
@@ -1926,7 +1931,7 @@ auto get_dir_files = [](const std::string &dir, const std::string &ext) {
         return entry.path().extension() == ext;
       }) |
       rv::transform([&dir](auto const &entry) {
-        return dir + "/" + entry.path().filename().string();
+        return (dir / entry.path().filename()).string();
       }) |
       rv::filter([](auto const &entry) { return fs::exists(entry); }) |
       rng::to_vector;
@@ -1937,7 +1942,6 @@ auto get_dir_files = [](const std::string &dir, const std::string &ext) {
   }
 
   std::sort(tif_filenames.begin(), tif_filenames.end());
-
   return tif_filenames;
 };
 
@@ -2927,13 +2931,13 @@ void encoded_tiff_write(image_t *inimg1d, TIFF *tiff, const GridCoord dims) {
 // components, create a full dense buffer will fault with bad_alloc due to size
 // z-plane by z-plane like below prevents this
 template <typename GridT>
-std::string write_vdb_to_tiff_planes(GridT grid, std::string base,
+std::string write_vdb_to_tiff_planes(GridT grid, fs::path base,
                                      CoordBBox bbox = {}, int channel = 0,
                                      int component_index = 0) {
   if (bbox.empty())
     bbox = grid->evalActiveVoxelBoundingBox(); // inclusive both ends
 
-  base = base + "/ch" + std::to_string(channel);
+  base /= ("ch" + std::to_string(channel));
   fs::remove_all(base); // make sure it's an overwrite
   fs::create_directories(base);
 
@@ -2953,15 +2957,15 @@ std::string write_vdb_to_tiff_planes(GridT grid, std::string base,
 
     // overflows at 1 million z planes
     std::ostringstream fn;
-    fn << base << "/component_" << component_index << "_img_"
+    fn <<  "component_" << component_index << "_img_"
        << std::setfill('0') << std::setw(6) << index << ".tif";
 
     // cout << '\n' << fn.str() << '\n';
     // print_image_3D(dense.data(), plane_bbox.dim());
 
-    write_single_z_plane(dense.data(), fn.str(), plane_bbox.dim());
+    write_single_z_plane(dense.data(), base / fn.str(), plane_bbox.dim());
   });
-  return base;
+  return base.string();
 }
 
 // for all active values of the output grid copy the value at that coordinate
@@ -3047,13 +3051,13 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
 // values copied in topology and written z-plane by z-plane to individual tiff
 // files tiff component also saved
 template <typename GridT>
-std::string write_output_windows(GridT output_grid, std::string dir,
+std::string write_output_windows(GridT output_grid, fs::path dir,
                                  std::ofstream &runtime, int index = 0,
                                  bool output_vdb = false, bool paged = true,
                                  CoordBBox bbox = {}, int channel = 0) {
 
-  auto base = dir + "/img-component-" + std::to_string(index) + "-ch" +
-              std::to_string(channel);
+  auto base = dir / ("img-component-" + std::to_string(index) + "-ch" +
+                     std::to_string(channel));
 
   std::string output_fn;
   if (output_grid->activeVoxelCount()) {
@@ -3070,7 +3074,7 @@ std::string write_output_windows(GridT output_grid, std::string dir,
       timer.restart();
       openvdb::GridPtrVec component_grids;
       component_grids.push_back(output_grid);
-      write_vdb_file(component_grids, base + ".vdb");
+      write_vdb_file(component_grids, base.string() + ".vdb");
 #ifdef LOG
       // cout << "Wrote window of component to vdb in " << timer.elapsed() << "
       // s\n";
@@ -3214,16 +3218,16 @@ openvdb::FloatGrid::Ptr clip_by_seed(openvdb::FloatGrid::Ptr grid,
 }
 
 void write_marker_files(std::vector<MyMarker *> component_markers,
-                        std::string component_dir_fn) {
+                        fs::path component_dir_fn) {
   rng::for_each(component_markers, [&component_dir_fn](const auto marker) {
     // write marker file
     std::ofstream marker_file;
     auto mass = ((4 * PI) / 3.) * pow(marker->radius, 3);
-    marker_file.open(component_dir_fn + "/marker_" +
-                     std::to_string(static_cast<int>(marker->x)) + "_" +
-                     std::to_string(static_cast<int>(marker->y)) + "_" +
-                     std::to_string(static_cast<int>(marker->z)) + "_" +
-                     std::to_string(int(mass)));
+    marker_file.open(component_dir_fn /
+                     ("marker_" + std::to_string(static_cast<int>(marker->x)) +
+                      "_" + std::to_string(static_cast<int>(marker->y)) + "_" +
+                      std::to_string(static_cast<int>(marker->z)) + "_" +
+                      std::to_string(int(mass))));
 
     marker_file << "# soma/seed x,y,z in original image\n";
     marker_file << marker->x << ',' << marker->y << ',' << marker->z << '\n';
@@ -3455,10 +3459,10 @@ auto get_hdf5_data = [](std::string file_name, int channel = 0) {
  * The tile size and shape define the requested "view" of the image
  * an image view is referred to as a tile
  * that we will load at one time. There is a one to one mapping
- * of an image view and an tile. There is also a one to
+ * of an image view and a tile. There is also a one to
  * one mapping between each voxel of the image view and the
  * vertex of the tile. Note the tile is an array of
- * initialized unvisited structs so they start off at arbitrary
+ * initialized unvisited structs, so they start off at arbitrary
  * location but are defined as they are visited.
  */
 template <typename image_t = uint16_t>
@@ -3486,7 +3490,7 @@ load_tile(const CoordBBox &bbox, const std::string &dir) {
 }
 
 auto get_unique_fn = [](std::string probe_name) {
-  // make sure its a clean write
+  // make sure it's a clean write
   while (fs::exists(probe_name)) {
     auto l = probe_name | rv::split('-') | rng::to<std::vector<std::string>>();
     l.back() = std::to_string(std::stoi(l.back()) + 1);
@@ -3495,19 +3499,13 @@ auto get_unique_fn = [](std::string probe_name) {
   return probe_name;
 };
 
-auto convert_fn_vdb = [](const std::string &name, auto split_char,
+auto convert_fn_vdb = [](const fs::path &file_path, auto split_char,
                          auto args) -> std::string {
-  auto dir_path = name | rv::split('/') | rng::to<std::vector<std::string>>();
-  auto file_name = name;
-  std::string parent = "";
-  if (dir_path.size() > 1) { // is a full path
-    file_name = dir_path.back();
-    parent = name | rv::split('/') | rv::drop_last(1) | rv::join('/') |
-             rng::to<std::string>();
-  }
+  auto parent = file_path.parent_path();
+  auto file_name = file_path.filename().string();
+
   std::string stripped = file_name | rv::split(split_char) | rv::drop_last(1) |
                          rv::join(split_char) | rng::to<std::string>();
-  // stripped += "-ch" + std::to_string(args->channel);
   stripped += "-" + args->output_type;
 
   if (args->foreground_percent >= 0) {
@@ -3519,8 +3517,7 @@ auto convert_fn_vdb = [](const std::string &name, auto split_char,
   if (args->image_offsets.z())
     stripped += "-zoff" + std::to_string(args->image_offsets.z());
   stripped += ".vdb";
-  stripped = dir_path.size() > 1 ? parent + "/" + stripped : stripped;
-  return stripped;
+  return (parent / stripped).string();
 };
 
 auto get_output_name = [](RecutCommandLineArgs *args) -> std::string {
@@ -3535,7 +3532,8 @@ auto get_output_name = [](RecutCommandLineArgs *args) -> std::string {
     const auto tif_filenames = get_dir_files(args->input_path, ".tif");
     return convert_fn_vdb(tif_filenames[0], '_', args);
   }
-  return std::string("out.vdb");
+  std::string default_output_name = "out.vdb";
+  return default_output_name;
 };
 
 auto convert_sdf_to_points = [](auto sdf, auto image_lengths,
@@ -3561,22 +3559,23 @@ auto anisotropic_factor = [](std::array<float, 3> voxel_size) {
 };
 
 // write seed/somas to disk
-auto write_seeds = [](std::string run_dir, std::vector<Seed> seeds,
+auto write_seeds = [](fs::path run_dir, std::vector<Seed> seeds,
                       std::array<float, 3> voxel_size) {
   // start seeds directory
-  std::string seed_dir = run_dir + "/seeds/";
+  fs::path seed_dir = run_dir / "seeds";
   fs::create_directories(seed_dir);
 
   rng::for_each(seeds, [&](const auto &seed) {
     std::ofstream seed_file;
     seed_file.open(
-        seed_dir + "marker_" +
-            std::to_string(static_cast<int>(seed.coord.x() * voxel_size[0])) +
-            "_" +
-            std::to_string(static_cast<int>(seed.coord.y() * voxel_size[1])) +
-            "_" +
-            std::to_string(static_cast<int>(seed.coord.z() * voxel_size[2])) +
-            "_" + std::to_string(static_cast<int>(seed.volume)),
+        seed_dir /
+            ("marker_" +
+             std::to_string(static_cast<int>(seed.coord.x() * voxel_size[0])) +
+             "_" +
+             std::to_string(static_cast<int>(seed.coord.y() * voxel_size[1])) +
+             "_" +
+             std::to_string(static_cast<int>(seed.coord.z() * voxel_size[2])) +
+             "_" + std::to_string(static_cast<int>(seed.volume))),
         std::ios::app);
     seed_file << std::fixed << std::setprecision(SWC_PRECISION);
     seed_file << "#x,y,z,radius in um based of voxel size: [" << voxel_size[0]

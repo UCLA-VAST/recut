@@ -1,6 +1,6 @@
 #include "recut_parameters.hpp"
 
-void RecutCommandLineArgs::PrintUsage() {
+    void RecutCommandLineArgs::PrintUsage() {
   std::cout << "Basic usage : recut <image or r> [--seeds <marker_dir>] "
                "[--type point/uint8/mask/float/ims/tiff] "
                "[-o <output_vdb_file_name>] "
@@ -15,8 +15,8 @@ void RecutCommandLineArgs::PrintUsage() {
    */
 
   std::cout << "<image file or dir>  file or directory of input image(s)\n";
-  std::cout << "--seeds              directory of files which represent known "
-               "root/soma locations, seeds are required to reconstruct\n";
+  std::cout << "--seeds              [-s] directory of files which represent "
+               "known root/soma locations, seeds are required to reconstruct\n";
   std::cout << "--output-name        [-o] give converted vdb a custom name "
                "defaults to "
                "naming with useful image attributes\n";
@@ -36,7 +36,8 @@ void RecutCommandLineArgs::PrintUsage() {
   // std::cout << "--channel            [-c] channel number, default 0\n";
   // std::cout << "--resolution-level   [-rl] resolution level default 0 "
   //"(original resolution)\n";
-  std::cout << "--image-offsets      [-io] offsets of subvolume, in x y z order "
+  std::cout
+      << "--image-offsets      [-io] offsets of subvolume, in x y z order "
          "default 0 0 0\n";
   std::cout << "--voxel-size         µm lengths of voxel in x y z order "
                "default 1.0 1.0 1.0 determines prune radius\n";
@@ -128,7 +129,7 @@ std::string RecutCommandLineArgs::MetaString() {
   meta_stream << "foreground_percent = " << foreground_percent << '\n';
   meta_stream << "background_thresh = " << background_thresh << '\n';
   meta_stream << "seeds directory = "
-              << (seed_path.empty() ? "none" : seed_path) << '\n';
+              << (seed_path == "" ? "none" : seed_path) << '\n';
   return meta_stream.str();
 }
 
@@ -144,9 +145,8 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       exit(0);
     } else {
       // global volume and channel selection
-      args.input_path = argv[1];
-      if (args.input_path.back() == '/')
-        args.input_path.pop_back();
+      // canonical removes the trailing slash
+      args.input_path = std::filesystem::canonical(argv[1]);
     }
     // if the switch is given, parameter(s) corresponding to the switch is
     // expected
@@ -158,7 +158,17 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         }
       } else if (strcmp(argv[i], "--seeds") == 0 ||
                  strcmp(argv[i], "-s") == 0) {
-        args.seed_path = argv[i + 1];
+        // canonical removes the trailing slash
+        args.seed_path = std::filesystem::canonical(argv[i + 1]);
+        if (!std::filesystem::exists(args.seed_path)){
+          cerr << "--seeds path does not exist\n";
+          exit(1);
+        }
+        if (!std::filesystem::is_directory(args.seed_path)){
+          cerr << "--seeds must be a directory\n";
+          exit(1);
+        }
+
         ++i;
       } else if (strcmp(argv[i], "--resolution-level") == 0 ||
                  strcmp(argv[i], "-rl") == 0) {
@@ -188,7 +198,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--input-type") == 0) {
         auto arg = std::string(argv[i + 1]);
         std::transform(arg.begin(), arg.end(), arg.begin(),
-                       [](auto c){ return std::tolower(c); });
+                       [](auto c) { return std::tolower(c); });
         if (arg == "float" || arg == "point" || arg == "uint8" ||
             arg == "mask" || arg == "ims" || arg == "tiff") {
           args.input_type = (argv[i + 1]);
@@ -201,7 +211,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--output-type") == 0) {
         auto arg = std::string(argv[i + 1]);
         std::transform(arg.begin(), arg.end(), arg.begin(),
-                       [](auto c){ return std::tolower(c); });
+                       [](auto c) { return std::tolower(c); });
         if (arg == "float" || arg == "point" || arg == "uint8" ||
             arg == "mask" || arg == "ims" || arg == "tiff" || arg == "eswc" ||
             arg == "swc" || arg == "labels" || arg == "seeds") {
