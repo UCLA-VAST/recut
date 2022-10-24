@@ -256,11 +256,13 @@ private:
 
 // Note: this is linux specific, other cross-platform solutions available:
 //     https://stackoverflow.com/questions/1528298/get-path-of-executable
-std::string get_parent_dir() {
+/*
+auto get_parent_dir() {
   // fs::path full_path(fs::current_path());
   fs::path full_path(fs::canonical("/proc/self/exe"));
-  return fs::canonical(full_path.parent_path().parent_path()).string();
+  return fs::canonical(full_path.parent_path().parent_path());
 }
+*/
 
 auto get_data_dir() {
   fs::path a = CMAKE_INSTALL_DATADIR;
