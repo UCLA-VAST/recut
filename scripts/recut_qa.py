@@ -3,6 +3,7 @@ import argparse
 import re
 from test_precision_recall import precision_recall
 from plots import get_hash
+from TMD_classify import filter_dir_by_model
 
 def parse_range(string):
     if string.contains('-'):
@@ -32,8 +33,14 @@ def call_recut(**kwargs):
     precision_recall(**kwargs)
 
     git_hash = get_hash()
-    # TODO return a pandas dataframe with 1 row for this particular run with columns for soma_recall, soma_precision, neuron yield, neuron precision, run dir, git hash, voxel size, for this given run
-    # note that this function will be called multiple times, each run being placed in a new row by the caller
+
+    true_neuron_count = filter_dir_by_model(run_dir, kwargs['model'])
+
+    # TODO return a pandas dataframe with 1 row for this particular run with columns for soma_recall, soma_precision, neuron yield, neuron precision, run dir, git hash, voxel size, TMD model name, for this given run
+    # note that this function will eventually be called multiple times, each run being placed in a new row by the caller
+    # the run of this whole script will output a single csv from the pd.df, each row corresponding to a recut run
+
+    # number of neurons that pass as true positives based on the topology descriptor trained in kwargs['model']
 
 def main():
     parser = argparse.ArgumentParser()
@@ -54,6 +61,9 @@ def main():
     parser.add_argument("--voxel-size-x", type=float, default=1, help="x voxel size in µm.")
     parser.add_argument("--voxel-size-y", type=float, default=1, help="y voxel size in µm.")
     parser.add_argument("--voxel-size-z", type=float, default=1, help="z voxel size in µm.")
+    # explicitly for TMD_classify
+    default_model = "model_base_rf_13_50_49.sav"
+    parser.add_argument("--model", default=f"{default_model}", help=f"path to the TMD classifier model; defaults to the MSN model: {default_model}")
     args = parser.parse_args()
 
     call_recut(**vars(args))
