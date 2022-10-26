@@ -29,29 +29,27 @@ from argparse import ArgumentParser
 from tqdm import tqdm
 import warnings
 warnings.filterwarnings("ignore")
-   
-### DEFINE A FUNCTION THAT GENERATE TRAIN_X, TRAIN_Y
+
 def generate_data(junk_path, true_path, neurite_type = "basal_dendrite"):
-    
     """
-    This function aims to generate the training data (pvecs) and labels for model training
-    input: 
+    This function aims to generate the training data (pvecs), train_x, train_y, and labels for model training
+    input:
         - junk_path: path to the junk SWCs
         - true_path: path to the true neuron SWCs
         - neurite_type: type of neurite, default is "basal_dendrite for MSNs"
-    returns: 
+    returns:
         - train_dataset: train_x
         - labels: train_y
         - xlims: x limits that will be used when generating pvecs during prediction
         - ylims: y limits that will be used when generating pvecs during prediction
     """
-    
-    # ------------------------ Training dataset -------------------------------- 
+
+    # ------------------------ Training dataset --------------------------------
     # load SWCs in junk folder
     pop1 = Population.Population()
     pop1_success = []
     pop1_failed = []
-    for f in os.listdir(junk_path):       
+    for f in os.listdir(junk_path):
         # swc = [str(directory1/f)]
         swc = str(junk_path/f)
         try:
@@ -77,15 +75,15 @@ def generate_data(junk_path, true_path, neurite_type = "basal_dendrite"):
     print(f"For SWC set2: {len(pop2_success)} files loaded successfully, {len(pop2_failed)} files loaded failed")
 
     groups = [pop1, pop2]
-    
+
     # neurite_type='basal_dendrite'
-    
+
     # Generate a persistence diagram per neuron
     # need to consider the SWCs that need to be excluded due to failer in getting persistence diagram
     pers_diagrams = []
     indx_dict = {0:[], 1:[]}
     indx_dict_0 = {0:[], 1:[]}
-    for i,m in enumerate(groups): 
+    for i,m in enumerate(groups):
         for j,n in enumerate(m.neurons):
             try:
                 p = tmd.methods.get_ph_neuron(n, neurite_type = neurite_type)
@@ -108,8 +106,8 @@ def generate_data(junk_path, true_path, neurite_type = "basal_dendrite"):
     labels = [i + 1 for i, k in enumerate(groups_new) for j in k]
     # validate this is correct
     # fq_check = collections.Counter(labels)
-    # print(dict(fq_check))   
-     
+    # print(dict(fq_check))
+
     # Define x-ylimits
     xlims, ylims = tmd.analysis.get_limits(pers_diagrams)
     # Generate a persistence image for each diagram
@@ -117,7 +115,7 @@ def generate_data(junk_path, true_path, neurite_type = "basal_dendrite"):
     pers_images_indx = []
     pers_images = []
     for i,p in enumerate(pers_diagrams):
-        try: 
+        try:
             p_i = tmd.analysis.get_persistence_image_data(p, xlims=xlims, ylims=ylims)
             # need to handle those NANs
             if np.isnan(p_i).any():
@@ -128,7 +126,7 @@ def generate_data(junk_path, true_path, neurite_type = "basal_dendrite"):
                 pers_images.append(p_i)
         except:
             pass
-    
+
     # pers_images[0]
     labels = [l for i,l in enumerate(labels) if i in pers_images_indx]
 
@@ -139,7 +137,7 @@ def generate_data(junk_path, true_path, neurite_type = "basal_dendrite"):
     print("Summary after completion of getting persistence image data:")
     print(f"SWC set1 has {success1} success and non-zeros, {len(os.listdir(junk_path))-success1} discarded")
     print(f"SWC set2 has {success2} success and non-zeros, {len(os.listdir(true_path))-success2} discarded")
-            
+
     # pers_images = [
     #     tmd.analysis.get_persistence_image_data(p, xlims=xlims, ylims=ylims) for p in pers_diagrams
     # ]
@@ -149,16 +147,15 @@ def generate_data(junk_path, true_path, neurite_type = "basal_dendrite"):
 
     return train_dataset, labels, xlims, ylims
 
-        
-### DEFINE A FUNCTION TO RETURN ALL MODEL EVALUATION RESULT
+
 def model_eval(clf, x_test, y_test, clf_name):
-    
+
     """
-    this function aims to generate all evaluation metrics of the given classifier
+    Generates all model evaluation metrics of the given classifier
     and save confusion matrix, roc curve to pdf files
-    input: 
+    input:
         - clf: classifier
-        - x_test: 
+        - x_test:
         - y_test:
         - clf_name: name of the clf (str)
     output:
@@ -168,7 +165,7 @@ def model_eval(clf, x_test, y_test, clf_name):
     """
     # accuracy
     # print(f"Accuracy: {clf.score(x_test, y_test)}")
-   
+
     # confusion matrix
     plot_confusion_matrix(clf, x_test, y_test).figure_
     plt.xticks(ticks=([0,1]), labels=(['junk','true']))
@@ -176,7 +173,7 @@ def model_eval(clf, x_test, y_test, clf_name):
     plt.title("Confusion matrix of " + clf_name)
     plt.savefig(result_path/f"Confusion_matrix_{clf_name}.pdf", format="pdf")
     plt.show()
-    
+
     # ROC AUC
     y_pred_proba = clf.predict_proba(x_test)[::,1]
     fpr, tpr, _ = roc_curve(y_test,  y_pred_proba, pos_label=2)
@@ -189,19 +186,15 @@ def model_eval(clf, x_test, y_test, clf_name):
     plt.xlabel('False Positive Rate')
     plt.legend(loc=4)
     plt.title("ROC curve for " + clf_name)
-    
+
     plt.savefig(result_path/f"ROC_curve_{clf_name}.pdf", format="pdf")
-    plt.show()  
-    
+    plt.show()
+
     # classification report
     print(classification_report(y_test, clf.predict(x_test), target_names=['junk','true'], digits=2))
 
-
-
-### DEFINE A FUNCTION THAT MAKE PREDICTIONS
-### INPUT COULD BE A SINGLE SWC OR A DIRECTORY OF SWCs
 def make_prediction(input, clf, clf_name, xlims=[1,1320], ylims=[0,905], num_iter = 20, neurite_type = "basal_dendrite"):
-    
+
     """
     this function aims to predict the class of the SWC(s), input could be a single file or a directory of SWCs
     input:
@@ -209,15 +202,18 @@ def make_prediction(input, clf, clf_name, xlims=[1,1320], ylims=[0,905], num_ite
         - clf: the classifier to use
         - clf_name: name of the clf (str)
         - num_iter: times of iteration, only use this when input is a single SWC file
+    returns:
+        - true_neuron_count: number of neurons classified as true positives by the model
     """
-    
-# input = Path("C:\\Users\\yanyanming77\\Desktop\\precision_recall\\TMD\\swc2")    
-# clf = pickle.load(open(Path("C:\\Users\\yanyanming77\\Desktop\\precision_recall\\TMD\\model_base_rf_12_52_10.sav"), 'rb'))
-    
+
+    true_neuron_count = 0
+    # input = Path("C:\\Users\\yanyanming77\\Desktop\\precision_recall\\TMD\\swc2")
+    # clf = pickle.load(open(Path("C:\\Users\\yanyanming77\\Desktop\\precision_recall\\TMD\\model_base_rf_12_52_10.sav"), 'rb'))
+
     # if input is a single neuron
     if os.path.isfile(input):
         print("input is a file")
-        try: 
+        try:
             neuron2test = tmd.io.load_neuron(str(input))
         except:
             print("Error when loading this neuron, please try another one")
@@ -227,27 +223,29 @@ def make_prediction(input, clf, clf_name, xlims=[1,1320], ylims=[0,905], num_ite
         pers_image2test = tmd.analysis.get_persistence_image_data(pers2test, xlims = xlims, ylims = ylims)
         # flatten
         test_dataset = pers_image2test.flatten()
-        
+
         predict_labels = []
-        
+
         # Train classifier with training images for selected number_of_trials
-        for i in range(num_iter): 
+        for i in range(num_iter):
             predict_labels.append(clf.predict([test_dataset])[0])
-        
+
         predict_cnt = dict(collections.Counter(predict_labels))
         predict_cnt_max = max(predict_cnt, key= lambda x: predict_cnt[x])
-        
+
         if predict_cnt_max == 1:
             print(f"The predicted class is JUNK")
+            true_neuron_count = 0
         elif predict_cnt_max == 2:
             print(f"The predicted class is TRUE NEURON")
+            true_neuron_count = 1
 
     # if input is a file path
     elif os.path.isdir(input):
         pop = Population.Population()
         pop_success = []
         pop_failed = []
-        for f in os.listdir(input):       
+        for f in os.listdir(input):
             # swc = [str(directory1/f)]
             swc = str(input/f)
             try:
@@ -256,7 +254,7 @@ def make_prediction(input, clf, clf_name, xlims=[1,1320], ylims=[0,905], num_ite
             except:
                 pass
         # print(f"For classification set: {len(pop.neurons)} loaded successfully")
-        
+
         predict_junk_list = []
         predict_true_neuron_list = []
         failed_list = []
@@ -268,21 +266,21 @@ def make_prediction(input, clf, clf_name, xlims=[1,1320], ylims=[0,905], num_ite
                 pers_image2test = tmd.analysis.get_persistence_image_data(pers2test, xlims = xlims, ylims = ylims)
                 test_dataset = pers_image2test.flatten()
                 predict_labels = []
-                
+
                 # Train classifier with training images for selected number_of_trials
-                for i in range(num_iter): 
+                for i in range(num_iter):
                     predict_labels.append(clf.predict([test_dataset])[0])
 
                 predict_cnt = dict(collections.Counter(predict_labels))
                 predict_cnt_max = max(predict_cnt, key= lambda x: predict_cnt[x])
-                
+
                 if predict_cnt_max == 1:
                     predict_junk_list.append(neuron_name)
                 elif predict_cnt_max == 2:
                     predict_true_neuron_list.append(neuron_name)
             except:
                 pass
-        
+
         ### save the classified SWCs to separate folders
         path_result = result_path/f"{clf_name}_{current_time}"
         path_result.mkdir(exist_ok=False)
@@ -292,7 +290,7 @@ def make_prediction(input, clf, clf_name, xlims=[1,1320], ylims=[0,905], num_ite
         path_true.mkdir(exist_ok=True)
         path_failed = path_result/'failed'
         path_failed.mkdir(exist_ok=True)
-        
+
         # list of failed files
         for f in os.listdir(input):
             # junk
@@ -304,21 +302,36 @@ def make_prediction(input, clf, clf_name, xlims=[1,1320], ylims=[0,905], num_ite
             elif f not in predict_junk_list and f not in predict_true_neuron_list:
                 shutil.copy(input/f, path_failed/f)
                 failed_list.append(f)
-        
+
+        true_neuron_count = len(predict_true_neuron_list)
         print("Summary of Classification:")
-        print(f"# of junk: {len(predict_junk_list)}, # of true neuron: {len(predict_true_neuron_list)}, # failed: {len(failed_list)}")
-    
+        print(f"# of junk: {len(predict_junk_list)}, # of true neuron: {true_neuron_count}, # failed: {len(failed_list)}")
 
+    return true_neuron_count
 
+def filter_dir_by_model(input, model, xlimits=None, ylimits=None):
+    """
+    wrapper function to make_prediction() to make classification simpler from outside scripts
+    input:
+        - input: a SWC file or a directory
+        - model: classifier path to use
+    returns:
+        - true_neuron_count: number of neurons classified as true positives by the model
+    """
 
-if __name__ == '__main__':
-    
+    m =  pickle.load(open(model, 'rb'))
+    # print(f"the model is loaded as {m}")
+    m_name = os.path.split(model)[1].split('.')[0]
+    # print(f"model name is: {m_name}")
+    return make_prediction(input, m, m_name, xlimits, ylimits)
+
+def main():
     time_now = datetime.now()
     current_time = time_now.strftime("%H:%M:%S").replace(':', '_')
-    
+
     parser = ArgumentParser(
         description = "TMD filtering, model training and classification")
-    
+
     # if needs to train model first
     parser.add_argument("--junk", "-j", type=str, required=False, help="path to junk folder")
     parser.add_argument("--true", "-t", type=str, required=False, help="path to true neuron folder")
@@ -326,16 +339,14 @@ if __name__ == '__main__':
     parser.add_argument("--filter", "-f", type=str, required=True, help="path or file to classifiy")
     parser.add_argument("--xlims", "-xlims", nargs='+', type=int, required=False, help="lower limit, upper limit of X separated by space, based on the training set")
     parser.add_argument("--ylims", "-ylims", nargs='+', type=int, required=False, help="lower limit, upper limit of Y separated by space, based on the training set")
-
-    
     args = parser.parse_args()
-    
+
     junk_path = None
     true_path = None
     model = None
     xlimits = None
     ylimits = None
-    
+
     if args.junk:
         junk_path = Path(args.junk)
     if args.true:
@@ -349,7 +360,7 @@ if __name__ == '__main__':
         ylimits = args.ylims
     print(f"xlimits {xlimits}")
     print(f"ylimits {ylimits}")
-    
+
     # results will be save in the parent directory of the file(s) to be filtered
     result_path = input.parent
 
@@ -370,7 +381,7 @@ if __name__ == '__main__':
         # lda_clf_base = LinearDiscriminantAnalysis()
         # lda_clf_base.fit(x_train, y_train)
         # lda_clf_base.score(x_val, y_val) # accuracy: 0.97
-        
+
         # # 2) Decision Tree
         # dt_clf_base = DecisionTreeClassifier(random_state=42)
         # dt_clf_base.fit(x_train, y_train)
@@ -389,17 +400,16 @@ if __name__ == '__main__':
         # save model
         model_name = result_path/f"model_base_rf_{current_time}.sav"
         pickle.dump(rf_clf_base, open(model_name, 'wb'))
-         
+
         # make prediction
         make_prediction(input, rf_clf_base, "rf_clf_base", xlims=xlims, ylims=ylims)
 
     # if have pre-trained model
     elif model and input:
-        m =  pickle.load(open(model, 'rb'))
-        # print(f"the model is loaded as {m}")
-        m_name = os.path.split(model)[1].split('.')[0]
-        # print(f"model name is: {m_name}")
-        make_prediction(input, m, m_name, xlimits, ylimits)
+        filter_dir_by_model(input, model, xlimits, ylimits)
+
+if __name__ == '__main__':
+    main()
 
 # # for testing purpose
 # junk_path = Path("C:\\Users\\yanyanming77\\Desktop\\precision_recall\\TMD\\junk_swc")
