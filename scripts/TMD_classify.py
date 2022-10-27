@@ -148,7 +148,7 @@ def generate_data(junk_path, true_path, neurite_type="basal_dendrite"):
     return train_dataset, labels, xlims, ylims
 
 
-def model_eval(clf, x_test, y_test, clf_name):
+def model_eval(clf, x_test, y_test, clf_name, result_path):
     """
     Generates all model evaluation metrics of the given classifier
     and save confusion matrix, roc curve to pdf files
@@ -193,7 +193,8 @@ def model_eval(clf, x_test, y_test, clf_name):
     print(classification_report(y_test, clf.predict(x_test), target_names=['junk', 'true'], digits=2))
 
 
-def make_prediction(input, clf, clf_name, xlims=[1, 1320], ylims=[0, 905], num_iter=20, neurite_type="basal_dendrite"):
+def make_prediction(input, clf, clf_name, result_path, current_time,
+                    xlims=[1, 1320], ylims=[0, 905], num_iter=20, neurite_type="basal_dendrite"):
     """
     this function aims to predict the class of the SWC(s), input could be a single file or a directory of SWCs
     input:
@@ -310,7 +311,8 @@ def make_prediction(input, clf, clf_name, xlims=[1, 1320], ylims=[0, 905], num_i
     return true_neuron_count
 
 
-def filter_dir_by_model(input, model, xlimits=None, ylimits=None):
+def filter_dir_by_model(input, model, result_path, current_time,
+                        xlimits=None, ylimits=None):
     """
     wrapper function to make_prediction() to make classification simpler from outside scripts
     input:
@@ -324,7 +326,7 @@ def filter_dir_by_model(input, model, xlimits=None, ylimits=None):
     # print(f"the model is loaded as {m}")
     m_name = os.path.split(model)[1].split('.')[0]
     # print(f"model name is: {m_name}")
-    return make_prediction(input, m, m_name, xlimits, ylimits)
+    return make_prediction(input, m, m_name, result_path, current_time, xlimits, ylimits)
 
 
 def main():
@@ -365,11 +367,11 @@ def main():
     print(f"xlimits {xlimits}")
     print(f"ylimits {ylimits}")
 
-    # results will be save in the parent directory of the file(s) to be filtered
+    # results will be saved in the parent directory of the file(s) to be filtered
     result_path = input.parent
 
-    ### evaluate inputs
-    # if need to train model first
+    # evaluate inputs
+    # if you need to train model first
     if junk_path and true_path and input:
         ### TRAIN MODEL, TRY LDA, DT, RF
         TRAIN_X, TRAIN_Y, xlims, ylims = generate_data(junk_path, true_path, neurite_type="basal_dendrite")
@@ -406,11 +408,11 @@ def main():
         pickle.dump(rf_clf_base, open(model_name, 'wb'))
 
         # make prediction
-        make_prediction(input, rf_clf_base, "rf_clf_base", xlims=xlims, ylims=ylims)
+        make_prediction(input, rf_clf_base, "rf_clf_base", result_path, current_time, xlims=xlims, ylims=ylims)
 
     # if have pre-trained model
     elif model and input:
-        filter_dir_by_model(input, model, xlimits, ylimits)
+        filter_dir_by_model(input, model, result_path, current_time, xlimits, ylimits)
 
 
 if __name__ == '__main__':
