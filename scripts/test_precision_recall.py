@@ -27,13 +27,10 @@ def gather_markers(seeds_path, max_radius=None, min_radius=None):
     markers_with_radii = []
     adjust = 0
     for root, dir_, files in os.walk(seeds_path):
-        # print("root: ", root)
-        # print("dir: ", dir_)
-        # print("files: ", files)
         for file in files:
             if 'marker_' in file:
                 x, y, z, radius_um = read_csv(
-                    Path(root)/file, names=("x", "y", "z", "radius_um"), skiprows=1).loc[0, :].values.tolist()
+                    Path(root) / file, names=("x", "y", "z", "radius_um"), skiprows=1).loc[0, :].values.tolist()
                 # file = file.replace('.000000', '').replace('.txt', '')
                 # x, y, z, volume = [int(i) for i in file.split('_')[1:]]
                 # print(x,y,z,volume)
@@ -44,7 +41,7 @@ def gather_markers(seeds_path, max_radius=None, min_radius=None):
                     continue
                 coord = (x - adjust, y - adjust, z - adjust)
                 markers.append(coord)
-                markers_with_radii.append(coord + (radius_um, ))
+                markers_with_radii.append(coord + (radius_um,))
     return markers, markers_with_radii
 
 
@@ -117,8 +114,8 @@ def precision_recall(**kwargs):
     print(f"distance threshold: {distance_threshold} µm\n"
           f"voxel_sizes: x={kwargs['voxel_size_x']}, y={kwargs['voxel_size_y']}, z={kwargs['voxel_size_z']} µm")
 
-    labeled_path = kwargs['labeled_path']
-    inferenced_path = Path(kwargs['inferenced_path'])
+    labeled_path = kwargs['labeled-path']
+    inferenced_path = Path(kwargs['inferenced-path'])
 
     # directory that stores the precision & recall summary file and the plots
     time_now = datetime.now()
@@ -132,7 +129,8 @@ def precision_recall(**kwargs):
         inferenced_path, max_radius=kwargs['max_radius'], min_radius=kwargs['min_radius'])
 
     euc_dists = euc_distance(label, inference,
-                            voxel_sizes=array([kwargs['voxel_size_x'], kwargs['voxel_size_y'], kwargs['voxel_size_z']], dtype=float))
+                             voxel_sizes=array([kwargs['voxel_size_x'], kwargs['voxel_size_y'], kwargs['voxel_size_z']],
+                                               dtype=float))
     matches = is_match(euc_dists, distance_threshold)  # all matches and unmatches
 
     # if two identical macthes, only remain the one with the lowest Euclidean distance as the match
@@ -140,8 +138,8 @@ def precision_recall(**kwargs):
     euc_dist = [list(ele) for ele in euc_dists]  # temporarily convert to list of lists
     match = [list(ele) for ele in matches]
 
-    ### capture the case of multiple inferences that have maches to the same soma label
-    ### only keep the match with closest Euc dist as real match, set others to non-match
+    # capture the case of multiple inferences that have maches to the same soma label
+    # only keep the match with closest Euc dist as real match, set others to non-match
     # inx1_all = [i for i in range(0, len(label))]
     for inx1 in range(0, len(label)):
         # print("inx1: ", inx1)
@@ -151,7 +149,7 @@ def precision_recall(**kwargs):
             if euc_dist[i][inx1] > minval:
                 match[i][inx1] = 0
 
-    ### then capture the case of same inference has matches to multiple somas
+    # then capture the case of same inference has matches to multiple somas
     for i, m in enumerate(match):
         cnt_match = m.count(1)
         # if there are multiple matches with soma inside one inference
@@ -166,7 +164,7 @@ def precision_recall(**kwargs):
     euc_dist = [list(ele) for ele in euc_dists]  # temporarily convert to list of lists
     match = [list(ele) for ele in matches]
 
-    ### validate for each element in match, there is as many as one '1'
+    # validate for each element in match, there is as many as one '1'
     sanity_list = []
     for i, m in enumerate(match):
         cnt_match = m.count(1)
@@ -242,7 +240,7 @@ def precision_recall(**kwargs):
 
     precision = TP / (TP + FP)
     recall = TP / (TP + FN)
-    print(f"Precision TP / (TP + FP): {precision*100:.2f}%, \nRecall TP / (TP + FN): {recall*100:.2f}%,\n"
+    print(f"Precision TP / (TP + FP): {precision * 100:.2f}%, \nRecall TP / (TP + FN): {recall * 100:.2f}%,\n"
           f"Total number of true labels: {n_pairs}, Total number of inferences: {len(match)}")
 
     # save matched pairs and all information of this run to a txt file
@@ -250,7 +248,7 @@ def precision_recall(**kwargs):
         f.write(f"Distance threshold: {distance_threshold}\n")
         # f.write(f"Number of duplicate match of true labels: {num_dup_match}\n")
         f.write(f"TP: {TP}, FP: {FP}, FN: {FN}\n")
-        f.write(f"Precision: {precision*100:.2f}%, Recall: {recall*100:.2f}%\n")
+        f.write(f"Precision: {precision * 100:.2f}%, Recall: {recall * 100:.2f}%\n")
         f.write(f"Total number of true labels: {n_pairs}, Total number of inferences: {len(match)}\n")
         f.write("\nAll matched pairs: \n")
         for inf, lab, dist in zip(inference_coord_list, label_coord_list, closest_dist_list):
@@ -273,28 +271,29 @@ def precision_recall(**kwargs):
         FN_x = FN[0]
         FN_y = FN[1]
         FN_z = FN[2]
-        with open(path_FN_markers / f"marker_{FN_x}_{FN_y}_{FN_z}_{int(round(distance_threshold, 0))}", 'w') as marker_file:
+        with open(path_FN_markers / f"marker_{FN_x}_{FN_y}_{FN_z}_{int(round(distance_threshold, 0))}",
+                  'w') as marker_file:
             marker_file.write("# x,y,z,radius\n")
             marker_file.write(f"{FN_x},{FN_y},{FN_z},{distance_threshold}")
 
     # generate and ano file for visualization in TeraFly
     FP_df = pd.DataFrame(FP_list, columns=("x", "y", "z"))
     FP_df["comment"] = "FP"
-    FP_df["volsize"] = 4/3 * np.pi * array([ele[3] for ele in FP_coord_radii_list])**3
+    FP_df["volsize"] = 4 / 3 * np.pi * array([ele[3] for ele in FP_coord_radii_list]) ** 3
 
     FN_df = pd.DataFrame(FN_list, columns=("x", "y", "z"))
     FN_df["comment"] = "FN"
-    FN_df["volsize"] = distance_threshold**3 * 4/3 * np.pi
+    FN_df["volsize"] = distance_threshold ** 3 * 4 / 3 * np.pi
 
     TP_df = pd.DataFrame(TP_list, columns=("x", "y", "z"))
     TP_df["comment"] = "TP"
-    TP_df["volsize"] = 4/3 * np.pi * array([ele[3] for ele in inference_coord_radii_list])**3
+    TP_df["volsize"] = 4 / 3 * np.pi * array([ele[3] for ele in inference_coord_radii_list]) ** 3
 
     df = pd.concat([FP_df, FN_df, TP_df])
     df["color_r"] = np.where(df['comment'] == "FP", 255, 0)
     df["color_g"] = np.where(df['comment'] == "FN", 255, 0)
     df["color_b"] = np.where(df['comment'] == "TP", 255, 0)
-    with open(path_result/"test.ano.apo", 'w') as apo_file:
+    with open(path_result / "test.ano.apo", 'w') as apo_file:
         apo_file.write(
             "##n,orderinfo,name,comment,z,x,y, pixmax,intensity,sdev,volsize,mass,,,, color_r,color_g,color_b\n")
         for idx, row in enumerate(df.itertuples(), start=1):
@@ -302,16 +301,16 @@ def precision_recall(**kwargs):
                 f"{idx},,,{row.comment},{row.z},{row.x},{row.y},0.000,0.000,0.000,{row.volsize},0.000,,,,"
                 f"{row.color_r},{row.color_g},{row.color_b}\n")
 
-    with open(path_result/"test.ano.eswc", 'w') as eswc_file:
+    with open(path_result / "test.ano.eswc", 'w') as eswc_file:
         eswc_file.write("#name test\n")
         eswc_file.write("#comment terafly_annotations\n")
         eswc_file.write("#n type x y z radius parent seg_id level mode timestamp TFresindex\n")
 
-    with open(path_result/"test.ano", 'w') as ano_file:
+    with open(path_result / "test.ano", 'w') as ano_file:
         ano_file.write("APOFILE=test.ano.apo\n")
         ano_file.write("SWCFILE=test.ano.eswc\n")
 
-    df.to_csv(path_result/"test.csv", index_label="n")
+    df.to_csv(path_result / "test.csv", index_label="n")
     # generate histogram and cdf for TP and FP
     plot_his_cdf(inference_coord_radii_list, FP_coord_radii_list, distance_threshold, current_time, path_result)
 
@@ -360,128 +359,126 @@ def plot_his_cdf(inference_coord_radii_list, FP_coord_radii_list, distance_thres
     xlim_max = max(max(TP_radii), max(FP_radii))
 
     ### generate figures
-    fig, axs = plt.subplots(4,2, figsize=(15,15))
+    fig, axs = plt.subplots(4, 2, figsize=(15, 15))
     # plt.figure(figsize=(15, 15)) 
-       
+
     ### 1,2 plot histograms side by side
     # binwidth=0.5
-    axs[0,0].hist(TP_radii, 
-             alpha=0.5, # the transaparency parameter
-             # bins=np.arange(min(TP_radii), max(TP_radii) + binwidth, binwidth),
-             label='TP radii',
-             color = 'blue',
-             range = (radii_min, radii_max))
-    axs[0,0].set_xlim(left=0, right=xlim_max)
-    axs[0,0].set_ylim(bottom=0)
-    axs[0,0].legend(loc='upper right')
-    axs[0,0].set_xlabel('Radii (um)')
-    axs[0,0].set_ylabel('Frequency')
-    axs[0,0].set_title("Distribution of radii of TPs")
+    axs[0, 0].hist(TP_radii,
+                   alpha=0.5,  # the transaparency parameter
+                   # bins=np.arange(min(TP_radii), max(TP_radii) + binwidth, binwidth),
+                   label='TP radii',
+                   color='blue',
+                   range=(radii_min, radii_max))
+    axs[0, 0].set_xlim(left=0, right=xlim_max)
+    axs[0, 0].set_ylim(bottom=0)
+    axs[0, 0].legend(loc='upper right')
+    axs[0, 0].set_xlabel('Radii (um)')
+    axs[0, 0].set_ylabel('Frequency')
+    axs[0, 0].set_title("Distribution of radii of TPs")
 
     # plt.subplot(3, 2, 2)
-    axs[0,1].hist(FP_radii,
-             alpha=0.5,
-             # bins=np.arange(min(FP_radii), max(FP_radii) + binwidth, binwidth),
-             label='FP radii',
-             color = 'red',
-             range = (radii_min, radii_max))
-    axs[0,1].set_xlim(left=0,right=xlim_max)
-    axs[0,1].set_ylim(bottom=0)
-    axs[0,1].legend(loc='upper right')
-    axs[0,1].set_xlabel('Radii (um)')
-    axs[0,1].set_ylabel('Frequency')
-    axs[0,1].set_title("Distribution of radii of FPs")
-    
+    axs[0, 1].hist(FP_radii,
+                   alpha=0.5,
+                   # bins=np.arange(min(FP_radii), max(FP_radii) + binwidth, binwidth),
+                   label='FP radii',
+                   color='red',
+                   range=(radii_min, radii_max))
+    axs[0, 1].set_xlim(left=0, right=xlim_max)
+    axs[0, 1].set_ylim(bottom=0)
+    axs[0, 1].legend(loc='upper right')
+    axs[0, 1].set_xlabel('Radii (um)')
+    axs[0, 1].set_ylabel('Frequency')
+    axs[0, 1].set_title("Distribution of radii of FPs")
+
     # plt.savefig(path/f"histogram_cdf_{current_time}.pdf", format="pdf", bbox_inches="tight")  
 
     ### 3,4 plot CDFs side by side
     # getting data of the histogram
-    cnt_TP, bins_count_TP = np.histogram(TP_radii, range = (radii_min, radii_max))
-    cnt_FP, bins_count_FP = np.histogram(FP_radii, range = (radii_min, radii_max))
+    cnt_TP, bins_count_TP = np.histogram(TP_radii, range=(radii_min, radii_max))
+    cnt_FP, bins_count_FP = np.histogram(FP_radii, range=(radii_min, radii_max))
     # finding the PDF of the histogram using count values
     pdf_TP = cnt_TP / sum(cnt_TP)
     pdf_FP = cnt_FP / sum(cnt_FP)
-      
+
     # calculate cdf using pdf
     cdf_TP = np.cumsum(pdf_TP)
     cdf_FP = np.cumsum(pdf_FP)
-    
+
     # plotting PDF and CDF
     # plt.plot(bins_count[1:], pdf, color="red", label="PDF")
-    axs[1,0].plot(bins_count_TP[1:], cdf_TP, label="CDF of TP", color = 'blue')
-    axs[1,0].set_xlim(left=0,right=xlim_max)
-    axs[1,0].set_ylim(bottom=0)
-    axs[1,0].legend(loc='upper right')
-    axs[1,0].set_xlabel('Radii (um)')
-    axs[1,0].set_ylabel('CDF')
-    axs[1,0].set_title("CDF of radii of TPs")
-    
-    axs[1,1].plot(bins_count_FP[1:], cdf_FP, label="CDF of FP", color = 'red')
-    axs[1,1].set_xlim(left=0,right=xlim_max)
-    axs[1,1].set_ylim(bottom=0)
-    axs[1,1].legend(loc='upper right')
-    axs[1,1].set_xlabel('Radii (um)')
-    axs[1,1].set_ylabel('CDF')
-    axs[1,1].set_title("CDF of radii of FPs")
+    axs[1, 0].plot(bins_count_TP[1:], cdf_TP, label="CDF of TP", color='blue')
+    axs[1, 0].set_xlim(left=0, right=xlim_max)
+    axs[1, 0].set_ylim(bottom=0)
+    axs[1, 0].legend(loc='upper right')
+    axs[1, 0].set_xlabel('Radii (um)')
+    axs[1, 0].set_ylabel('CDF')
+    axs[1, 0].set_title("CDF of radii of TPs")
 
+    axs[1, 1].plot(bins_count_FP[1:], cdf_FP, label="CDF of FP", color='red')
+    axs[1, 1].set_xlim(left=0, right=xlim_max)
+    axs[1, 1].set_ylim(bottom=0)
+    axs[1, 1].legend(loc='upper right')
+    axs[1, 1].set_xlabel('Radii (um)')
+    axs[1, 1].set_ylabel('CDF')
+    axs[1, 1].set_title("CDF of radii of FPs")
 
     ### 5,6 plot scatter plots of TP/FP radii vs. true label radii
-    axs[2,0].scatter(np.linspace(0,1,len(TP_radii)), TP_radii, label='TPs', color='blue')
-    axs[2,0].axhline(y=distance_threshold, linestyle='--', c='green')
-    axs[2,0].set_ylim(bottom=0, top=radii_max)
-    axs[2,0].legend(loc='upper right')
-    axs[2,0].set_xlabel('Sample')
-    axs[2,0].set_ylabel('Radii (um)')
-    axs[2,0].set_title("Distribution of radii of TPs compared to labels' radii")
-    
-    axs[2,1].scatter(np.linspace(0,1,len(FP_radii)), FP_radii, label='FPs', color='red')
-    axs[2,1].axhline(y=distance_threshold, linestyle='--', c='green')
-    axs[2,1].set_ylim(bottom=0, top=radii_max)
-    axs[2,1].legend(loc='upper right')
-    axs[2,1].set_xlabel('Sample')
-    axs[2,1].set_ylabel('Radii (um)')
-    axs[2,1].set_title("Distribution of radii of FPs compared to labels' radii")
-    
-    
+    axs[2, 0].scatter(np.linspace(0, 1, len(TP_radii)), TP_radii, label='TPs', color='blue')
+    axs[2, 0].axhline(y=distance_threshold, linestyle='--', c='green')
+    axs[2, 0].set_ylim(bottom=0, top=radii_max)
+    axs[2, 0].legend(loc='upper right')
+    axs[2, 0].set_xlabel('Sample')
+    axs[2, 0].set_ylabel('Radii (um)')
+    axs[2, 0].set_title("Distribution of radii of TPs compared to labels' radii")
+
+    axs[2, 1].scatter(np.linspace(0, 1, len(FP_radii)), FP_radii, label='FPs', color='red')
+    axs[2, 1].axhline(y=distance_threshold, linestyle='--', c='green')
+    axs[2, 1].set_ylim(bottom=0, top=radii_max)
+    axs[2, 1].legend(loc='upper right')
+    axs[2, 1].set_xlabel('Sample')
+    axs[2, 1].set_ylabel('Radii (um)')
+    axs[2, 1].set_title("Distribution of radii of FPs compared to labels' radii")
+
     ### 7,8 plot histogram/CDF overlayed
-    axs[3,0].hist(TP_radii, 
-             alpha=0.5, # the transaparency parameter
-             # bins=np.arange(min(TP_radii), max(TP_radii) + binwidth, binwidth),
-             label='TP radii',
-             color = 'blue',
-             range = (radii_min, radii_max))
-    axs[3,0].hist(FP_radii,
-             alpha=0.5,
-             # bins=np.arange(min(FP_radii), max(FP_radii) + binwidth, binwidth),
-             label='FP radii',
-             color = 'red',
-             range = (radii_min, radii_max)) 
-    axs[3,0].set_xlim(left=0, right=xlim_max)
-    axs[3,0].set_ylim(bottom=0)
-    axs[3,0].legend(loc='upper right')
-    axs[3,0].set_xlabel('Radii (um)')
-    axs[3,0].set_ylabel('Frequency')
-    axs[3,0].set_title('Distribution of radii of TPs vs. FPs')
-    
-    
-    axs[3,1].plot(bins_count_TP[1:], cdf_TP, label="CDF of TP", color = 'blue')
-    axs[3,1].plot(bins_count_FP[1:], cdf_FP, label="CDF of FP", color = 'red')
-    axs[3,1].set_xlim(left=0, right=xlim_max)
-    axs[3,1].set_ylim(bottom=0)
-    axs[3,1].legend(loc='upper right')
-    axs[3,1].set_xlabel('Radii (um)')
-    axs[3,1].set_ylabel('CDF')
-    axs[3,1].set_title("CDF of radii of TPs vs. FPs")
-    axs[3,1].text(radii_min,-0.3, f'Two sample t-test:\nstatistic: {tstats}, pval: {pval}')
-    axs[3,1].text(radii_min,-0.5, summary_stats_TP)
-    axs[3,1].text(radii_min,-0.8, summary_stats_FP)
-    
-    fig.tight_layout(pad = 2.5)
+    axs[3, 0].hist(TP_radii,
+                   alpha=0.5,  # the transaparency parameter
+                   # bins=np.arange(min(TP_radii), max(TP_radii) + binwidth, binwidth),
+                   label='TP radii',
+                   color='blue',
+                   range=(radii_min, radii_max))
+    axs[3, 0].hist(FP_radii,
+                   alpha=0.5,
+                   # bins=np.arange(min(FP_radii), max(FP_radii) + binwidth, binwidth),
+                   label='FP radii',
+                   color='red',
+                   range=(radii_min, radii_max))
+    axs[3, 0].set_xlim(left=0, right=xlim_max)
+    axs[3, 0].set_ylim(bottom=0)
+    axs[3, 0].legend(loc='upper right')
+    axs[3, 0].set_xlabel('Radii (um)')
+    axs[3, 0].set_ylabel('Frequency')
+    axs[3, 0].set_title('Distribution of radii of TPs vs. FPs')
+
+    axs[3, 1].plot(bins_count_TP[1:], cdf_TP, label="CDF of TP", color='blue')
+    axs[3, 1].plot(bins_count_FP[1:], cdf_FP, label="CDF of FP", color='red')
+    axs[3, 1].set_xlim(left=0, right=xlim_max)
+    axs[3, 1].set_ylim(bottom=0)
+    axs[3, 1].legend(loc='upper right')
+    axs[3, 1].set_xlabel('Radii (um)')
+    axs[3, 1].set_ylabel('CDF')
+    axs[3, 1].set_title("CDF of radii of TPs vs. FPs")
+    axs[3, 1].text(radii_min, -0.3, f'Two sample t-test:\nstatistic: {tstats}, pval: {pval}')
+    axs[3, 1].text(radii_min, -0.5, summary_stats_TP)
+    axs[3, 1].text(radii_min, -0.8, summary_stats_FP)
+
+    fig.tight_layout(pad=2.5)
     plt.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=None, hspace=0.5)
 
     # plt.savefig(path/f"histogram_cdf.pdf", format="pdf")
-    plt.savefig(path_result/f"histogram_cdf_{current_time}.pdf", format="pdf")
-    plt.show()  
+    plt.savefig(path_result / f"histogram_cdf_{current_time}.pdf", format="pdf")
+    plt.show()
+
 
 def main():
     # args
@@ -500,6 +497,7 @@ def main():
 
     # calculate precision & recall
     precision_recall(**vars(args))
+
 
 if __name__ == "__main__":
     main()
