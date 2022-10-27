@@ -37,7 +37,11 @@ def call_recut(**kwargs):
 
     git_hash = get_hash()
 
-    true_neuron_count = filter_dir_by_model(run_dir, kwargs['model'])
+    true_neuron_count, junk_neuron_count = filter_dir_by_model(run_dir, kwargs['model'])
+    neuron_count = true_neuron_count + junk_neuron_count
+    fraction_true_neurons = true_neuron_count / neuron_count
+    print(f"Neuron counts true: {true_neuron_count} junk: {junk_neuron_count}")
+    print(f"True neuron %: {100 * fraction_true_neurons}")
 
     # TODO return a pandas dataframe with 1 row for this particular run with columns for soma_recall, soma_precision,
     #  neuron yield, neuron precision, run dir, git hash, voxel size, TMD model name, for this given run note that

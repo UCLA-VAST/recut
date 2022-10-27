@@ -304,11 +304,12 @@ def make_prediction(input, clf, clf_name, result_path, current_time,
                 failed_list.append(f)
 
         true_neuron_count = len(predict_true_neuron_list)
+        junk_neuron_count = len(predict_junk_list)
         print("Summary of Classification:")
         print(
             f"# of junk: {len(predict_junk_list)}, # of true neuron: {true_neuron_count}, # failed: {len(failed_list)}")
 
-    return true_neuron_count
+    return true_neuron_count, junk_neuron_count
 
 
 def filter_dir_by_model(input, model, result_path, current_time,
