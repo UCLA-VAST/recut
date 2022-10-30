@@ -194,7 +194,7 @@ def model_eval(clf, x_test, y_test, clf_name, result_path):
 
 
 def make_prediction(input, clf, clf_name, result_path, current_time,
-                    xlims=[1, 1320], ylims=[0, 905], num_iter=20, neurite_type="basal_dendrite"):
+                    xlims=(1, 1320), ylims=(0, 905), num_iter=20, neurite_type="basal_dendrite"):
     """
     this function aims to predict the class of the SWC(s), input could be a single file or a directory of SWCs
     input:
@@ -207,8 +207,6 @@ def make_prediction(input, clf, clf_name, result_path, current_time,
     """
 
     true_neuron_count = 0
-    # input = Path("C:\\Users\\yanyanming77\\Desktop\\precision_recall\\TMD\\swc2")
-    # clf = pickle.load(open(Path("C:\\Users\\yanyanming77\\Desktop\\precision_recall\\TMD\\model_base_rf_12_52_10.sav"), 'rb'))
 
     # if input is a single neuron
     if os.path.isfile(input):
@@ -243,10 +241,7 @@ def make_prediction(input, clf, clf_name, result_path, current_time,
     # if input is a file path
     elif os.path.isdir(input):
         pop = Population.Population()
-        pop_success = []
-        pop_failed = []
         for f in os.listdir(input):
-            # swc = [str(directory1/f)]
             swc = str(input / f)
             try:
                 n = tmd.io.load_neuron(swc)
@@ -281,7 +276,7 @@ def make_prediction(input, clf, clf_name, result_path, current_time,
             except:
                 pass
 
-        ### save the classified SWCs to separate folders
+        # save the classified SWCs to separate folders
         path_result = result_path / f"{clf_name}_{current_time}"
         path_result.mkdir(exist_ok=False)
         path_junk = path_result / 'predicted_junk'
@@ -312,7 +307,7 @@ def make_prediction(input, clf, clf_name, result_path, current_time,
     return true_neuron_count, junk_neuron_count
 
 
-def filter_dir_by_model(input, model, result_path, current_time,
+def filter_dir_by_model(input: Path, model: Path, result_path: Path, current_time: str,
                         xlimits=None, ylimits=None):
     """
     wrapper function to make_prediction() to make classification simpler from outside scripts
@@ -334,14 +329,13 @@ def main():
     time_now = datetime.now()
     current_time = time_now.strftime("%H:%M:%S").replace(':', '_')
 
-    parser = ArgumentParser(
-        description="TMD filtering, model training and classification")
+    parser = ArgumentParser(description="TMD filtering, model training and classification")
 
     # if needs to train model first
     parser.add_argument("--junk", "-j", type=str, required=False, help="path to junk folder")
     parser.add_argument("--true", "-t", type=str, required=False, help="path to true neuron folder")
     parser.add_argument("--model", "-m", type=str, required=False, help="path and name of the saved model")
-    parser.add_argument("--filter", "-f", type=str, required=True, help="path or file to classifiy")
+    parser.add_argument("--filter", "-f", type=str, required=True, help="path or file to classify")
     parser.add_argument("--xlims", "-xlims", nargs='+', type=int, required=False,
                         help="lower limit, upper limit of X separated by space, based on the training set")
     parser.add_argument("--ylims", "-ylims", nargs='+', type=int, required=False,
@@ -374,7 +368,7 @@ def main():
     # evaluate inputs
     # if you need to train model first
     if junk_path and true_path and input:
-        ### TRAIN MODEL, TRY LDA, DT, RF
+        # TRAIN MODEL, TRY LDA, DT, RF
         TRAIN_X, TRAIN_Y, xlims, ylims = generate_data(junk_path, true_path, neurite_type="basal_dendrite")
         print("Take note of x and y limits:")
         print(f"X limits: {xlims}, Y limits: {ylims}")
@@ -418,13 +412,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-# # for testing purpose
-# junk_path = Path("C:\\Users\\yanyanming77\\Desktop\\precision_recall\\TMD\\junk_swc")
-# true_path = Path("C:\\Users\\yanyanming77\\Desktop\\precision_recall\\TMD\\proofread_swc")
-
-# # result path is the path where script is located
-# script_path = Path( __file__ ).absolute()
-
-# base_dir = Path("C:\\Users\\yanyanming77\\Desktop\\precision_recall\\TMD\\swc1")
-# input = base_dir/"001_TME10-1_30x_Str_02A_x3891_y12982_z405.swc"
