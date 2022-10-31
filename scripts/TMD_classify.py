@@ -15,6 +15,7 @@ import shutil
 import collections
 import matplotlib.pyplot as plt
 import warnings
+import logging as log
 from datetime import datetime
 from tmd.Population import Population
 from sklearn.ensemble import RandomForestClassifier
@@ -193,6 +194,16 @@ def model_eval(clf, x_test, y_test, clf_name, result_path):
     print(classification_report(y_test, clf.predict(x_test), target_names=['junk', 'true'], digits=2))
 
 
+def copy_file(file, destination):
+    if "multi-component" in file.parent.name:
+        multi_component_dest_dir = destination / file.parent.name
+        multi_component_dest_dir.mkdir(exist_ok=True)
+        for n_file in file.parent.glob(f"{file.name[:-len(file.suffix)]}.*"):
+            shutil.copy(n_file, multi_component_dest_dir)
+    else:
+        shutil.copytree(src=file.parent, dst=destination/file.parent.name, dirs_exist_ok=True)
+
+
 def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, current_time: str,
                     xlims=(1, 1320), ylims=(0, 905), num_iter=20, neurite_type="basal_dendrite"):
     """
@@ -207,121 +218,61 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
     - true_neuron_count: number of neurons classified as true positives by the model
     """
 
-    true_neuron_count = 0
-    junk_neuron_count = 0
+    true_neuron_count = junk_neuron_count = failed_neuron_count = 0
 
-    # if input_path is a single neuron
-    if input_path.is_file():
-        print("input_path is a file")
+    path_result = result_path / f"{clf_name}_{current_time}"
+    path_result.mkdir(exist_ok=False)
+    path_junk = path_result / 'predicted_junk'
+    path_junk.mkdir(exist_ok=True)
+    path_true = path_result / 'predicted_true'
+    path_true.mkdir(exist_ok=True)
+    path_failed = path_result / 'failed'
+    path_failed.mkdir(exist_ok=True)
+    log_file = result_path/"prediction.log"
+    log.basicConfig(filename=str(log_file), level=log.INFO)
+    log.FileHandler(str(log_file), mode="w")  # rewrite the file instead of appending
+
+    for file in tqdm(list(input_path.rglob("*.swc")), desc="classification: "):
         try:
-            neuron2test = tmd.io.load_neuron(str(input_path))
+            n = tmd.io.load_neuron(str(file))
         except Exception as e:
-            print("Error when loading this neuron, please try another one")
-            raise RuntimeError
-        # get pvecs
-        pers2test = tmd.methods.get_ph_neuron(neuron2test, neurite_type=neurite_type)
-        # get persistence image
-        pers_image2test = tmd.analysis.get_persistence_image_data(pers2test, xlims=xlims, ylims=ylims)
-        # flatten
-        test_dataset = pers_image2test.flatten()
-
-        predict_labels = []
-
-        # Train classifier with training images for selected number_of_trials
-        for i in range(num_iter):
-            predict_labels.append(clf.predict([test_dataset])[0])
-
-        predict_cnt = dict(collections.Counter(predict_labels))
-        predict_cnt_max = max(predict_cnt, key=lambda x: predict_cnt[x])
-
-        if predict_cnt_max == 1:
-            print(f"The predicted class is JUNK")
-            true_neuron_count = 0
-        elif predict_cnt_max == 2:
-            print(f"The predicted class is TRUE NEURON")
-            true_neuron_count = 1
-
-    # if input_path is a file path
-    elif input_path.is_dir():
-        pop = Population.Population()
-        for file in input_path.rglob("*.swc"):
-            try:
-                n = tmd.io.load_neuron(str(file))
-                pop.append_neuron(n)
-            except Exception as e:
-                print(f"failed to load file: {file}\n"
+            log.error(f"tmd failed to load file: {file}\n"
                       f"Error: {e}")
-                continue
-        # print(f"For classification set: {len(pop.neurons)} loaded successfully")
-        predict_junk_list = []
-        predict_true_neuron_list = []
-        failed_list = []
-        # for each neuron in the population, generate pvecs and classify using the designated classifier
-        for i, n in enumerate(tqdm(pop.neurons, desc="classification: ")):
-            neuron_path = Path(n.name + ".swc")
-            try:
-                pers2test = tmd.methods.get_ph_neuron(n, neurite_type='basal_dendrite')
-                pers_image2test = tmd.analysis.get_persistence_image_data(pers2test, xlims=xlims, ylims=ylims)
-                test_dataset = pers_image2test.flatten()
-                predict_labels = []
+            failed_neuron_count += 1
+            copy_file(file, path_failed)
+            continue
+        try:
+            pers2test = tmd.methods.get_ph_neuron(n, neurite_type='basal_dendrite')
+            pers_image2test = tmd.analysis.get_persistence_image_data(pers2test, xlims=xlims, ylims=ylims)
+            test_dataset = pers_image2test.flatten()
+            predict_labels = []
 
-                # Train classifier with training images for selected number_of_trials
-                for idx in range(num_iter):
-                    predict_labels.append(clf.predict([test_dataset])[0])
+            # Train classifier with training images for selected number_of_trials
+            for idx in range(num_iter):
+                predict_labels.append(clf.predict([test_dataset])[0])
 
-                predict_cnt = dict(collections.Counter(predict_labels))
-                predict_cnt_max = max(predict_cnt, key=lambda x: predict_cnt[x])
+            predict_cnt = dict(collections.Counter(predict_labels))
+            predict_cnt_max = max(predict_cnt, key=lambda x: predict_cnt[x])
 
-                if predict_cnt_max == 1:
-                    predict_junk_list.append(neuron_path)
-                elif predict_cnt_max == 2:
-                    predict_true_neuron_list.append(neuron_path)
-            except:
-                pass
-
-        # save the classified SWCs to separate folders
-        path_result = result_path / f"{clf_name}_{current_time}"
-        path_result.mkdir(exist_ok=False)
-        path_junk = path_result / 'predicted_junk'
-        path_junk.mkdir(exist_ok=True)
-        path_true = path_result / 'predicted_true'
-        path_true.mkdir(exist_ok=True)
-        path_failed = path_result / 'failed'
-        path_failed.mkdir(exist_ok=True)
-
-        # list of failed files
-        def copy_multi_component(file_, destination):
-            multi_component_dest_dir = destination / file_.parent.name
-            multi_component_dest_dir.mkdir(exist_ok=True)
-            for n_file in file_.parent.glob(f"{file_.name[:-len(file_.suffix)]}.*"):
-                shutil.copy(n_file, multi_component_dest_dir)
-
-        for file in tqdm(list(input_path.rglob("*.swc")), desc="file copy: "):
-            # junk
-            if file in predict_junk_list:
-                if "multi-component" in file.parent.name:
-                    copy_multi_component(file, path_junk)
-                else:
-                    shutil.copytree(src=file.parent, dst=path_junk/file.parent.name, dirs_exist_ok=True)
-            # true
-            elif file in predict_true_neuron_list:
-                if "multi-component" in file.parent.name:
-                    copy_multi_component(file, path_true)
-                else:
-                    shutil.copytree(src=file.parent, dst=path_true/file.parent.name, dirs_exist_ok=True)
+            if predict_cnt_max == 1:
+                junk_neuron_count += 1
+                copy_file(file, path_junk)
+            elif predict_cnt_max == 2:
+                true_neuron_count += 1
+                copy_file(file, path_true)
             else:
-                if "multi-component" in file.parent.name:
-                    copy_multi_component(file, path_failed)
-                else:
-                    shutil.copytree(src=file.parent, dst=path_failed/file.parent.name, dirs_exist_ok=True)
-                failed_list.append(file)
+                log.info(f"unexpected class {predict_cnt_max} for {file}")
+                failed_neuron_count += 1
+                copy_file(file, path_failed)
+        except Exception as e:
+            log.error(f"failure in classification for {file}: {e}")
+            failed_neuron_count += 1
+            copy_file(file, path_failed)
 
-        true_neuron_count = len(predict_true_neuron_list)
-        junk_neuron_count = len(predict_junk_list)
-        print("Summary of Classification:")
-        print(f"{len(predict_junk_list)} \t # junk neurons\n"
-              f"{true_neuron_count} \t # true neurons\n"
-              f"{len(failed_list)}\t # failed neurons")
+    print("Summary of Classification:"
+          f"{junk_neuron_count} \t # junk neurons\n"
+          f"{true_neuron_count} \t # true neurons\n"
+          f"{failed_neuron_count}\t # failed neurons")
 
     return true_neuron_count, junk_neuron_count
 
@@ -415,7 +366,7 @@ def main():
         # evaluate baseline model
         # model_eval(lda_clf_base, x_val, y_val, "baseline LDA")
         # model_eval(dt_clf_base, x_val, y_val, "baseline Decision Tree")
-        model_eval(rf_clf_base, x_val, y_val, "baseline Random Forest")
+        model_eval(rf_clf_base, x_val, y_val, "baseline Random Forest", result_path)
 
         # save model
         model_name = result_path / f"model_base_rf_{current_time}.sav"
