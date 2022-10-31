@@ -236,8 +236,7 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
         try:
             n = tmd.io.load_neuron(str(file))
         except Exception as e:
-            log.error(f"tmd failed to load file: {file}\n"
-                      f"Error: {e}")
+            log.error(f"tmd.io.load_neuron failed to load {file}: {e}")
             failed_neuron_count += 1
             copy_file(file, path_failed)
             continue
@@ -269,10 +268,10 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
             failed_neuron_count += 1
             copy_file(file, path_failed)
 
-    print("Summary of Classification:"
-          f"{junk_neuron_count} \t # junk neurons\n"
-          f"{true_neuron_count} \t # true neurons\n"
-          f"{failed_neuron_count}\t # failed neurons")
+    print("Summary of Classification:\n"
+          f"\t{junk_neuron_count} \t # junk neurons\n"
+          f"\t{true_neuron_count} \t # true neurons\n"
+          f"\t{failed_neuron_count}\t # failed neurons")
 
     return true_neuron_count, junk_neuron_count
 
