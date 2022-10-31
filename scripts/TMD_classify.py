@@ -271,8 +271,8 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
     print("Summary of Classification:\n"
           f"\t{junk_neuron_count} \t # junk neurons\n"
           f"\t{true_neuron_count} \t # true neurons\n"
-          f"\t{failed_neuron_count}\t # failed neurons"
-          f"\t{true_neuron_count/(true_neuron_count+failed_neuron_count+junk_neuron_count):.2f} yield %")
+          f"\t{failed_neuron_count}\t # failed neurons\n"
+          f"\t{true_neuron_count/(true_neuron_count+failed_neuron_count+junk_neuron_count)*100:.2f}\t yield %")
 
     return true_neuron_count, junk_neuron_count
 
