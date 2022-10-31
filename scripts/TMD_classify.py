@@ -257,7 +257,7 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
         predict_true_neuron_list = []
         failed_list = []
         # for each neuron in the population, generate pvecs and classify using the designated classifier
-        for i, n in enumerate(tqdm(pop.neurons)):
+        for i, n in enumerate(tqdm(pop.neurons, desc="classification: ")):
             neuron_path = Path(n.name + ".swc")
             try:
                 pers2test = tmd.methods.get_ph_neuron(n, neurite_type='basal_dendrite')
@@ -290,22 +290,38 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
         path_failed.mkdir(exist_ok=True)
 
         # list of failed files
-        for file in input_path.rglob("*.swc"):
+        def copy_multi_component(file_, destination):
+            multi_component_dest_dir = destination / file_.parent.name
+            multi_component_dest_dir.mkdir(exist_ok=True)
+            for n_file in file_.parent.glob(f"{file_.name[:-len(file_.suffix)]}.*"):
+                shutil.copy(n_file, multi_component_dest_dir)
+
+        for file in tqdm(list(input_path.rglob("*.swc")), desc="file copy: "):
             # junk
             if file in predict_junk_list:
-                shutil.copytree(file.parent, path_junk)
+                if "multi-component" in file.parent.name:
+                    copy_multi_component(file, path_junk)
+                else:
+                    shutil.copytree(src=file.parent, dst=path_junk/file.parent.name, dirs_exist_ok=True)
             # true
             elif file in predict_true_neuron_list:
-                shutil.copytree(file.parent, path_true)
-            elif file not in predict_junk_list and file not in predict_true_neuron_list:
-                shutil.copytree(file.parent, path_failed)
+                if "multi-component" in file.parent.name:
+                    copy_multi_component(file, path_true)
+                else:
+                    shutil.copytree(src=file.parent, dst=path_true/file.parent.name, dirs_exist_ok=True)
+            else:
+                if "multi-component" in file.parent.name:
+                    copy_multi_component(file, path_failed)
+                else:
+                    shutil.copytree(src=file.parent, dst=path_failed/file.parent.name, dirs_exist_ok=True)
                 failed_list.append(file)
 
         true_neuron_count = len(predict_true_neuron_list)
         junk_neuron_count = len(predict_junk_list)
         print("Summary of Classification:")
-        print(
-            f"# of junk: {len(predict_junk_list)}, # of true neuron: {true_neuron_count}, # failed: {len(failed_list)}")
+        print(f"{len(predict_junk_list)} \t # junk neurons\n"
+              f"{true_neuron_count} \t # true neurons\n"
+              f"{len(failed_list)}\t # failed neurons")
 
     return true_neuron_count, junk_neuron_count
 
