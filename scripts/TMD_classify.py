@@ -220,7 +220,7 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
 
     true_neuron_count = junk_neuron_count = failed_neuron_count = 0
 
-    path_result = result_path / f"{clf_name}_{current_time}"
+    path_result = result_path / f"{input_path.name}_{clf_name}_{current_time}"
     path_result.mkdir(exist_ok=False)
     path_junk = path_result / 'predicted_junk'
     path_junk.mkdir(exist_ok=True)
@@ -228,7 +228,7 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
     path_true.mkdir(exist_ok=True)
     path_failed = path_result / 'failed'
     path_failed.mkdir(exist_ok=True)
-    log_file = result_path/"prediction.log"
+    log_file = path_result/"prediction.log"
     log.basicConfig(filename=str(log_file), level=log.INFO)
     log.FileHandler(str(log_file), mode="w")  # rewrite the file instead of appending
 
@@ -271,7 +271,8 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
     print("Summary of Classification:\n"
           f"\t{junk_neuron_count} \t # junk neurons\n"
           f"\t{true_neuron_count} \t # true neurons\n"
-          f"\t{failed_neuron_count}\t # failed neurons")
+          f"\t{failed_neuron_count}\t # failed neurons"
+          f"\t{true_neuron_count/(true_neuron_count+failed_neuron_count+junk_neuron_count):.2f} yield %")
 
     return true_neuron_count, junk_neuron_count
 
