@@ -3,32 +3,32 @@
 Created on Mon Sep 26 14:50:07 2022
 
 @author: yanyanming77
+
+This script is to (train classifiers) use pre-trained classifier to classify junk SWCs and true neuron SWCs
+Classifiers explored: LDA, Decision Tree, Random Forest
 """
-
-"""This script is to (train classifiers) use pre-trained classifier to classify junk SWCs and true neuron SWCs"""
-"""Classifiers explored: LDA, Decision Tree, Random Forest"""
-
-import importlib
 import numpy as np
 import tmd
-from pathlib import Path
+import pickle
 import os
 import shutil
-from datetime import datetime
-from tmd.Population import Population
 import collections
 import matplotlib.pyplot as plt
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
+import warnings
+from datetime import datetime
+from tmd.Population import Population
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.tree import DecisionTreeClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import confusion_matrix, plot_confusion_matrix, classification_report, roc_curve, roc_auc_score
-import pickle
+from sklearn.metrics import plot_confusion_matrix, classification_report, roc_curve, roc_auc_score
+from pathlib import Path
 from argparse import ArgumentParser
 from tqdm import tqdm
-import warnings
 
+# import importlib
+# from sklearn.metrics import confusion_matrix
+# from sklearn.tree import DecisionTreeClassifier
+# from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+# from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 warnings.filterwarnings("ignore")
 
 
@@ -193,28 +193,31 @@ def model_eval(clf, x_test, y_test, clf_name, result_path):
     print(classification_report(y_test, clf.predict(x_test), target_names=['junk', 'true'], digits=2))
 
 
-def make_prediction(input, clf, clf_name, result_path, current_time,
+def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, current_time: str,
                     xlims=(1, 1320), ylims=(0, 905), num_iter=20, neurite_type="basal_dendrite"):
     """
     this function aims to predict the class of the SWC(s), input could be a single file or a directory of SWCs
-    input:
-        - input: a SWC file or a directory
-        - clf: the classifier to use
-        - clf_name: name of the clf (str)
-        - num_iter: times of iteration, only use this when input is a single SWC file
+
+    - input_path: a SWC file or a directory
+    - clf: the classifier to use
+    - clf_name: name of the clf (str)
+    - num_iter: times of iteration, only use this when input is a single SWC file
+
     returns:
-        - true_neuron_count: number of neurons classified as true positives by the model
+    - true_neuron_count: number of neurons classified as true positives by the model
     """
 
     true_neuron_count = 0
+    junk_neuron_count = 0
 
-    # if input is a single neuron
-    if os.path.isfile(input):
-        print("input is a file")
+    # if input_path is a single neuron
+    if input_path.is_file():
+        print("input_path is a file")
         try:
-            neuron2test = tmd.io.load_neuron(str(input))
-        except:
+            neuron2test = tmd.io.load_neuron(str(input_path))
+        except Exception as e:
             print("Error when loading this neuron, please try another one")
+            raise RuntimeError
         # get pvecs
         pers2test = tmd.methods.get_ph_neuron(neuron2test, neurite_type=neurite_type)
         # get persistence image
@@ -238,24 +241,24 @@ def make_prediction(input, clf, clf_name, result_path, current_time,
             print(f"The predicted class is TRUE NEURON")
             true_neuron_count = 1
 
-    # if input is a file path
-    elif os.path.isdir(input):
+    # if input_path is a file path
+    elif input_path.is_dir():
         pop = Population.Population()
-        for f in os.listdir(input):
-            swc = str(input / f)
+        for file in input_path.rglob("*.swc"):
             try:
-                n = tmd.io.load_neuron(swc)
+                n = tmd.io.load_neuron(str(file))
                 pop.append_neuron(n)
-            except:
-                pass
+            except Exception as e:
+                print(f"failed to load file: {file}\n"
+                      f"Error: {e}")
+                continue
         # print(f"For classification set: {len(pop.neurons)} loaded successfully")
-
         predict_junk_list = []
         predict_true_neuron_list = []
         failed_list = []
         # for each neuron in the population, generate pvecs and classify using the designated classifier
         for i, n in enumerate(tqdm(pop.neurons)):
-            neuron_name = os.path.split(Path(n.name))[-1] + '.swc'
+            neuron_path = Path(n.name + ".swc")
             try:
                 pers2test = tmd.methods.get_ph_neuron(n, neurite_type='basal_dendrite')
                 pers_image2test = tmd.analysis.get_persistence_image_data(pers2test, xlims=xlims, ylims=ylims)
@@ -263,16 +266,16 @@ def make_prediction(input, clf, clf_name, result_path, current_time,
                 predict_labels = []
 
                 # Train classifier with training images for selected number_of_trials
-                for i in range(num_iter):
+                for idx in range(num_iter):
                     predict_labels.append(clf.predict([test_dataset])[0])
 
                 predict_cnt = dict(collections.Counter(predict_labels))
                 predict_cnt_max = max(predict_cnt, key=lambda x: predict_cnt[x])
 
                 if predict_cnt_max == 1:
-                    predict_junk_list.append(neuron_name)
+                    predict_junk_list.append(neuron_path)
                 elif predict_cnt_max == 2:
-                    predict_true_neuron_list.append(neuron_name)
+                    predict_true_neuron_list.append(neuron_path)
             except:
                 pass
 
@@ -287,16 +290,16 @@ def make_prediction(input, clf, clf_name, result_path, current_time,
         path_failed.mkdir(exist_ok=True)
 
         # list of failed files
-        for f in os.listdir(input):
+        for file in input_path.rglob("*.swc"):
             # junk
-            if f in predict_junk_list:
-                shutil.copy(input / f, path_junk / f)
+            if file in predict_junk_list:
+                shutil.copytree(file.parent, path_junk)
             # true
-            elif f in predict_true_neuron_list:
-                shutil.copy(input / f, path_true / f)
-            elif f not in predict_junk_list and f not in predict_true_neuron_list:
-                shutil.copy(input / f, path_failed / f)
-                failed_list.append(f)
+            elif file in predict_true_neuron_list:
+                shutil.copytree(file.parent, path_true)
+            elif file not in predict_junk_list and file not in predict_true_neuron_list:
+                shutil.copytree(file.parent, path_failed)
+                failed_list.append(file)
 
         true_neuron_count = len(predict_true_neuron_list)
         junk_neuron_count = len(predict_junk_list)
@@ -307,7 +310,7 @@ def make_prediction(input, clf, clf_name, result_path, current_time,
     return true_neuron_count, junk_neuron_count
 
 
-def filter_dir_by_model(input: Path, model: Path, result_path: Path, current_time: str,
+def filter_dir_by_model(input_path: Path, model: Path, result_path: Path, current_time: str,
                         xlimits=None, ylimits=None):
     """
     wrapper function to make_prediction() to make classification simpler from outside scripts
@@ -320,9 +323,9 @@ def filter_dir_by_model(input: Path, model: Path, result_path: Path, current_tim
 
     m = pickle.load(open(model, 'rb'))
     # print(f"the model is loaded as {m}")
-    m_name = os.path.split(model)[1].split('.')[0]
+    m_name: str = os.path.split(model)[1].split('.')[0]
     # print(f"model name is: {m_name}")
-    return make_prediction(input, m, m_name, result_path, current_time, xlimits, ylimits)
+    return make_prediction(input_path, m, m_name, result_path, current_time, xlimits, ylimits)
 
 
 def main():
@@ -331,7 +334,7 @@ def main():
 
     parser = ArgumentParser(description="TMD filtering, model training and classification")
 
-    # if needs to train model first
+    # if you need to train model first
     parser.add_argument("--junk", "-j", type=str, required=False, help="path to junk folder")
     parser.add_argument("--true", "-t", type=str, required=False, help="path to true neuron folder")
     parser.add_argument("--model", "-m", type=str, required=False, help="path and name of the saved model")
@@ -354,7 +357,7 @@ def main():
         true_path = Path(args.true)
     if args.model:
         model = Path(args.model)
-    input = Path(args.filter)
+    input_path = Path(args.filter)
     if args.xlims:
         xlimits = args.xlims
     if args.ylims:
@@ -363,11 +366,11 @@ def main():
     print(f"ylimits {ylimits}")
 
     # results will be saved in the parent directory of the file(s) to be filtered
-    result_path = input.parent
+    result_path = input_path.parent
 
     # evaluate inputs
     # if you need to train model first
-    if junk_path and true_path and input:
+    if junk_path and true_path and input_path:
         # TRAIN MODEL, TRY LDA, DT, RF
         TRAIN_X, TRAIN_Y, xlims, ylims = generate_data(junk_path, true_path, neurite_type="basal_dendrite")
         print("Take note of x and y limits:")
@@ -403,11 +406,11 @@ def main():
         pickle.dump(rf_clf_base, open(model_name, 'wb'))
 
         # make prediction
-        make_prediction(input, rf_clf_base, "rf_clf_base", result_path, current_time, xlims=xlims, ylims=ylims)
+        make_prediction(input_path, rf_clf_base, "rf_clf_base", result_path, current_time, xlims=xlims, ylims=ylims)
 
-    # if have pre-trained model
-    elif model and input:
-        filter_dir_by_model(input, model, result_path, current_time, xlimits, ylimits)
+    # if you have pre-trained model
+    elif model and input_path:
+        filter_dir_by_model(input_path, model, result_path, current_time, xlimits, ylimits)
 
 
 if __name__ == '__main__':
