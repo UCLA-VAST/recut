@@ -52,7 +52,7 @@ def generate_data(junk_path, true_path, neurite_type="basal_dendrite"):
     pop1 = Population.Population()
     pop1_success = []
     pop1_failed = []
-    for f in os.listdir(junk_path):
+    for f in tqdm(os.listdir(junk_path), desc="Reading files in junk path: "):
         # swc = [str(directory1/f)]
         swc = str(junk_path / f)
         try:
@@ -61,13 +61,13 @@ def generate_data(junk_path, true_path, neurite_type="basal_dendrite"):
             pop1_success.append(f)
         except:
             pop1_failed.append(f)
-    print(f"For SWC set1: {len(pop1_success)} files loaded successfully, {len(pop1_failed)} files loaded failed")
+    print(f"For files in junk path: {len(pop1_success)} files loaded successfully, {len(pop1_failed)} files loaded failed")
 
     # load SWCs in true neuron folder
     pop2 = Population.Population()
     pop2_success = []
     pop2_failed = []
-    for f in os.listdir(true_path):
+    for f in tqdm(os.listdir(true_path), desc="Reading files in true path: "):
         swc = str(true_path / f)
         try:
             n = tmd.io.load_neuron(swc)
@@ -75,7 +75,7 @@ def generate_data(junk_path, true_path, neurite_type="basal_dendrite"):
             pop2_success.append(f)
         except:
             pop2_failed.append(f)
-    print(f"For SWC set2: {len(pop2_success)} files loaded successfully, {len(pop2_failed)} files loaded failed")
+    print(f"For files in true path: {len(pop2_success)} files loaded successfully, {len(pop2_failed)} files loaded failed")
 
     groups = [pop1, pop2]
 
@@ -87,7 +87,7 @@ def generate_data(junk_path, true_path, neurite_type="basal_dendrite"):
     indx_dict = {0: [], 1: []}
     indx_dict_0 = {0: [], 1: []}
     for i, m in enumerate(groups):
-        for j, n in enumerate(m.neurons):
+        for j, n in enumerate(tqdm(m.neurons, desc=f"Getting P-diagrams for group {i+1}")):
             try:
                 p = tmd.methods.get_ph_neuron(n, neurite_type=neurite_type)
                 if len(p) > 0:
@@ -115,7 +115,7 @@ def generate_data(junk_path, true_path, neurite_type="basal_dendrite"):
     # also need to error control
     pers_images_indx = []
     pers_images = []
-    for i, p in enumerate(pers_diagrams):
+    for i, p in enumerate(tqdm(pers_diagrams, desc="Getting Pvecs: ")):
         try:
             p_i = tmd.analysis.get_persistence_image_data(p, xlims=xlims, ylims=ylims)
             # need to handle those NANs
@@ -201,7 +201,7 @@ def copy_file(file, destination):
         for n_file in file.parent.glob(f"{file.name[:-len(file.suffix)]}.*"):
             shutil.copy(n_file, multi_component_dest_dir)
     else:
-        shutil.copytree(src=file.parent, dst=destination/file.parent.name, dirs_exist_ok=True)
+        shutil.copy(file, dst=destination/file.name)
 
 
 def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, current_time: str,
@@ -219,7 +219,8 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
     """
 
     true_neuron_count = junk_neuron_count = failed_neuron_count = 0
-
+    junk_neuron_short_length_count = junk_neuron_singular_matrix_count = junk_neuron_classified_count = 0
+    
     path_result = result_path / f"{input_path.name}_{clf_name}_{current_time}"
     path_result.mkdir(exist_ok=False)
     path_junk = path_result / 'predicted_junk'
@@ -231,6 +232,9 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
     log_file = path_result/"prediction.log"
     log.basicConfig(filename=str(log_file), level=log.INFO)
     log.FileHandler(str(log_file), mode="w")  # rewrite the file instead of appending
+    
+    # base_path = Path('C:\\Users\\yanyanming77\\Desktop\\precision_recall\\TMD\\junk_swc_model_base_rf_13_50_49_15_39_52\\failed')
+    # file = base_path/'component-412_tree-with-soma-xyz-337-34-3050.swc'
 
     for file in tqdm(list(input_path.rglob("*.swc")), desc="classification: "):
         try:
@@ -242,27 +246,52 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
             continue
         try:
             pers2test = tmd.methods.get_ph_neuron(n, neurite_type='basal_dendrite')
-            pers_image2test = tmd.analysis.get_persistence_image_data(pers2test, xlims=xlims, ylims=ylims)
-            test_dataset = pers_image2test.flatten()
-            predict_labels = []
-
-            # Train classifier with training images for selected number_of_trials
-            for idx in range(num_iter):
-                predict_labels.append(clf.predict([test_dataset])[0])
-
-            predict_cnt = dict(collections.Counter(predict_labels))
-            predict_cnt_max = max(predict_cnt, key=lambda x: predict_cnt[x])
-
-            if predict_cnt_max == 1:
+            # Check for junk definition1: length of P-diagram is 0 or 1
+            if len(pers2test) in (0,1):
                 junk_neuron_count += 1
+                junk_neuron_short_length_count += 1
                 copy_file(file, path_junk)
-            elif predict_cnt_max == 2:
-                true_neuron_count += 1
-                copy_file(file, path_true)
-            else:
-                log.info(f"unexpected class {predict_cnt_max} for {file}")
-                failed_neuron_count += 1
-                copy_file(file, path_failed)
+            elif len(pers2test) > 1:
+                pers_image2test = np.empty(1, dtype='float64') # initialize
+                # Check fro junk definition2: singular matrix error when getting P-vecs
+                try:
+                    pers_image2test = tmd.analysis.get_persistence_image_data(pers2test, xlims=xlims, ylims=ylims)
+                except np.linalg.LinAlgError:
+                    junk_neuron_count += 1
+                    junk_neuron_singular_matrix_count += 1
+                    copy_file(file, path_junk)
+                except Exception as e:
+                    log.info(f"other error when extracting pvecs for {file}")
+                    failed_neuron_count += 1
+                    copy_file(file, path_failed)
+  
+                if len(pers_image2test) > 1:
+                            
+                    test_dataset = pers_image2test.flatten()
+                    predict_labels = []
+                   
+                    # Train classifier with training images for selected number_of_trials
+                    for idx in range(num_iter):
+                        predict_labels.append(clf.predict([test_dataset])[0])
+        
+                    predict_cnt = dict(collections.Counter(predict_labels))
+                    predict_cnt_max = max(predict_cnt, key=lambda x: predict_cnt[x])
+                    # print("pvecs: ", test_dataset)
+                    # print(f'predict_result of {file.name}', predict_cnt)
+                    # print(f"x limit: {xlims}, y limit: {ylims}, niter: {num_iter}")
+
+                    if predict_cnt_max == 1:
+                        junk_neuron_count += 1
+                        junk_neuron_classified_count += 1
+                        copy_file(file, path_junk)
+                    elif predict_cnt_max == 2:
+                        true_neuron_count += 1
+                        copy_file(file, path_true)
+                    else:
+                        log.info(f"unexpected class {predict_cnt_max} for {file}")
+                        failed_neuron_count += 1
+                        copy_file(file, path_failed)
+                        
         except Exception as e:
             log.error(f"failure in classification for {file}: {e}")
             failed_neuron_count += 1
@@ -270,9 +299,13 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
 
     print("Summary of Classification:\n"
           f"\t{junk_neuron_count} \t # junk neurons\n"
-          f"\t{true_neuron_count} \t # true neurons\n"
+          f"\tjunk neuron break down:\n"
+          f"\t\t{junk_neuron_short_length_count} identified by 0- or 1-length P-diagrams\n"
+          f"\t\t{junk_neuron_singular_matrix_count} identified by singular matrix\n"
+          f"\t\t{junk_neuron_classified_count} identified by classifier\n"
+          f"\t{true_neuron_count} \t # true neurons identified by classifier\n"
           f"\t{failed_neuron_count}\t # failed neurons\n"
-          f"\t{true_neuron_count/(true_neuron_count+failed_neuron_count+junk_neuron_count)*100:.2f}\t yield %")
+          f"\t{true_neuron_count/(true_neuron_count+failed_neuron_count+junk_neuron_count)*100:.2f}%\t yield %")
 
     return true_neuron_count, junk_neuron_count
 
@@ -315,8 +348,8 @@ def main():
     junk_path = None
     true_path = None
     model = None
-    xlimits = None
-    ylimits = None
+    xlimits = (1, 1320)
+    ylimits = (0, 905)
 
     if args.junk:
         junk_path = Path(args.junk)
@@ -327,10 +360,15 @@ def main():
     input_path = Path(args.filter)
     if args.xlims:
         xlimits = args.xlims
+        print(f"specified xlimits {xlimits}")
+    elif args.xlims == None and model!= None:
+        print("Using default xlimits from training data")
     if args.ylims:
         ylimits = args.ylims
-    print(f"xlimits {xlimits}")
-    print(f"ylimits {ylimits}")
+        print(f"specified ylimits {ylimits}")
+    elif args.ylims == None and model != None:
+        print("Using default ylimits from training data")
+        
 
     # results will be saved in the parent directory of the file(s) to be filtered
     result_path = input_path.parent
@@ -341,12 +379,12 @@ def main():
         # TRAIN MODEL, TRY LDA, DT, RF
         TRAIN_X, TRAIN_Y, xlims, ylims = generate_data(junk_path, true_path, neurite_type="basal_dendrite")
         print("Take note of x and y limits:")
-        print(f"X limits: {xlims}, Y limits: {ylims}")
+        print(f"X limits: {[round(i,0) for i in xlims]}, Y limits: {[round(i,0) for i in ylims]}")
 
         # split data to train and val
         x_train, x_val, y_train, y_val = train_test_split(TRAIN_X, TRAIN_Y, train_size=0.8, random_state=42)
-        print(f"train x: {len(x_train)}, train y: {len(y_train)}")
-        print(f"val x: {len(x_val)}, val y: {len(y_val)}")
+        print(f"size of train x: {len(x_train)}, size of train y: {len(y_train)}")
+        print(f"size of validation x: {len(x_val)}, size of validation y: {len(y_val)}")
 
         # # 1) LDA baseline
         # lda_clf_base = LinearDiscriminantAnalysis()
