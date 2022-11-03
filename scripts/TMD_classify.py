@@ -331,8 +331,7 @@ def filter_dir_by_model(input_path: Path, model: Path, result_path: Path, curren
 
 
 def main():
-    time_now = datetime.now()
-    current_time = time_now.strftime("%H:%M:%S").replace(':', '_')
+    current_time = datetime.now().strftime("%H_%M_%S")
 
     parser = ArgumentParser(description="TMD filtering, model training and classification")
 
