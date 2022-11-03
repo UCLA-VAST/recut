@@ -233,14 +233,14 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
     path_failed.mkdir(exist_ok=True)
     log_file = path_result / "prediction.log"
     log.basicConfig(filename=str(log_file), level=log.INFO)
-    log.FileHandler(str(log_file), mode="w")  # rewrite the file instead of appending
+    log.FileHandler(log_file.__str__(), mode="w")  # rewrite the file instead of appending
 
     # base_path = Path('C:\\Users\\yanyanming77\\Desktop\\precision_recall\\TMD\\junk_swc_model_base_rf_13_50_49_15_39_52\\failed')
     # file = base_path/'component-412_tree-with-soma-xyz-337-34-3050.swc'
 
     for file in tqdm(list(input_path.rglob("*.swc")), desc="classification: "):
         try:
-            n = tmd.io.load_neuron(str(file))
+            n = tmd.io.load_neuron(file.__str__())
         except Exception as e:
             log.error(f"tmd.io.load_neuron failed to load {file}: {e}")
             failed_neuron_count += 1
