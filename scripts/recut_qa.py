@@ -21,7 +21,7 @@ def parse_range(string):
 
 
 def call_recut(**kwargs):
-    if kwargs['inferenced-path'] is None:
+    if kwargs['inferenced_path'] is None:
         # whitelist certain arguments to pass directly to recut
         include = ['min_radius', 'max_radius', 'open_denoise', 'open_steps', 'close_steps', 'fg_percent']
         args = "".join([f"--{k} {v} ".replace('_', '-') for k, v in kwargs.items() if k in include if v])
