@@ -1,6 +1,7 @@
 import subprocess
 import argparse
 import re
+# import pandas as pd
 from test_precision_recall import precision_recall
 from plots import get_hash
 from TMD_classify import filter_dir_by_model
@@ -31,7 +32,7 @@ def call_recut(**kwargs):
 
         output = subprocess.check_output(cmd.split()).strip().decode().split('\n')
         run_dir = [v.split()[-1] for v in output if "written to:" in v][0]
-        kwargs['inferenced-path'] = f"{run_dir}/seeds"
+        kwargs['inferenced_path'] = f"{run_dir}/seeds"
 
     precision_recall(**kwargs)
 
@@ -47,6 +48,7 @@ def call_recut(**kwargs):
     #  neuron yield, neuron precision, run dir, git hash, voxel size, TMD model name, for this given run note that
     #  this function will eventually be called multiple times, each run being placed in a new row by the caller the
     #  run of this whole script will output a single csv from the pd.df, each row corresponding to a recut run
+    # df = pd.DataFrame(kwargs)
 
     # number of neurons that pass as true positives based on the topology descriptor trained in kwargs['model']
 
