@@ -33,6 +33,8 @@ def call_recut(**kwargs):
         output = subprocess.check_output(cmd.split()).strip().decode().split('\n')
         run_dir = [v.split()[-1] for v in output if "written to:" in v][0]
         kwargs['inferenced_path'] = f"{run_dir}/seeds"
+    else:
+        run_dir = kwargs['inferenced_path']
 
     precision_recall(**kwargs)
 
