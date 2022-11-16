@@ -44,6 +44,11 @@ def gather_markers(seeds_path, max_radius=None, min_radius=None):
                 markers_with_radii.append(coord + (radius_um,))
     return markers, markers_with_radii
 
+def flip_y(markers):
+    max_y = 7153
+    for marker in markers:
+        # flip y value
+        marker[1] = max_y - marker[1]
 
 def euc_distance(
         soma_labels: List[Tuple[int, int, int]],

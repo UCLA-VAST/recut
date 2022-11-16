@@ -1726,8 +1726,7 @@ void write_tiff_page(image_t *inimg1d, TIFF *tiff, const GridCoord dims,
 
 // passing a page number >= 0 means write a multipage tiff file
 template <typename image_t>
-void write_single_z_plane(image_t *inimg1d, fs::path fn,
-                          const GridCoord dims) {
+void write_single_z_plane(image_t *inimg1d, fs::path fn, const GridCoord dims) {
 
   TIFF *tiff = TIFFOpen(fn.string().c_str(), "w");
   if (!tiff) {
@@ -1924,24 +1923,44 @@ auto get_dir_files = [](const fs::path &dir, const std::string &ext) {
 
   // not a safe range, so convert to object before passing to range-v3
   auto iter = fs::directory_iterator(dir);
-  auto tif_filenames =
+  auto fn_pairs =
       iter |
       rv::filter([](auto const &entry) { return fs::is_regular_file(entry); }) |
       rv::filter([&ext](auto const &entry) {
         return entry.path().extension() == ext;
       }) |
       rv::transform([&dir](auto const &entry) {
-        return (dir / entry.path().filename()).string();
+        auto fn = (dir / entry.path().filename()).string();
+        auto str_index =
+            fn | rv::split('_') | rv::tail | rv::join | rng::to<std::string>();
+        if (str_index.empty()) {
+          throw std::runtime_error("input images must be have their z-plane "
+                                   "specified after _ like img_000000.tif");
+        }
+
+        // remove non digit characters
+        auto clean_index = str_index |
+                           rv::filter([](char c) { return isdigit(c); }) |
+                           rng::to<std::string>();
+
+        auto index = std::stoi(clean_index);
+        std::cout << str_index << ' ' << fn << '\n';
+        return std::make_pair(index, fn);
       }) |
-      rv::filter([](auto const &entry) { return fs::exists(entry); }) |
+      rv::filter([](auto const &entry) { return fs::exists(entry.second); }) |
       rng::to_vector;
 
-  if (tif_filenames.empty()) {
+  if (fn_pairs.empty()) {
     os << " directory must contain at least one file with extension " << ext;
     throw std::runtime_error(os.str());
   }
 
-  std::sort(tif_filenames.begin(), tif_filenames.end());
+  std::sort(fn_pairs.begin(), fn_pairs.end());
+
+  auto tif_filenames = fn_pairs |
+                       rv::transform([](auto fpair) { return fpair.second; }) |
+                       rng::to_vector;
+
   return tif_filenames;
 };
 
@@ -2957,8 +2976,8 @@ std::string write_vdb_to_tiff_planes(GridT grid, fs::path base,
 
     // overflows at 1 million z planes
     std::ostringstream fn;
-    fn <<  "component_" << component_index << "_img_"
-       << std::setfill('0') << std::setw(6) << index << ".tif";
+    fn << "component_" << component_index << "_img_" << std::setfill('0')
+       << std::setw(6) << index << ".tif";
 
     // cout << '\n' << fn.str() << '\n';
     // print_image_3D(dense.data(), plane_bbox.dim());
@@ -3076,8 +3095,8 @@ std::string write_output_windows(GridT output_grid, fs::path dir,
       component_grids.push_back(output_grid);
       write_vdb_file(component_grids, base.string() + ".vdb");
 #ifdef LOG
-      // cout << "Wrote window of component to vdb in " << timer.elapsed() << "
-      // s\n";
+      // cout << "Wrote window of component to vdb in " << timer.elapsed() <<
+      // " s\n";
 #endif
     }
   } else {
@@ -3693,10 +3712,11 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
     auto coord_center = GridCoord(sphere[0], sphere[1], sphere[2]);
 
     if (is_coordinate_active(topology_grid, coord_center)) {
-      // if this run is only for seed generation and the user also passed in known seeds
-      // then the topology was already clipped around --seeds
-      // therefore allow any components that were found within the clipped region
-      // regardless of whether you can find a corresponding --seeds in them
+      // if this run is only for seed generation and the user also passed in
+      // known seeds then the topology was already clipped around --seeds
+      // therefore allow any components that were found within the clipped
+      // region regardless of whether you can find a corresponding --seeds in
+      // them
       if ((output_type != "seeds") && !known_seeds.empty()) {
         // convert to fog so that isValueOn returns whether it is
         // within the
