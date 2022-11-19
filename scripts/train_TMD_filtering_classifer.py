@@ -27,7 +27,7 @@ from pathlib import Path
 from argparse import ArgumentParser
 from tqdm import tqdm
 
-warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore",)
 
 
 def generate_data(junk_path, true_path, neurite_type="all"):
@@ -213,7 +213,12 @@ def train_classifier():
 
     # save model
     model_name = os.path.join(result_path, f"model_base_rf_{current_time}.sav")
-    pickle.dump(rf_clf_base, open(model_name, 'wb'))
+    with open(model_name, 'ab+') as fp: 
+        pickle.dump(rf_clf_base, fp)
+        pickle.dump(xlims, fp)
+        pickle.dump(ylims, fp)
+    fp.close()
+    
     
     print(f"x lims: {[round(i,2) for i in xlims]}")
     print(f"y lims: {[round(i,2) for i in ylims]}")

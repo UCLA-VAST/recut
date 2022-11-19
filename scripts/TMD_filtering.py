@@ -43,7 +43,7 @@ def copy_file(file, destination):
 
 
 def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, current_time: str,
-                    xlims=[0.35, 304.45], ylims=[0, 243.03], num_iter=20, neurite_type="all"):
+                    xlims, ylims, num_iter=20, neurite_type="all"):
     """
     this function aims to predict the class of the SWC(s), input could be a single file or a directory of SWCs
 
@@ -163,46 +163,32 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
     return true_neuron_count, junk_neuron_count
 
 
-def filter_dir_by_model(input_path: Path, model: Path, result_path: Path, current_time: str,
-                        xlimits=None, ylimits=None):
-    """
-    wrapper function to make_prediction() to make classification simpler from outside scripts
-    input:
-        - input: a SWC file or a directory
-        - model: classifier path to use
-    returns:
-        - true_neuron_count: number of neurons classified as true positives by the model
-    """
-
-    m = pickle.load(open(model, 'rb'))
-    # print(f"the model is loaded as {m}")
-    m_name: str = os.path.split(model)[1].split('.')[0]
-    # print(f"model name is: {m_name}")
-    return make_prediction(input_path, m, m_name, result_path, current_time, xlimits, ylimits)
-
-
-
 if __name__ == '__main__':
     current_time = datetime.now().strftime("%H_%M_%S")
     
     parser = ArgumentParser(description="TMD filtering")
     parser.add_argument("--model", "-m", type=str, required=True, help="model")
     parser.add_argument("--filter", "-f", type=str, required=True, help="SWCs to be filtered")
-    parser.add_argument("--xlims", "-xlims", nargs='+', type=int, required=False,
-                        help="lower limit, upper limit of X separated by space, based on the training set")
-    parser.add_argument("--ylims", "-ylims", nargs='+', type=int, required=False,
-                        help="lower limit, upper limit of Y separated by space, based on the training set")
+  
     args = parser.parse_args()
     
-    model = Path(args.model)
+    pickle_data = []
+    with open(args.model, 'rb') as fr:
+        try:
+            while True:
+                pickle_data.append(pickle.load(fr))
+        except EOFError:
+            pass
+    fr.close()
+    
+    model_name = os.path.split(args.model)[1].split('.')[0]
+    model = pickle_data[0]
+    
+    xlims = pickle_data[1]
+    ylims= pickle_data[2]
+    
     input_path = Path(args.filter)
     result_path = input_path.parent
     
-    # if trained a new model, need to update the xy limits
-    if args.xlims and args.ylims: 
-        xlims = args.xlims
-        ylims = args.ylims
-    else:
-        xlims = [0.35, 304.45]
-        ylims = [0, 243.03]
-    filter_dir_by_model(input_path, model, result_path, current_time, xlims, ylims)
+    make_prediction(input_path, model, model_name, result_path, current_time, xlims, ylims)
+    
