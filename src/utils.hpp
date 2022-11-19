@@ -1931,20 +1931,20 @@ auto get_dir_files = [](const fs::path &dir, const std::string &ext) {
       }) |
       rv::transform([&dir](auto const &entry) {
         auto fn = (dir / entry.path().filename()).string();
-        auto str_index =
-            fn | rv::split('_') | rv::tail | rv::join | rng::to<std::string>();
-        if (str_index.empty()) {
+        auto tokens =
+            fn | rv::split('_') | rng::to<std::vector<std::string>>();
+        if (tokens.empty()) {
           throw std::runtime_error("input images must be have their z-plane "
                                    "specified after _ like img_000000.tif");
         }
+	auto str_index = tokens.back();
 
         // remove non digit characters
         auto clean_index = str_index |
                            rv::filter([](char c) { return isdigit(c); }) |
                            rng::to<std::string>();
 
-        auto index = std::stoi(clean_index);
-        std::cout << str_index << ' ' << fn << '\n';
+        int index = std::stoi(clean_index);
         return std::make_pair(index, fn);
       }) |
       rv::filter([](auto const &entry) { return fs::exists(entry.second); }) |
