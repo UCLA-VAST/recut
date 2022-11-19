@@ -167,13 +167,19 @@ if __name__ == '__main__':
     current_time = datetime.now().strftime("%H_%M_%S")
     
     parser = ArgumentParser(description="TMD filtering")
-    parser.add_argument("--model", "-m", type=str, required=True, help="model")
+    parser.add_argument("--model", "-m", type=str, required=False, help="model")
     parser.add_argument("--filter", "-f", type=str, required=True, help="SWCs to be filtered")
   
     args = parser.parse_args()
     
+    # if the default model: model_base_rf_17_55_57.sav
+    if not args.model:
+        the_model = Path(__file__).absolute().parent/'model_base_rf_17_55_57.sav'
+    elif args.model:
+        the_model = args.model
+    
     pickle_data = []
-    with open(args.model, 'rb') as fr:
+    with open(the_model, 'rb') as fr:
         try:
             while True:
                 pickle_data.append(pickle.load(fr))
@@ -181,7 +187,8 @@ if __name__ == '__main__':
             pass
     fr.close()
     
-    model_name = os.path.split(args.model)[1].split('.')[0]
+    model_name = os.path.split(the_model)[1].split('.')[0]
+    print(f"The classifier used: {model_name}")
     model = pickle_data[0]
     
     xlims = pickle_data[1]
