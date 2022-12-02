@@ -269,9 +269,7 @@ auto write_swc = [](std::vector<MyMarker *> &tree,
     apo_file
         << "##n,orderinfo,name,comment,z,x,y, "
            "pixmax,intensity,sdev,volsize,mass,,,, color_r,color_g,color_b\n";
-    // n
-    // apo_file << std::to_string(find_or_assign(swc_coord, coord_to_swc_id)) <<
-    // ',';
+    // ...skip assigning a node id (n)
     apo_file << ',';
     // orderinfo,name,comment
     apo_file << ",,,";
@@ -292,6 +290,7 @@ auto write_swc = [](std::vector<MyMarker *> &tree,
     eswc_file << "# id type_id x y z radius parent_id"
               << " seg_id level mode timestamp TFresindex\n";
 
+    coord_to_swc_id = get_id_map();
     rng::for_each(tree, [&](const auto marker) {
       auto coord = std::array<double, 3>{marker->x, marker->y, marker->z};
       auto is_root = marker->type == 0;

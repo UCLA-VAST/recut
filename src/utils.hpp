@@ -1931,13 +1931,12 @@ auto get_dir_files = [](const fs::path &dir, const std::string &ext) {
       }) |
       rv::transform([&dir](auto const &entry) {
         auto fn = (dir / entry.path().filename()).string();
-        auto tokens =
-            fn | rv::split('_') | rng::to<std::vector<std::string>>();
+        auto tokens = fn | rv::split('_') | rng::to<std::vector<std::string>>();
         if (tokens.empty()) {
           throw std::runtime_error("input images must be have their z-plane "
                                    "specified after _ like img_000000.tif");
         }
-	auto str_index = tokens.back();
+        auto str_index = tokens.back();
 
         // remove non digit characters
         auto clean_index = str_index |
@@ -2296,17 +2295,37 @@ auto print_swc_line = [](std::array<double, 3> swc_coord, bool is_root,
                          bool bbox_adjust = true, bool is_eswc = false) {
   std::ostringstream line;
 
-  if (bbox_adjust) { // implies output window crops is set
-    swc_coord = {swc_coord[0] - static_cast<double>(bbox.min().x()),
-                 swc_coord[1] - static_cast<double>(bbox.min().y()),
-                 swc_coord[2] - static_cast<double>(bbox.min().z())};
-    parent_coord = {parent_coord[0] - static_cast<double>(bbox.min().x()),
-                    parent_coord[1] - static_cast<double>(bbox.min().y()),
-                    parent_coord[2] - static_cast<double>(bbox.min().z())};
-  }
+  auto scale_coord = [voxel_size](std::array<double, 3> &coord) {
+    for (int i = 0; i < 3; ++i)
+      coord[i] *= voxel_size[i];
+  };
 
-  // CoordBBox uses extents inclusively, but we want exclusive bbox
-  GridCoord swc_lengths = bbox.extents().offsetBy(-1);
+  scale_coord(swc_coord);
+  scale_coord(parent_coord);
+
+  if (bbox_adjust) { // implies output window crops is set
+    std::array<double, 3> window_start = {static_cast<double>(bbox.min().x()),
+                                          static_cast<double>(bbox.min().y()),
+                                          static_cast<double>(bbox.min().z())};
+    scale_coord(window_start);
+
+    auto subtract = [](std::array<double, 3> &l,
+                       const std::array<double, 3> r) {
+      for (int i = 0; i < 3; ++i)
+        l[i] -= r[i];
+    };
+
+    // adjust the coordinates to the components bbox
+    subtract(swc_coord, window_start);
+    subtract(parent_coord, window_start);
+
+    // swc_coord = {swc_coord[0] - static_cast<double>(bbox.min().x()),
+    // swc_coord[1] - static_cast<double>(bbox.min().y()),
+    // swc_coord[2] - static_cast<double>(bbox.min().z())};
+    // parent_coord = {parent_coord[0] - static_cast<double>(bbox.min().x()),
+    // parent_coord[1] - static_cast<double>(bbox.min().y()),
+    // parent_coord[2] - static_cast<double>(bbox.min().z())};
+  }
 
   // n
   uint32_t current_id = find_or_assign(swc_coord, coord_to_swc_id);
@@ -2321,8 +2340,7 @@ auto print_swc_line = [](std::array<double, 3> swc_coord, bool is_root,
   line << std::fixed << std::setprecision(SWC_PRECISION);
 
   // coordinates
-  line << voxel_size[0] * swc_coord[0] << ' ' << voxel_size[1] * swc_coord[1]
-       << ' ' << voxel_size[2] * swc_coord[2] << ' ';
+  line << swc_coord[0] << ' ' << swc_coord[1] << ' ' << swc_coord[2] << ' ';
 
   // radius, already been adjsuted to voxel size
   line << static_cast<float>(radius) << ' ';
