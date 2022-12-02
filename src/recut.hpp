@@ -29,9 +29,7 @@
 #include <unistd.h>
 #include <unordered_set>
 
-template <typename... Ts> struct Overload : Ts... {
-  using Ts::operator()...;
-};
+template <typename... Ts> struct Overload : Ts... { using Ts::operator()...; };
 template <class... Ts> Overload(Ts...) -> Overload<Ts...>;
 
 using ThreshV =
@@ -3130,10 +3128,14 @@ template <class image_t> void Recut<image_t>::operator()() {
     std::cout << "starting seed (soma) detection:\n";
     std::cout << "\tmask to sdf step\n";
 #endif
-    // technically it is modified by closing by 1 which has a very minimal
+    // resulting SDF is slightly modified by a closing op of 1 step which has a very minimal
     // effect this API does not allow 0 closing
     timer.restart();
-    auto sdf_grid = vto::topologyToLevelSet(*this->mask_grid, 1, 0);
+    // if there is no pre-opening step (open_denoise) then do closing at the time of
+    // conversion to sdf for performance gain
+    auto sdf_grid = vto::topologyToLevelSet(
+        *this->mask_grid, /*halfwidth voxels*/ 1,
+        /*closing steps*/ args->open_denoise == 0 ? args->close_steps : 0);
     run_log << "Seed detection: mask to SDF conversion time, "
             << timer.elapsed_formatted() << '\n'
             << "Seed detection: SDF (topology) voxel count, "
@@ -3214,17 +3216,19 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log.flush();
 
     // close to fill the holes inside somata where cell nuclei are
+    if (args->open_denoise > 0) {
 #ifdef LOG
-    std::cout << "\tclose step: close = " << args->close_steps << "\n";
+      std::cout << "\tclose step: close = " << args->close_steps << "\n";
 #endif
-    timer.restart();
-    filter->offset(-args->close_steps);
-    filter->offset(args->close_steps);
-    run_log << "Seed detection: closing time, " << timer.elapsed_formatted()
-            << '\n'
-            << "Seed detection: closed SDF voxel count, "
-            << sdf_grid->activeVoxelCount() << '\n';
-    run_log.flush();
+      timer.restart();
+      filter->offset(-args->close_steps);
+      filter->offset(args->close_steps);
+      run_log << "Seed detection: closing time, " << timer.elapsed_formatted()
+              << '\n'
+              << "Seed detection: closed SDF voxel count, "
+              << sdf_grid->activeVoxelCount() << '\n';
+      run_log.flush();
+    }
 
     auto closed_sdf = sdf_grid->deepCopy();
     if (args->save_vdbs)
