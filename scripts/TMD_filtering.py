@@ -27,19 +27,15 @@ from tqdm import tqdm
 
 warnings.filterwarnings("ignore")
 
+
 def copy_file(file, destination):
-    
     """
     Copy files to their corresponding folder based on the filtering result
     """
-    
-    if "multi-component" in file.parent.name:
-        multi_component_dest_dir = destination / file.parent.name
-        multi_component_dest_dir.mkdir(exist_ok=True)
-        for n_file in file.parent.glob(f"{file.name[:-len(file.suffix)]}.*"):
-            shutil.copy(n_file, multi_component_dest_dir)
-    else:
-        shutil.copy(file, dst=destination / file.name)
+    dest_dir = destination / file.parent.name
+    dest_dir.mkdir(exist_ok=True)
+    for n_file in file.parent.glob(f"{file.name[:-len(file.suffix)]}.*"):
+        shutil.copy(n_file, dest_dir)
 
 
 def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, current_time: str,
@@ -58,7 +54,7 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
 
     true_neuron_count = junk_neuron_count = failed_neuron_count = 0
     junk_neuron_short_length_count = junk_neuron_singular_matrix_count = junk_neuron_classified_count = 0
-    
+
     path_result = result_path / f"{input_path.name}_{clf_name}_{current_time}"
     path_result.mkdir(exist_ok=False)
     path_junk = path_result / 'predicted_junk'
@@ -70,10 +66,9 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
     log_file = path_result / "prediction.log"
     log.basicConfig(filename=str(log_file), level=log.INFO)
     log.FileHandler(log_file.__str__(), mode="w")  # rewrite the file instead of appending
-    
+
     ### validate xy limits
     print(f"Current x limits: {xlims}, Current y limits: {ylims}")
-
 
     for file in tqdm(list(input_path.rglob("*.swc")), desc="classification: "):
         try:
@@ -147,9 +142,9 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
           f"\t{true_neuron_count} \t # true neurons identified by classifier\n"
           f"\t{failed_neuron_count}\t # failed neurons\n"
           f"\t{true_neuron_count / (true_neuron_count + failed_neuron_count + junk_neuron_count) * 100:.2f}%\t yield")
-    
+
     # write the result to a text file
-    with open(path_result/'summary.txt','w') as summary_file:
+    with open(path_result / 'summary.txt', 'w') as summary_file:
         summary_file.write("Summary of TMD filtering: \n")
         summary_file.write(f"Junk neuron count: {junk_neuron_count}, break down: \n")
         summary_file.write(f"\t\t{junk_neuron_short_length_count} identified by 0- or 1-length P-diagrams\n")
@@ -157,7 +152,8 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
         summary_file.write(f"\t\t{junk_neuron_classified_count} identified by classifier\n")
         summary_file.write(f"{true_neuron_count} true neurons identified by classifier\n")
         summary_file.write(f"{failed_neuron_count} SWC failed, refer to the log file (prediction.log)\n")
-        summary_file.write(f"{true_neuron_count / (true_neuron_count + failed_neuron_count + junk_neuron_count) * 100:.2f}%\t yield")
+        summary_file.write(
+            f"{true_neuron_count / (true_neuron_count + failed_neuron_count + junk_neuron_count) * 100:.2f}%\t yield")
     summary_file.close()
 
     return true_neuron_count, junk_neuron_count
@@ -165,19 +161,19 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
 
 if __name__ == '__main__':
     current_time = datetime.now().strftime("%H_%M_%S")
-    
+
     parser = ArgumentParser(description="TMD filtering")
     parser.add_argument("--model", "-m", type=str, required=False, help="model")
     parser.add_argument("--filter", "-f", type=str, required=True, help="SWCs to be filtered")
-  
+
     args = parser.parse_args()
-    
+
     # if the default model: model_base_rf_17_55_57.sav
     if not args.model:
-        the_model = Path(__file__).absolute().parent/'model_base_rf_17_55_57.sav'
+        the_model = Path(__file__).absolute().parent / 'model_base_rf_17_55_57.sav'
     elif args.model:
         the_model = args.model
-    
+
     pickle_data = []
     with open(the_model, 'rb') as fr:
         try:
@@ -186,16 +182,15 @@ if __name__ == '__main__':
         except EOFError:
             pass
     fr.close()
-    
+
     model_name = os.path.split(the_model)[1].split('.')[0]
     print(f"The classifier used: {model_name}")
     model = pickle_data[0]
-    
+
     xlims = pickle_data[1]
-    ylims= pickle_data[2]
-    
+    ylims = pickle_data[2]
+
     input_path = Path(args.filter)
     result_path = input_path.parent
-    
+
     make_prediction(input_path, model, model_name, result_path, current_time, xlims, ylims)
-    
