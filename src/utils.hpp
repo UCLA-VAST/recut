@@ -2767,7 +2767,7 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
                          EnlargedPointDataGrid::Ptr point_grid,
                          uint16_t prune_radius_factor) {
 #ifdef FULL_PRINT
-  cout << "Convert" << '\n';
+  std::cout << "Convert\n";
 #endif
 
   auto timer = high_resolution_timer();

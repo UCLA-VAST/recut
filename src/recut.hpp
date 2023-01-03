@@ -2776,10 +2776,30 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 #endif
 
     timer.restart();
+    int max_iterations = 4;
+    auto refined_markers = non_blurring(markers, max_iterations);
+    // TODO mark time that passed
+
+    // sort by markers by decreasing radii (~relevance)
+    std::sort(refined_markers.begin(), refined_markers.end(),
+              [](const MyMarker *l, const MyMarker *r) {
+                return l->radius > r->radius;
+              });
+
+    // place all somas (type 0 first) while preserving large radii precedence
+    std::stable_partition(refined_markers.begin(), refined_markers.end(), 
+              [](const MyMarker *l) {
+                return l->type == 0;
+              });
+
+    // rebuild coord to idx for prune
+    auto coord_to_idx_double = create_coord_to_idx<double>(refined_markers);
+
+    timer.restart();
     // prune radius already set when converting from markers above
     auto pruned_markers = advantra_prune(
-        markers, /*prune_radius*/ this->args->prune_radius.value(),
-        coord_to_idx);
+        refined_markers, /*prune_radius*/ this->args->prune_radius.value(),
+        coord_to_idx_double);
     if (pruned_markers.empty()) {
       return; // skip
     }
@@ -3128,11 +3148,11 @@ template <class image_t> void Recut<image_t>::operator()() {
     std::cout << "starting seed (soma) detection:\n";
     std::cout << "\tmask to sdf step\n";
 #endif
-    // resulting SDF is slightly modified by a closing op of 1 step which has a very minimal
-    // effect this API does not allow 0 closing
+    // resulting SDF is slightly modified by a closing op of 1 step which has a
+    // very minimal effect this API does not allow 0 closing
     timer.restart();
-    // if there is no pre-opening step (open_denoise) then do closing at the time of
-    // conversion to sdf for performance gain
+    // if there is no pre-opening step (open_denoise) then do closing at the
+    // time of conversion to sdf for performance gain
     auto sdf_grid = vto::topologyToLevelSet(
         *this->mask_grid, /*halfwidth voxels*/ 1,
         /*closing steps*/ args->open_denoise == 0 ? args->close_steps : 0);

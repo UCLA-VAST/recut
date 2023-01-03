@@ -91,21 +91,23 @@ auto sort_tree_in_place = [](std::vector<MyMarker *> &tree) {
   return coord_to_swc_id;
 };
 
-auto create_coord_to_idx = [](const std::vector<MyMarker *> &cluster) {
+template <typename ArrayT>
+std::unordered_map<std::array<ArrayT, 3>, VID_t, ArrayHasher>
+create_coord_to_idx(const std::vector<MyMarker *> &cluster) {
   // build to coord_to_idx
-  std::unordered_map<std::array<double, 3>, VID_t, ArrayHasher> coord_to_idx;
+  std::unordered_map<std::array<ArrayT, 3>, VID_t, ArrayHasher> coord_to_idx;
   rng::for_each(cluster | rv::enumerate, [&](auto imarker) {
     auto [id, marker] = imarker;
     coord_to_idx[{marker->x, marker->y, marker->z}] = id;
   });
   return coord_to_idx;
-};
+}
 
 // markers have a ptr to parent, all aprents must point to marker *within* its
 // current vector if it points to marker within a previous vector, undefined
 // behavior
 auto adjust_parent_ptrs = [](std::vector<MyMarker *> &cluster) {
-  auto coord_to_idx = create_coord_to_idx(cluster);
+  auto coord_to_idx = create_coord_to_idx<double>(cluster);
 
   // adjust in place
   rng::for_each(cluster, [&](auto marker) {
@@ -125,7 +127,7 @@ auto adjust_parent_ptrs = [](std::vector<MyMarker *> &cluster) {
 };
 
 auto is_cluster_self_contained = [](const std::vector<MyMarker *> &cluster) {
-  auto coord_to_idx = create_coord_to_idx(cluster);
+  auto coord_to_idx = create_coord_to_idx<double>(cluster);
 
   auto has_out_cluster_parent =
       cluster | rv::filter([](auto marker) {
@@ -151,7 +153,7 @@ auto is_cluster_self_contained = [](const std::vector<MyMarker *> &cluster) {
 // index is the index into the cluster vector
 // leaves will have no children, roots will not have a parent
 auto create_child_list = [](const std::vector<MyMarker *> &cluster) {
-  auto coord_to_idx = create_coord_to_idx(cluster);
+  auto coord_to_idx = create_coord_to_idx<double>(cluster);
 
   // build child_list
   auto child_list = std::unordered_map<VID_t, std::vector<VID_t>>();
@@ -492,17 +494,103 @@ auto sphere_iterator = [](const GridCoord &center, const int radius) {
   });
 };
 
+// From Advantra pnr implementation: mean-shift (non-blurring) uses flexible
+// neighbourhood scaled with respect to the node's sigma
+std::vector<MyMarker *> non_blurring(std::vector<MyMarker *> nX,
+                                     int max_iterations) {
+
+  int checkpoint = round(nX.size() / 10.0);
+
+  double conv[4], next[4]; // x y z radius
+
+  auto nY = nX;
+
+  double x2, y2, z2, r2;
+  double d2 = -1; // default value
+  for (long i = 0; i < nY.size(); ++i) {
+
+    // log progress
+    if (i % checkpoint == 0)
+      cout << (i / checkpoint) * 10 << "%  " << std::flush;
+
+    if (nY[i]->type == 0)
+      continue; // do not refine soma nodes
+
+    // refine nX[i] node location and scale and store the result in nY[i]
+    conv[0] = nX[i]->x;
+    conv[1] = nX[i]->y;
+    conv[2] = nX[i]->z;
+    conv[3] = nX[i]->radius;
+
+    // ... and greater than float positive min
+    for (int iter = 0; iter < max_iterations && d2 > .0001; ++iter) {
+      int cnt = 0;
+
+      next[0] = 0; // local mean is the follow-up location
+      next[1] = 0;
+      next[2] = 0;
+      next[3] = 0;
+
+      r2 = pow(conv[3], 2);
+
+      // TODO switch to sphere_iterator
+      for (long j = 0; j < nX.size(); ++j) {
+        if (nX[j]->type == 0)
+          continue; // don't use soma nodes in refinement
+        x2 = pow(nX[j]->x - conv[0], 2);
+        if (x2 <= r2) {
+          y2 = pow(nX[j]->y - conv[1], 2);
+          if (x2 + y2 <= r2) {
+            z2 = pow(nX[j]->z - conv[2], 2);
+            if (x2 + y2 + z2 <= r2) {
+              next[0] += nX[j]->x;
+              next[1] += nX[j]->y;
+              next[2] += nX[j]->z;
+              next[3] += nX[j]->radius;
+              ++cnt;
+            }
+          }
+        }
+      }
+
+      //            if (cnt==0) cout << "WRONG!!!" << endl;
+
+      next[0] /= cnt; // cnt > 0, at least node location itself will be in the
+                      // kernel neighbourhood
+      next[1] /= cnt;
+      next[2] /= cnt;
+      next[3] /= cnt;
+
+      d2 = pow(next[0] - conv[0], 2) + pow(next[1] - conv[1], 2) +
+           pow(next[2] - conv[2], 2);
+
+      conv[0] = next[0]; // for the next iteration
+      conv[1] = next[1];
+      conv[2] = next[2];
+      conv[3] = next[3];
+    }
+
+    // force
+    nY[i]->x = std::round(conv[0]);
+    nY[i]->y = std::round(conv[1]);
+    nY[i]->z = std::round(conv[2]);
+    nY[i]->radius = conv[3];
+
+  } // go through nY[i], initiate with nX[i] values and refine by mean-shift
+    // averaging
+  std::cout << '\n';
+  return nY;
+}
+
 // sphere grouping compaction/pruning strategy inspired by Advantra's code
 // switched from n^2 to nr^3 where r is the radii of a given node
 std::vector<MyMarker *>
 advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
-               std::unordered_map<GridCoord, VID_t> coord_to_idx) {
+               std::unordered_map<std::array<double, 3>, VID_t, ArrayHasher> coord_to_idx) {
 
   std::vector<MyMarker *> nY;
   auto no_neighbor_count = 0;
 
-  // nX[0].corr = FLT_MAX; // so that the dummy node gets index 0 again, larges
-  // correlation
   vector<long> indices(nX.size());
   for (VID_t i = 0; i < indices.size(); ++i)
     indices[i] = i;
@@ -537,7 +625,10 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
     // all markers passed to this function are integer coordinates
     // all markers passed
     for (const auto coord : sphere_iterator(center, radius_for_pruning)) {
-      auto ipair = coord_to_idx.find(coord);
+      std::array<double, 3> coord_key = {static_cast<double>(coord[0]),
+                                      static_cast<double>(coord[1]),
+                                      static_cast<double>(coord[2])};
+      auto ipair = coord_to_idx.find(coord_key);
       if (ipair == coord_to_idx.end())
         continue; // skip not found
       auto nbr_idx = ipair->second;
