@@ -2778,7 +2778,8 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     timer.restart();
     int max_iterations = 4;
     auto refined_markers = non_blurring(markers, max_iterations);
-    // TODO mark time that passed
+    auto mean_shift_elapsed = timer.elapsed();
+    timer.restart();
 
     // sort by markers by decreasing radii (~relevance)
     std::sort(refined_markers.begin(), refined_markers.end(),
@@ -2794,8 +2795,9 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 
     // rebuild coord to idx for prune
     auto coord_to_idx_double = create_coord_to_idx<double>(refined_markers);
-
+    auto sort_elapsed = timer.elapsed();
     timer.restart();
+
     // prune radius already set when converting from markers above
     auto pruned_markers = advantra_prune(
         refined_markers, /*prune_radius*/ this->args->prune_radius.value(),
@@ -2819,6 +2821,8 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     component_log << "Soma count, " << component_seeds.size() << '\n';
     component_log << "Component count, " << markers.size() << '\n';
     component_log << "TC count, " << pruned_markers.size() << '\n';
+    component_log << "MS elapsed time, " << mean_shift_elapsed << '\n';
+    component_log << "S elapsed time, " << sort_elapsed << '\n';
     component_log << "TC elapsed time, " << timer.elapsed() << '\n';
 #endif
 
