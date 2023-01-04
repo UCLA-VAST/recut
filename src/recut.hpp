@@ -2788,10 +2788,8 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
               });
 
     // place all somas (type 0 first) while preserving large radii precedence
-    std::stable_partition(refined_markers.begin(), refined_markers.end(), 
-              [](const MyMarker *l) {
-                return l->type == 0;
-              });
+    std::stable_partition(refined_markers.begin(), refined_markers.end(),
+                          [](const MyMarker *l) { return l->type == 0; });
 
     // rebuild coord to idx for prune
     auto coord_to_idx_double = create_coord_to_idx<double>(refined_markers);
@@ -2934,10 +2932,18 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
       }
     } // end window created if any
 
+    VID_t total_leaves = rng::accumulate(
+        trees | rv::transform([](auto tree) { return count_leaves(tree); }), 0LL);
+    // VID_t total_leaves = 0;
+    // rng::for_each(trees, [&, total_leaves](auto tree) {
+    // total_leaves += count_leaves(tree);
+    // return total_leaves;
+    // });
+
 #ifdef LOG
     component_log << "Volume, " << bbox.volume() << '\n';
     component_log << "Bounding box, " << bbox << '\n';
-    component_log << "Final leaf count, " << count_leaves(tree) << '\n';
+    component_log << "Final leaf count, " << total_leaves << '\n';
 #endif
 
     rng::for_each(trees, [&, this](auto tree) {
