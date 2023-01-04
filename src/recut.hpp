@@ -2937,6 +2937,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 #ifdef LOG
     component_log << "Volume, " << bbox.volume() << '\n';
     component_log << "Bounding box, " << bbox << '\n';
+    component_log << "Final leaf count, " << count_leaves(tree) << '\n';
 #endif
 
     rng::for_each(trees, [&, this](auto tree) {

@@ -327,6 +327,17 @@ auto create_child_count = [](std::vector<MyMarker *> &tree) {
   return child_count;
 };
 
+VID_t count_leaves(std::vector<MyMarker *> &tree) {
+  auto child_count = create_child_count(tree);
+
+  auto is_a_leaf = [&child_count](auto const marker) {
+    return child_count.find(std::array{marker->x, marker->y, marker->z}) ==
+           child_count.end();
+  };
+
+  return rng::count_if(tree, is_a_leaf);
+}
+
 // returns a new set of valid markers
 std::vector<MyMarker *>
 prune_short_branches(std::vector<MyMarker *> &tree,
@@ -586,7 +597,8 @@ std::vector<MyMarker *> non_blurring(std::vector<MyMarker *> nX,
 // switched from n^2 to nr^3 where r is the radii of a given node
 std::vector<MyMarker *>
 advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
-               std::unordered_map<std::array<double, 3>, VID_t, ArrayHasher> coord_to_idx) {
+               std::unordered_map<std::array<double, 3>, VID_t, ArrayHasher>
+                   coord_to_idx) {
 
   std::vector<MyMarker *> nY;
   auto no_neighbor_count = 0;
@@ -626,8 +638,8 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
     // all markers passed
     for (const auto coord : sphere_iterator(center, radius_for_pruning)) {
       std::array<double, 3> coord_key = {static_cast<double>(coord[0]),
-                                      static_cast<double>(coord[1]),
-                                      static_cast<double>(coord[2])};
+                                         static_cast<double>(coord[1]),
+                                         static_cast<double>(coord[2])};
       auto ipair = coord_to_idx.find(coord_key);
       if (ipair == coord_to_idx.end())
         continue; // skip not found
