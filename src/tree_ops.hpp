@@ -505,8 +505,8 @@ auto sphere_iterator = [](const GridCoord &center, const int radius) {
   });
 };
 
-// From Advantra pnr implementation: mean-shift (non-blurring) uses flexible
-// neighbourhood scaled with respect to the node's sigma
+// From Advantra pnr implementation: mean-shift (non-blurring) uses 
+// neighbourhood of pixels determined by the current nodes radius
 std::vector<MyMarker *> non_blurring(std::vector<MyMarker *> nX,
                                      int max_iterations) {
 
@@ -517,7 +517,7 @@ std::vector<MyMarker *> non_blurring(std::vector<MyMarker *> nX,
   auto nY = nX;
 
   double x2, y2, z2, r2;
-  double d2 = -1; // default value
+  double last_distance_delta = -1; // default value
   for (long i = 0; i < nY.size(); ++i) {
 
     // log progress
@@ -534,7 +534,7 @@ std::vector<MyMarker *> non_blurring(std::vector<MyMarker *> nX,
     conv[3] = nX[i]->radius;
 
     // ... and greater than float positive min
-    for (int iter = 0; iter < max_iterations && d2 > .0001; ++iter) {
+    for (int iter = 0; iter < max_iterations && last_distance_delta > .0001; ++iter) {
       int cnt = 0;
 
       next[0] = 0; // local mean is the follow-up location
@@ -572,7 +572,7 @@ std::vector<MyMarker *> non_blurring(std::vector<MyMarker *> nX,
       next[2] /= cnt;
       next[3] /= cnt;
 
-      d2 = pow(next[0] - conv[0], 2) + pow(next[1] - conv[1], 2) +
+      last_distance_delta = pow(next[0] - conv[0], 2) + pow(next[1] - conv[1], 2) +
            pow(next[2] - conv[2], 2);
 
       conv[0] = next[0]; // for the next iteration

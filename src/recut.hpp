@@ -2934,11 +2934,6 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 
     VID_t total_leaves = rng::accumulate(
         trees | rv::transform([](auto tree) { return count_leaves(tree); }), 0LL);
-    // VID_t total_leaves = 0;
-    // rng::for_each(trees, [&, total_leaves](auto tree) {
-    // total_leaves += count_leaves(tree);
-    // return total_leaves;
-    // });
 
 #ifdef LOG
     component_log << "Volume, " << bbox.volume() << '\n';
