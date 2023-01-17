@@ -505,7 +505,7 @@ auto sphere_iterator = [](const GridCoord &center, const int radius) {
   });
 };
 
-// From Advantra pnr implementation: mean-shift (non-blurring) uses 
+// From Advantra pnr implementation: mean-shift (non-blurring) uses
 // neighbourhood of pixels determined by the current nodes radius
 std::vector<MyMarker *> non_blurring(std::vector<MyMarker *> nX,
                                      int max_iterations) {
@@ -514,15 +514,18 @@ std::vector<MyMarker *> non_blurring(std::vector<MyMarker *> nX,
 
   double conv[4], next[4]; // x y z radius
 
-  auto nY = nX;
+  std::vector<MyMarker *> nY;
+  nY.reserve(nX.size());
 
   double x2, y2, z2, r2;
   double last_distance_delta = -1; // default value
-  for (long i = 0; i < nY.size(); ++i) {
-
-    // log progress
-    if (i % checkpoint == 0)
-      cout << (i / checkpoint) * 10 << "%  " << std::flush;
+  // go through nY[i], initiate with nX[i] values and refine by mean-shift
+  // averaging
+  for (long i = 0; i < nX.size(); ++i) {
+    // adjust_marker = new MyMarker
+    // type, x, y, z, radius, nbr,
+    //  create a new copy
+    nY.emplace_back(nX[i]);
 
     if (nY[i]->type == 0)
       continue; // do not refine soma nodes
@@ -534,7 +537,8 @@ std::vector<MyMarker *> non_blurring(std::vector<MyMarker *> nX,
     conv[3] = nX[i]->radius;
 
     // ... and greater than float positive min
-    for (int iter = 0; iter < max_iterations && last_distance_delta > .0001; ++iter) {
+    for (int iter = 0; iter < max_iterations && last_distance_delta > .0001;
+         ++iter) {
       int cnt = 0;
 
       next[0] = 0; // local mean is the follow-up location
@@ -572,8 +576,9 @@ std::vector<MyMarker *> non_blurring(std::vector<MyMarker *> nX,
       next[2] /= cnt;
       next[3] /= cnt;
 
-      last_distance_delta = pow(next[0] - conv[0], 2) + pow(next[1] - conv[1], 2) +
-           pow(next[2] - conv[2], 2);
+      last_distance_delta = pow(next[0] - conv[0], 2) +
+                            pow(next[1] - conv[1], 2) +
+                            pow(next[2] - conv[2], 2);
 
       conv[0] = next[0]; // for the next iteration
       conv[1] = next[1];
@@ -586,10 +591,16 @@ std::vector<MyMarker *> non_blurring(std::vector<MyMarker *> nX,
     nY[i]->y = std::round(conv[1]);
     nY[i]->z = std::round(conv[2]);
     nY[i]->radius = conv[3];
+  }
+  // now that all nY's have been created, go through all and reassign parent
+  // ptrs to correct new address in nY (instead of nX) which would be undefined
+  // when nX goes out of scope
+  rng::for_each(nY | rv::enumerate, [&nY](auto nY_pair) {
+    auto [i, nYi] = nY_pair;
+    // update parent ptr to the new vector's marker
+    nYi->parent = nY[nY[i]->nbr[0]];
+  });
 
-  } // go through nY[i], initiate with nX[i] values and refine by mean-shift
-    // averaging
-  std::cout << '\n';
   return nY;
 }
 

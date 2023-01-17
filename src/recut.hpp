@@ -2776,20 +2776,24 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 #endif
 
     timer.restart();
-    int max_iterations = 4;
+    int max_iterations = 0;
     auto refined_markers = non_blurring(markers, max_iterations);
+    //auto refined_markers = markers;
     auto mean_shift_elapsed = timer.elapsed();
     timer.restart();
 
+    // TODO sorting may improve pruning by favoring higher relevance/radii
+    // get a vector of original coords
+    // nodes, however each marker contains an index to 
     // sort by markers by decreasing radii (~relevance)
-    std::sort(refined_markers.begin(), refined_markers.end(),
-              [](const MyMarker *l, const MyMarker *r) {
-                return l->radius > r->radius;
-              });
+    //std::sort(refined_markers.begin(), refined_markers.end(),
+              //[](const MyMarker *l, const MyMarker *r) {
+                //return l->radius > r->radius;
+              //});
 
-    // place all somas (type 0 first) while preserving large radii precedence
-    std::stable_partition(refined_markers.begin(), refined_markers.end(),
-                          [](const MyMarker *l) { return l->type == 0; });
+    //// place all somas (type 0 first) while preserving large radii precedence
+    //std::stable_partition(refined_markers.begin(), refined_markers.end(),
+                          //[](const MyMarker *l) { return l->type == 0; });
 
     // rebuild coord to idx for prune
     auto coord_to_idx_double = create_coord_to_idx<double>(refined_markers);
@@ -2830,6 +2834,13 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 #ifdef LOG
     component_log << "ET, " << timer.elapsed() << '\n';
 #endif
+    // TODO delete me
+    auto temp_trees = partition_cluster(cluster);
+    if (temp_trees.size() == 1) {
+      write_swc(temp_trees[0], this->args->voxel_size, component_dir_fn, bbox,
+                /*bbox_adjust*/ !args->window_grid_paths.empty(),
+                this->args->output_type == "eswc");
+    }
 
     timer.restart();
     if (!is_cluster_self_contained(cluster)) {
@@ -2942,9 +2953,9 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 #endif
 
     rng::for_each(trees, [&, this](auto tree) {
-      write_swc(tree, this->args->voxel_size, component_dir_fn, bbox,
-                /*bbox_adjust*/ !args->window_grid_paths.empty(),
-                this->args->output_type == "eswc");
+      //write_swc(tree, this->args->voxel_size, component_dir_fn, bbox,
+                //[>bbox_adjust<] !args->window_grid_paths.empty(),
+                //this->args->output_type == "eswc");
       if (!parent_listed_above(tree)) {
         throw std::runtime_error("Tree is not properly sorted");
       }

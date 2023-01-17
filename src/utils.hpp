@@ -2762,7 +2762,7 @@ convert_float_to_point(openvdb::FloatGrid::Ptr float_grid) {
   return point_grid;
 };
 
-std::pair<vector<MyMarker *>, std::unordered_map<GridCoord, VID_t>>
+std::pair<vector<MyMarker*>, std::unordered_map<GridCoord, VID_t>>
 convert_float_to_markers(openvdb::FloatGrid::Ptr component,
                          EnlargedPointDataGrid::Ptr point_grid,
                          uint16_t prune_radius_factor) {
@@ -2771,7 +2771,7 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
 #endif
 
   auto timer = high_resolution_timer();
-  std::vector<MyMarker *> outtree;
+  std::vector<MyMarker*> outtree;
 
   // get a mapping to stable address pointers in outtree such that a markers
   // parent is valid pointer when returning just outtree
