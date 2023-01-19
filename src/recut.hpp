@@ -2776,7 +2776,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 #endif
 
     timer.restart();
-    int max_iterations = 0;
+    int max_iterations = 4;
     auto refined_markers = non_blurring(markers, max_iterations);
     //auto refined_markers = markers;
     auto mean_shift_elapsed = timer.elapsed();

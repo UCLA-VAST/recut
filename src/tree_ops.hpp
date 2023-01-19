@@ -592,14 +592,24 @@ std::vector<MyMarker *> non_blurring(std::vector<MyMarker *> nX,
     nY[i]->z = std::round(conv[2]);
     nY[i]->radius = conv[3];
   }
-  // now that all nY's have been created, go through all and reassign parent
-  // ptrs to correct new address in nY (instead of nX) which would be undefined
-  // when nX goes out of scope
-  rng::for_each(nY | rv::enumerate, [&nY](auto nY_pair) {
-    auto [i, nYi] = nY_pair;
-    // update parent ptr to the new vector's marker
-    nYi->parent = nY[nY[i]->nbr[0]];
-  });
+  assertm(nY.size() == nX.size(), "nX and nY size must match");
+  // now that all nY's have been created, go through all non-somas and reassign
+  // parent ptrs to correct new address in nY (instead of nX) which would be
+  // undefined when nX goes out of scope
+  rng::for_each(nY | rv::filter([](auto marker) { return marker->type; }),
+                [&nY](auto nYi) {
+                  // auto [i, nYi] = nY_pair;
+                  //  update parent ptr to the new vector's marker
+                  //  from convert_float_to_markers nbr only has 1 entry so far
+                  // if (nY[i]->nbr.size() != 1) {
+                  // std::cout << nY[i]->nbr.size() << '\n';
+                  //}
+                  assertm(nYi->nbr.size() == 1,
+                          "marker can only have 1 nbr in advantra prune");
+                  auto idx = nYi->nbr[0];
+                  assertm(idx < nY.size(), "idx not in bounds of nY");
+                  nYi->parent = nY[idx];
+                });
 
   return nY;
 }
