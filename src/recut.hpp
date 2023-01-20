@@ -2943,13 +2943,16 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
       }
     } // end window created if any
 
+#ifdef LOG
     VID_t total_leaves = rng::accumulate(
         trees | rv::transform([](auto tree) { return count_leaves(tree); }), 0LL);
+    VID_t total_furcations = rng::accumulate(
+        trees | rv::transform([](auto tree) { return count_furcations(tree); }), 0LL);
 
-#ifdef LOG
     component_log << "Volume, " << bbox.volume() << '\n';
     component_log << "Bounding box, " << bbox << '\n';
     component_log << "Final leaf count, " << total_leaves << '\n';
+    component_log << "Final branching node count, " << total_furcations << '\n';
 #endif
 
     rng::for_each(trees, [&, this](auto tree) {

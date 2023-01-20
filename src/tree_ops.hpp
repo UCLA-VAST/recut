@@ -468,6 +468,23 @@ std::vector<MyMarker *> fix_trifurcations(std::vector<MyMarker *> &tree) {
   return tree;
 }
 
+auto is_furcation = [](auto const marker, auto &child_count) {
+  const auto val_count = child_count.find({marker->x, marker->y, marker->z});
+  return val_count != child_count.end() ? (val_count->second > 1) : false;
+};
+
+VID_t count_furcations(std::vector<MyMarker *> &tree) {
+  auto child_count = create_child_count(tree);
+
+  auto furcations =
+      tree | rv::filter([](auto marker) {
+        return marker->type; // ignore roots (type of 0)
+      }) |
+      rv::filter([&child_count](auto marker) { return is_furcation(marker, child_count); });
+
+  return rng::distance(furcations);
+}
+
 // returns vector of trifurcation points
 auto tree_is_valid = [](auto tree) {
   auto child_count = create_child_count(tree);
