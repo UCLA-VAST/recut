@@ -2770,15 +2770,9 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     auto timer = high_resolution_timer();
     auto [markers, coord_to_idx] = convert_float_to_markers(
         component, this->topology_grid, this->args->prune_radius.value());
-    // auto markers = convert_to_markers(this->topology_grid, false);
-#ifdef LOG
-    // cout << "Convert to markers in " << timer.elapsed() << '\n';
-#endif
 
     timer.restart();
-    int max_iterations = 4;
-    auto refined_markers = non_blurring(markers, max_iterations);
-    //auto refined_markers = markers;
+    auto refined_markers = mean_shift(markers, args->mean_shift, this->args->prune_radius.value());
     auto mean_shift_elapsed = timer.elapsed();
     timer.restart();
 
@@ -2826,6 +2820,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     component_log << "MS elapsed time, " << mean_shift_elapsed << '\n';
     component_log << "S elapsed time, " << sort_elapsed << '\n';
     component_log << "TC elapsed time, " << timer.elapsed() << '\n';
+    component_log << "Mean shift iterations, " << args->mean_shift << '\n';
 #endif
 
     timer.restart();

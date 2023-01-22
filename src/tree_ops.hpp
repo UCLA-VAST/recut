@@ -476,11 +476,12 @@ auto is_furcation = [](auto const marker, auto &child_count) {
 VID_t count_furcations(std::vector<MyMarker *> &tree) {
   auto child_count = create_child_count(tree);
 
-  auto furcations =
-      tree | rv::filter([](auto marker) {
-        return marker->type; // ignore roots (type of 0)
-      }) |
-      rv::filter([&child_count](auto marker) { return is_furcation(marker, child_count); });
+  auto furcations = tree | rv::filter([](auto marker) {
+                      return marker->type; // ignore roots (type of 0)
+                    }) |
+                    rv::filter([&child_count](auto marker) {
+                      return is_furcation(marker, child_count);
+                    });
 
   return rng::distance(furcations);
 }
@@ -524,8 +525,8 @@ auto sphere_iterator = [](const GridCoord &center, const int radius) {
 
 // From Advantra pnr implementation: mean-shift (non-blurring) uses
 // neighbourhood of pixels determined by the current nodes radius
-std::vector<MyMarker *> non_blurring(std::vector<MyMarker *> nX,
-                                     int max_iterations) {
+std::vector<MyMarker *> mean_shift(std::vector<MyMarker *> nX,
+                                   int max_iterations, uint16_t prune_radius_factor) {
 
   int checkpoint = round(nX.size() / 10.0);
 
@@ -535,7 +536,7 @@ std::vector<MyMarker *> non_blurring(std::vector<MyMarker *> nX,
   nY.reserve(nX.size());
 
   double x2, y2, z2, r2;
-  double last_distance_delta = -1; // default value
+  double last_distance_delta = 1; // default value
   // go through nY[i], initiate with nX[i] values and refine by mean-shift
   // averaging
   for (long i = 0; i < nX.size(); ++i) {
@@ -563,18 +564,21 @@ std::vector<MyMarker *> non_blurring(std::vector<MyMarker *> nX,
       next[2] = 0;
       next[3] = 0;
 
-      r2 = pow(conv[3], 2);
+      r2 = prune_radius_factor * pow(conv[3], 2);
 
       // TODO switch to sphere_iterator
       for (long j = 0; j < nX.size(); ++j) {
-        if (nX[j]->type == 0)
-          continue; // don't use soma nodes in refinement
+        // if (nX[j]->type == 0)
+        // continue; // don't use soma nodes in refinement
         x2 = pow(nX[j]->x - conv[0], 2);
         if (x2 <= r2) {
           y2 = pow(nX[j]->y - conv[1], 2);
-          if (x2 + y2 <= r2) {
+          // if (x2 + y2 <= r2) {
+          if (y2 <= r2) {
             z2 = pow(nX[j]->z - conv[2], 2);
-            if (x2 + y2 + z2 <= r2) {
+            // if (x2 + y2 + z2 <= r2) {
+            if (z2 <= r2) {
+              // assumes that all x,y,z are positive
               next[0] += nX[j]->x;
               next[1] += nX[j]->y;
               next[2] += nX[j]->z;

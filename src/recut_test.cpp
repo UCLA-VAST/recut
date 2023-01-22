@@ -819,6 +819,36 @@ TEST(Utils, AdjustSomaRadii) {
   });
 }
 
+TEST(TreeOps, MeanShift) {
+  std::vector<MyMarker *> tree;
+  auto max_iterations = 4;
+
+  auto soma = new MyMarker(0, 2, 0);
+  soma->parent = 0;
+  soma->nbr.push_back(0);
+  soma->type = 0;
+  soma->radius = 5;
+  tree.push_back(soma);
+
+  auto a = new MyMarker(0, 1, 0);
+  a->parent = soma;
+  a->nbr.push_back(0);
+  a->radius = 2;
+  tree.push_back(a);
+
+  auto b = new MyMarker(0, 3, 0);
+  b->parent = soma;
+  b->nbr.push_back(0);
+  b->radius = 2;
+  tree.push_back(b);
+
+  auto refined_tree = mean_shift(tree, max_iterations, 1);
+
+  std::cout << *(refined_tree[0]) << '\n';
+  std::cout << *(refined_tree[1]) << '\n';
+  std::cout << *(refined_tree[2]) << '\n';
+}
+
 TEST(TreeOps, FixTrifurcations) {
   auto write_swc_disk = true;
   std::vector<MyMarker *> tree;

@@ -1,6 +1,6 @@
 #include "recut_parameters.hpp"
 
-    void RecutCommandLineArgs::PrintUsage() {
+void RecutCommandLineArgs::PrintUsage() {
   std::cout << "Basic usage : recut <image or r> [--seeds <marker_dir>] "
                "[--type point/uint8/mask/float/ims/tiff] "
                "[-o <output_vdb_file_name>] "
@@ -66,6 +66,8 @@
   std::cout
       << "--parallel           [-pl] thread count defaults to max hardware "
          "threads\n";
+  std::cout
+      << "--mean-shift         iterations to shift nodes towards local mean which aid pruning; default 0\n";
   std::cout << "--output-windows     list 1 or more uint8 vdb files in channel "
                "order to create "
                "image windows for each neuron cluster/component\n";
@@ -128,8 +130,8 @@ std::string RecutCommandLineArgs::MetaString() {
               << image_lengths[1] << " " << image_lengths[2] << '\n';
   meta_stream << "foreground_percent = " << foreground_percent << '\n';
   meta_stream << "background_thresh = " << background_thresh << '\n';
-  meta_stream << "seeds directory = "
-              << (seed_path == "" ? "none" : seed_path) << '\n';
+  meta_stream << "seeds directory = " << (seed_path == "" ? "none" : seed_path)
+              << '\n';
   return meta_stream.str();
 }
 
@@ -160,11 +162,11 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
                  strcmp(argv[i], "-s") == 0) {
         // canonical removes the trailing slash
         args.seed_path = std::filesystem::canonical(argv[i + 1]);
-        if (!std::filesystem::exists(args.seed_path)){
+        if (!std::filesystem::exists(args.seed_path)) {
           cerr << "--seeds path does not exist\n";
           exit(1);
         }
-        if (!std::filesystem::is_directory(args.seed_path)){
+        if (!std::filesystem::is_directory(args.seed_path)) {
           cerr << "--seeds must be a directory\n";
           exit(1);
         }
@@ -270,6 +272,9 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         ++i;
       } else if (strcmp(argv[i], "--open-steps") == 0) {
         args.open_steps = atof(argv[i + 1]);
+        ++i;
+      } else if (strcmp(argv[i], "--mean-shift") == 0) {
+        args.mean_shift = atoi(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--close-steps") == 0) {
         args.close_steps = atof(argv[i + 1]);
