@@ -2777,14 +2777,11 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
   // parent is valid pointer when returning just outtree
   std::unordered_map<GridCoord, MyMarker *> coord_to_marker_ptr;
 
-  // temporary for advantra prune method
-  std::unordered_map<GridCoord, VID_t> coord_to_idx;
-
   auto keep_if = [](const auto coord, const auto float_leaf) {
     return float_leaf->isValueOn(coord);
   };
 
-  auto establish_marker_set = [&coord_to_marker_ptr, &coord_to_idx, &outtree,
+  auto establish_marker_set = [&coord_to_marker_ptr, &outtree,
                                prune_radius_factor](const auto &flags_handle,
                                                     auto &parents_handle,
                                                     const auto &radius_handle,
@@ -2829,7 +2826,6 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
     // save this marker ptr to a map
     coord_to_marker_ptr.emplace(coord, marker);
 
-    coord_to_idx[coord] = outtree.size();
     outtree.push_back(marker);
   };
 
@@ -2837,6 +2833,27 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
   // can have a pointer to its parent marker.
   // iterate by leaf markers since attributes are stored in chunks of leaf size.
   visit_float(component, point_grid, keep_if, establish_marker_set);
+
+  // sorting improves pruning by favoring higher relevance/radii
+  // sort by markers by decreasing radii (~relevance)
+  std::sort(outtree.begin(), outtree.end(),
+            [](const MyMarker *l, const MyMarker *r) {
+              return l->radius > r->radius;
+            });
+
+  // place all somas (type 0 first) while preserving large radii precedence
+  std::stable_partition(outtree.begin(), outtree.end(),
+                        [](const MyMarker *l) { return l->type == 0; });
+
+  // for advantra prune method and assigning correct nbr index
+  std::unordered_map<GridCoord, VID_t> coord_to_idx;
+
+  //establish coord to idx
+  rng::for_each(outtree | rv::enumerate, [&coord_to_idx](auto markerp) {
+    auto [i, marker] = markerp;
+    auto coord = GridCoord(marker->x, marker->y, marker->z);
+    coord_to_idx[coord] = i;
+  });
 
   // now that a pointer to all desired markers is known
   // iterate and complete the marker definition
@@ -2870,17 +2887,6 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
       marker->nbr.push_back(coord_to_idx[parent_coord]);
     }
   };
-
-  // sorting may improve pruning by favoring higher relevance/radii
-  // sort by markers by decreasing radii (~relevance)
-  std::sort(outtree.begin(), outtree.end(),
-            [](const MyMarker *l, const MyMarker *r) {
-              return l->radius > r->radius;
-            });
-
-  // place all somas (type 0 first) while preserving large radii precedence
-  std::stable_partition(outtree.begin(), outtree.end(),
-                        [](const MyMarker *l) { return l->type == 0; });
 
   visit_float(component, point_grid, keep_if, assign_parent);
 
