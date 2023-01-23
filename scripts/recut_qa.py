@@ -36,7 +36,7 @@ def call_recut(**kwargs):
     else:
         run_dir = kwargs['inferenced_path']
 
-    precision_recall(**kwargs)
+    #precision_recall(**kwargs)
 
     git_hash = get_hash()
 
