@@ -2776,19 +2776,6 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     auto mean_shift_elapsed = timer.elapsed();
     timer.restart();
 
-    // TODO sorting may improve pruning by favoring higher relevance/radii
-    // get a vector of original coords
-    // nodes, however each marker contains an index to 
-    // sort by markers by decreasing radii (~relevance)
-    //std::sort(refined_markers.begin(), refined_markers.end(),
-              //[](const MyMarker *l, const MyMarker *r) {
-                //return l->radius > r->radius;
-              //});
-
-    //// place all somas (type 0 first) while preserving large radii precedence
-    //std::stable_partition(refined_markers.begin(), refined_markers.end(),
-                          //[](const MyMarker *l) { return l->type == 0; });
-
     // rebuild coord to idx for prune
     auto coord_to_idx_double = create_coord_to_idx<double>(refined_markers);
     auto sort_elapsed = timer.elapsed();
