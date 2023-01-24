@@ -705,14 +705,7 @@ advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
           nYi->y = a * nYi->y + b * nX[nbr_idx]->y;
           nYi->z = a * nYi->z + b * nX[nbr_idx]->z;
           // average the radius
-          // nYi->radius = a * nYi->radius + nX[nbr_idx]->radius;
-          // adjust the radii to be a max
-          // this is a cheat to avoid having to sort the list of markers
-          // by radii, since the maximum SDF value will tend to
-          // be found and is about the same along the centerline of neurites
-          if (nX[nbr_idx]->radius > nYi->radius) {
-            nYi->radius = nX[nbr_idx]->radius;
-          }
+          nYi->radius = a * nYi->radius + b * nX[nbr_idx]->radius;
         }
       }
     }
