@@ -110,7 +110,7 @@ struct MyMarker {
     os << std::to_string(static_cast<int>(m.x)) + ", " +
               std::to_string(static_cast<int>(m.y)) + ", " +
               std::to_string(static_cast<int>(m.z)) +
-              " type: " + std::to_string(m.type);
+              " radius: " + std::to_string(m.radius);
     return os;
   }
 

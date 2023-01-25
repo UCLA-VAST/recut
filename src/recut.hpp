@@ -2772,7 +2772,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
         component, this->topology_grid, this->args->prune_radius.value());
 
     timer.restart();
-    auto refined_markers = mean_shift(markers, args->mean_shift, this->args->prune_radius.value());
+    auto refined_markers = mean_shift(markers, 4, this->args->mean_shift);
     auto mean_shift_elapsed = timer.elapsed();
     timer.restart();
 

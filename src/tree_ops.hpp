@@ -536,7 +536,6 @@ std::vector<MyMarker *> mean_shift(std::vector<MyMarker *> nX,
   nY.reserve(nX.size());
 
   double x2, y2, z2, r2;
-  double last_distance_delta = 1; // default value
   // go through nY[i], initiate with nX[i] values and refine by mean-shift
   // averaging
   for (long i = 0; i < nX.size(); ++i) {
@@ -554,6 +553,7 @@ std::vector<MyMarker *> mean_shift(std::vector<MyMarker *> nX,
     conv[2] = nX[i]->z;
     conv[3] = nX[i]->radius;
 
+    double last_distance_delta = 1; // default value
     // ... and greater than float positive min
     for (int iter = 0; iter < max_iterations && last_distance_delta > .0001;
          ++iter) {
