@@ -534,6 +534,7 @@ std::vector<MyMarker *> mean_shift(std::vector<MyMarker *> nX,
 
   std::vector<MyMarker *> nY;
   nY.reserve(nX.size());
+  double distance_delta_criterion = .5;
 
   double x2, y2, z2, r2;
   // go through nY[i], initiate with nX[i] values and refine by mean-shift
@@ -554,8 +555,11 @@ std::vector<MyMarker *> mean_shift(std::vector<MyMarker *> nX,
     conv[3] = nX[i]->radius;
 
     double last_distance_delta = 1; // default value
-    // ... and greater than float positive min
-    for (int iter = 0; iter < max_iterations && last_distance_delta > .0001;
+    // ... stop when the update in distance gets half the size of a voxel
+    // all coordinates are rounded to the nearest pixel
+    // pixels are small and negligible in high resolution anyway
+    // so this is still conservative
+    for (int iter = 0; iter < max_iterations && last_distance_delta > distance_delta_criterion;
          ++iter) {
       int cnt = 0;
 
