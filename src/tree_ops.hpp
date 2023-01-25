@@ -525,8 +525,11 @@ auto sphere_iterator = [](const GridCoord &center, const int radius) {
 
 // From Advantra pnr implementation: mean-shift (non-blurring) uses
 // neighbourhood of pixels determined by the current nodes radius
-std::vector<MyMarker *> mean_shift(std::vector<MyMarker *> nX,
-                                   int max_iterations, uint16_t prune_radius_factor) {
+std::vector<MyMarker *>
+mean_shift(std::vector<MyMarker *> nX, int max_iterations,
+           uint16_t prune_radius_factor,
+           std::unordered_map<GridCoord, VID_t>
+               coord_to_idx) {
 
   int checkpoint = round(nX.size() / 10.0);
 
@@ -559,7 +562,8 @@ std::vector<MyMarker *> mean_shift(std::vector<MyMarker *> nX,
     // all coordinates are rounded to the nearest pixel
     // pixels are small and negligible in high resolution anyway
     // so this is still conservative
-    for (int iter = 0; iter < max_iterations && last_distance_delta > distance_delta_criterion;
+    for (int iter = 0; iter < max_iterations &&
+                       last_distance_delta > distance_delta_criterion;
          ++iter) {
       int cnt = 0;
 
@@ -568,32 +572,25 @@ std::vector<MyMarker *> mean_shift(std::vector<MyMarker *> nX,
       next[2] = 0;
       next[3] = 0;
 
-      r2 = prune_radius_factor * pow(conv[3], 2);
+      auto center = GridCoord(std::round(conv[0]), std::round(conv[1]),
+                              std::round(conv[2]));
+      auto radius_for_pruning = prune_radius_factor * conv[3];
 
-      // TODO switch to sphere_iterator
-      for (long j = 0; j < nX.size(); ++j) {
-        // if (nX[j]->type == 0)
-        // continue; // don't use soma nodes in refinement
-        x2 = pow(nX[j]->x - conv[0], 2);
-        if (x2 <= r2) {
-          y2 = pow(nX[j]->y - conv[1], 2);
-          // if (x2 + y2 <= r2) {
-          if (y2 <= r2) {
-            z2 = pow(nX[j]->z - conv[2], 2);
-            // if (x2 + y2 + z2 <= r2) {
-            if (z2 <= r2) {
-              // assumes that all x,y,z are positive
-              next[0] += nX[j]->x;
-              next[1] += nX[j]->y;
-              next[2] += nX[j]->z;
-              next[3] += nX[j]->radius;
-              ++cnt;
-            }
-          }
+      for (const auto coord : sphere_iterator(center, radius_for_pruning)) {
+        auto ipair = coord_to_idx.find(coord);
+        if (ipair == coord_to_idx.end())
+          continue; // skip not found
+        auto nbr_idx = ipair->second;
+        // if not same node
+        if (nbr_idx != i) {
+          // assumes that all x,y,z are positive
+          next[0] += nX[nbr_idx]->x;
+          next[1] += nX[nbr_idx]->y;
+          next[2] += nX[nbr_idx]->z;
+          next[3] += nX[nbr_idx]->radius;
+          ++cnt;
         }
       }
-
-      //            if (cnt==0) cout << "WRONG!!!" << endl;
 
       next[0] /= cnt; // cnt > 0, at least node location itself will be in the
                       // kernel neighbourhood
@@ -619,9 +616,9 @@ std::vector<MyMarker *> mean_shift(std::vector<MyMarker *> nX,
   }
   assertm(nY.size() == nX.size(), "nX and nY size must match");
 
-  // now that all nY's have been created, go through all non-somas and reassign
-  // parent ptrs to correct new address in nY (instead of nX) which would be
-  // undefined when nX goes out of scope
+  // now that all nY's have been created, go through all non-somas and
+  // reassign parent ptrs to correct new address in nY (instead of nX) which
+  // would be undefined when nX goes out of scope
   rng::for_each(nY | rv::filter([](auto marker) { return marker->type; }),
                 [&nY](auto nYi) {
                   assertm(nYi->nbr.size() == 1,

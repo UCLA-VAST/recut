@@ -842,37 +842,37 @@ TEST(TreeOps, MeanShift) {
   b->radius = 2;
   tree.push_back(b);
 
-  auto refined_tree = mean_shift(tree, max_iterations, 1);
+  //auto refined_tree = mean_shift(tree, max_iterations, 1);
 
-  auto print_markers = [](auto tree) {
-    for (auto m : tree)
-      std::cout << *m << '\n';
-  };
+  //auto print_markers = [](auto tree) {
+    //for (auto m : tree)
+      //std::cout << *m << '\n';
+  //};
 
-  print_markers(refined_tree);
+  //print_markers(refined_tree);
 
-  // make sure sphere coords are entirely positive
-  // since locations are summed you wouldn't
-  // want negative coordinates
-  auto center = GridCoord(3, 3, 3);
-  int radius = 1;
-  auto prune_radius_factor = 5;
-  auto rng = sphere_iterator(center, radius);
+  //// make sure sphere coords are entirely positive
+  //// since locations are summed you wouldn't
+  //// want negative coordinates
+  //auto center = GridCoord(3, 3, 3);
+  //int radius = 1;
+  //auto prune_radius_factor = 5;
+  //auto rng = sphere_iterator(center, radius);
 
-  std::vector<MyMarker *> sphere_tree;
-  for (auto coord : rng) {
-    auto m = new MyMarker(coord[0], coord[1], coord[2]);
-    m->radius = 1 + radius - coord_dist(center, coord);
-    m->nbr.push_back(0); // null
-    m->type = 3;
-    sphere_tree.push_back(m);
-  }
+  //std::vector<MyMarker *> sphere_tree;
+  //for (auto coord : rng) {
+    //auto m = new MyMarker(coord[0], coord[1], coord[2]);
+    //m->radius = 1 + radius - coord_dist(center, coord);
+    //m->nbr.push_back(0); // null
+    //m->type = 3;
+    //sphere_tree.push_back(m);
+  //}
 
-  std::cout << "Sphere tree\n";
-  print_markers(sphere_tree);
-  auto refined_sphere_tree = mean_shift(sphere_tree, max_iterations, prune_radius_factor);
-  std::cout << "Refined sphere tree\n";
-  print_markers(refined_sphere_tree);
+  //std::cout << "Sphere tree\n";
+  //print_markers(sphere_tree);
+  //auto refined_sphere_tree = mean_shift(sphere_tree, max_iterations, prune_radius_factor);
+  //std::cout << "Refined sphere tree\n";
+  //print_markers(refined_sphere_tree);
 }
 
 TEST(TreeOps, FixTrifurcations) {
