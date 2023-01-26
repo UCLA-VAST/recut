@@ -2532,9 +2532,9 @@ void check_nbr(vector<MyMarker *> &nX) {
   }
 };
 
-auto coord_dist = [](const GridCoord &a, const GridCoord &b) {
+auto coord_dist = [](const GridCoord &a, const GridCoord &b) -> float {
   auto diff = a - b;
-  return std::sqrt(diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]);
+  return std::sqrt(static_cast<float>(diff[0]) * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]);
 };
 
 // accept_tombstone is a way to see pruned vertices still in active_vertex

@@ -2576,7 +2576,7 @@ template <class image_t> void Recut<image_t>::initialize() {
 
   // set the prune radius if not passed at command line
   // based on the voxel size
-  if (!this->args->prune_radius) {
+  if (!this->args->prune_radius.has_value()) {
     this->args->prune_radius = anisotropic_factor(this->args->voxel_size);
 #ifdef LOG
     std::cout << "voxel sizes:"
@@ -2752,10 +2752,6 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
       prefix = "a-multi-";
     }
 
-    if (component_seeds.size() > MAX_SOMA_PER_COMPONENT) {
-      return; // skip
-    }
-
     auto voxel_count = component->activeVoxelCount();
     if (voxel_count < SWC_MIN_LINE) {
       prefix = "discard-";
@@ -2768,24 +2764,34 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     }
 
     auto timer = high_resolution_timer();
-    auto [markers, coord_to_idx] = convert_float_to_markers(
+    auto [refined_markers, coord_to_idx] = convert_float_to_markers(
         component, this->topology_grid, this->args->prune_radius.value());
 
-    timer.restart();
-    auto refined_markers = mean_shift(markers, 4, this->args->mean_shift, coord_to_idx);
-    auto mean_shift_elapsed = timer.elapsed();
-    timer.restart();
+    // timer.restart();
+    // auto refined_markers =
+    // this->args->mean_shift_factor.has_value()
+    //? mean_shift(markers, 4, this->args->mean_shift_factor.value(),
+    // coord_to_idx)
+    //: markers;
+    // auto mean_shift_elapsed = timer.elapsed();
+    // timer.restart();
+    auto mean_shift_elapsed = 0;
+    auto markers = refined_markers;
 
     // rebuild coord to idx for prune
     auto coord_to_idx_double = create_coord_to_idx<double>(refined_markers);
-    auto sort_elapsed = timer.elapsed();
     timer.restart();
 
     // prune radius already set when converting from markers above
     auto pruned_markers = advantra_prune(
         refined_markers, /*prune_radius*/ this->args->prune_radius.value(),
         coord_to_idx_double);
-    if (pruned_markers.empty()) {
+    if (pruned_markers.size() < 3) {
+      std::cerr
+          << "Non fatal error: extracted pruned trees contains too few nodes "
+             "skipping " +
+                 std::to_string(index)
+          << '\n';
       return; // skip
     }
 
@@ -2805,9 +2811,9 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     component_log << "Component count, " << markers.size() << '\n';
     component_log << "TC count, " << pruned_markers.size() << '\n';
     component_log << "MS elapsed time, " << mean_shift_elapsed << '\n';
-    component_log << "S elapsed time, " << sort_elapsed << '\n';
     component_log << "TC elapsed time, " << timer.elapsed() << '\n';
-    component_log << "Mean shift iterations, " << args->mean_shift << '\n';
+    component_log << "Mean shift iterations, "
+                  << this->args->mean_shift_factor.value_or(0) << '\n';
 #endif
 
     timer.restart();
@@ -2927,9 +2933,11 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 
 #ifdef LOG
     VID_t total_leaves = rng::accumulate(
-        trees | rv::transform([](auto tree) { return count_leaves(tree); }), 0LL);
+        trees | rv::transform([](auto tree) { return count_leaves(tree); }),
+        0LL);
     VID_t total_furcations = rng::accumulate(
-        trees | rv::transform([](auto tree) { return count_furcations(tree); }), 0LL);
+        trees | rv::transform([](auto tree) { return count_furcations(tree); }),
+        0LL);
 
     component_log << "Volume, " << bbox.volume() << '\n';
     component_log << "Bounding box, " << bbox << '\n';
@@ -2938,9 +2946,9 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 #endif
 
     rng::for_each(trees, [&, this](auto tree) {
-      //write_swc(tree, this->args->voxel_size, component_dir_fn, bbox,
-                //[>bbox_adjust<] !args->window_grid_paths.empty(),
-                //this->args->output_type == "eswc");
+      write_swc(tree, this->args->voxel_size, component_dir_fn, bbox,
+                /*bbox_adjust*/ !args->window_grid_paths.empty(),
+                this->args->output_type == "eswc");
       if (!parent_listed_above(tree)) {
         throw std::runtime_error("Tree is not properly sorted");
       }

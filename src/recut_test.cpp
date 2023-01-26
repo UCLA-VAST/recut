@@ -745,6 +745,16 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
   // Check values
 }
 
+TEST(Utils, CoordDist) {
+  auto center = GridCoord(0, 0, 0);
+  float dist = .5;
+  auto nb = GridCoord(0, dist, 0);
+
+  // test that coord dist returns proper float entities
+  auto actual_dist = coord_dist(center, nb);
+  ASSERT_EQ(actual_dist, dist);
+}
+
 TEST(Utils, SphereIterator) {
   auto center = GridCoord(0, 0, 0);
   int radius = 3;

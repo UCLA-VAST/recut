@@ -29,7 +29,7 @@ public:
         open_denoise(0.), close_steps(8.), open_steps(5.),
         morphological_operations_order(1), min_radius_um(MIN_SOMA_RADIUS_UM),
         max_radius_um(MAX_SOMA_RADIUS_UM), voxel_size({1., 1., 1.}),
-        save_vdbs(false), mean_shift(0) {}
+        save_vdbs(false) {}
 
   static void PrintUsage();
   std::string MetaString();
@@ -55,7 +55,7 @@ public:
   std::string input_type, output_type, output_name, second_grid;
   std::vector<std::string> window_grid_paths;
   uint16_t user_thread_count, min_branch_length, resolution_level, channel,
-      upsample_z, downsample_factor, morphological_operations_order, mean_shift;
+      upsample_z, downsample_factor, morphological_operations_order;
   int background_thresh, max_intensity, min_intensity, tcase;
   double foreground_percent, slt_pct;
   float min_window_um, expand_window_um, min_radius_um, max_radius_um,
@@ -64,7 +64,8 @@ public:
   bool run_app2, convert_only, combine, histogram, save_vdbs;
   std::array<int, 3> tile_lengths;
   std::array<float, 3> voxel_size;
-  std::optional<uint16_t> prune_radius;
+  std::optional<float> prune_radius;
+  std::optional<float> mean_shift_factor;
 };
 
 RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]);

@@ -1,6 +1,3 @@
-[![built with
-nix](https://builtwithnix.org/badge.svg)](https://builtwithnix.org)
-
 # Quick Install With Nix (strongly recommended)
 Make sure `git` and `curl` is installed and available from your command line and copy and paste the single command to install the Nix package manager for your operating system found [here](https://nixos.org/download.html).
 

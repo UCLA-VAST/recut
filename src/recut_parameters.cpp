@@ -67,7 +67,7 @@ void RecutCommandLineArgs::PrintUsage() {
       << "--parallel           [-pl] thread count defaults to max hardware "
          "threads\n";
   std::cout
-      << "--mean-shift         iterations to shift nodes towards local mean which aid pruning; default 0\n";
+      << "--mean-shift         radius to mean shift nodes towards local mean which aids pruning; default 0\n";
   std::cout << "--output-windows     list 1 or more uint8 vdb files in channel "
                "order to create "
                "image windows for each neuron cluster/component\n";
@@ -235,7 +235,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         args.channel = atoi(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--prune-radius") == 0) {
-        args.prune_radius = atoi(argv[i + 1]);
+        args.prune_radius = atof(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--bg-thresh") == 0 ||
                  strcmp(argv[i], "-bt") == 0) {
@@ -274,7 +274,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         args.open_steps = atof(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--mean-shift") == 0) {
-        args.mean_shift = atoi(argv[i + 1]);
+        args.mean_shift_factor = atof(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--close-steps") == 0) {
         args.close_steps = atof(argv[i + 1]);

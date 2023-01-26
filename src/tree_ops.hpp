@@ -507,7 +507,8 @@ auto tree_is_valid = [](auto tree) {
 
 // creates an iterator in zyx order for probing VDB grids for the interior of a
 // sphere
-auto sphere_iterator = [](const GridCoord &center, const int radius) {
+auto sphere_iterator = [](const GridCoord &center, const float radiusf) {
+  const int radius = std::round(radiusf);
   // passing center by ref & through the lambda captures causes UB
   int cx = center.x();
   int cy = center.y();
@@ -516,7 +517,7 @@ auto sphere_iterator = [](const GridCoord &center, const int radius) {
     return rv::for_each(rv::iota(cy - radius, 1 + cy + radius), [=](int y) {
       return rv::for_each(rv::iota(cz - radius, 1 + cz + radius), [=](int z) {
         auto const new_coord = GridCoord(x, y, z);
-        return rng::yield_if(coord_dist(new_coord, center) <= radius,
+        return rng::yield_if(coord_dist(new_coord, center) <= radiusf,
                              new_coord);
       });
     });
@@ -527,7 +528,7 @@ auto sphere_iterator = [](const GridCoord &center, const int radius) {
 // neighbourhood of pixels determined by the current nodes radius
 std::vector<MyMarker *>
 mean_shift(std::vector<MyMarker *> nX, int max_iterations,
-           uint16_t prune_radius_factor,
+           float shift_radius,
            std::unordered_map<GridCoord, VID_t>
                coord_to_idx) {
 
@@ -574,9 +575,9 @@ mean_shift(std::vector<MyMarker *> nX, int max_iterations,
 
       auto center = GridCoord(std::round(conv[0]), std::round(conv[1]),
                               std::round(conv[2]));
-      auto radius_for_pruning = prune_radius_factor * conv[3];
+      auto radius_for_shifting = shift_radius * conv[3];
 
-      for (const auto coord : sphere_iterator(center, radius_for_pruning)) {
+      for (const auto coord : sphere_iterator(center, radius_for_shifting)) {
         auto ipair = coord_to_idx.find(coord);
         if (ipair == coord_to_idx.end())
           continue; // skip not found
@@ -634,7 +635,7 @@ mean_shift(std::vector<MyMarker *> nX, int max_iterations,
 // sphere grouping compaction/pruning strategy inspired by Advantra's code
 // switched from n^2 to nr^3 where r is the radii of a given node
 std::vector<MyMarker *>
-advantra_prune(vector<MyMarker *> nX, uint16_t prune_radius_factor,
+advantra_prune(vector<MyMarker *> nX, float prune_radius_factor,
                std::unordered_map<std::array<double, 3>, VID_t, ArrayHasher>
                    coord_to_idx) {
 
