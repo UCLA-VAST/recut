@@ -2764,19 +2764,17 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     }
 
     auto timer = high_resolution_timer();
-    auto [refined_markers, coord_to_idx] = convert_float_to_markers(
+    auto [markers, coord_to_idx] = convert_float_to_markers(
         component, this->topology_grid, this->args->prune_radius.value());
 
-    // timer.restart();
-    // auto refined_markers =
-    // this->args->mean_shift_factor.has_value()
-    //? mean_shift(markers, 4, this->args->mean_shift_factor.value(),
-    // coord_to_idx)
-    //: markers;
-    // auto mean_shift_elapsed = timer.elapsed();
-    // timer.restart();
-    auto mean_shift_elapsed = 0;
-    auto markers = refined_markers;
+    timer.restart();
+    auto refined_markers =
+        this->args->mean_shift_factor.has_value()
+            ? mean_shift(markers, 4, this->args->mean_shift_factor.value(),
+                         coord_to_idx)
+            : markers;
+    auto mean_shift_elapsed = timer.elapsed();
+    timer.restart();
 
     // rebuild coord to idx for prune
     auto coord_to_idx_double = create_coord_to_idx<double>(refined_markers);
@@ -2812,7 +2810,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     component_log << "TC count, " << pruned_markers.size() << '\n';
     component_log << "MS elapsed time, " << mean_shift_elapsed << '\n';
     component_log << "TC elapsed time, " << timer.elapsed() << '\n';
-    component_log << "Mean shift iterations, "
+    component_log << "Mean shift factor, "
                   << this->args->mean_shift_factor.value_or(0) << '\n';
 #endif
 

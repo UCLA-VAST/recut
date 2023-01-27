@@ -51,6 +51,11 @@ auto print_iter = [](auto iterable) {
   std::cout << '\n';
 };
 
+auto print_markers = [](auto tree) {
+  for (auto m : tree)
+    std::cout << *m << '\n';
+};
+
 auto print_iter_name = [](auto iterable, std::string name) {
   std::cout << name << ": ";
   print_iter(iterable);
@@ -2533,8 +2538,11 @@ void check_nbr(vector<MyMarker *> &nX) {
 };
 
 auto coord_dist = [](const GridCoord &a, const GridCoord &b) -> float {
-  auto diff = a - b;
-  return std::sqrt(static_cast<float>(diff[0]) * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]);
+  std::array<float, 3> diff = {
+      static_cast<float>(a[0]) - static_cast<float>(b[0]),
+      static_cast<float>(a[1]) - static_cast<float>(b[1]),
+      static_cast<float>(a[2]) - static_cast<float>(b[2])};
+  return std::sqrt(diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]);
 };
 
 // accept_tombstone is a way to see pruned vertices still in active_vertex
@@ -2848,7 +2856,7 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
   // for advantra prune method and assigning correct nbr index
   std::unordered_map<GridCoord, VID_t> coord_to_idx;
 
-  //establish coord to idx
+  // establish coord to idx
   rng::for_each(outtree | rv::enumerate, [&coord_to_idx](auto markerp) {
     auto [i, marker] = markerp;
     auto coord = GridCoord(marker->x, marker->y, marker->z);

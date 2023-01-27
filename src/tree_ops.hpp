@@ -527,10 +527,8 @@ auto sphere_iterator = [](const GridCoord &center, const float radiusf) {
 // From Advantra pnr implementation: mean-shift (non-blurring) uses
 // neighbourhood of pixels determined by the current nodes radius
 std::vector<MyMarker *>
-mean_shift(std::vector<MyMarker *> nX, int max_iterations,
-           float shift_radius,
-           std::unordered_map<GridCoord, VID_t>
-               coord_to_idx) {
+mean_shift(std::vector<MyMarker *> nX, int max_iterations, float shift_radius,
+           std::unordered_map<GridCoord, VID_t> coord_to_idx) {
 
   int checkpoint = round(nX.size() / 10.0);
 
@@ -557,6 +555,7 @@ mean_shift(std::vector<MyMarker *> nX, int max_iterations,
     conv[1] = nX[i]->y;
     conv[2] = nX[i]->z;
     conv[3] = nX[i]->radius;
+    //std::cout << conv[0] << ' ' << conv[1] << ' ' << conv[2] << '\n';
 
     double last_distance_delta = 1; // default value
     // ... stop when the update in distance gets half the size of a voxel
@@ -572,6 +571,7 @@ mean_shift(std::vector<MyMarker *> nX, int max_iterations,
       next[1] = 0;
       next[2] = 0;
       next[3] = 0;
+      //std::cout << "  iteration: " << iter << '\n';
 
       auto center = GridCoord(std::round(conv[0]), std::round(conv[1]),
                               std::round(conv[2]));
@@ -582,15 +582,16 @@ mean_shift(std::vector<MyMarker *> nX, int max_iterations,
         if (ipair == coord_to_idx.end())
           continue; // skip not found
         auto nbr_idx = ipair->second;
-        // if not same node
-        if (nbr_idx != i) {
-          // assumes that all x,y,z are positive
-          next[0] += nX[nbr_idx]->x;
-          next[1] += nX[nbr_idx]->y;
-          next[2] += nX[nbr_idx]->z;
-          next[3] += nX[nbr_idx]->radius;
-          ++cnt;
-        }
+        // if (nbr_idx != i) {
+        //  also average the orignal node's location
+        //  assumes that all x,y,z are positive
+        //std::cout << "\t" << coord << '\n';
+        next[0] += nX[nbr_idx]->x;
+        next[1] += nX[nbr_idx]->y;
+        next[2] += nX[nbr_idx]->z;
+        next[3] += nX[nbr_idx]->radius;
+        ++cnt;
+        //}
       }
 
       next[0] /= cnt; // cnt > 0, at least node location itself will be in the

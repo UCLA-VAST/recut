@@ -747,8 +747,8 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
 
 TEST(Utils, CoordDist) {
   auto center = GridCoord(0, 0, 0);
-  float dist = .5;
-  auto nb = GridCoord(0, dist, 0);
+  auto dist = 5;
+  auto nb = GridCoord(3, 4, 0);
 
   // test that coord dist returns proper float entities
   auto actual_dist = coord_dist(center, nb);
@@ -829,27 +829,26 @@ TEST(Utils, AdjustSomaRadii) {
   });
 }
 
-TEST(TreeOps, MeanShift) {
+TEST(TreeOps, MeanShiftTiny) {
   std::vector<MyMarker *> tree;
   auto max_iterations = 100;
 
   auto soma = new MyMarker(0, 2, 0);
   soma->parent = 0;
   soma->nbr.push_back(0);
-  soma->type = 0;
   soma->radius = 5;
   tree.push_back(soma);
 
   auto a = new MyMarker(0, 1, 0);
   a->parent = soma;
   a->nbr.push_back(0);
-  a->radius = 2;
+  a->radius = 4;
   tree.push_back(a);
 
   auto b = new MyMarker(0, 3, 0);
   b->parent = soma;
   b->nbr.push_back(0);
-  b->radius = 2;
+  b->radius = 3;
   tree.push_back(b);
 
   std::unordered_map<GridCoord, VID_t> coord_to_idx;
@@ -863,12 +862,20 @@ TEST(TreeOps, MeanShift) {
 
   auto refined_tree = mean_shift(tree, max_iterations, 1, coord_to_idx);
 
-  auto print_markers = [](auto tree) {
-    for (auto m : tree)
-      std::cout << *m << '\n';
-  };
-
   print_markers(refined_tree);
+
+  for (auto m : refined_tree) {
+    ASSERT_EQ(m->x, 0);
+    ASSERT_EQ(m->y, 2);
+    ASSERT_EQ(m->z, 0);
+  }
+  // make sure soma
+  ASSERT_EQ(refined_tree[0]->radius, 4);
+}
+
+TEST(TreeOps, MeanShift) {
+  std::vector<MyMarker *> tree;
+  auto max_iterations = 100;
 
   // make sure sphere coords are entirely positive
   // since locations are summed you wouldn't
@@ -888,8 +895,8 @@ TEST(TreeOps, MeanShift) {
   }
 
   // reestablish coord to idx
-  coord_to_idx.clear();
-  rng::for_each(tree | rv::enumerate, [&coord_to_idx](auto markerp) {
+  std::unordered_map<GridCoord, VID_t> coord_to_idx;
+  rng::for_each(sphere_tree | rv::enumerate, [&coord_to_idx](auto markerp) {
     auto [i, marker] = markerp;
     auto coord = GridCoord(marker->x, marker->y, marker->z);
     coord_to_idx[coord] = i;
@@ -900,6 +907,15 @@ TEST(TreeOps, MeanShift) {
   auto refined_sphere_tree = mean_shift(sphere_tree, max_iterations, prune_radius_factor, coord_to_idx);
   std::cout << "Refined sphere tree\n";
   print_markers(refined_sphere_tree);
+
+  // even though radii are somewhat accurate we used a pruned_radius_factor of 5
+  // which means all nodes will be meaned with all others
+  // therefore all coordinates should converge at the center
+  for (auto m : tree) {
+    ASSERT_EQ(m->x, 0);
+    ASSERT_EQ(m->y, 2);
+    ASSERT_EQ(m->z, 0);
+  }
 }
 
 TEST(TreeOps, FixTrifurcations) {
