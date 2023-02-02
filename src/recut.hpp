@@ -2820,14 +2820,6 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 #ifdef LOG
     component_log << "ET, " << timer.elapsed() << '\n';
 #endif
-    // TODO delete me
-    auto temp_trees = partition_cluster(cluster);
-    if (temp_trees.size() == 1) {
-      write_swc(temp_trees[0], this->args->voxel_size, component_dir_fn, bbox,
-                /*bbox_adjust*/ !args->window_grid_paths.empty(),
-                this->args->output_type == "eswc");
-    }
-
     timer.restart();
     if (!is_cluster_self_contained(cluster)) {
       std::cerr << "Non fatal error: extracted cluster not self contained, "
@@ -2843,7 +2835,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
         prune_short_branches(cluster, this->args->min_branch_length);
 
     if (!is_cluster_self_contained(pruned_cluster))
-      throw std::runtime_error("Pruend cluster not self contained");
+      throw std::runtime_error("Pruned cluster not self contained");
 
     auto fixed_cluster = fix_trifurcations(pruned_cluster);
     { // check

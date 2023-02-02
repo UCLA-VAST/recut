@@ -833,10 +833,12 @@ TEST(TreeOps, MeanShiftTiny) {
   std::vector<MyMarker *> tree;
   auto max_iterations = 100;
 
+  // soma nodes are unnaffected by mean shift
   auto soma = new MyMarker(0, 2, 0);
   soma->parent = 0;
   soma->nbr.push_back(0);
   soma->radius = 5;
+  soma->type = 0; // soma
   tree.push_back(soma);
 
   auto a = new MyMarker(0, 1, 0);
@@ -853,7 +855,7 @@ TEST(TreeOps, MeanShiftTiny) {
 
   std::unordered_map<GridCoord, VID_t> coord_to_idx;
 
-  //establish coord to idx
+  // establish coord to idx
   rng::for_each(tree | rv::enumerate, [&coord_to_idx](auto markerp) {
     auto [i, marker] = markerp;
     auto coord = GridCoord(marker->x, marker->y, marker->z);
@@ -869,8 +871,9 @@ TEST(TreeOps, MeanShiftTiny) {
     ASSERT_EQ(m->y, 2);
     ASSERT_EQ(m->z, 0);
   }
+
   // make sure soma
-  ASSERT_EQ(refined_tree[0]->radius, 4);
+  ASSERT_EQ(refined_tree[0]->radius, 5);
 }
 
 TEST(TreeOps, MeanShift) {
@@ -904,7 +907,8 @@ TEST(TreeOps, MeanShift) {
 
   std::cout << "Sphere tree\n";
   print_markers(sphere_tree);
-  auto refined_sphere_tree = mean_shift(sphere_tree, max_iterations, prune_radius_factor, coord_to_idx);
+  auto refined_sphere_tree = mean_shift(sphere_tree, max_iterations,
+                                        prune_radius_factor, coord_to_idx);
   std::cout << "Refined sphere tree\n";
   print_markers(refined_sphere_tree);
 
