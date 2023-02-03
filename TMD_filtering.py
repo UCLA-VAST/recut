@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
 """
+Created on Fri Feb  3 13:57:00 2023
+
+@author: yanyanming77
+"""
+
+# -*- coding: utf-8 -*-
+"""
 
 @author: yanyanming77
 Last update: 02-01-2023
@@ -18,6 +25,7 @@ input arguments:
 
   
 import numpy as np
+import pandas as pd
 import tmd
 import pickle
 import os
@@ -81,6 +89,31 @@ def copy_file(file, destination, copy_type):
         shutil.copy(input_path/'log.csv', destination.parent/'log.csv')
 
 
+def scale_swc_files(root_dir, scale_x, scale_y, scale_z, scale_radii):
+    
+    for file in tqdm(list(root_dir.rglob('*.swc')), desc = 'Scaling SWCs: '):
+        comment_lines = [l for l in open(file,'r').readlines() if '#' in l]
+        num_comment_lines = len(comment_lines)
+        # read data
+        df = pd.read_csv(file, delimiter=' ', skiprows=num_comment_lines, names = ['node_num1', 'type', 'x', 'y', 'z', 'radii', 'node_num2'])
+        # scaling
+        df['x'] = df['x'] * scale_x
+        df['x'] = df['x'].round(decimals=3)
+        df['y'] = df['y'] * scale_y
+        df['y'] = df['y'].round(decimals=3)
+        df['z'] = df['z'] * scale_z
+        df['z'] = df['z'].round(decimals=3)
+        df['radii'] = df['radii'] * scale_radii
+        df['radii'] = df['radii'].round(decimals=5)
+        
+        with open(file,'w') as scaled_file:
+            for cmt_line in comment_lines:
+                scaled_file.write(cmt_line)
+            for row in df.itertuples():
+                scaled_file.write(f"{row.node_num1} {row.type} {row.x} {row.y} {row.z} {row.radii} {row.node_num2}\n")
+        scaled_file.close()
+
+
 def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, current_time: str,
                     xlims, ylims, num_iter=20, neurite_type="all"):
     """
@@ -113,6 +146,7 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
     ### validate xy limits
     print(f"Current x limits: {xlims}, Current y limits: {ylims}")
     
+    scale_swc_files(input_path, 0.4, 0.4, 0.4, 0.4)
     
     bbox_volume = []
     ### find the mean of the volume of each bounding box (if not soma only)
@@ -204,6 +238,9 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
     
     # assign number to components in the proofread folder, for the convenience of distributing data for proofreading
     assign_number_to_folder(path_true)
+    
+    scale_swc_files(input_path, 1/0.4, 1/0.4, 1/0.4, 1/0.4)
+    scale_swc_files(path_result, 1/0.4, 1/0.4, 1/0.4, 1/0.4)
 
     print("Summary of Classification:\n"
           f"\t{junk_neuron_count} \t # junk neurons\n"
