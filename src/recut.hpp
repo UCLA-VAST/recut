@@ -3279,7 +3279,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 #endif
     std::vector<openvdb::FloatGrid::Ptr> components;
     timer.restart();
-    openvdb::v9_1::tools::segmentSDF(*sdf_grid, components); // 362,285,313
+    openvdb::v9_1::tools::segmentSDF(*sdf_grid, components);
     run_log << "Seed detection: segmentation time, "
             << timer.elapsed_formatted() << '\n'
             << "Seed detection: initial seed count, " << components.size()

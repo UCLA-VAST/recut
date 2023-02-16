@@ -920,6 +920,23 @@ TEST(TreeOps, MeanShift) {
     ASSERT_EQ(m->y, 2);
     ASSERT_EQ(m->z, 0);
   }
+
+  // rebuild coord to idx for prune
+  auto coord_to_idx_double = create_coord_to_idx<double>(refined_sphere_tree);
+
+  // prune radius factor is so high that all markers to converge to
+  // a single point
+  auto pruned_markers = advantra_prune(refined_sphere_tree, prune_radius_factor,
+                                       coord_to_idx_double);
+
+  std::cout << "Pruned sphere tree\n";
+  print_markers(pruned_markers);
+  ASSERT_EQ(pruned_markers.size(), 1);
+
+  auto m = pruned_markers.front();
+  ASSERT_EQ(m->x, 0);
+  ASSERT_EQ(m->y, 2);
+  ASSERT_EQ(m->z, 0);
 }
 
 TEST(TreeOps, FixTrifurcations) {
