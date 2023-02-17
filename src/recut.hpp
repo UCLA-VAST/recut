@@ -2777,13 +2777,13 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     timer.restart();
 
     // rebuild coord to idx for prune
-    auto coord_to_idx_double = create_coord_to_idx<double>(refined_markers);
+    auto coord_to_indices = create_coord_to_indices(refined_markers);
     timer.restart();
 
     // prune radius already set when converting from markers above
     auto pruned_markers = advantra_prune(
         refined_markers, /*prune_radius*/ this->args->prune_radius.value(),
-        coord_to_idx_double);
+        coord_to_indices);
     if (pruned_markers.size() < 3) {
       std::cerr
           << "Non fatal error: extracted pruned trees contains too few nodes "

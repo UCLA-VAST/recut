@@ -747,25 +747,51 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
 
 TEST(Utils, CoordDist) {
   auto center = GridCoord(0, 0, 0);
-  auto dist = 5;
-  auto nb = GridCoord(3, 4, 0);
+  {
+    auto dist = 5;
+    auto nb = GridCoord(3, 4, 0);
 
-  // test that coord dist returns proper float entities
-  auto actual_dist = coord_dist(center, nb);
-  ASSERT_EQ(actual_dist, dist);
+    // test that coord dist returns proper float entities
+    auto actual_dist = coord_dist(center, nb);
+    ASSERT_EQ(actual_dist, dist);
+  }
+  {
+    auto dist = 1.41;
+    auto nb = GridCoord(1, 1, 0);
+
+    // test that coord dist returns proper float entities
+    auto actual_dist = coord_dist(center, nb);
+    ASSERT_NEAR(actual_dist, dist, .1);
+  }
 }
 
 TEST(Utils, SphereIterator) {
-  auto center = GridCoord(0, 0, 0);
-  int radius = 3;
-  auto rng = sphere_iterator(center, radius);
+  {
+    auto center = GridCoord(0, 0, 0);
+    float radius = 3;
+    auto rng = sphere_iterator(center, radius);
 
-  for (auto e : rng) {
-    // cout << e << ' ';
-    ASSERT_LE(coord_dist(center, e), radius);
+    for (auto e : rng) {
+      // cout << e << ' ';
+      ASSERT_LE(coord_dist(center, e), radius);
+    }
+    // cout << '\n';
+    ASSERT_EQ(rng::distance(rng), 123);
   }
-  // cout << '\n';
-  ASSERT_EQ(rng::distance(rng), 123);
+
+  {
+    auto center = GridCoord(0, 0, 0);
+    float radius = 1.5f;
+    auto rng = sphere_iterator(center, radius);
+
+    std::cout << "Yielded\n";
+    for (auto e : rng) {
+      cout << e << ' ';
+      ASSERT_LE(coord_dist(center, e), radius);
+    }
+    cout << '\n';
+    ASSERT_EQ(rng::distance(rng), 19);
+  }
 }
 
 TEST(Utils, AdjustSomaRadii) {
@@ -876,7 +902,7 @@ TEST(TreeOps, MeanShiftTiny) {
   ASSERT_EQ(refined_tree[0]->radius, 5);
 }
 
-TEST(TreeOps, MeanShift) {
+TEST(TreeOps, MeanShiftAndPruneSingle) {
   std::vector<MyMarker *> tree;
   auto max_iterations = 100;
 
@@ -922,21 +948,95 @@ TEST(TreeOps, MeanShift) {
   }
 
   // rebuild coord to idx for prune
-  auto coord_to_idx_double = create_coord_to_idx<double>(refined_sphere_tree);
+  auto coord_to_indices = create_coord_to_indices(refined_sphere_tree);
 
   // prune radius factor is so high that all markers to converge to
   // a single point
   auto pruned_markers = advantra_prune(refined_sphere_tree, prune_radius_factor,
-                                       coord_to_idx_double);
+                                       coord_to_indices);
 
   std::cout << "Pruned sphere tree\n";
   print_markers(pruned_markers);
   ASSERT_EQ(pruned_markers.size(), 1);
 
   auto m = pruned_markers.front();
-  ASSERT_EQ(m->x, 0);
-  ASSERT_EQ(m->y, 2);
-  ASSERT_EQ(m->z, 0);
+  ASSERT_NEAR(m->x, 3, .01);
+  ASSERT_NEAR(m->y, 3, .01);
+  ASSERT_NEAR(m->z, 3, .01);
+}
+
+TEST(TreeOps, MeanShiftAndPrune) {
+  std::vector<MyMarker *> tree;
+  auto max_iterations = 100;
+
+  // make sure sphere coords are entirely positive
+  // since locations are summed you wouldn't
+  // want negative coordinates
+  auto center = GridCoord(3, 3, 3);
+  int radius = 2;
+  auto prune_radius_factor = 1.5;
+  auto rng = sphere_iterator(center, radius);
+
+  std::vector<MyMarker *> sphere_tree;
+  for (auto coord : rng) {
+    auto m = new MyMarker(coord[0], coord[1], coord[2]);
+    m->radius = 1 + radius - coord_dist(center, coord);
+    m->nbr.push_back(0); // null
+    m->type = 3;
+    sphere_tree.push_back(m);
+  }
+
+  // sorting improves pruning by favoring higher relevance/radii
+  // sort by markers by decreasing radii (~relevance)
+  std::sort(sphere_tree.begin(), sphere_tree.end(),
+            [](const MyMarker *l, const MyMarker *r) {
+              return l->radius > r->radius;
+            });
+
+  // place all somas (type 0 first) while preserving large radii precedence
+  std::stable_partition(sphere_tree.begin(), sphere_tree.end(),
+                        [](const MyMarker *l) { return l->type == 0; });
+
+  // reestablish coord to idx
+  std::unordered_map<GridCoord, VID_t> coord_to_idx;
+  rng::for_each(sphere_tree | rv::enumerate, [&coord_to_idx](auto markerp) {
+    auto [i, marker] = markerp;
+    auto coord = GridCoord(marker->x, marker->y, marker->z);
+    coord_to_idx[coord] = i;
+  });
+
+  std::cout << "Sphere tree\n";
+  print_markers(sphere_tree);
+  auto refined_sphere_tree = mean_shift(sphere_tree, max_iterations,
+                                        prune_radius_factor, coord_to_idx);
+  std::cout << "Refined sphere tree\n";
+  print_markers(refined_sphere_tree);
+
+  // even though radii are somewhat accurate we used a pruned_radius_factor of 5
+  // which means all nodes will be meaned with all others
+  // therefore all coordinates should converge at the center
+  for (auto m : tree) {
+    ASSERT_EQ(m->x, 0);
+    ASSERT_EQ(m->y, 2);
+    ASSERT_EQ(m->z, 0);
+  }
+
+  // rebuild coord to idx for prune
+  auto coord_to_indices = create_coord_to_indices(refined_sphere_tree);
+
+  // prune radius factor is so high that all markers to converge to
+  // a single point
+  auto pruned_markers = advantra_prune(refined_sphere_tree, prune_radius_factor,
+                                       coord_to_indices);
+
+  std::cout << "Pruned sphere tree\n";
+  print_markers(pruned_markers);
+  ASSERT_EQ(pruned_markers.size(), 1);
+
+  auto m = pruned_markers.front();
+  ASSERT_NEAR(m->x, 3, .01);
+  ASSERT_NEAR(m->y, 3, .01);
+  ASSERT_NEAR(m->z, 3, .01);
 }
 
 TEST(TreeOps, FixTrifurcations) {

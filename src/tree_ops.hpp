@@ -91,10 +91,25 @@ auto sort_tree_in_place = [](std::vector<MyMarker *> &tree) {
   return coord_to_swc_id;
 };
 
+std::unordered_map<std::array<double, 3>, std::set<VID_t>, ArrayHasher>
+create_coord_to_indices(const std::vector<MyMarker *> &cluster) {
+  std::unordered_map<std::array<double, 3>, std::set<VID_t>, ArrayHasher>
+      coord_to_indices;
+  rng::for_each(cluster | rv::enumerate, [&](auto imarker) {
+    auto [id, marker] = imarker;
+    std::array<double, 3> coord_key = {marker->x, marker->y, marker->z};
+    auto ipair = coord_to_indices.find(coord_key);
+    if (ipair == coord_to_indices.end()) // not found
+      coord_to_indices[coord_key] = {id};
+    else // add to existing set
+      ipair->second.insert(id);
+  });
+  return coord_to_indices;
+}
+
 template <typename ArrayT>
 std::unordered_map<std::array<ArrayT, 3>, VID_t, ArrayHasher>
 create_coord_to_idx(const std::vector<MyMarker *> &cluster) {
-  // build to coord_to_idx
   std::unordered_map<std::array<ArrayT, 3>, VID_t, ArrayHasher> coord_to_idx;
   rng::for_each(cluster | rv::enumerate, [&](auto imarker) {
     auto [id, marker] = imarker;
@@ -116,7 +131,7 @@ auto adjust_parent_ptrs = [](std::vector<MyMarker *> &cluster) {
           marker->parent->x, marker->parent->y, marker->parent->z};
       const auto parent_pair = coord_to_idx.find(parent_coord);
       if (parent_pair == coord_to_idx.end()) {
-        std::cout << "Invalid " << *marker << '\n';
+        std::cout << "Invalid " << *marker << ' ' << *(marker->parent) << '\n';
         throw std::runtime_error("adjust_parent_ptrs() can not operate on "
                                  "clusters with out-of-cluster parents");
       } else {
@@ -508,7 +523,7 @@ auto tree_is_valid = [](auto tree) {
 // creates an iterator in zyx order for probing VDB grids for the interior of a
 // sphere
 auto sphere_iterator = [](const GridCoord &center, const float radiusf) {
-  const int radius = std::round(radiusf);
+  const int radius = std::floor(radiusf);
   // passing center by ref & through the lambda captures causes UB
   int cx = center.x();
   int cy = center.y();
@@ -517,6 +532,7 @@ auto sphere_iterator = [](const GridCoord &center, const float radiusf) {
     return rv::for_each(rv::iota(cy - radius, 1 + cy + radius), [=](int y) {
       return rv::for_each(rv::iota(cz - radius, 1 + cz + radius), [=](int z) {
         auto const new_coord = GridCoord(x, y, z);
+        //std::cout << new_coord << ' ' << coord_dist(new_coord, center) << '\n';
         return rng::yield_if(coord_dist(new_coord, center) <= radiusf,
                              new_coord);
       });
@@ -555,7 +571,7 @@ mean_shift(std::vector<MyMarker *> nX, int max_iterations, float shift_radius,
     conv[1] = nX[i]->y;
     conv[2] = nX[i]->z;
     conv[3] = nX[i]->radius;
-    //std::cout << conv[0] << ' ' << conv[1] << ' ' << conv[2] << '\n';
+    // std::cout << conv[0] << ' ' << conv[1] << ' ' << conv[2] << '\n';
 
     double last_distance_delta = 1; // default value
     // ... stop when the update in distance gets half the size of a voxel
@@ -571,11 +587,11 @@ mean_shift(std::vector<MyMarker *> nX, int max_iterations, float shift_radius,
       next[1] = 0;
       next[2] = 0;
       next[3] = 0;
-      //std::cout << "  iteration: " << iter << '\n';
+      // std::cout << "  iteration: " << iter << '\n';
 
       auto center = GridCoord(std::round(conv[0]), std::round(conv[1]),
                               std::round(conv[2]));
-      auto radius_for_shifting = shift_radius * conv[3];
+      double radius_for_shifting = shift_radius * conv[3];
 
       for (const auto coord : sphere_iterator(center, radius_for_shifting)) {
         auto ipair = coord_to_idx.find(coord);
@@ -585,7 +601,7 @@ mean_shift(std::vector<MyMarker *> nX, int max_iterations, float shift_radius,
         // if (nbr_idx != i) {
         //  also average the orignal node's location
         //  assumes that all x,y,z are positive
-        //std::cout << "\t" << coord << '\n';
+        // std::cout << "\t" << coord << '\n';
         next[0] += nX[nbr_idx]->x;
         next[1] += nX[nbr_idx]->y;
         next[2] += nX[nbr_idx]->z;
@@ -635,10 +651,10 @@ mean_shift(std::vector<MyMarker *> nX, int max_iterations, float shift_radius,
 
 // sphere grouping compaction/pruning strategy inspired by Advantra's code
 // switched from n^2 to nr^3 where r is the radii of a given node
-std::vector<MyMarker *>
-advantra_prune(vector<MyMarker *> nX, float prune_radius_factor,
-               std::unordered_map<std::array<double, 3>, VID_t, ArrayHasher>
-                   coord_to_idx) {
+std::vector<MyMarker *> advantra_prune(
+    vector<MyMarker *> nX, double prune_radius_factor,
+    std::unordered_map<std::array<double, 3>, std::set<VID_t>, ArrayHasher>
+        coord_to_indices) {
 
   std::vector<MyMarker *> nY;
   auto no_neighbor_count = 0;
@@ -646,14 +662,9 @@ advantra_prune(vector<MyMarker *> nX, float prune_radius_factor,
   vector<long> indices(nX.size());
   for (VID_t i = 0; i < indices.size(); ++i)
     indices[i] = i;
-  // TODO sort by float value if possible
-  // sort(indices.begin(), indices.end(), CompareIndicesByNodeCorrVal(&nX));
 
   // translate a dense linear idx of X to the sparse linear idx of y
   vector<long> X2Y(nX.size(), -1);
-  X2Y[0] = 0; // first one is with max. correlation
-
-  nY.push_back(nX[0]);
 
   auto check_node = [&](const long ci) {
     X2Y[ci] = nY.size();
@@ -662,12 +673,14 @@ advantra_prune(vector<MyMarker *> nX, float prune_radius_factor,
     auto nYi = new MyMarker(*(nX[ci]));
     float grp_size = 1;
 
-    auto radius_for_pruning = static_cast<float>(nYi->radius);
+    auto radius_for_pruning = nYi->radius;
     if (nYi->type != 0) { // not soma
       // you can decrease the sampling density along any branch
       // by increasing the prune radius here
       radius_for_pruning *= prune_radius_factor;
     }
+
+    //std::cout << "Check nYi: " << *nYi << '\n';
 
     // rounds the current iteratively averaged location of nYi
     auto center =
@@ -677,38 +690,42 @@ advantra_prune(vector<MyMarker *> nX, float prune_radius_factor,
     // all markers passed to this function are integer coordinates
     // all markers passed
     for (const auto coord : sphere_iterator(center, radius_for_pruning)) {
+      //std::cout << "  nb " << coord << '\n';
       std::array<double, 3> coord_key = {static_cast<double>(coord[0]),
                                          static_cast<double>(coord[1]),
                                          static_cast<double>(coord[2])};
-      auto ipair = coord_to_idx.find(coord_key);
-      if (ipair == coord_to_idx.end())
+      auto ipair = coord_to_indices.find(coord_key);
+      if (ipair == coord_to_indices.end())
         continue; // skip not found
-      auto nbr_idx = ipair->second;
-      // found?, not the same node?, not already grouped
-      if (nbr_idx != ci && X2Y[nbr_idx] == -1) {
-        // mark the idx, since nY is being accumulated to
-        X2Y[nbr_idx] = nY.size();
+      //std::cout << "  continuing " << coord_key[0] << ',' << coord_key[1] << ','
+                //<< coord_key[2] << '\n';
+      for (auto nbr_idx : ipair->second) {
+        // found?, not the same node?, not already grouped
+        if (nbr_idx != ci && X2Y[nbr_idx] == -1) {
+          // mark the idx, since nY is being accumulated to
+          X2Y[nbr_idx] = nY.size();
 
-        // modifies marker to have a set of marker nbs
-        for (VID_t k = 0; k < nX[nbr_idx]->nbr.size(); ++k) {
-          nYi->nbr.push_back(
-              nX[nbr_idx]
-                  ->nbr[k]); // append the neighbours of the group members
-        }
+          // modifies marker to have a set of marker nbs
+          for (VID_t k = 0; k < nX[nbr_idx]->nbr.size(); ++k) {
+            nYi->nbr.push_back(
+                nX[nbr_idx]
+                    ->nbr[k]); // append the neighbours of the group members
+          }
 
-        // update local average with x,y,z,sig elements from nX[nbr_idx]
-        ++grp_size;
+          // update local average with x,y,z,sig elements from nX[nbr_idx]
+          ++grp_size;
 
-        // non roots can be averaged
-        if (nYi->type != 0) {
-          // adjust the coordinate to be an average
-          float a = (grp_size - 1) / grp_size;
-          float b = (1.0 / grp_size);
-          nYi->x = a * nYi->x + b * nX[nbr_idx]->x;
-          nYi->y = a * nYi->y + b * nX[nbr_idx]->y;
-          nYi->z = a * nYi->z + b * nX[nbr_idx]->z;
-          // average the radius
-          nYi->radius = a * nYi->radius + b * nX[nbr_idx]->radius;
+          // non roots can be averaged
+          if (nYi->type != 0) {
+            // adjust the coordinate to be an average
+            float a = (grp_size - 1) / grp_size;
+            float b = (1.0 / grp_size);
+            nYi->x = a * nYi->x + b * nX[nbr_idx]->x;
+            nYi->y = a * nYi->y + b * nX[nbr_idx]->y;
+            nYi->z = a * nYi->z + b * nX[nbr_idx]->z;
+            // average the radius
+            nYi->radius = a * nYi->radius + b * nX[nbr_idx]->radius;
+          }
         }
       }
     }
@@ -730,16 +747,6 @@ advantra_prune(vector<MyMarker *> nX, float prune_radius_factor,
     nY.push_back(nYi);
     return 0;
   };
-
-  //// add soma nodes as independent groups at the beginning
-  // for (long i = 0; i < nX.size(); ++i) {
-  //// all somas are automatically kept
-  // if (nX[i]->type == 0) {
-  // X2Y[i] = nY.size();
-  // auto nYi = new MyMarker(*nX[i]);
-  // nY.push_back(nYi);
-  //}
-  //}
 
   // add soma nodes first
   for (VID_t i = 0; i < indices.size(); ++i) {
@@ -766,8 +773,15 @@ advantra_prune(vector<MyMarker *> nX, float prune_radius_factor,
   // once complete mapping is established, update the indices from
   // the original linear index to the new sparse group index according
   // to the X2Y idx map vector
-  for (VID_t i = 1; i < nY.size(); ++i) {
+  for (VID_t i = 0; i < nY.size(); ++i) {
     for (VID_t nbr_idx = 0; nbr_idx < nY[i]->nbr.size(); ++nbr_idx) {
+      auto idx = X2Y[nY[i]->nbr[nbr_idx]];
+      if (idx >= nY.size()) {
+        std::cout << "i " << i << " nbr " << nbr_idx
+                  << " X2Y idx: " << nY[i]->nbr[nbr_idx] << " idx: " << idx
+                  << '\n';
+        throw std::runtime_error("improper x2y mapping");
+      }
       nY[i]->nbr[nbr_idx] = X2Y[nY[i]->nbr[nbr_idx]];
     }
   }
@@ -792,11 +806,12 @@ public:
 };
 
 // advantra based re-extraction of tree based on bfs
+// reorders the tree according to BFS making nbr indices
 std::vector<MyMarker *>
 extract_trees(std::vector<MyMarker *> nlist,
               bool remove_isolated_tree_with_one_node = false) {
 
-  BfsQueue<int> q;
+  BfsQueue<VID_t> q;
   std::vector<MyMarker *> tree;
 
   vector<int> dist(nlist.size());
@@ -809,31 +824,24 @@ extract_trees(std::vector<MyMarker *> nlist,
     parent[i] = -1; // parent index in current tree
   }
 
-  dist[0] = -1;
-
-  // Node tree0(nlist[0]); // first element of the nodelist is dummy both in
-  // input and output tree.clear(); tree.push_back(tree0);
-  int treecnt = 0; // independent tree counter, will be obsolete
-
-  int seed;
-
-  auto get_undiscovered2 = [](std::vector<int> dist) -> int {
-    for (VID_t i = 1; i < dist.size(); i++) {
+  auto get_undiscovered = [](std::vector<int> dist) -> std::optional<VID_t> {
+    for (VID_t i = 0; i < dist.size(); i++) {
       if (dist[i] == INT_MAX) {
         return i;
       }
     }
-    return -1;
+    return {};
   };
 
-  while ((seed = get_undiscovered2(dist)) > 0) {
+  std::optional<VID_t> seed;
+  while (seed = get_undiscovered(dist)) {
 
-    treecnt++;
-
-    dist[seed] = 0;
-    nmap[seed] = -1;
-    parent[seed] = -1;
-    q.enqueue(seed);
+    VID_t seed_idx = *seed;
+    dist[seed_idx] = 0;
+    nmap[seed_idx] = -1;
+    parent[seed_idx] = -1;
+    //std::cout << "seed: " << seed_idx << '\n';
+    q.enqueue(seed_idx);
 
     int nodesInTree = 0;
 
@@ -843,6 +851,7 @@ extract_trees(std::vector<MyMarker *> nlist,
       // http://en.wikipedia.org/wiki/Queue_%28abstract_data_type%29
       int curr = q.dequeue();
 
+      //std::cout << "curr: " << curr << '\n';
       auto n = new MyMarker(*nlist[curr]);
       n->nbr.clear();
       if (n->type == 0) {
@@ -878,11 +887,13 @@ extract_trees(std::vector<MyMarker *> nlist,
 
         int adj = nlist[curr]->nbr[nbr_idx];
 
-        if (dist[adj] == INT_MAX) {
-          dist[adj] = dist[curr] + 1;
+        if (dist[adj] == INT_MAX) { // if undiscovered
+          //dist[adj] = dist[curr] + 1;
+          dist[adj] = 0;
           parent[adj] = curr;
           // enqueue(), add to FIFO structure,
           // http://en.wikipedia.org/wiki/Queue_%28abstract_data_type%29
+          //std::cout << "Found nb: " << adj << '\n';
           q.enqueue(adj);
         }
       }

@@ -2501,6 +2501,7 @@ auto collect_all_points = [](EnlargedPointDataGrid::Ptr point_grid,
 // neighbor list
 void check_nbr(vector<MyMarker *> &nX) {
 
+  //std::cout << "nX size" << nX.size() << '\n';
   for (VID_t i = 0; i < nX.size(); ++i) {
     // remove repeats
     sort(nX[i]->nbr.begin(), nX[i]->nbr.end());
@@ -2514,11 +2515,15 @@ void check_nbr(vector<MyMarker *> &nX) {
       nX[i]->nbr.erase(nX[i]->nbr.begin() + pos); // remove at pos
   }
 
+  //std::cout << "nX size" << nX.size() << '\n';
   // ensure linkings are bidirectional, add if not
+  // for all markers
   for (VID_t i = 0; i < nX.size(); ++i) {
+    //for all neighbors of this marker
     for (VID_t j = 0; j < nX[i]->nbr.size(); ++j) {
       if (i != j) {
         bool fnd = false;
+        //std::cout << "access: " << nX[i]->nbr[j] << '\n';
         for (VID_t k = 0; k < nX[nX[i]->nbr[j]]->nbr.size(); ++k) {
           if (nX[nX[i]->nbr[j]]->nbr[k] == i) {
             fnd = true;
