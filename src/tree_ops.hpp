@@ -157,6 +157,10 @@ auto is_cluster_self_contained = [](const std::vector<MyMarker *> &cluster) {
         const auto parent_coord = std::array<double, 3>{
             marker->parent->x, marker->parent->y, marker->parent->z};
         const auto parent_pair = coord_to_idx.find(parent_coord);
+        //if (parent_pair == coord_to_idx.end()) {
+          //std::cout << "marker: " << *marker << " parent " << marker->parent
+                    //<< '\n';
+        //}
         return parent_pair == coord_to_idx.end();
       });
 
@@ -532,7 +536,6 @@ auto sphere_iterator = [](const GridCoord &center, const float radiusf) {
     return rv::for_each(rv::iota(cy - radius, 1 + cy + radius), [=](int y) {
       return rv::for_each(rv::iota(cz - radius, 1 + cz + radius), [=](int z) {
         auto const new_coord = GridCoord(x, y, z);
-        //std::cout << new_coord << ' ' << coord_dist(new_coord, center) << '\n';
         return rng::yield_if(coord_dist(new_coord, center) <= radiusf,
                              new_coord);
       });
@@ -581,13 +584,12 @@ mean_shift(std::vector<MyMarker *> nX, int max_iterations, float shift_radius,
     for (int iter = 0; iter < max_iterations &&
                        last_distance_delta > distance_delta_criterion;
          ++iter) {
-      int cnt = 0;
+      int cnt = 1;
 
-      next[0] = 0; // local mean is the follow-up location
-      next[1] = 0;
-      next[2] = 0;
-      next[3] = 0;
-      // std::cout << "  iteration: " << iter << '\n';
+      next[0] = conv[0]; // local mean is the follow-up location
+      next[1] = conv[1];
+      next[2] = conv[2];
+      next[3] = conv[3];
 
       auto center = GridCoord(std::round(conv[0]), std::round(conv[1]),
                               std::round(conv[2]));
@@ -598,16 +600,13 @@ mean_shift(std::vector<MyMarker *> nX, int max_iterations, float shift_radius,
         if (ipair == coord_to_idx.end())
           continue; // skip not found
         auto nbr_idx = ipair->second;
-        // if (nbr_idx != i) {
-        //  also average the orignal node's location
+        //  also may average the orignal node's location
         //  assumes that all x,y,z are positive
-        // std::cout << "\t" << coord << '\n';
         next[0] += nX[nbr_idx]->x;
         next[1] += nX[nbr_idx]->y;
         next[2] += nX[nbr_idx]->z;
         next[3] += nX[nbr_idx]->radius;
         ++cnt;
-        //}
       }
 
       next[0] /= cnt; // cnt > 0, at least node location itself will be in the
@@ -680,8 +679,6 @@ std::vector<MyMarker *> advantra_prune(
       radius_for_pruning *= prune_radius_factor;
     }
 
-    //std::cout << "Check nYi: " << *nYi << '\n';
-
     // rounds the current iteratively averaged location of nYi
     auto center =
         GridCoord(std::round(nYi->x), std::round(nYi->y), std::round(nYi->z));
@@ -690,15 +687,12 @@ std::vector<MyMarker *> advantra_prune(
     // all markers passed to this function are integer coordinates
     // all markers passed
     for (const auto coord : sphere_iterator(center, radius_for_pruning)) {
-      //std::cout << "  nb " << coord << '\n';
       std::array<double, 3> coord_key = {static_cast<double>(coord[0]),
                                          static_cast<double>(coord[1]),
                                          static_cast<double>(coord[2])};
       auto ipair = coord_to_indices.find(coord_key);
       if (ipair == coord_to_indices.end())
         continue; // skip not found
-      //std::cout << "  continuing " << coord_key[0] << ',' << coord_key[1] << ','
-                //<< coord_key[2] << '\n';
       for (auto nbr_idx : ipair->second) {
         // found?, not the same node?, not already grouped
         if (nbr_idx != ci && X2Y[nbr_idx] == -1) {
@@ -840,18 +834,14 @@ extract_trees(std::vector<MyMarker *> nlist,
     dist[seed_idx] = 0;
     nmap[seed_idx] = -1;
     parent[seed_idx] = -1;
-    //std::cout << "seed: " << seed_idx << '\n';
     q.enqueue(seed_idx);
 
     int nodesInTree = 0;
 
     while (q.hasItems()) {
 
-      // dequeue(), take from FIFO structure,
-      // http://en.wikipedia.org/wiki/Queue_%28abstract_data_type%29
       int curr = q.dequeue();
 
-      //std::cout << "curr: " << curr << '\n';
       auto n = new MyMarker(*nlist[curr]);
       n->nbr.clear();
       if (n->type == 0) {
@@ -888,12 +878,8 @@ extract_trees(std::vector<MyMarker *> nlist,
         int adj = nlist[curr]->nbr[nbr_idx];
 
         if (dist[adj] == INT_MAX) { // if undiscovered
-          //dist[adj] = dist[curr] + 1;
           dist[adj] = 0;
           parent[adj] = curr;
-          // enqueue(), add to FIFO structure,
-          // http://en.wikipedia.org/wiki/Queue_%28abstract_data_type%29
-          //std::cout << "Found nb: " << adj << '\n';
           q.enqueue(adj);
         }
       }

@@ -2814,13 +2814,14 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
                   << this->args->mean_shift_factor.value_or(0) << '\n';
 #endif
 
-    timer.restart();
     // extract a new tree via bfs
+    timer.restart();
     auto cluster = extract_trees(pruned_markers, true);
 #ifdef LOG
     component_log << "ET, " << timer.elapsed() << '\n';
 #endif
     timer.restart();
+
     if (!is_cluster_self_contained(cluster)) {
       std::cerr << "Non fatal error: extracted cluster not self contained, "
                    "skipping " +
