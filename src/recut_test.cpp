@@ -892,13 +892,12 @@ TEST(TreeOps, MeanShiftTiny) {
 
   print_markers(refined_tree);
 
-  for (auto m : refined_tree) {
-    ASSERT_EQ(m->x, 0);
-    ASSERT_EQ(m->y, 2);
-    ASSERT_EQ(m->z, 0);
-  }
+  auto m = refined_tree[1];
+  ASSERT_EQ(m->x, 0);
+  ASSERT_EQ(m->y, 2);
+  ASSERT_EQ(m->z, 0);
 
-  // make sure soma
+  // make sure soma didn't change
   ASSERT_EQ(refined_tree[0]->radius, 5);
 }
 

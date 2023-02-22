@@ -47,6 +47,14 @@ recut ch0
 ```
 This will create a folder in your current directory `run-1` which has a folder for each component of neurons and their respective skeletonized SWC (tree-format) outputs.
 
+### Soma Proofreading
+Vaa3d
+Advanced, Big Data, Terafly 2.5.11
+Image on the SSD
+set the correct voxel size
+TMD_soma
+max dims 255, 255, 255 to speed the loading time
+
 ### Morphological Operations and Seed Segmentation
 In order to find the cell bodies of branching neurons more effectively, recut accepts a parameter to conduct morphological opening like so:
 ```
