@@ -47,15 +47,9 @@ recut ch0
 ```
 This will create a folder in your current directory `run-1` which has a folder for each component of neurons and their respective skeletonized SWC (tree-format) outputs.
 
-### Soma Proofreading
-Vaa3d
-Advanced, Big Data, Terafly 2.5.11
-Image on the SSD
-set the correct voxel size
-TMD_soma
-max dims 255, 255, 255 to speed the loading time
+### Morphological Operations and Seed (Cell Body/Soma) Segmentation
+Even in inferenced neural tissue of internal data, only about 20% of foreground voxels are reachable from known seed locations. In order for Recut to build trees it must traverse from a seed (cell body) point. These seed points can either be morphologically segmented (default), picked from the image by hand, or inferenced from the U-net model in the `recut/pipeline` folder. Inferencing using the U-net implementation requires rigorous training for new datasets therefore we recommend using the morphological soma segmentation included in Recut. Automated soma detection tends to have high recall but low precision (lots of false positives) therefore we recommend proofreading the automated soma locations. If you elect not to proofread the soma locations on large volumes we strongly recommend filtering the final SWCs by their persistent homology via `scripts/TMD_filtering.py` which automates the removal of false positive somas.
 
-### Morphological Operations and Seed Segmentation
 In order to find the cell bodies of branching neurons more effectively, recut accepts a parameter to conduct morphological opening like so:
 ```
 recut ch0 --open-steps 5
@@ -69,9 +63,18 @@ recut ch0 --input-type mask --close-steps 8 --open-steps 5
 
 For brain volumes with voxel size [1,1,1] in um, we found a morphological closing step of 8 followed by a morphological opening step of 5 with a foreground percent of .1 to be best for segmenting hollow cell body (seed) regions. The estimated cell body location and coordinates will be created in the new run directory under `seeds/`. 
 
-#### Seeds
-Even in inferenced neural tissue of internal data, only about 20% of foreground voxels are reachable from known seed locations. In order for Recut to build trees it must traverse from a seed (cell body) point. These seed points can be picked from the image by hand or from the U-net model in the `recut/pipeline` folder. If you wish to generate seed locations via a separate method, output all seed in the image into separate files in the same folder. Each file contains a single line with the coordinate and radius information separated by commas like so:
+If you wish to generate seed locations via a separate method, output all seed in the image into separate files in the same folder. Each file contains a single line with the coordinate and radius information separated by commas like so:
 `X,Y,Z,RADIUS`
+
+#### Soma Proofreading
+It's recommended to generate a first pass approximation of soma locations using Recut's morphological operations then proofreading those somas by hand since too many false positives split neurons into erroneous subtrees. We recommend converting Recut's seeds to the Terafly format and proofreading them there using [this](https://github.com/ucla-brain/image-preprocessing-pipeline/blob/main/supplements/soma_recut_seed_to_terafly_ano.py) script. Once proofreading is complete you can convert the Terafly annotations back in to the soma locations readable by Recut via [this](https://github.com/ucla-brain/image-preprocessing-pipeline/blob/main/supplements/soma_terafly_ano_to_recut_seed.py) script. It's also possible to convert to imaris annotations (see the `/scripts/` folder). 
+
+When you pass in seeds to a Recut run it will only reconstruct from the somas passed. This is the best way to get high recall and precision in your soma detection and neuron reconstructions.
+
+## Tuning Recut's Parameters to Match Your Data
+Soma and neurites radii are calculated based off their voxel lengths and the input `--voxel-size` passed. This means if you have anisotropic, flat, signal smearing or scaling differences between the dimension of your image, the reconstruction accuracy could suffer. Since such asymmetries are common, Recut has two major parameters to mitigate the reconstruction. The first is the `--mean-shift`, which is a unitless factor which is multiplied by each nodes true radius when conducting laplacian smoothing. This smoothing gathers voxels points close to a centerline along neurites or axons. You should choose a `--mean-shift` which reflects the anisotropic factor of your image, for example, if your image has a voxel size with a z-dimension 5 times larger than x and y, the suggested mean-shift is 5.
+
+The second parameter controlling reconstruction is `--prune-radius`. The higher this number is the more coarse the final reconstructions are and the more sparse the sampling along neurites is. It should usually be set between 1 and 1.5. The prune radius relies on data that is natively isotropic or has been properly mean shifted to a centerline with the appopriate factor. Together, mean shifting and pruning produce more fine grained branch reconstructions with less spurious short branches.
 
 ## Conversions
 Convert the folder `ch0` into a VDB point grid:
@@ -230,7 +233,7 @@ versioning issues in multi-language repositories.  You can install Nix on any Li
 distribution, MacOS and Windows (via WSL).
 
 # Scientific Motivation
-The execution pattern and partitioning strategy resembles this [paper]( https://arxiv.org/abs/1811.00009), however we build on top of the [VDB library](https://github.com/AcademySoftwareFoundation/openvdb) for performance in sparse large-scale settings. 
+The execution pattern and partitioning strategy resembles this [paper]( https://arxiv.org/abs/1811.00009), however we build on top of the [VDB library](https://github.com/AcademySoftwareFoundation/openvdb) for performance in sparse large-scale settings. The skeletonization/pruning algorithm draws in the BigNeuron Advantra reconstruction method, outlined [here](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6594993/).
 
 # Cite
 If you find this software helpful please consider citing the [preprint](https://www.biorxiv.org/content/10.1101/2021.12.07.471686v2.full).
