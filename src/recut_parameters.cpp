@@ -5,15 +5,6 @@ void RecutCommandLineArgs::PrintUsage() {
                "[--type point/uint8/mask/float/ims/tiff] "
                "[-o <output_vdb_file_name>] "
                "[--bkg-thresh <int>] [--fg-percent <double>]\n\n";
-  /*
-  "[--image-offsets <int> [<int>] [<int>]] "
-  "[--image-lengths <int> [<int>] [<int>]] "
-  "[--channel <int>] "
-  "[--resolution-level <int>] "
-  "\nNote: neurite+soma images are binarized and do not need bkg-thresh or "
-  "fg-percent specified";
-   */
-
   std::cout << "<image file or dir>  file or directory of input image(s)\n";
   std::cout << "--seeds              [-s] directory of files which represent "
                "known root/soma locations, seeds are required to reconstruct\n";
@@ -27,15 +18,6 @@ void RecutCommandLineArgs::PrintUsage() {
       << "--output-type        output type img: 'ims', 'tiff' | "
          "VDB: 'point', "
          "'uint8', 'mask' or 'float' | 'swc', 'eswc', 'labels' | 'seeds'\n";
-  // std::cout << "--max                set max image voxel raw value allowed, "
-  //"computed automatically when --bg_thresh or --fg-percent are "
-  //"specified\n";
-  // std::cout << "--min                set min image voxel raw value allowed, "
-  //"computed automatically when --bg_thresh or --fg-percent are "
-  //"specified\n";
-  // std::cout << "--channel            [-c] channel number, default 0\n";
-  // std::cout << "--resolution-level   [-rl] resolution level default 0 "
-  //"(original resolution)\n";
   std::cout
       << "--image-offsets      [-io] offsets of subvolume, in x y z order "
          "default 0 0 0\n";
@@ -60,9 +42,6 @@ void RecutCommandLineArgs::PrintUsage() {
          "foreground % between (0-100], overriding any --bg-thresh args. "
          "Value of .08 yields ~8 in 10,000 voxels "
          "as foreground per z-plane\n";
-  // std::cout << "--prune              [-pr] prune 0 false, 1 true; defaults to
-  // 1 "
-  //"(automatically prunes)\n";
   std::cout
       << "--parallel           [-pl] thread count defaults to max hardware "
          "threads\n";
@@ -84,13 +63,13 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout
       << "--min-window         windows by default only extend to bounding "
          "volume "
-         "of their component, this value specifies the minimum window border "
-         "surrounding seeds, if no um value is passed it will use "
+         "of their component, this value (in µm units) specifies the minimum window border "
+         "surrounding seeds, if no value is passed it will use "
       << MIN_WINDOW_UM << " µm\n";
   std::cout
       << "--expand-window      windows by default only extend to bounding "
          "volume of their component, this allows specifying an expansion "
-         "factor around seeds, if no um value is passed it will use "
+         "factor around seeds, if no µm value is passed it will use "
       << EXPAND_WINDOW_UM << " µm\n";
   std::cout << "--open-denoise       1st morphological opening level "
                "to denoise image before soma detection; "
@@ -124,8 +103,6 @@ std::string RecutCommandLineArgs::MetaString() {
   meta_stream << "image file/dir = " << input_path << '\n';
   meta_stream << "channel = " << channel << '\n';
   meta_stream << "resolution level = " << resolution_level << '\n';
-  // meta_stream << "offsets (xyz) = " << image_offsets[0] << " "
-  //<< image_offsets[1] << " " << image_offsets[2] << '\n';
   meta_stream << "lengths (xyz) = " << image_lengths[0] << " "
               << image_lengths[1] << " " << image_lengths[2] << '\n';
   meta_stream << "foreground_percent = " << foreground_percent << '\n';
