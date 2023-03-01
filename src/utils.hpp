@@ -2300,8 +2300,8 @@ auto print_swc_line = [](std::array<double, 3> swc_coord, bool is_root,
                          bool bbox_adjust = true, bool is_eswc = false) {
   std::ostringstream line;
 
-  auto scale_coord = [bbox_adjust, voxel_size](std::array<double, 3> &coord) {
-    if (!bbox_adjust) {
+  auto scale_coord = [&](std::array<double, 3> &coord) {
+    if (!bbox_adjust || is_eswc) {
       for (int i = 0; i < 3; ++i)
         coord[i] *= voxel_size[i];
     }
@@ -3242,15 +3242,8 @@ GridTypePtr merge_grids(std::vector<GridTypePtr> grids) {
 // Warning this can not clip mask.vdb files
 // which is why SDFs are used
 openvdb::FloatGrid::Ptr clip_by_seed(openvdb::FloatGrid::Ptr grid,
-                                     std::vector<Seed> seeds,
-                                     float max_radius_um,
-                                     std::array<float, 3> voxel_size) {
-  auto min_max_pair = min_max(voxel_size);
-  // convert from world space (um) to image space (pixels)
-  // these are the offsets around the coordinate to keep
-  auto offset = GridCoord(max_radius_um / min_max_pair.second);
-
-  // parallelize
+                                     std::vector<Seed> seeds) {
+  // parallelized implementation had seg fault for unknown reason
   // std::vector<openvdb::FloatGrid::Ptr> component_grids;
   // auto enum_components = seeds | rv::enumerate | rng::to_vector;
   // tbb::task_arena arena(args->user_thread_count);
@@ -3258,13 +3251,14 @@ openvdb::FloatGrid::Ptr clip_by_seed(openvdb::FloatGrid::Ptr grid,
   //[&] { tbb::parallel_for_each(enum_components, process_component); });
   auto timer = high_resolution_timer();
 
-  auto component_grids = seeds |
-                         rv::transform([grid, &offset](const Seed &seed) {
-                           vb::BBoxd clipBox((seed.coord - offset).asVec3d(),
-                                             (seed.coord + offset).asVec3d());
-                           return vto::clip(*grid, clipBox);
-                         }) |
-                         rng::to_vector;
+  auto component_grids =
+      seeds | rv::transform([grid](const Seed &seed) {
+        auto offset = GridCoord(seed.radius, seed.radius, seed.radius);
+        vb::BBoxd clipBox((seed.coord - offset).asVec3d(),
+                          (seed.coord + offset).asVec3d());
+        return vto::clip(*grid, clipBox);
+      }) |
+      rng::to_vector;
 #ifdef LOG
   std::cout << "\tFinished seed clip in " << timer.elapsed() << '\n';
 #endif
@@ -3619,11 +3613,16 @@ auto anisotropic_factor = [](std::array<float, 3> voxel_size) {
 };
 
 // write seed/somas to disk
+// Converts the seeds from voxel space to um space
 auto write_seeds = [](fs::path run_dir, std::vector<Seed> seeds,
                       std::array<float, 3> voxel_size) {
   // start seeds directory
   fs::path seed_dir = run_dir / "seeds";
   fs::create_directories(seed_dir);
+
+#ifdef LOG
+  std::cout << "Writing " << seeds.size() << " seeds\n";
+#endif
 
   rng::for_each(seeds, [&](const auto &seed) {
     std::ofstream seed_file;
@@ -3818,3 +3817,66 @@ auto binarize_uint8_grid = [](auto image_grid) {
     }
   }
 };
+
+// adds all markers to seeds
+// recut operates in voxel units (image space) therefore whenever marker/node
+// information is input into recut it converts it from um units into voxel units
+// marker_base: some programs like APP2 consider input markers should be offset
+// by 1 recut operates with 0 offset of input markers and SWC nodes
+std::vector<Seed> process_marker_dir(
+    std::string seed_path,
+    std::array<float, 3> voxel_size = std::array<float, 3>{1, 1, 1},
+    int marker_base = 0) {
+
+  // input handler
+  if (seed_path.empty())
+    return {};
+
+  auto min_voxel_size = min_max(voxel_size).first;
+
+  // gather all markers within directory
+  auto seeds = std::vector<Seed>();
+
+  rng::for_each(
+      fs::directory_iterator(seed_path), [&](const auto &marker_file) {
+        if (!fs::is_directory(marker_file)) {
+          auto markers =
+              readMarker_file(fs::absolute(marker_file), marker_base);
+          assertm(markers.size() == 1, "only 1 marker file per soma");
+          auto marker = markers[0];
+
+          std::string fn = marker_file.path().filename().string();
+          auto numbers =
+              fn | rv::split('_') | rng::to<std::vector<std::string>>();
+          if (numbers.size() != 5)
+            throw std::runtime_error(
+                "Marker file names must be in format marker_x_y_z_volume");
+          //  volume is the last number of the file name
+          uint64_t volume = std::stoull(numbers.back());
+
+          if (marker.radius == 0) {
+            marker.radius =
+                static_cast<uint8_t>(std::cbrt(volume) / (4 / 3 * PI) + 0.5);
+          }
+
+          // ones() + GridCoord(marker.x / args->downsample_factor,
+          // marker.y / args->downsample_factor,
+          // upsample_idx(args->upsample_z, marker.z)),
+
+          // convert from world space (um) to image space (pixels)
+          // these are the offsets around the coordinate to keep
+          seeds.emplace_back(
+              GridCoord(std::round(marker.x / voxel_size[0]),
+                        std::round(marker.y / voxel_size[1]),
+                        std::round(marker.z / voxel_size[2])),
+              static_cast<uint8_t>(marker.radius / min_voxel_size + 0.5),
+              marker.radius, volume);
+        }
+      });
+
+#ifdef LOG
+  std::cout << '\t' << seeds.size() << " seeds found in directory\n";
+#endif
+
+  return seeds;
+}

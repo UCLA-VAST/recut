@@ -263,7 +263,6 @@ public:
                 const std::string stage,
                 std::map<GridCoord, std::deque<VertexAttr>> &fifo,
                 std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo);
-  std::vector<Seed> process_marker_dir(int marker_base);
   void set_parent_non_branch(const VID_t tile_id, const VID_t block_id,
                              VertexAttr *dst, VertexAttr *potential_new_parent);
 };
@@ -356,58 +355,6 @@ template <typename image_t>
 OffsetCoord Recut<image_t>::v_to_off(VID_t tile_id, VID_t block_id,
                                      VertexAttr *v) {
   return coord_mod(v_to_img_coord(tile_id, block_id, v), this->block_lengths);
-}
-
-// adds all markers to seeds
-template <class image_t>
-std::vector<Seed> Recut<image_t>::process_marker_dir(int marker_base) {
-
-  // input handler
-  {
-    if (args->seed_path == "")
-      return {};
-  }
-
-  // gather all markers within directory
-  auto seeds = std::vector<Seed>();
-
-  rng::for_each(
-      fs::directory_iterator(args->seed_path),
-      [this, marker_base, &seeds](const auto &marker_file) {
-        if (!fs::is_directory(marker_file)) {
-          auto markers =
-              readMarker_file(fs::absolute(marker_file), marker_base);
-          assertm(markers.size() == 1, "only 1 marker file per soma");
-          auto marker = markers[0];
-
-          std::string fn = marker_file.path().filename().string();
-          auto numbers =
-              fn | rv::split('_') | rng::to<std::vector<std::string>>();
-          if (numbers.size() != 5)
-            throw std::runtime_error(
-                "Marker file names must be in format marker_x_y_z_volume");
-          //  volume is the last number of the file name
-          uint64_t volume = std::stoull(numbers.back());
-
-          if (marker.radius == 0) {
-            marker.radius =
-                static_cast<uint8_t>(std::cbrt(volume) / (4 / 3 * PI) + 0.5);
-          }
-
-          // ones() + GridCoord(marker.x / args->downsample_factor,
-          // marker.y / args->downsample_factor,
-          // upsample_idx(args->upsample_z, marker.z)),
-          seeds.emplace_back(GridCoord(marker.x, marker.y, marker.z),
-                             static_cast<uint8_t>(marker.radius + 0.5),
-                             marker.radius, volume);
-        }
-      });
-
-#ifdef LOG
-  std::cout << '\t' << seeds.size() << " seeds found in directory\n";
-#endif
-
-  return seeds;
 }
 
 // activates
@@ -2945,7 +2892,8 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
       }
     });
 
-    // seeds are always in voxel units and output with respect to the whole volume
+    // seeds are always in voxel units and output with respect to the whole
+    // volume
     write_seeds(component_dir_fn, component_seeds, this->args->voxel_size);
 
     std::cout << "Component " << index << " complete and safe to open\n";
@@ -3167,15 +3115,14 @@ template <class image_t> void Recut<image_t>::operator()() {
     run_log.flush();
 
     // collects user passed seeds if any
-    auto known_seeds = process_marker_dir(0);
+    auto known_seeds = process_marker_dir(args->seed_path, args->voxel_size);
 
     if (known_seeds.size() && args->output_type == "seeds") {
 #ifdef LOG
       std::cout << "\tClipping image by user passed seeds and +-max radius "
                    "since output is seeds only\n";
 #endif
-      sdf_grid = clip_by_seed(sdf_grid, known_seeds, args->max_radius_um,
-                              args->voxel_size);
+      sdf_grid = clip_by_seed(sdf_grid, known_seeds);
     }
 
     if (args->save_vdbs)

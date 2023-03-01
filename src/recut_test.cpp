@@ -271,7 +271,7 @@ TEST(VDB, InitializeGlobals) {
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto seeds = recut.process_marker_dir(0);
+  auto seeds = process_marker_dir(args.seed_path);
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
 
   auto update_accessor = recut.update_grid->getConstAccessor();
@@ -420,7 +420,7 @@ TEST(VDB, IntegrateUpdateGrid) {
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto seeds = recut.process_marker_dir(0);
+  auto seeds = process_marker_dir(args.seed_path);
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
   auto update_accessor = recut.update_grid->getAccessor();
   auto topology_accessor = recut.topology_grid->getConstAccessor();
@@ -560,7 +560,7 @@ TEST(VDB, ActivateVids) {
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto seeds = recut.process_marker_dir(0);
+  auto seeds = process_marker_dir(args.seed_path);
 
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
 
@@ -614,7 +614,7 @@ TEST(VDB, DISABLED_PriorityQueue) {
                /* type =*/"float"); // priority queue must have type float
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto seeds = recut.process_marker_dir(0);
+  auto seeds = process_marker_dir(args.seed_path);
 
   // TODO switch this to a more formal method
   // set the topology_grid mainly from file for this test
@@ -683,7 +683,7 @@ TEST(VDB, DISABLED_PriorityQueueLarge) {
                        /* type =*/"point");
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto seeds = recut.process_marker_dir(0);
+  auto seeds = process_marker_dir(args.seed_path);
   cout << "root " << seeds[0].coord << '\n';
 
   // TODO switch this to a more formal method
@@ -810,7 +810,7 @@ TEST(Utils, AdjustSomaRadii) {
                /* type =*/"float"); // priority queue must have type float
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto seeds = recut.process_marker_dir(0);
+  auto seeds = process_marker_dir(args.seed_path);
 
   // TODO switch this to a more formal method
   // set the topology_grid mainly from file for this test
@@ -1170,7 +1170,7 @@ TEST(VDB, Connected) {
                        /*input_is_vdb=*/true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
-  auto seeds = recut.process_marker_dir(0);
+  auto seeds = process_marker_dir(args.seed_path);
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
   auto stage = "connected";
   recut.activate_vids(recut.topology_grid, seeds, stage, recut.map_fifo,
@@ -2234,7 +2234,7 @@ TEST(Update, EachStageIteratively) {
 
             auto recut = Recut<uint16_t>(args);
             recut.initialize();
-            auto seeds = recut.process_marker_dir(0);
+            auto seeds = process_marker_dir(args.seed_path);
 
             if (print_all) {
               std::cout << "ground truth image grid" << endl;

@@ -2,12 +2,12 @@
 
 void RecutCommandLineArgs::PrintUsage() {
   std::cout << "Basic usage : recut <image or r> [--seeds <marker_dir>] "
-               "[--type point/uint8/mask/float/ims/tiff] "
+               "[--output-type point/uint8/mask/float/ims/tiff] "
                "[-o <output_vdb_file_name>] "
                "[--bkg-thresh <int>] [--fg-percent <double>]\n\n";
   std::cout << "<image file or dir>  file or directory of input image(s)\n";
-  std::cout << "--seeds              [-s] directory of files which represent "
-               "known root/soma locations, seeds are required to reconstruct\n";
+  std::cout << "--seeds              [-s] optional option to pass a directory of SWC files with 1 root/soma per file "
+               "to filter by, when --seeds are passed all other auto-found seeds will be discarded\n";
   std::cout << "--output-name        [-o] give converted vdb a custom name "
                "defaults to "
                "naming with useful image attributes\n";
@@ -17,7 +17,7 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout
       << "--output-type        output type img: 'ims', 'tiff' | "
          "VDB: 'point', "
-         "'uint8', 'mask' or 'float' | 'swc', 'eswc', 'labels' | 'seeds'\n";
+         "'uint8', 'mask' or 'float' | 'swc', 'eswc', 'labels' | 'seeds', default output is 'swc'\n";
   std::cout
       << "--image-offsets      [-io] offsets of subvolume, in x y z order "
          "default 0 0 0\n";
