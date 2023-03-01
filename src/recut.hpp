@@ -2945,6 +2945,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
       }
     });
 
+    // seeds are always in voxel units and output with respect to the whole volume
     write_seeds(component_dir_fn, component_seeds, this->args->voxel_size);
 
     std::cout << "Component " << index << " complete and safe to open\n";
