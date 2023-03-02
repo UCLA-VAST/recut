@@ -74,7 +74,11 @@ When you pass in seeds to a Recut run it will only reconstruct from the somas pa
 ## Tuning Recut's Parameters to Match Your Data
 Soma and neurites radii are calculated based off their voxel lengths and the input `--voxel-size` passed. This means if you have anisotropic, flat, signal smearing or scaling differences between the dimension of your image, the reconstruction accuracy could suffer. Since such asymmetries are common, Recut has two major parameters to mitigate the reconstruction. The first is the `--mean-shift`, which is a unitless factor which is multiplied by each nodes true radius when conducting laplacian smoothing. This smoothing gathers voxels points close to a centerline along neurites or axons. You should choose a `--mean-shift` which reflects the anisotropic factor of your image, for example, if your image has a voxel size with a z-dimension 5 times larger than x and y, the suggested mean-shift is 5.
 
+![mean-shift](/images/advantra-mean-shift.png)
+
 The second parameter controlling reconstruction is `--prune-radius`. The higher this number is the more coarse the final reconstructions are and the more sparse the sampling along neurites is. It should usually be set between 1 and 1.5. The prune radius relies on data that is natively isotropic or has been properly mean shifted to a centerline with the appopriate factor. Together, mean shifting and pruning produce more fine grained branch reconstructions with less spurious short branches.
+
+![prune](/images/advantra-prune.png)
 
 ## Conversions
 Convert the folder `ch0` into a VDB point grid:
