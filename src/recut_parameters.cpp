@@ -207,6 +207,10 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         ++i;
       } else if (strcmp(argv[i], "--save-vdbs") == 0) {
         args.save_vdbs = true;
+      } else if (strcmp(argv[i], "--seed-intersection") == 0) {
+        args.seed_intersection = true;
+      } else if (strcmp(argv[i], "--ignore-multifurcations") == 0) {
+        args.ignore_multifurcations = true;
       } else if (strcmp(argv[i], "--channel") == 0 ||
                  strcmp(argv[i], "-c") == 0) {
         args.channel = atoi(argv[i + 1]);

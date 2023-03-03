@@ -19,6 +19,7 @@
 #include <map>
 #include <openvdb/tools/Composite.h>
 #include <openvdb/tools/FastSweeping.h>
+#include <openvdb/tools/Mask.h> // interiorMask()
 #include <openvdb/tools/TopologyToLevelSet.h>
 #include <set>
 #include <sstream>
@@ -2785,29 +2786,33 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     if (!is_cluster_self_contained(pruned_cluster))
       throw std::runtime_error("Pruned cluster not self contained");
 
-    auto fixed_cluster = fix_trifurcations(pruned_cluster);
-    { // check
-      auto trifurcations = tree_is_valid(fixed_cluster);
-      if (!trifurcations.empty()) {
-        auto soma = fixed_cluster[0];
-        std::cout << "Warning tree in component-" + std::to_string(index)
-                  << " with soma " << soma->x << ' ' << soma->y << ' '
-                  << soma->z << " has trifurcations listed below:\n";
-        rng::for_each(trifurcations, [](auto mismatch) {
-          std::cout << "    " << *mismatch << '\n';
-        });
-        // throw std::runtime_error("Tree has trifurcations" +
-        // std::to_string(index));
-      }
-      if (!is_cluster_self_contained(fixed_cluster)) {
-        std::cout << "Warning a tree in component-" + std::to_string(index)
-                  << " contains at least 1 node with an invalid parent\n";
-        // throw std::runtime_error("Trifurc cluster not self contained" +
-        // std::to_string(index));
-      }
-    }
+    //auto fixed_cluster = pruned_cluster;
+    //if (!args->ignore_multifurcations) {
+      //auto fixed_cluster = fix_trifurcations(pruned_cluster);
+      //{ // check
+        //auto trifurcations = tree_is_valid(fixed_cluster);
+        //if (!trifurcations.empty()) {
+          //auto soma = fixed_cluster[0];
+          //std::cout << "Warning tree in component-" + std::to_string(index)
+                    //<< " with soma " << soma->x << ' ' << soma->y << ' '
+                    //<< soma->z << " has trifurcations listed below:\n";
+          //rng::for_each(trifurcations, [](auto mismatch) {
+            //std::cout << "    " << *mismatch << '\n';
+          //});
+          //// throw std::runtime_error("Tree has trifurcations" +
+          //// std::to_string(index));
+        //}
+        //if (!is_cluster_self_contained(fixed_cluster)) {
+          //std::cout << "Warning a tree in component-" + std::to_string(index)
+                    //<< " contains at least 1 node with an invalid parent\n";
+          //// throw std::runtime_error("Trifurc cluster not self contained" +
+          //// std::to_string(index));
+        //}
+      //}
+    //}
 
-    auto trees = partition_cluster(fixed_cluster);
+    //auto trees = partition_cluster(fixed_cluster);
+    auto trees = partition_cluster(pruned_cluster);
 
 #ifdef LOG
     component_log << "TP, " << timer.elapsed() << '\n';
@@ -2903,6 +2908,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
   tbb::task_arena arena(args->user_thread_count);
   arena.execute(
       [&] { tbb::parallel_for_each(enum_components, process_component); });
+  //rng::for_each(enum_components, process_component);
 
   if (output_topology)
     write_vdb_file({this->topology_grid}, "final-point-grid.vdb");
@@ -3087,17 +3093,6 @@ template <class image_t> void Recut<image_t>::operator()() {
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
 
-    // collects user passed seeds if any
-    auto known_seeds = process_marker_dir(args->seed_path, args->voxel_size);
-
-    if (known_seeds.size() && args->save_vdbs) {
-#ifdef LOG
-      std::cout << "\tClipping image by user passed seeds and +-max radius of each seed\n";
-#endif
-      auto mask_of_known_seeds = clip_by_seed(this->mask_grid, known_seeds);
-      write_vdb_file({mask_of_known_seeds}, this->run_dir / "mask-of-known_seeds.vdb");
-    }
-
     // mask grids are a fog volume of sparse active values in space
     // change the fog volume into an SDF by holding values on the border between
     // active an inactive voxels
@@ -3124,19 +3119,8 @@ template <class image_t> void Recut<image_t>::operator()() {
             << sdf_grid->activeVoxelCount() << '\n';
     run_log.flush();
 
-    // This is extremely slow don't use this
-    // it's much faster to find all possible seeds and filter them
-    // as is done in create_seed_pairs() anyway
-    //if (known_seeds.size() && args->output_type == "seeds") {
-//#ifdef LOG
-      //std::cout << "\tClipping SDF by user passed seeds and +-max radius "
-                   //"since output is seeds only\n";
-//#endif
-      //sdf_grid = clip_by_seed(sdf_grid, known_seeds);
-    //}
-
-    //if (args->save_vdbs)
-      //write_vdb_file({sdf_grid}, this->run_dir / "sdf.vdb");
+    // if (args->save_vdbs)
+    // write_vdb_file({sdf_grid}, this->run_dir / "sdf.vdb");
 
     // TODO find enclosed regions and log
 
@@ -3212,8 +3196,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     }
 
     auto closed_sdf = sdf_grid->deepCopy();
-    //if (args->save_vdbs)
-      //write_vdb_file({closed_sdf}, this->run_dir / "closed_sdf.vdb");
+    // if (args->save_vdbs)
+    // write_vdb_file({closed_sdf}, this->run_dir / "closed_sdf.vdb");
 
     // open again to filter axons and dendrites
     if (args->open_steps > 0) {
@@ -3232,8 +3216,42 @@ template <class image_t> void Recut<image_t>::operator()() {
             << sdf_grid->activeVoxelCount() << "\n";
     run_log.flush();
 
-    //if (args->save_vdbs)
-      //write_vdb_file({sdf_grid}, this->run_dir / "opened_sdf.vdb");
+    // if (args->save_vdbs)
+    // write_vdb_file({sdf_grid}, this->run_dir / "opened_sdf.vdb");
+
+    // collects user passed seeds if any
+    auto known_seeds = process_marker_dir(args->seed_path, args->voxel_size);
+    if (known_seeds.size()) {
+      // these strategies permanently modify the  mask_grid for both soma
+      // detection and neurite reconstruction, the image grid uint8 that is
+      // output in windows is unaffected however
+      auto mask_of_known_seeds = create_seed_sphere_grid(known_seeds);
+      timer.restart();
+      if (args->seed_intersection) {
+        // grids passed as args are unchanged, a new grid copy is created only
+        // where both the image mask and the seed mask are active
+        // this new grid is finally reassigned to the temporary
+        // starting_grid ptr for use only in soma detection but not
+        // in neurite reconstruction
+        vto::csgIntersection(*sdf_grid, *mask_of_known_seeds, true, true);
+#ifdef LOG
+        std::cout << "\tFinished csgIntersection in " << timer.elapsed()
+                  << '\n';
+#endif
+        if (args->save_vdbs) {
+          write_vdb_file({sdf_grid}, this->run_dir / "intersection.vdb");
+        }
+      } else {
+        // fills in spheres where the user passed seeds are
+        // known to be located
+        vto::csgUnion(*sdf_grid, *mask_of_known_seeds, true, true);
+        std::cout << "\tFinished csgUnion in " << timer.elapsed() << '\n';
+
+        if (args->save_vdbs) {
+          write_vdb_file({sdf_grid}, this->run_dir / "union.vdb");
+        }
+      }
+    }
 
 #ifdef LOG
     std::cout << "\tsegmentation step\n";
@@ -3259,8 +3277,8 @@ template <class image_t> void Recut<image_t>::operator()() {
             << masked_sdf->activeVoxelCount() << '\n';
     run_log.flush();
 
-    //if (args->save_vdbs)
-      //write_vdb_file({masked_sdf}, this->run_dir / "connected_sdf.vdb");
+    // if (args->save_vdbs)
+    // write_vdb_file({masked_sdf}, this->run_dir / "connected_sdf.vdb");
 
 #ifdef LOG
     std::cout << "\tSDF to point step\n";
@@ -3268,23 +3286,27 @@ template <class image_t> void Recut<image_t>::operator()() {
     this->topology_grid = convert_sdf_to_points(masked_sdf, this->image_lengths,
                                                 this->args->foreground_percent);
 
-    //if (args->save_vdbs)
-      //write_vdb_file({this->topology_grid}, this->run_dir / "point.vdb");
+    // if (args->save_vdbs)
+    // write_vdb_file({this->topology_grid}, this->run_dir / "point.vdb");
 
-      // adds all valid markers to roots vector
-      // filters by user input seeds if available
+    // adds all valid markers to roots vector
+    // filters by user input seeds if available
 #ifdef LOG
     std::cout << "\tcreate seed pairs step\n";
     std::cout << "\tmin allowed radius is " << args->min_radius_um << " µm\n";
     std::cout << "\tmax allowed radius is " << args->max_radius_um << " µm\n";
 #endif
     timer.restart();
-    seeds = create_seed_pairs(components, this->topology_grid,
-                              this->args->voxel_size, this->args->min_radius_um,
-                              this->args->max_radius_um,
-                              this->args->output_type, known_seeds);
+    // If you already filtered the grid with seed intersection there's no need
+    // to refilter by known seeds
+    seeds = create_seed_pairs(
+        components, this->topology_grid, this->args->voxel_size,
+        this->args->min_radius_um, this->args->max_radius_um,
+        this->args->output_type,
+        args->seed_intersection ? std::vector<Seed>{} : known_seeds);
 #ifdef LOG
-    std::cout << "\tsaving seed coordinates to file ...\n";
+    std::cout << "\tsaving " << seeds.size()
+              << " seed coordinates to file ...\n";
 #endif
     write_seeds(this->run_dir, seeds, this->args->voxel_size);
 

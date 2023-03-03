@@ -16,8 +16,9 @@
 #include <math.h>
 #include <openvdb/tools/Clip.h>
 #include <openvdb/tools/Composite.h>
-#include <openvdb/tools/Dense.h>           // copyToDense
-#include <openvdb/tools/LevelSetUtil.h>    // sdfSegment, sdfToFogVolume
+#include <openvdb/tools/Dense.h>          // copyToDense
+#include <openvdb/tools/LevelSetSphere.h> // createLevelSetSphere
+#include <openvdb/tools/LevelSetUtil.h> // sdfSegment, sdfToFogVolume, extractEnclosedRegion
 #include <openvdb/tools/VolumeToSpheres.h> // fillWithSpheres
 #include <queue>
 #include <ranges>
@@ -3239,16 +3240,19 @@ GridTypePtr merge_grids(std::vector<GridTypePtr> grids) {
   return final_grid;
 }
 
-// Warning this can not clip mask.vdb files
+// This is extremely slow don't use this
+// it's much faster to find all possible seeds and filter them
+// as is done in create_seed_pairs() anyway
+// Warning this can not clip mask.vdb files due to bug in openvdb::tools::clip
 // which is why SDFs are used
+// when attempting to parallelized this implementation had seg fault for unknown
+// reason
 template <typename GridTypePtr>
 GridTypePtr clip_by_seed(GridTypePtr grid, std::vector<Seed> seeds) {
-  // parallelized implementation had seg fault for unknown reason
-  // std::vector<openvdb::FloatGrid::Ptr> component_grids;
-  // auto enum_components = seeds | rv::enumerate | rng::to_vector;
-  // tbb::task_arena arena(args->user_thread_count);
-  // arena.execute(
-  //[&] { tbb::parallel_for_each(enum_components, process_component); });
+#ifdef LOG
+  std::cout << "\tClipping image by user passed seeds and +-max radius of "
+               "each seed\n";
+#endif
   auto timer = high_resolution_timer();
 
   auto component_grids = seeds | rv::transform([grid](const Seed &seed) {
@@ -3256,8 +3260,7 @@ GridTypePtr clip_by_seed(GridTypePtr grid, std::vector<Seed> seeds) {
                                GridCoord(seed.radius, seed.radius, seed.radius);
                            vb::BBoxd clipBox((seed.coord - offset).asVec3d(),
                                              (seed.coord + offset).asVec3d());
-                           return grid;
-                           //return vto::clip(*grid, clipBox);
+                           return vto::clip(*grid, clipBox);
                          }) |
                          rng::to_vector;
 #ifdef LOG
@@ -3268,6 +3271,28 @@ GridTypePtr clip_by_seed(GridTypePtr grid, std::vector<Seed> seeds) {
   auto merged = merge_grids(component_grids);
 #ifdef LOG
   std::cout << "\tFinished seed merge in " << timer.elapsed() << '\n';
+#endif
+  return merged;
+}
+
+openvdb::FloatGrid::Ptr create_seed_sphere_grid(std::vector<Seed> seeds) {
+  auto timer = high_resolution_timer();
+
+  auto component_grids = seeds | rv::transform([](const Seed &seed) {
+                           int voxel_size = 1;
+                           return vto::createLevelSetSphere<openvdb::FloatGrid>(
+                               seed.radius, seed.coord.asVec3s(), voxel_size);
+                         }) |
+                         rng::to_vector;
+#ifdef LOG
+  std::cout << "\tFinished create seed spheres in " << timer.elapsed() << '\n';
+#endif
+  timer.restart();
+
+  // TODO replace with sumMergeOp which is parallel and more efficient
+  auto merged = merge_grids(component_grids);
+#ifdef LOG
+  std::cout << "\tFinished sphere merge in " << timer.elapsed() << '\n';
 #endif
   return merged;
 }
@@ -3396,7 +3421,8 @@ auto load_imaris_tile = [](std::string file_name, const CoordBBox &bbox,
   // check inputs
   auto imaris_bbox = imaris_image_bbox(file_name, resolution, channel);
   // FIXME get voxel type
-  // auto dense = std::make_unique<vto::Dense<uint16_t, vto::LayoutXYZ>>(bbox);
+  // auto dense = std::make_unique<vto::Dense<uint16_t,
+  // vto::LayoutXYZ>>(bbox);
   auto dense = std::make_unique<vto::Dense<uint8_t, vto::LayoutXYZ>>(bbox);
 
   if (!imaris_bbox.isInside(bbox)) {
@@ -3620,10 +3646,6 @@ auto write_seeds = [](fs::path run_dir, std::vector<Seed> seeds,
   fs::path seed_dir = run_dir / "seeds";
   fs::create_directories(seed_dir);
 
-#ifdef LOG
-  std::cout << "Writing " << seeds.size() << " seeds\n";
-#endif
-
   rng::for_each(seeds, [&](const auto &seed) {
     std::ofstream seed_file;
     seed_file.open(
@@ -3726,6 +3748,8 @@ filter_seeds_by_points(EnlargedPointDataGrid::Ptr topology_grid,
 // active voxel in the point topology and estimate the radius given the
 // bbox of the component. If passing known seeds, then filter all
 // components to only those components which contain the passed seed
+// If you already filtered the grid with seed intersection there's no need
+// to refilter by known seeds
 auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
                             EnlargedPointDataGrid::Ptr topology_grid,
                             std::array<float, 3> voxel_size,
@@ -3820,9 +3844,9 @@ auto binarize_uint8_grid = [](auto image_grid) {
 
 // adds all markers to seeds
 // recut operates in voxel units (image space) therefore whenever marker/node
-// information is input into recut it converts it from um units into voxel units
-// marker_base: some programs like APP2 consider input markers should be offset
-// by 1 recut operates with 0 offset of input markers and SWC nodes
+// information is input into recut it converts it from um units into voxel
+// units marker_base: some programs like APP2 consider input markers should be
+// offset by 1 recut operates with 0 offset of input markers and SWC nodes
 std::vector<Seed> process_marker_dir(
     std::string seed_path,
     std::array<float, 3> voxel_size = std::array<float, 3>{1, 1, 1},
