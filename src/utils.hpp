@@ -3241,8 +3241,8 @@ GridTypePtr merge_grids(std::vector<GridTypePtr> grids) {
 
 // Warning this can not clip mask.vdb files
 // which is why SDFs are used
-openvdb::FloatGrid::Ptr clip_by_seed(openvdb::FloatGrid::Ptr grid,
-                                     std::vector<Seed> seeds) {
+template <typename GridTypePtr>
+GridTypePtr clip_by_seed(GridTypePtr grid, std::vector<Seed> seeds) {
   // parallelized implementation had seg fault for unknown reason
   // std::vector<openvdb::FloatGrid::Ptr> component_grids;
   // auto enum_components = seeds | rv::enumerate | rng::to_vector;
@@ -3251,14 +3251,15 @@ openvdb::FloatGrid::Ptr clip_by_seed(openvdb::FloatGrid::Ptr grid,
   //[&] { tbb::parallel_for_each(enum_components, process_component); });
   auto timer = high_resolution_timer();
 
-  auto component_grids =
-      seeds | rv::transform([grid](const Seed &seed) {
-        auto offset = GridCoord(seed.radius, seed.radius, seed.radius);
-        vb::BBoxd clipBox((seed.coord - offset).asVec3d(),
-                          (seed.coord + offset).asVec3d());
-        return vto::clip(*grid, clipBox);
-      }) |
-      rng::to_vector;
+  auto component_grids = seeds | rv::transform([grid](const Seed &seed) {
+                           auto offset =
+                               GridCoord(seed.radius, seed.radius, seed.radius);
+                           vb::BBoxd clipBox((seed.coord - offset).asVec3d(),
+                                             (seed.coord + offset).asVec3d());
+                           return grid;
+                           //return vto::clip(*grid, clipBox);
+                         }) |
+                         rng::to_vector;
 #ifdef LOG
   std::cout << "\tFinished seed clip in " << timer.elapsed() << '\n';
 #endif
@@ -3592,7 +3593,6 @@ auto get_output_name = [](RecutCommandLineArgs *args) -> std::string {
 
 auto convert_sdf_to_points = [](auto sdf, auto image_lengths,
                                 auto foreground_percent) {
-  // openvdb::v9_1::tools::sdfToFogVolume(*sdf);
   // write_vdb_file({sdf}, "fog.vdb");
   std::vector<PositionT> positions;
   for (auto iter = sdf->cbeginValueOn(); iter.test(); ++iter) {
@@ -3760,7 +3760,7 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
       if ((output_type != "seeds") && !known_seeds.empty()) {
         // convert to fog so that isValueOn returns whether it is
         // within the
-        openvdb::v9_1::tools::sdfToFogVolume(*component);
+        vto::sdfToFogVolume(*component);
         // component if no known seed is an active voxel in this
         // component then remove this component
         if (rng::none_of(known_seeds, [&component](const auto &known_seed) {

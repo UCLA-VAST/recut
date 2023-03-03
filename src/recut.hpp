@@ -3084,9 +3084,19 @@ template <class image_t> void Recut<image_t>::operator()() {
     if (args->save_vdbs && args->input_type != "mask")
       write_vdb_file({this->mask_grid}, this->run_dir / "mask.vdb");
 
-    auto timer = high_resolution_timer();
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
+
+    // collects user passed seeds if any
+    auto known_seeds = process_marker_dir(args->seed_path, args->voxel_size);
+
+    if (known_seeds.size() && args->save_vdbs) {
+#ifdef LOG
+      std::cout << "\tClipping image by user passed seeds and +-max radius of each seed\n";
+#endif
+      auto mask_of_known_seeds = clip_by_seed(this->mask_grid, known_seeds);
+      write_vdb_file({mask_of_known_seeds}, this->run_dir / "mask-of-known_seeds.vdb");
+    }
 
     // mask grids are a fog volume of sparse active values in space
     // change the fog volume into an SDF by holding values on the border between
@@ -3102,7 +3112,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 #endif
     // resulting SDF is slightly modified by a closing op of 1 step which has a
     // very minimal effect this API does not allow 0 closing
-    timer.restart();
+    auto timer = high_resolution_timer();
     // if there is no pre-opening step (open_denoise) then do closing at the
     // time of conversion to sdf for performance gain
     auto sdf_grid = vto::topologyToLevelSet(
@@ -3114,19 +3124,19 @@ template <class image_t> void Recut<image_t>::operator()() {
             << sdf_grid->activeVoxelCount() << '\n';
     run_log.flush();
 
-    // collects user passed seeds if any
-    auto known_seeds = process_marker_dir(args->seed_path, args->voxel_size);
+    // This is extremely slow don't use this
+    // it's much faster to find all possible seeds and filter them
+    // as is done in create_seed_pairs() anyway
+    //if (known_seeds.size() && args->output_type == "seeds") {
+//#ifdef LOG
+      //std::cout << "\tClipping SDF by user passed seeds and +-max radius "
+                   //"since output is seeds only\n";
+//#endif
+      //sdf_grid = clip_by_seed(sdf_grid, known_seeds);
+    //}
 
-    if (known_seeds.size() && args->output_type == "seeds") {
-#ifdef LOG
-      std::cout << "\tClipping image by user passed seeds and +-max radius "
-                   "since output is seeds only\n";
-#endif
-      sdf_grid = clip_by_seed(sdf_grid, known_seeds);
-    }
-
-    if (args->save_vdbs)
-      write_vdb_file({sdf_grid}, this->run_dir / "sdf.vdb");
+    //if (args->save_vdbs)
+      //write_vdb_file({sdf_grid}, this->run_dir / "sdf.vdb");
 
     // TODO find enclosed regions and log
 
@@ -3202,8 +3212,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     }
 
     auto closed_sdf = sdf_grid->deepCopy();
-    if (args->save_vdbs)
-      write_vdb_file({closed_sdf}, this->run_dir / "closed_sdf.vdb");
+    //if (args->save_vdbs)
+      //write_vdb_file({closed_sdf}, this->run_dir / "closed_sdf.vdb");
 
     // open again to filter axons and dendrites
     if (args->open_steps > 0) {
@@ -3222,15 +3232,15 @@ template <class image_t> void Recut<image_t>::operator()() {
             << sdf_grid->activeVoxelCount() << "\n";
     run_log.flush();
 
-    if (args->save_vdbs)
-      write_vdb_file({sdf_grid}, this->run_dir / "opened_sdf.vdb");
+    //if (args->save_vdbs)
+      //write_vdb_file({sdf_grid}, this->run_dir / "opened_sdf.vdb");
 
 #ifdef LOG
     std::cout << "\tsegmentation step\n";
 #endif
     std::vector<openvdb::FloatGrid::Ptr> components;
     timer.restart();
-    openvdb::v9_1::tools::segmentSDF(*sdf_grid, components);
+    vto::segmentSDF(*sdf_grid, components);
     run_log << "Seed detection: segmentation time, "
             << timer.elapsed_formatted() << '\n'
             << "Seed detection: initial seed count, " << components.size()
@@ -3249,8 +3259,8 @@ template <class image_t> void Recut<image_t>::operator()() {
             << masked_sdf->activeVoxelCount() << '\n';
     run_log.flush();
 
-    if (args->save_vdbs)
-      write_vdb_file({masked_sdf}, this->run_dir / "connected_sdf.vdb");
+    //if (args->save_vdbs)
+      //write_vdb_file({masked_sdf}, this->run_dir / "connected_sdf.vdb");
 
 #ifdef LOG
     std::cout << "\tSDF to point step\n";
@@ -3258,8 +3268,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     this->topology_grid = convert_sdf_to_points(masked_sdf, this->image_lengths,
                                                 this->args->foreground_percent);
 
-    if (args->save_vdbs)
-      write_vdb_file({this->topology_grid}, this->run_dir / "point.vdb");
+    //if (args->save_vdbs)
+      //write_vdb_file({this->topology_grid}, this->run_dir / "point.vdb");
 
       // adds all valid markers to roots vector
       // filters by user input seeds if available
