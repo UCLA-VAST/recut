@@ -2,22 +2,30 @@
 """
 
 @author: yanyanming77
-Last update: 02-01-2023
+Last update: 03-03-2023
 
 To perform SWC filtering of junks/true neurons using pre-defined conditions and pre-trained random forest classifier
 
-input arguments: 
-    --model/-m: the pre-trained model to use, default most up-to-date model is model_base_rf_14_10_17.sav
-    --filter/-f: the directory to be filtered 
-    --delete/-d: whether to delete the original recut output to save space
-                do not specify if don't want to delete
-    --bbox_threshold/-bb_thresh: integer, an extra filtering based on the bounding box volume, default 30%
-                if specified, SWCs that have bounding box sizes below the percentage of this value will be defined as junk
+<03-03-2023: updated, only filter non-multi-components, as reconstructions are based on proofread somas>
+
+
+input arguments:
+    --filter/-f: (required) the directory to be filtered    
+    --model/-m: (optional) the pre-trained model to use, default 'msn', to use clf_msn.sav, which was trained on true/junk based on MSNs (scale is in um)
+                if specified 'all', then will use clf_all.sav, which was trained on true/junk based on all cell types
+    --delete/-d: (optional) whether to delete the original recut output to save space
+                do not =specify if don't want to delete
+    --scale/-s: (optional) a list of scaling factor from voxel to um, for x y z and radii, deafult is 0.4,0.4,0.4,1
+    
+    
+    ((deprecated) --bbox_threshold/-bb_thresh: (optional) integer, an extra filtering based on the bounding box volume, default not applying this function
+                if specified, SWCs that have bounding box sizes below the percentage of this value will be defined as junk)
 
 """
 
   
 import numpy as np
+import pandas as pd
 import tmd
 import pickle
 import os
@@ -38,12 +46,14 @@ from tqdm import tqdm
 warnings.filterwarnings("ignore")
 
 def assign_number_to_folder(path_to_rename: Path):
-    total_num = len(os.listdir(path_to_rename))
+    
+    components_list = [file for file in os.listdir(path_to_rename) if file not in ['seeds', 'log.csv']]
+    total_num = len(components_list)
     num_range = [str(i) for i in range(1,total_num + 1)]
-    for folder, num in zip(os.listdir(path_to_rename), num_range):
+    for folder, num in zip(components_list, num_range):
         new_name = num + '_' + folder
         os.rename(path_to_rename/folder, path_to_rename/new_name)
-        
+
 def delete_original_outputs(path_to_delete: Path):
     shutil.rmtree(path_to_delete)
 
@@ -52,31 +62,41 @@ def copy_file(file, destination):
     """
     Copy files to their corresponding folder based on the filtering result
     """
-    
-    if "multi-component" in file.parent.name:
-        multi_component_dest_dir = destination / file.parent.name
-        multi_component_dest_dir.mkdir(exist_ok=True)
-        
-        for n_file in file.parent.glob(f"{file.name[:-len(file.suffix)]}.*"):
-            shutil.copy(n_file, multi_component_dest_dir)
-        # save one copy of <seeds>, <log.csv>, <tif>  in each multi-component folder
-        if not os.path.exists(multi_component_dest_dir/'seeds'):
-            shutil.copytree(file.parent/'seeds', multi_component_dest_dir/'seeds')
-        if not os.path.exists(multi_component_dest_dir/'*.csv'):
-            for csv_file in file.parent.rglob(r'*.csv'):
-                shutil.copy(file.parent/csv_file.name, multi_component_dest_dir/csv_file.name)
-        if len(list(file.parent.rglob(r'*.tif'))) > 0:
-            for tif_file in file.parent.rglob(r'*.tif'):
-                shutil.copy(file.parent/tif_file.name, multi_component_dest_dir/tif_file.name)
-                
+    if file.is_file():
+        shutil.copy(file, destination)
     else:
-        shutil.copytree(file.parent, dst=destination / file.parent.name)
-
-    # save one copy of overall <seeds> folder and <log.csv> in the result folder
-    if not os.path.exists(destination.parent/'seeds'):
-        shutil.copytree(input_path/'seeds', destination.parent/'seeds')
-    if not os.path.exists(destination.parent/'log.csv'):
-        shutil.copy(input_path/'log.csv', destination.parent/'log.csv')
+        shutil.copytree(file, dst = destination)
+    
+def scale_swc_files(root_dir, scale_x, scale_y, scale_z, scale_radii, scale_which):
+    
+    if scale_which == 'original_recut_swc':
+        description = 'Scaling recut swc from voxel to um in input path: '
+    elif scale_which == 'scaled_recut_swc_input':
+        description = 'Scaling recut swc back to voxel in input path: '
+    elif scale_which == 'scaled_recut_swc_result':
+        description = 'Scaling recut swc back to voxel in result path: '
+    
+    for file in tqdm(list(root_dir.rglob('*.swc')), desc = description):
+        comment_lines = [l for l in open(file,'r').readlines() if '#' in l]
+        num_comment_lines = len(comment_lines)
+        # read data
+        df = pd.read_csv(file, delimiter=' ', skiprows=num_comment_lines, names = ['node_num1', 'type', 'x', 'y', 'z', 'radii', 'node_num2'])
+        # scaling
+        df['x'] = df['x'] * scale_x
+        df['x'] = df['x'].round(decimals=3)
+        df['y'] = df['y'] * scale_y
+        df['y'] = df['y'].round(decimals=3)
+        df['z'] = df['z'] * scale_z
+        df['z'] = df['z'].round(decimals=3)
+        df['radii'] = df['radii'] * scale_radii
+        df['radii'] = df['radii'].round(decimals=5)
+        
+        with open(file,'w') as scaled_file:
+            for cmt_line in comment_lines:
+                scaled_file.write(cmt_line)
+            for row in df.itertuples():
+                scaled_file.write(f"{row.node_num1} {row.type} {row.x} {row.y} {row.z} {row.radii} {row.node_num2}\n")
+        scaled_file.close()
 
 
 def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, current_time: str,
@@ -111,48 +131,41 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
     ### validate xy limits
     print(f"Current x limits: {xlims}, Current y limits: {ylims}")
     
+    scale_swc_files(input_path, scale_x, scale_y, scale_z, scale_radii, 'original_recut_swc')
     
-    bbox_volume = []
-    ### find the mean of the volume of each bounding box (if not soma only)
-    for file in tqdm(list(input_path.rglob("*.swc")), desc = "Calculating bounding boxes: "):
+
+    # create a list of .swcs that only belong to non-multi-components and not the discard- component
+    non_multi_list = [file for file in list(input_path.rglob("*.swc")) if 'multi-' not in file.parent.name and 'discard-' not in file.parent.name] 
+    # create a list of folders/file in the filtering path that are single components/seeds/log.csv
+    multi_and_other_list = [file for file in os.listdir(input_path) if 'multi-' in file or file in ['seeds','log.csv']]
+    
+    # copy multi-components, seeds folder and log.csv to the -for-proofread folder
+    for file in tqdm(multi_and_other_list, desc = 'Copying multi-components: '):
+        copy_file(input_path/file, path_true/file)
+
+    # copy discard-component directly to the discarded folder
+    discard_list = [file for file in list(os.listdir(input_path)) if 'discard-' in file]  
+    for file in discard_list:
+        shutil.copytree(input_path/file, path_junk/file)
+    
+    # TMD filtering on non-multi-components        
+    for file in tqdm(non_multi_list, desc = "TMD filtering on non-multi-components: "):
         try:
             n = tmd.io.load_neuron(file.__str__())
-            bbox_n = n.get_bounding_box()
-            bbox_length = abs(np.subtract(bbox_n[0], bbox_n[1]))
-            bbox_volume.append(bbox_length[0] * bbox_length[1] * bbox_length[2])
-        except:
-            pass
-        
-    bbox_thresh_volume = np.percentile(np.array(bbox_volume), bbox_threshold)
-    
-    for file in tqdm(list(input_path.rglob("*.swc")), desc="classification: "):
-        try:
-            ### try morphio as well
-            n = tmd.io.load_neuron(file.__str__())
-            
-            try:
-                bbox_n = n.get_bounding_box()
-                bbox_length = abs(np.subtract(bbox_n[0], bbox_n[1]))
-                bbox_volume = bbox_length[0] * bbox_length[1] * bbox_length[2]
-            except:
-                bbox_volume = 0
-                
-            # n = tmd.io.load_neuron_from_morphio(file.__str__())
+  
         except Exception as e:
             log.error(f"tmd.io.load_neuron failed to load {file}: {e}")
             failed_neuron_count += 1
-            copy_file(file, path_failed)
+            copy_file(file.parent, path_failed/file.parent.name)
             continue
         try:
             pers2test = tmd.methods.get_ph_neuron(n, neurite_type=neurite_type)
-            # Check for junk definition1: length of P-diagram is 0,1,2
-            # Add another condition to filter junks:
-            # the ratio of len(persistence_diagrams)/number of dendrites, if out of the bound of 1~17.5, then assign junk
-            # if len(pers2test) in (0, 1, 2) or len(pers2test)/len(n.dendrites) > 17.5 or len(n.dendrites) < 2 or n.get_bounding_box() < bbox_mean:
-            if len(pers2test) in (0, 1, 2) or len(pers2test)/len(n.dendrites) > 17.5 or bbox_volume < bbox_thresh_volume:
+            # Check for junk definition1: length of P-diagram is 0,1,2, ratio of pers_diagrams and num_of_dendrites > 30
+            if len(pers2test) in (0, 1, 2) or len(pers2test)/len(n.dendrites) > 30: 
+                # or bbox_volume < bbox_thresh_volume_low or bbox_volume > bbox_thresh_volume_high:
                 junk_neuron_count += 1
                 junk_neuron_short_length_count += 1 # short p_diagrams, too few dendrites, giant component, small bounding box
-                copy_file(file, path_junk)
+                copy_file(file.parent, path_junk/file.parent.name)
  
             elif len(pers2test) > 1:
                 pers_image2test = np.empty(1, dtype='float64')  # initialize
@@ -162,11 +175,11 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
                 except np.linalg.LinAlgError:
                     junk_neuron_count += 1
                     junk_neuron_singular_matrix_count += 1
-                    copy_file(file, path_junk)
+                    copy_file(file.parent, path_junk/file.parent.name)
                 except Exception as e:
                     log.info(f"other error when extracting pvecs for {file}: {e}")
                     failed_neuron_count += 1
-                    copy_file(file, path_failed)
+                    copy_file(file.parent, path_failed/file.parent.name)
                 
                 if len(pers_image2test) > 1:
 
@@ -179,29 +192,29 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
 
                     predict_cnt = dict(collections.Counter(predict_labels))
                     predict_cnt_max = max(predict_cnt, key=lambda x: predict_cnt[x])
-                    # print("pvecs: ", test_dataset)
-                    # print(f'predict_result of {file.name}', predict_cnt)
-                    # print(f"x limit: {xlims}, y limit: {ylims}, niter: {num_iter}")
 
                     if predict_cnt_max == 1:
                         junk_neuron_count += 1
                         junk_neuron_classified_count += 1
-                        copy_file(file, path_junk)
+                        copy_file(file.parent, path_junk/file.parent.name)
                     elif predict_cnt_max == 2:
                         true_neuron_count += 1
-                        copy_file(file, path_true)
+                        copy_file(file.parent, path_true/file.parent.name)
                     else:
                         log.info(f"unexpected class {predict_cnt_max} for {file}")
                         failed_neuron_count += 1
-                        copy_file(file, path_failed)
+                        copy_file(file.parent, path_failed/file.parent.name)
 
         except Exception as e:
             log.error(f"failure in classification for {file}: {e}")
             failed_neuron_count += 1
-            copy_file(file, path_failed)
+            copy_file(file.parent, path_failed/file.parent.name)
     
     # assign number to components in the proofread folder, for the convenience of distributing data for proofreading
     assign_number_to_folder(path_true)
+    
+    scale_swc_files(input_path, 1/scale_x, 1/scale_y, 1/scale_z, 1/scale_radii, 'scaled_recut_swc_input')
+    scale_swc_files(path_result, 1/scale_x, 1/scale_y, 1/scale_z, 1/scale_radii, 'scaled_recut_swc_result')
 
     print("Summary of Classification:\n"
           f"\t{junk_neuron_count} \t # junk neurons\n"
@@ -224,7 +237,8 @@ def make_prediction(input_path: Path, clf, clf_name: str, result_path: Path, cur
         summary_file.write(f"{failed_neuron_count} SWC failed, refer to the log file (prediction.log)\n")
         summary_file.write(f"{true_neuron_count / (true_neuron_count + failed_neuron_count + junk_neuron_count) * 100:.2f}%\t yield\n\n")
         summary_file.write(f"x limit: {xlims}, y limit: {ylims}\n")
-        summary_file.write(f"Bounding box filtering threshold: {bbox_threshold}%")
+        summary_file.write(f"The model used: {model_name}")
+        # summary_file.write(f"Bounding box filtering threshold: {bbox_threshold_low}%\nBounding box size at {bbox_threshold_low}%th percentle: {bbox_thresh_volume_low} and Bounding box size at {bbox_threshold_high}%th percentle: {bbox_thresh_volume_high} ")
     summary_file.close()
 
     return true_neuron_count, junk_neuron_count
@@ -234,18 +248,19 @@ if __name__ == '__main__':
     current_time = datetime.now().strftime("%H_%M_%S")
     
     parser = ArgumentParser(description="TMD filtering")
-    parser.add_argument("--model", "-m", type=str, required=False, help="model")
+    parser.add_argument("--model", "-m", type=str, required=False, default='msn', help="Whether to use the model trained on pure MSNs (msn) or all cell types (all)")
     parser.add_argument("--filter", "-f", type=str, required=True, help="SWCs to be filtered")
     parser.add_argument("--delete", "-d", action = 'store_true', help="Whether to delete the original recut output")
-    parser.add_argument("--bbox_threshold", "-bb_thresh", type=int, required=False, help="Percentile of bounding box below which to be treated as junk")
+    parser.add_argument("--scale", '-s', required=False, default=[0.4,0.4,0.4,1], \
+                        nargs=4, metavar=('scale_x','scale_y','scale_z','scale_radii'), type=float, help="scaling factor to convert to um unit, input in the order of x, y, z, radii")
     
     args = parser.parse_args()
     
-    # if the default model: model_base_rf_17_55_57.sav
-    if not args.model:
-        the_model = Path(__file__).absolute().parent/'model_base_rf_14_10_17.sav'
-    elif args.model:
-        the_model = args.model
+    # if the default model: model_base_rf_15_26_00.sav
+    if args.model == 'msn':
+        the_model = Path(__file__).absolute().parent/'clf_msn.sav'
+    elif args.model == 'all':
+        the_model = Path(__file__).absolute().parent/'clf_all.sav'
     
     pickle_data = []
     with open(the_model, 'rb') as fr:
@@ -265,12 +280,10 @@ if __name__ == '__main__':
     
     input_path = Path(args.filter)
     result_path = input_path.parent
-
-    if not args.bbox_threshold:
-        bbox_threshold = 30
-    elif args.bbox_threshold:
-        bbox_threshold = args.bbox_threshold
-    print(f"Threshold of bounding box: {bbox_threshold}% percentile of the bounding box sizes")
+    
+    # scaling factor
+    scale_x, scale_y, scale_z, scale_radii = args.scale[0], args.scale[1], args.scale[2], args.scale[3]
+    print(f"scaling factor to convert to um: x: {scale_x}, y: {scale_y}, z: {scale_z}, radii: {scale_radii}")
 
     make_prediction(input_path, model, model_name, result_path, current_time, xlims, ylims)
 
