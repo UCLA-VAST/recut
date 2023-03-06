@@ -3758,6 +3758,8 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
                             std::vector<Seed> known_seeds = {}) {
   std::vector<Seed> seeds;
   auto removed_by_inactivity = 0;
+  auto removed_by_known_seeds = 0;
+  auto removed_by_incorrect_sphere = 0;
   auto removed_by_radii = 0;
   auto max_voxel_size = min_max(voxel_size).second;
   for (auto component : components) {
@@ -3769,19 +3771,14 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
                          /*min, max total count of spheres allowed*/ {1, 1},
                          /*overlapping*/ false);
     if (spheres.size() != 1) {
-      ++removed_by_inactivity;
+      ++removed_by_incorrect_sphere;
       continue;
     }
     auto sphere = spheres[0];
     auto coord_center = GridCoord(sphere[0], sphere[1], sphere[2]);
 
     if (is_coordinate_active(topology_grid, coord_center)) {
-      // if this run is only for seed generation and the user also passed in
-      // known seeds then the topology was already clipped around --seeds
-      // therefore allow any components that were found within the clipped
-      // region regardless of whether you can find a corresponding --seeds in
-      // them
-      if ((output_type != "seeds") && !known_seeds.empty()) {
+      if (!known_seeds.empty()) {
         // convert to fog so that isValueOn returns whether it is
         // within the
         vto::sdfToFogVolume(*component);
@@ -3790,7 +3787,7 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
         if (rng::none_of(known_seeds, [&component](const auto &known_seed) {
               return component->tree().isValueOn(known_seed.coord);
             })) {
-          ++removed_by_inactivity;
+          ++removed_by_known_seeds;
           continue;
         }
       }
@@ -3827,6 +3824,12 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
   if (removed_by_inactivity)
     std::cerr << "\tWarning: seeds removed by inactivity "
               << removed_by_inactivity << '\n';
+  if (removed_by_known_seeds)
+    std::cerr << "\tWarning: seeds removed by known seeds "
+              << removed_by_known_seeds << '\n';
+  if (removed_by_incorrect_sphere)
+    std::cerr << "\tWarning: seeds removed by incorrect sphere "
+              << removed_by_incorrect_sphere << '\n';
 #endif
   return seeds;
 };
