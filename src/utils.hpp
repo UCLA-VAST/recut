@@ -3783,7 +3783,7 @@ sdf_to_seed(const openvdb::FloatGrid::Ptr sdf_component) {
 
   // saves the grid before erasure in current_sdf
   while (next_sdf->activeVoxelCount()) {
-    std::cout << "voxel count " << next_sdf->activeVoxelCount() << '\n';
+    //std::cout << "voxel count " << next_sdf->activeVoxelCount() << '\n';
     // since we know next_sdf still hasn't been completely erased
     // by opening yet, we should preserve a copy of it in case
     // its about to be erased
@@ -3797,10 +3797,11 @@ sdf_to_seed(const openvdb::FloatGrid::Ptr sdf_component) {
     // plausible and has to be unnecessarily discarded for lack
     // of a better method
     // note that vto::fillWithSpheres also can have a similar problem
-    filter->offset(1);
+    filter->offset(.5);
   }
 
   assertm(current_sdf->activeVoxelCount(), "current_sdf must have at least 1 active voxel");
+  std::cout << "Final voxel count " << current_sdf->activeVoxelCount() << '\n';
   // current_sdf is now approximately a tiny spherical level set which
   // approximates the center of mass of the component morphologically
 
@@ -3811,18 +3812,15 @@ sdf_to_seed(const openvdb::FloatGrid::Ptr sdf_component) {
   float val;
   for (auto voxelIter = current_sdf->cbeginValueOn(); voxelIter; ++voxelIter) {
     auto coord = voxelIter.getCoord();
-    std::cout << coord << '\n';
+    //std::cout << coord << '\n';
     // auto val = sdf_component->getValue(voxelIter.getCoord());
     auto leaf = sdf_component->tree().probeLeaf(coord);
     // try {
     if (leaf) {
       val = leaf->getValue(coord);
        //std::cout << ' ' << " val " << val << '\n';
-      if (val < min_location.first)
+      if (val < min_location.first) 
         min_location = std::make_pair(val, coord);
-      //} catch (...) {
-      // continue;
-      //}
     }
   }
 
@@ -3831,6 +3829,7 @@ sdf_to_seed(const openvdb::FloatGrid::Ptr sdf_component) {
   // (a subset) of sdf_component
   if (min_location.first == std::numeric_limits<float>::max()) {
     //throw std::runtime_error("sdf_to_seed() found no valid location");
+    std::cout << "  discarded\n";
     return {};
   }
 
