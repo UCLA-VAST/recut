@@ -17,6 +17,7 @@
 #include <openvdb/tools/Clip.h>
 #include <openvdb/tools/Composite.h>
 #include <openvdb/tools/Dense.h>          // copyToDense
+#include <openvdb/tools/LevelSetFilter.h> // LevelSetFilter
 #include <openvdb/tools/LevelSetSphere.h> // createLevelSetSphere
 #include <openvdb/tools/LevelSetUtil.h> // sdfSegment, sdfToFogVolume, extractEnclosedRegion
 #include <openvdb/tools/VolumeToSpheres.h> // fillWithSpheres
@@ -3744,6 +3745,98 @@ filter_seeds_by_points(EnlargedPointDataGrid::Ptr topology_grid,
   return filtered_seeds;
 }
 
+std::optional<std::pair<GridCoord, float>>
+sdf_to_seed(const openvdb::FloatGrid::Ptr sdf_component) {
+  // check input
+  assertm(sdf_component->getGridClass() == openvdb::GRID_LEVEL_SET,
+          "sdf_to_seed() only accepts grids of type level set");
+  assertm(sdf_component->activeVoxelCount(), "sdf_to_seed() can only accept components with at least 1 active voxel");
+
+  //for (auto voxelIter = sdf_component->cbeginValueOn(); voxelIter; ++voxelIter) {
+    //auto coord = voxelIter.getCoord();
+    //std::cout << coord << '\n';
+  //}
+  //std::cout << "finished printing sdf components\n";
+
+  auto volume_voxels = sdf_component->activeVoxelCount();
+  // estimate the radii from the volume of active voxels
+  float radius_voxels = std::cbrtf((volume_voxels * 3) / (4 * PI));
+  auto current_sdf = sdf_component->deepCopy();
+  auto next_sdf = sdf_component->deepCopy();
+
+  //for (auto voxelIter = current_sdf->cbeginValueOn(); voxelIter; ++voxelIter) {
+    //auto coord = voxelIter.getCoord();
+    //// auto val = sdf_component->getValue(voxelIter.getCoord());
+    //auto leaf = sdf_component->tree().probeLeaf(coord);
+    //// try {
+    //if (leaf) {
+      //auto val = leaf->getValue(coord);
+      //std::cout << coord << ' ' << " val " << val << '\n';
+    //}
+  //}
+
+  // establish the filter for opening
+  auto filter =
+      std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(*next_sdf);
+  filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
+  filter->setTemporalScheme(openvdb::math::TVD_RK1);
+
+  // saves the grid before erasure in current_sdf
+  while (next_sdf->activeVoxelCount()) {
+    std::cout << "voxel count " << next_sdf->activeVoxelCount() << '\n';
+    // since we know next_sdf still hasn't been completely erased
+    // by opening yet, we should preserve a copy of it in case
+    // its about to be erased
+    current_sdf = next_sdf->deepCopy();
+
+    // erode
+    // contracts next_sdf towards its center
+    // the smaller this number is the finer the estimate of the
+    // center however the final contraction point can be outside
+    // of the original component which is not biologically
+    // plausible and has to be unnecessarily discarded for lack
+    // of a better method
+    // note that vto::fillWithSpheres also can have a similar problem
+    filter->offset(1);
+  }
+
+  assertm(current_sdf->activeVoxelCount(), "current_sdf must have at least 1 active voxel");
+  // current_sdf is now approximately a tiny spherical level set which
+  // approximates the center of mass of the component morphologically
+
+  // Need to guarantee your on an active voxel
+  // Iterate through all the active voxels and choose the one with the maximum
+  // radius in the OG SDF
+  auto min_location = std::make_pair(std::numeric_limits<float>::max(), GridCoord{0,0,0});
+  float val;
+  for (auto voxelIter = current_sdf->cbeginValueOn(); voxelIter; ++voxelIter) {
+    auto coord = voxelIter.getCoord();
+    std::cout << coord << '\n';
+    // auto val = sdf_component->getValue(voxelIter.getCoord());
+    auto leaf = sdf_component->tree().probeLeaf(coord);
+    // try {
+    if (leaf) {
+      val = leaf->getValue(coord);
+       //std::cout << ' ' << " val " << val << '\n';
+      if (val < min_location.first)
+        min_location = std::make_pair(val, coord);
+      //} catch (...) {
+      // continue;
+      //}
+    }
+  }
+
+  // this should be impossible to trigger since current_sdf always
+  // has at least 1 voxel to iterate and current sdf should be a erosion
+  // (a subset) of sdf_component
+  if (min_location.first == std::numeric_limits<float>::max()) {
+    //throw std::runtime_error("sdf_to_seed() found no valid location");
+    return {};
+  }
+
+  return std::make_pair(min_location.second, radius_voxels);
+}
+
 // Of all connected components, keep those whose central coordinate is an
 // active voxel in the point topology and estimate the radius given the
 // bbox of the component. If passing known seeds, then filter all
@@ -3763,19 +3856,26 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
   auto removed_by_radii = 0;
   auto max_voxel_size = min_max(voxel_size).second;
   for (auto component : components) {
-    std::vector<openvdb::Vec4s> spheres;
-    // it's possible to force this function to return spheres with a
-    // certain range of radii, but we'd rather see what the raw radii
-    // it returns for now and let the min and max radii filter them
-    vto::fillWithSpheres(*component, spheres,
-                         /*min, max total count of spheres allowed*/ {1, 1},
-                         /*overlapping*/ false);
-    if (spheres.size() != 1) {
+    // std::vector<openvdb::Vec4s> spheres;
+    //// it's possible to force this function to return spheres with a
+    //// certain range of radii, but we'd rather see what the raw radii
+    //// it returns for now and let the min and max radii filter them
+    // vto::fillWithSpheres(*component, spheres,
+    //[>min, max total count of spheres allowed<] {1, 1},
+    //[>overlapping<] false);
+    // if (spheres.size() != 1) {
+    //++removed_by_incorrect_sphere;
+    // continue;
+    //}
+    // auto sphere = spheres[0];
+    // auto coord_center = GridCoord(sphere[0], sphere[1], sphere[2]);
+    auto seed = sdf_to_seed(component);
+    if (!seed) {
       ++removed_by_incorrect_sphere;
       continue;
     }
-    auto sphere = spheres[0];
-    auto coord_center = GridCoord(sphere[0], sphere[1], sphere[2]);
+    auto [coord_center, radius_voxels] = *seed;
+    //std::cout << "radius voxels " << radius_voxels << '\n';
 
     if (is_coordinate_active(topology_grid, coord_center)) {
       if (!known_seeds.empty()) {
@@ -3804,13 +3904,13 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
     // radius returned was 3, it would be the actual radii_um is 3 um
     // along the z-dimension therefore scale with the voxel dimension
     // with the largest length
-    auto radius_um = sphere[3] * max_voxel_size;
+    auto radius_um = radius_voxels * std::pow(max_voxel_size,3);
     if (radius_um > max_radius_um || !radius_um)
       std::cout << radius_um << " ";
     if (min_radius_um <= radius_um && radius_um <= max_radius_um) {
-      // sphere[3] is of type float
       // round to the nearest 8-bit unsigned integer between 0 and 255
-      auto radius = static_cast<uint8_t>(sphere[3] + 0.5);
+      auto radius = static_cast<uint8_t>(radius_voxels + 0.5);
+      radius = radius < 1 ? 1 : radius; // clamp to at least 1
       seeds.emplace_back(coord_center, radius, radius_um,
                          adjust_volume_by_voxel_size(
                              component->activeVoxelCount(), voxel_size));
