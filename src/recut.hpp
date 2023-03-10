@@ -3111,7 +3111,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     // if there is no pre-opening step (open_denoise) then do closing at the
     // time of conversion to sdf for performance gain
     auto sdf_grid = vto::topologyToLevelSet(
-        *this->mask_grid, /*halfwidth voxels*/ 1,
+        *this->mask_grid, /*halfwidth voxels*/ RECUT_LEVEL_SET_HALF_WIDTH,
         /*closing steps*/ args->open_denoise == 0 ? args->close_steps : 0);
     run_log << "Seed detection: mask to SDF conversion time, "
             << timer.elapsed_formatted() << '\n'

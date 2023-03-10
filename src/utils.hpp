@@ -3282,7 +3282,7 @@ openvdb::FloatGrid::Ptr create_seed_sphere_grid(std::vector<Seed> seeds) {
   auto component_grids = seeds | rv::transform([](const Seed &seed) {
                            int voxel_size = 1;
                            return vto::createLevelSetSphere<openvdb::FloatGrid>(
-                               seed.radius, seed.coord.asVec3s(), voxel_size);
+                               seed.radius, seed.coord.asVec3s(), voxel_size, RECUT_LEVEL_SET_HALF_WIDTH);
                          }) |
                          rng::to_vector;
 #ifdef LOG
