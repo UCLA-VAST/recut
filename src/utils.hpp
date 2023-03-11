@@ -3881,7 +3881,7 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
 
     std::cout << "\tstarting sdf count " << dilated_sdf->activeVoxelCount()
               << '\n';
-    do {
+    for (int i=0; (i < 5) && (spheres.size() < 1) && (dilated_sdf->activeVoxelCount() >=1); ++i) {
       // it's possible to force this function to return spheres with a
       // certain range of radii, but we'd rather see what the raw radii
       // it returns for now and let the min and max radii filter them
@@ -3893,7 +3893,7 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
       filter->offset(-1);
       std::cout << "\tdilated sdf count " << dilated_sdf->activeVoxelCount()
                 << '\n';
-    } while (spheres.size() < 1 && (dilated_sdf->activeVoxelCount() >=1));
+    }
 
     if (spheres.size() < 1) { 
       ++removed_by_incorrect_sphere;
