@@ -91,4 +91,4 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 // qualifies as covering its neighbor.
 // Must be 1 or greater
 #define DILATION_FACTOR 1
-#define RECUT_LEVEL_SET_HALF_WIDTH 1
+#define RECUT_LEVEL_SET_HALF_WIDTH 2

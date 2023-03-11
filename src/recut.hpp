@@ -2901,6 +2901,10 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     // volume
     write_seeds(component_dir_fn, component_seeds, this->args->voxel_size);
 
+    if (args->save_vdbs) { // save a mask grid corresponding to this component
+      write_vdb_file({component}, component_dir_fn / "float.vdb");
+    }
+
     std::cout << "Component " << index << " complete and safe to open\n";
   }; // for each component
 
@@ -3087,8 +3091,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     assertm(this->mask_grid,
             "Mask grid must be set before starting soma segmentation");
 
-    if (args->save_vdbs && args->input_type != "mask")
-      write_vdb_file({this->mask_grid}, this->run_dir / "mask.vdb");
+    //if (args->save_vdbs && args->input_type != "mask")
+      //write_vdb_file({this->mask_grid}, this->run_dir / "mask.vdb");
 
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
@@ -3113,6 +3117,11 @@ template <class image_t> void Recut<image_t>::operator()() {
     auto sdf_grid = vto::topologyToLevelSet(
         *this->mask_grid, /*halfwidth voxels*/ RECUT_LEVEL_SET_HALF_WIDTH,
         /*closing steps*/ args->open_denoise == 0 ? args->close_steps : 0);
+
+    // get an unaltered sdf copy of the image, you must close at least 1 step
+    auto raw_image_sdf = vto::topologyToLevelSet(
+        *this->mask_grid, /*halfwidth voxels*/ RECUT_LEVEL_SET_HALF_WIDTH,
+        /*closing steps*/ 1);
     run_log << "Seed detection: mask to SDF conversion time, "
             << timer.elapsed_formatted() << '\n'
             << "Seed detection: SDF (topology) voxel count, "
@@ -3195,7 +3204,7 @@ template <class image_t> void Recut<image_t>::operator()() {
       run_log.flush();
     }
 
-    auto closed_sdf = sdf_grid->deepCopy();
+    //auto closed_sdf = sdf_grid->deepCopy();
     // if (args->save_vdbs)
     // write_vdb_file({closed_sdf}, this->run_dir / "closed_sdf.vdb");
 
@@ -3270,7 +3279,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     std::cout << "\tmasking step\n";
 #endif
     timer.restart();
-    auto masked_sdf = vto::maskSdf(*sdf_grid, *closed_sdf);
+    //auto masked_sdf = vto::maskSdf(*sdf_grid, *closed_sdf);
+    auto masked_sdf = vto::maskSdf(*sdf_grid, *raw_image_sdf);
     run_log << "Seed detection: masking time, " << timer.elapsed_formatted()
             << '\n'
             << "Seed detection: masked SDF voxel count, "

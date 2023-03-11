@@ -120,7 +120,7 @@ def precision_recall(**kwargs):
           f"voxel_sizes: x={kwargs['voxel_size_x']}, y={kwargs['voxel_size_y']}, z={kwargs['voxel_size_z']} µm")
 
     labeled_path = kwargs['labeled-path']
-    inferenced_path = Path(kwargs['inferenced_path'])
+    inferenced_path = Path(kwargs['inferenced-path'])
 
     # directory that stores the precision & recall summary file and the plots
     time_now = datetime.now()
