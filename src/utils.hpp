@@ -3282,7 +3282,8 @@ openvdb::FloatGrid::Ptr create_seed_sphere_grid(std::vector<Seed> seeds) {
   auto component_grids = seeds | rv::transform([](const Seed &seed) {
                            int voxel_size = 1;
                            return vto::createLevelSetSphere<openvdb::FloatGrid>(
-                               seed.radius, seed.coord.asVec3s(), voxel_size, RECUT_LEVEL_SET_HALF_WIDTH);
+                               seed.radius, seed.coord.asVec3s(), voxel_size,
+                               RECUT_LEVEL_SET_HALF_WIDTH);
                          }) |
                          rng::to_vector;
 #ifdef LOG
@@ -3878,7 +3879,8 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
       continue;
     }
 
-    std::cout << "\tstarting sdf count " << dilated_sdf->activeVoxelCount() << '\n';
+    std::cout << "\tstarting sdf count " << dilated_sdf->activeVoxelCount()
+              << '\n';
     do {
       // it's possible to force this function to return spheres with a
       // certain range of radii, but we'd rather see what the raw radii
@@ -3889,16 +3891,20 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
 
       // dilate
       filter->offset(-1);
-      std::cout << "\tdilated sdf count " << dilated_sdf->activeVoxelCount() << '\n';
-    } while (spheres.size() < 1);
+      std::cout << "\tdilated sdf count " << dilated_sdf->activeVoxelCount()
+                << '\n';
+    } while (spheres.size() < 1 && (dilated_sdf->activeVoxelCount() >=1));
 
-    if (spheres.size() == 1) {
+    if (spheres.size() < 1) { 
+      ++removed_by_incorrect_sphere;
+      continue;
+    } else if (spheres.size() == 1) {
       sphere = spheres[0];
     } else { // get the sphere with max radii
       sphere = *std::max_element(spheres.begin(), spheres.end(),
-                                [](openvdb::Vec4s &fst, openvdb::Vec4s &snd) {
-                                  return fst[3] < snd[3];
-                                });
+                                 [](openvdb::Vec4s &fst, openvdb::Vec4s &snd) {
+                                   return fst[3] < snd[3];
+                                 });
     }
 
     auto coord_center = GridCoord(sphere[0], sphere[1], sphere[2]);
