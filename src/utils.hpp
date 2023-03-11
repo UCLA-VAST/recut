@@ -3873,6 +3873,11 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
     auto dilated_sdf = component->deepCopy();
     // establish the filter for opening
     auto filter = create_morph_filter(dilated_sdf);
+    if (dilated_sdf->activeVoxelCount() < 1) {
+      ++removed_by_incorrect_sphere;
+      continue;
+    }
+
     std::cout << "\tstarting sdf count " << dilated_sdf->activeVoxelCount() << '\n';
     do {
       // it's possible to force this function to return spheres with a
