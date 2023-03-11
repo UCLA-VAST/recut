@@ -3873,6 +3873,7 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
     auto dilated_sdf = component->deepCopy();
     // establish the filter for opening
     auto filter = create_morph_filter(dilated_sdf);
+    std::cout << "\tstarting sdf count " << dilated_sdf->activeVoxelCount() << '\n';
     do {
       // it's possible to force this function to return spheres with a
       // certain range of radii, but we'd rather see what the raw radii
@@ -3883,6 +3884,7 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
 
       // dilate
       filter->offset(-1);
+      std::cout << "\tdilated sdf count " << dilated_sdf->activeVoxelCount() << '\n';
     } while (spheres.size() < 1);
 
     if (spheres.size() == 1) {
