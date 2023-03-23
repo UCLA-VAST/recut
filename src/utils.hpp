@@ -3886,7 +3886,7 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
     //  it's possible to force this function to return spheres with a
     //  certain range of radii, but we'd rather see what the raw radii
     //  it returns for now and let the min and max radii filter them
-    vto::fillWithSpheres(*dilated_sdf, spheres,
+    vto::fillWithSpheres(*component, spheres,
                          /* min, max total count of spheres allowed */ {1, 1},
                          /* overlapping*/ false);
 
