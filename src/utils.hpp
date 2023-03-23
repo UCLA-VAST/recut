@@ -3871,31 +3871,32 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
     openvdb::Vec4s sphere;
     std::vector<openvdb::Vec4s> spheres;
     // make a temporary copy to possibly mutate
-    auto dilated_sdf = component->deepCopy();
+    //auto dilated_sdf = component->deepCopy();
     // establish the filter for opening
-    auto filter = create_morph_filter(dilated_sdf);
-    if (dilated_sdf->activeVoxelCount() < 1) {
+    auto filter = create_morph_filter(component);
+    if (component->activeVoxelCount() < 1) {
       ++removed_by_incorrect_sphere;
       continue;
     }
 
-    std::cout << "\tstarting sdf count " << dilated_sdf->activeVoxelCount()
-              << '\n';
-    for (int i=0; (i < 5) && (spheres.size() < 1) && (dilated_sdf->activeVoxelCount() >=1); ++i) {
-      // it's possible to force this function to return spheres with a
-      // certain range of radii, but we'd rather see what the raw radii
-      // it returns for now and let the min and max radii filter them
-      vto::fillWithSpheres(*dilated_sdf, spheres,
-                           /* min, max total count of spheres allowed */ {1, 1},
-                           /* overlapping*/ false);
+    // std::cout << "\tstarting sdf count " << dilated_sdf->activeVoxelCount()
+    //<< '\n';
+    // for (int i=0; (i < 5) && (spheres.size() < 1) &&
+    // (dilated_sdf->activeVoxelCount() >=1); ++i) {
+    //  it's possible to force this function to return spheres with a
+    //  certain range of radii, but we'd rather see what the raw radii
+    //  it returns for now and let the min and max radii filter them
+    vto::fillWithSpheres(*dilated_sdf, spheres,
+                         /* min, max total count of spheres allowed */ {1, 1},
+                         /* overlapping*/ false);
 
-      // dilate
-      filter->offset(-1);
-      std::cout << "\tdilated sdf count " << dilated_sdf->activeVoxelCount()
-                << '\n';
-    }
+    // dilate
+    // filter->offset(-1);
+    // std::cout << "\tdilated sdf count " << dilated_sdf->activeVoxelCount()
+    //<< '\n';
+    //}
 
-    if (spheres.size() < 1) { 
+    if (spheres.size() < 1) {
       ++removed_by_incorrect_sphere;
       continue;
     } else if (spheres.size() == 1) {
