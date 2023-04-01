@@ -2786,32 +2786,32 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     if (!is_cluster_self_contained(pruned_cluster))
       throw std::runtime_error("Pruned cluster not self contained");
 
-    //auto fixed_cluster = pruned_cluster;
-    //if (!args->ignore_multifurcations) {
-      //auto fixed_cluster = fix_trifurcations(pruned_cluster);
-      //{ // check
-        //auto trifurcations = tree_is_valid(fixed_cluster);
-        //if (!trifurcations.empty()) {
-          //auto soma = fixed_cluster[0];
-          //std::cout << "Warning tree in component-" + std::to_string(index)
-                    //<< " with soma " << soma->x << ' ' << soma->y << ' '
-                    //<< soma->z << " has trifurcations listed below:\n";
-          //rng::for_each(trifurcations, [](auto mismatch) {
-            //std::cout << "    " << *mismatch << '\n';
-          //});
-          //// throw std::runtime_error("Tree has trifurcations" +
-          //// std::to_string(index));
-        //}
-        //if (!is_cluster_self_contained(fixed_cluster)) {
-          //std::cout << "Warning a tree in component-" + std::to_string(index)
-                    //<< " contains at least 1 node with an invalid parent\n";
-          //// throw std::runtime_error("Trifurc cluster not self contained" +
-          //// std::to_string(index));
-        //}
-      //}
+    // auto fixed_cluster = pruned_cluster;
+    // if (!args->ignore_multifurcations) {
+    // auto fixed_cluster = fix_trifurcations(pruned_cluster);
+    //{ // check
+    // auto trifurcations = tree_is_valid(fixed_cluster);
+    // if (!trifurcations.empty()) {
+    // auto soma = fixed_cluster[0];
+    // std::cout << "Warning tree in component-" + std::to_string(index)
+    //<< " with soma " << soma->x << ' ' << soma->y << ' '
+    //<< soma->z << " has trifurcations listed below:\n";
+    // rng::for_each(trifurcations, [](auto mismatch) {
+    // std::cout << "    " << *mismatch << '\n';
+    //});
+    //// throw std::runtime_error("Tree has trifurcations" +
+    //// std::to_string(index));
+    //}
+    // if (!is_cluster_self_contained(fixed_cluster)) {
+    // std::cout << "Warning a tree in component-" + std::to_string(index)
+    //<< " contains at least 1 node with an invalid parent\n";
+    //// throw std::runtime_error("Trifurc cluster not self contained" +
+    //// std::to_string(index));
+    //}
+    //}
     //}
 
-    //auto trees = partition_cluster(fixed_cluster);
+    // auto trees = partition_cluster(fixed_cluster);
     auto trees = partition_cluster(pruned_cluster);
 
 #ifdef LOG
@@ -2912,7 +2912,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
   tbb::task_arena arena(args->user_thread_count);
   arena.execute(
       [&] { tbb::parallel_for_each(enum_components, process_component); });
-  //rng::for_each(enum_components, process_component);
+  // rng::for_each(enum_components, process_component);
 
   if (output_topology)
     write_vdb_file({this->topology_grid}, "final-point-grid.vdb");
@@ -3091,8 +3091,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     assertm(this->mask_grid,
             "Mask grid must be set before starting soma segmentation");
 
-    //if (args->save_vdbs && args->input_type != "mask")
-      //write_vdb_file({this->mask_grid}, this->run_dir / "mask.vdb");
+    // if (args->save_vdbs && args->input_type != "mask")
+    // write_vdb_file({this->mask_grid}, this->run_dir / "mask.vdb");
 
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
@@ -3204,7 +3204,7 @@ template <class image_t> void Recut<image_t>::operator()() {
       run_log.flush();
     }
 
-    //auto closed_sdf = sdf_grid->deepCopy();
+    auto closed_sdf = sdf_grid->deepCopy();
     // if (args->save_vdbs)
     // write_vdb_file({closed_sdf}, this->run_dir / "closed_sdf.vdb");
 
@@ -3279,8 +3279,9 @@ template <class image_t> void Recut<image_t>::operator()() {
     std::cout << "\tmasking step\n";
 #endif
     timer.restart();
-    //auto masked_sdf = vto::maskSdf(*sdf_grid, *closed_sdf);
-    auto masked_sdf = vto::maskSdf(*sdf_grid, *raw_image_sdf);
+    // auto masked_sdf = vto::maskSdf(*sdf_grid, *closed_sdf);
+    auto masked_sdf = vto::maskSdf(
+        *sdf_grid, args->close_topology ? *closed_sdf : *raw_image_sdf);
     run_log << "Seed detection: masking time, " << timer.elapsed_formatted()
             << '\n'
             << "Seed detection: masked SDF voxel count, "

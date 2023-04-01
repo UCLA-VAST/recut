@@ -29,7 +29,8 @@ public:
         open_denoise(0.), close_steps(8.), open_steps(5.),
         morphological_operations_order(1), min_radius_um(MIN_SOMA_RADIUS_UM),
         max_radius_um(MAX_SOMA_RADIUS_UM), voxel_size({1., 1., 1.}),
-        save_vdbs(false), seed_intersection(false), ignore_multifurcations(false) {}
+        save_vdbs(false), seed_intersection(false),
+        ignore_multifurcations(false), close_topology(false) {}
 
   static void PrintUsage();
   std::string MetaString();
@@ -61,7 +62,8 @@ public:
   float min_window_um, expand_window_um, min_radius_um, max_radius_um,
       open_denoise, open_steps, close_steps;
   VID_t selected, root_vid;
-  bool run_app2, convert_only, combine, histogram, save_vdbs, seed_intersection, ignore_multifurcations;
+  bool run_app2, convert_only, combine, histogram, save_vdbs, seed_intersection,
+      ignore_multifurcations, close_topology;
   std::array<int, 3> tile_lengths;
   std::array<float, 3> voxel_size;
   std::optional<float> prune_radius;

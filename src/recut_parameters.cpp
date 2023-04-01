@@ -6,18 +6,20 @@ void RecutCommandLineArgs::PrintUsage() {
                "[-o <output_vdb_file_name>] "
                "[--bkg-thresh <int>] [--fg-percent <double>]\n\n";
   std::cout << "<image file or dir>  file or directory of input image(s)\n";
-  std::cout << "--seeds              [-s] optional option to pass a directory of SWC files with 1 root/soma per file "
-               "to filter by, when --seeds are passed all other auto-found seeds will be discarded\n";
+  std::cout << "--seeds              [-s] optional option to pass a directory "
+               "of SWC files with 1 root/soma per file "
+               "to filter by, when --seeds are passed all other auto-found "
+               "seeds will be discarded\n";
   std::cout << "--output-name        [-o] give converted vdb a custom name "
                "defaults to "
                "naming with useful image attributes\n";
   std::cout << "--input-type         input type img: 'ims', 'tiff' | "
                "VDB: 'point', "
                "'uint8', 'mask' or 'float'\n";
-  std::cout
-      << "--output-type        output type img: 'ims', 'tiff' | "
-         "VDB: 'point', "
-         "'uint8', 'mask' or 'float' | 'swc', 'eswc', 'labels' | 'seeds', default output is 'swc'\n";
+  std::cout << "--output-type        output type img: 'ims', 'tiff' | "
+               "VDB: 'point', "
+               "'uint8', 'mask' or 'float' | 'swc', 'eswc', 'labels' | "
+               "'seeds', default output is 'swc'\n";
   std::cout
       << "--image-offsets      [-io] offsets of subvolume, in x y z order "
          "default 0 0 0\n";
@@ -45,8 +47,8 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout
       << "--parallel           [-pl] thread count defaults to max hardware "
          "threads\n";
-  std::cout
-      << "--mean-shift         radius to mean shift nodes towards local mean which aids pruning; default 0\n";
+  std::cout << "--mean-shift         radius to mean shift nodes towards local "
+               "mean which aids pruning; default 0\n";
   std::cout << "--output-windows     list 1 or more uint8 vdb files in channel "
                "order to create "
                "image windows for each neuron cluster/component\n";
@@ -63,7 +65,8 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout
       << "--min-window         windows by default only extend to bounding "
          "volume "
-         "of their component, this value (in µm units) specifies the minimum window border "
+         "of their component, this value (in µm units) specifies the minimum "
+         "window border "
          "surrounding seeds, if no value is passed it will use "
       << MIN_WINDOW_UM << " µm\n";
   std::cout
@@ -77,6 +80,8 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "--close-steps        morphological closing level "
                "to fill existing voids inside somata; "
                "defaults to 8.\n";
+  std::cout << "--close-topology     also apply the close-steps to the "
+               "neurites of the image; defaults to false";
   std::cout << "--open-steps         2nd morphological opening level "
                "to clear neurites and keep somata in the image only; "
                "defaults to 5 and disabled by passing 0 (no-opening)\n";
@@ -260,6 +265,8 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--close-steps") == 0) {
         args.close_steps = atof(argv[i + 1]);
         ++i;
+      } else if (strcmp(argv[i], "--close-topology") == 0) {
+        args.close_topology = true;
       } else if (strcmp(argv[i], "--order") == 0) {
         args.morphological_operations_order = atoi(argv[i + 1]);
         ++i;
