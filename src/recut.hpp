@@ -3000,9 +3000,9 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << "Seed detection: max allowed soma radius in µm, "
             << args->max_radius_um << '\n'
             << "Skeletonization: neurites mean shift radius, "
-            << args->mean_shift_factor.value() << '\n'
+            << args->mean_shift_factor.value_or(0) << '\n'
             << "Skeletonization: neurites prune radius, "
-            << args->prune_radius.value() << '\n'
+            << args->prune_radius.value_or(0) << '\n'
             << "Skeletonization: soma prune radius, " << SOMA_PRUNE_RADIUS
             << '\n'
             << "Skeletonization: min branch, " << args->min_branch_length
@@ -3205,8 +3205,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     }
 
     auto closed_sdf = sdf_grid->deepCopy();
-    // if (args->save_vdbs)
-    // write_vdb_file({closed_sdf}, this->run_dir / "closed_sdf.vdb");
+    if (args->save_vdbs)
+      write_vdb_file({closed_sdf}, this->run_dir / "closed_sdf.vdb");
 
     // open again to filter axons and dendrites
     if (args->open_steps > 0) {
@@ -3225,8 +3225,8 @@ template <class image_t> void Recut<image_t>::operator()() {
             << sdf_grid->activeVoxelCount() << "\n";
     run_log.flush();
 
-    // if (args->save_vdbs)
-    // write_vdb_file({sdf_grid}, this->run_dir / "opened_sdf.vdb");
+    if (args->save_vdbs)
+      write_vdb_file({sdf_grid}, this->run_dir / "opened_sdf.vdb");
 
     // collects user passed seeds if any
     auto known_seeds = process_marker_dir(args->seed_path, args->voxel_size);
@@ -3330,8 +3330,13 @@ template <class image_t> void Recut<image_t>::operator()() {
     }
   }
 
-  assertm(!seeds.empty(),
-          "Root pairs must be set before beginning reconstruction");
+  if (seeds.empty())
+    throw std::runtime_error(
+        "No somas found, possibly make --open-steps lower or --close-steps "
+        "higher (if using membrane labeling), also consider raising the fg "
+        "percent. Note that passing --seeds forces all found somas to be "
+        "filtered against those you specified, exiting...");
+
   assertm(this->topology_grid,
           "Topology grid must be set before starting reconstruction");
 

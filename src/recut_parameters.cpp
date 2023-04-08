@@ -81,7 +81,7 @@ void RecutCommandLineArgs::PrintUsage() {
                "to fill existing voids inside somata; "
                "defaults to 8.\n";
   std::cout << "--close-topology     also apply the close-steps to the "
-               "neurites of the image; defaults to false";
+               "neurites of the image; defaults to false\n";
   std::cout << "--open-steps         2nd morphological opening level "
                "to clear neurites and keep somata in the image only; "
                "defaults to 5 and disabled by passing 0 (no-opening)\n";
