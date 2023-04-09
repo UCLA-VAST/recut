@@ -3235,6 +3235,8 @@ template <class image_t> void Recut<image_t>::operator()() {
       // detection and neurite reconstruction, the image grid uint8 that is
       // output in windows is unaffected however
       auto mask_of_known_seeds = create_seed_sphere_grid(known_seeds);
+      if (args->save_vdbs) 
+        write_vdb_file({mask_of_known_seeds}, this->run_dir / "known_seeds.vdb");
       timer.restart();
       if (args->seed_intersection) {
         // grids passed as args are unchanged, a new grid copy is created only
