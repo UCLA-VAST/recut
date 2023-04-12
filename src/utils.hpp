@@ -3871,7 +3871,7 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
     openvdb::Vec4s sphere;
     std::vector<openvdb::Vec4s> spheres;
     // make a temporary copy to possibly mutate
-    //auto dilated_sdf = component->deepCopy();
+    // auto dilated_sdf = component->deepCopy();
     // establish the filter for opening
     auto filter = create_morph_filter(component);
     if (component->activeVoxelCount() < 1) {
@@ -4049,3 +4049,39 @@ std::vector<Seed> process_marker_dir(
 
   return seeds;
 }
+
+auto create_filter(openvdb::FloatGrid::Ptr grid,
+                   int morphological_operations_order = 1) {
+  auto filter =
+      std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(*grid);
+
+  switch (morphological_operations_order) {
+  case 1:
+    std::cout << "\t1st order morphological operations\n";
+    filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
+    break;
+  case 2:
+    std::cout << "\t2nd order morphological operations\n";
+    filter->setSpatialScheme(openvdb::math::SECOND_BIAS);
+    break;
+  case 3:
+    std::cout << "\t3rd order morphological operations\n";
+    filter->setSpatialScheme(openvdb::math::THIRD_BIAS);
+    break;
+  case 4:
+    std::cout << "\t4th order morphological operations\n";
+    filter->setSpatialScheme(openvdb::math::WENO5_BIAS);
+    break;
+  case 5:
+    std::cout << "\t5th order morphological operations\n";
+    filter->setSpatialScheme(openvdb::math::HJWENO5_BIAS);
+    break;
+  default:
+    std::cout << "\tunexpected value for argument --order "
+              << morphological_operations_order << "\n"
+              << "\t1st order morphological operations\n";
+    filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
+  }
+  filter->setTemporalScheme(openvdb::math::TVD_RK1);
+  return filter;
+};

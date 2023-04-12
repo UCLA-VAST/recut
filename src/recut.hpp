@@ -3131,8 +3131,6 @@ template <class image_t> void Recut<image_t>::operator()() {
     // if (args->save_vdbs)
     // write_vdb_file({sdf_grid}, this->run_dir / "sdf.vdb");
 
-    // TODO find enclosed regions and log
-
     // define the filter for the morphological operations to the level set
     // morpho operations can only occur on SDF level sets, not on FOG topologies
     // the morphological ops with filter below mutate sdf_grid in place
@@ -3140,37 +3138,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     // dilate then erode --> morphological closing
     // negative offset means dilate
     // positive offset means erode
-    auto filter =
-        std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(*sdf_grid);
-
-    switch (args->morphological_operations_order) {
-    case 1:
-      std::cout << "\t1st order morphological operations\n";
-      filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
-      break;
-    case 2:
-      std::cout << "\t2nd order morphological operations\n";
-      filter->setSpatialScheme(openvdb::math::SECOND_BIAS);
-      break;
-    case 3:
-      std::cout << "\t3rd order morphological operations\n";
-      filter->setSpatialScheme(openvdb::math::THIRD_BIAS);
-      break;
-    case 4:
-      std::cout << "\t4th order morphological operations\n";
-      filter->setSpatialScheme(openvdb::math::WENO5_BIAS);
-      break;
-    case 5:
-      std::cout << "\t5th order morphological operations\n";
-      filter->setSpatialScheme(openvdb::math::HJWENO5_BIAS);
-      break;
-    default:
-      std::cout << "\tunexpected value for argument --order "
-                << args->morphological_operations_order << "\n"
-                << "\t1st order morphological operations\n";
-      filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
-    }
-    filter->setTemporalScheme(openvdb::math::TVD_RK1);
+    auto filter = create_filter(sdf_grid, args->morphological_operations_order);
 
     // open a bit to denoise specifically in brain surfaces
     if (args->open_denoise > 0) {
@@ -3235,8 +3203,9 @@ template <class image_t> void Recut<image_t>::operator()() {
       // detection and neurite reconstruction, the image grid uint8 that is
       // output in windows is unaffected however
       auto mask_of_known_seeds = create_seed_sphere_grid(known_seeds);
-      if (args->save_vdbs) 
-        write_vdb_file({mask_of_known_seeds}, this->run_dir / "known_seeds.vdb");
+      if (args->save_vdbs)
+        write_vdb_file({mask_of_known_seeds},
+                       this->run_dir / "known_seeds.vdb");
       timer.restart();
       if (args->seed_intersection) {
         // grids passed as args are unchanged, a new grid copy is created only
@@ -3264,11 +3233,14 @@ template <class image_t> void Recut<image_t>::operator()() {
       }
 
 #ifdef LOG
-    std::cout << "\tdilate intersection/union to join nearby known and generated seeds\n";
+      std::cout << "\tdilate intersection/union to join nearby known and "
+                   "generated seeds\n";
 #endif
-      // dilate by the close steps factor so that close by somas tend to 
-      // be joined together and so that soma yield can be higher in create_seed_pairs
-      filter->offset(-args->close_steps);
+      // dilate by the close steps factor so that close by somas tend to
+      // be joined together and so that soma yield can be higher in
+      // create_seed_pairs
+      auto joined_filter = create_filter(sdf_grid, args->morphological_operations_order);
+      joined_filter->offset(-args->close_steps);
     }
 
 #ifdef LOG
