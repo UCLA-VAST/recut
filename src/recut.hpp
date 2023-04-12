@@ -3262,6 +3262,13 @@ template <class image_t> void Recut<image_t>::operator()() {
           write_vdb_file({sdf_grid}, this->run_dir / "union.vdb");
         }
       }
+
+#ifdef LOG
+    std::cout << "\tdilate intersection/union to join nearby known and generated seeds\n";
+#endif
+      // dilate by the close steps factor so that close by somas tend to 
+      // be joined together and so that soma yield can be higher in create_seed_pairs
+      filter->offset(-args->close_steps);
     }
 
 #ifdef LOG
