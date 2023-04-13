@@ -4,6 +4,7 @@
 #include "recut_parameters.hpp"
 #include "tile_thresholds.hpp"
 #include "tree_ops.hpp"
+#include "morphological_soma_segmentation.hpp"
 #include "utils.hpp"
 #include <algorithm>
 #include <bits/stdc++.h>
@@ -17,10 +18,6 @@
 #include <future>
 #include <iostream>
 #include <map>
-#include <openvdb/tools/Composite.h>
-#include <openvdb/tools/FastSweeping.h>
-#include <openvdb/tools/Mask.h> // interiorMask()
-#include <openvdb/tools/TopologyToLevelSet.h>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -3026,8 +3023,6 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   start_run_dir_and_logs();
 
-  std::vector<Seed> seeds;
-
   // if point.vdb was not already set by input
   if (!this->input_is_vdb) {
     // if (!args->convert_only) {
@@ -3087,257 +3082,19 @@ template <class image_t> void Recut<image_t>::operator()() {
     this->input_is_vdb = true;
   }
 
-  if (this->mask_grid) {
-    assertm(this->mask_grid,
-            "Mask grid must be set before starting soma segmentation");
+  auto [seeds, topology_grid] =
+      soma_segmentation(mask_grid, args, this->image_lengths, log_fn, run_dir);
 
-    // if (args->save_vdbs && args->input_type != "mask")
-    // write_vdb_file({this->mask_grid}, this->run_dir / "mask.vdb");
-
-    std::ofstream run_log;
-    run_log.open(log_fn, std::ios::app);
-
-    // mask grids are a fog volume of sparse active values in space
-    // change the fog volume into an SDF by holding values on the border between
-    // active an inactive voxels
-    // the new SDF wraps (dilates by 1) the original active voxels, and
-    // additionally holds values across the interface of the surface
-    //
-    // this function additionally adds a morphological closing step such that
-    // holes and valleys in the SDF are filled
-#ifdef LOG
-    std::cout << "starting seed (soma) detection:\n";
-    std::cout << "\tmask to sdf step\n";
-#endif
-    // resulting SDF is slightly modified by a closing op of 1 step which has a
-    // very minimal effect this API does not allow 0 closing
-    auto timer = high_resolution_timer();
-    // if there is no pre-opening step (open_denoise) then do closing at the
-    // time of conversion to sdf for performance gain
-    auto sdf_grid = vto::topologyToLevelSet(
-        *this->mask_grid, /*halfwidth voxels*/ RECUT_LEVEL_SET_HALF_WIDTH,
-        /*closing steps*/ args->open_denoise == 0 ? args->close_steps : 0);
-
-    // get an unaltered sdf copy of the image, you must close at least 1 step
-    auto raw_image_sdf = vto::topologyToLevelSet(
-        *this->mask_grid, /*halfwidth voxels*/ RECUT_LEVEL_SET_HALF_WIDTH,
-        /*closing steps*/ 1);
-    run_log << "Seed detection: mask to SDF conversion time, "
-            << timer.elapsed_formatted() << '\n'
-            << "Seed detection: SDF (topology) voxel count, "
-            << sdf_grid->activeVoxelCount() << '\n';
-    run_log.flush();
-
-    // if (args->save_vdbs)
-    // write_vdb_file({sdf_grid}, this->run_dir / "sdf.vdb");
-
-    // TODO find enclosed regions and log
-
-    // define the filter for the morphological operations to the level set
-    // morpho operations can only occur on SDF level sets, not on FOG topologies
-    // the morphological ops with filter below mutate sdf_grid in place
-    // erode then dilate --> morphological opening
-    // dilate then erode --> morphological closing
-    // negative offset means dilate
-    // positive offset means erode
-    auto filter =
-        std::make_unique<vto::LevelSetFilter<openvdb::FloatGrid>>(*sdf_grid);
-
-    switch (args->morphological_operations_order) {
-    case 1:
-      std::cout << "\t1st order morphological operations\n";
-      filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
-      break;
-    case 2:
-      std::cout << "\t2nd order morphological operations\n";
-      filter->setSpatialScheme(openvdb::math::SECOND_BIAS);
-      break;
-    case 3:
-      std::cout << "\t3rd order morphological operations\n";
-      filter->setSpatialScheme(openvdb::math::THIRD_BIAS);
-      break;
-    case 4:
-      std::cout << "\t4th order morphological operations\n";
-      filter->setSpatialScheme(openvdb::math::WENO5_BIAS);
-      break;
-    case 5:
-      std::cout << "\t5th order morphological operations\n";
-      filter->setSpatialScheme(openvdb::math::HJWENO5_BIAS);
-      break;
-    default:
-      std::cout << "\tunexpected value for argument --order "
-                << args->morphological_operations_order << "\n"
-                << "\t1st order morphological operations\n";
-      filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
-    }
-    filter->setTemporalScheme(openvdb::math::TVD_RK1);
-
-    // open a bit to denoise specifically in brain surfaces
-    if (args->open_denoise > 0) {
-#ifdef LOG
-      std::cout << "\topen denoise step: open = " << args->open_denoise << "\n";
-#endif
-      timer.restart();
-      filter->offset(args->open_denoise);
-      filter->offset(-args->open_denoise);
-      run_log << "Seed detection: denoise time, " << timer.elapsed_formatted()
-              << "\n";
-    } else {
-      run_log << "Seed detection: denoise time, 00:00:00:00 d:h:m:s\n";
-    }
-    run_log << "Seed detection: denoised SDF voxel count, "
-            << sdf_grid->activeVoxelCount() << '\n';
-    run_log.flush();
-
-    // close to fill the holes inside somata where cell nuclei are
-    if (args->open_denoise > 0) {
-#ifdef LOG
-      std::cout << "\tclose step: close = " << args->close_steps << "\n";
-#endif
-      timer.restart();
-      filter->offset(-args->close_steps);
-      filter->offset(args->close_steps);
-      run_log << "Seed detection: closing time, " << timer.elapsed_formatted()
-              << '\n'
-              << "Seed detection: closed SDF voxel count, "
-              << sdf_grid->activeVoxelCount() << '\n';
-      run_log.flush();
-    }
-
-    auto closed_sdf = sdf_grid->deepCopy();
-    if (args->save_vdbs)
-      write_vdb_file({closed_sdf}, this->run_dir / "closed_sdf.vdb");
-
-    // open again to filter axons and dendrites
-    if (args->open_steps > 0) {
-#ifdef LOG
-      std::cout << "\topen step: open = " << args->open_steps << "\n";
-#endif
-      timer.restart();
-      filter->offset(args->open_steps);
-      filter->offset(-args->open_steps);
-      run_log << "Seed detection: opening time, " << timer.elapsed_formatted()
-              << "\n";
-    } else {
-      run_log << "Seed detection: opening time, 00:00:00:00 d:h:m:s\n";
-    }
-    run_log << "Seed detection: opened SDF voxel count, "
-            << sdf_grid->activeVoxelCount() << "\n";
-    run_log.flush();
-
-    if (args->save_vdbs)
-      write_vdb_file({sdf_grid}, this->run_dir / "opened_sdf.vdb");
-
-    // collects user passed seeds if any
-    auto known_seeds = process_marker_dir(args->seed_path, args->voxel_size);
-    if (known_seeds.size()) {
-      // these strategies permanently modify the  mask_grid for both soma
-      // detection and neurite reconstruction, the image grid uint8 that is
-      // output in windows is unaffected however
-      auto mask_of_known_seeds = create_seed_sphere_grid(known_seeds);
-      if (args->save_vdbs) 
-        write_vdb_file({mask_of_known_seeds}, this->run_dir / "known_seeds.vdb");
-      timer.restart();
-      if (args->seed_intersection) {
-        // grids passed as args are unchanged, a new grid copy is created only
-        // where both the image mask and the seed mask are active
-        // this new grid is finally reassigned to the temporary
-        // starting_grid ptr for use only in soma detection but not
-        // in neurite reconstruction
-        vto::csgIntersection(*sdf_grid, *mask_of_known_seeds, true, true);
-#ifdef LOG
-        std::cout << "\tFinished csgIntersection in " << timer.elapsed()
-                  << '\n';
-#endif
-        if (args->save_vdbs) {
-          write_vdb_file({sdf_grid}, this->run_dir / "intersection.vdb");
-        }
-      } else {
-        // fills in spheres where the user passed seeds are
-        // known to be located
-        vto::csgUnion(*sdf_grid, *mask_of_known_seeds, true, true);
-        std::cout << "\tFinished csgUnion in " << timer.elapsed() << '\n';
-
-        if (args->save_vdbs) {
-          write_vdb_file({sdf_grid}, this->run_dir / "union.vdb");
-        }
-      }
-    }
-
-#ifdef LOG
-    std::cout << "\tsegmentation step\n";
-#endif
-    std::vector<openvdb::FloatGrid::Ptr> components;
-    timer.restart();
-    vto::segmentSDF(*sdf_grid, components);
-    run_log << "Seed detection: segmentation time, "
-            << timer.elapsed_formatted() << '\n'
-            << "Seed detection: initial seed count, " << components.size()
-            << '\n';
-    run_log.flush();
-
-    // build full SDF by extending known somas into reachable neurites
-#ifdef LOG
-    std::cout << "\tmasking step\n";
-#endif
-    timer.restart();
-    // auto masked_sdf = vto::maskSdf(*sdf_grid, *closed_sdf);
-    auto masked_sdf = vto::maskSdf(
-        *sdf_grid, args->close_topology ? *closed_sdf : *raw_image_sdf);
-    run_log << "Seed detection: masking time, " << timer.elapsed_formatted()
-            << '\n'
-            << "Seed detection: masked SDF voxel count, "
-            << masked_sdf->activeVoxelCount() << '\n';
-    run_log.flush();
-
-    // if (args->save_vdbs)
-    // write_vdb_file({masked_sdf}, this->run_dir / "connected_sdf.vdb");
-
-#ifdef LOG
-    std::cout << "\tSDF to point step\n";
-#endif
-    this->topology_grid = convert_sdf_to_points(masked_sdf, this->image_lengths,
-                                                this->args->foreground_percent);
-
-    // if (args->save_vdbs)
-    // write_vdb_file({this->topology_grid}, this->run_dir / "point.vdb");
-
-    // adds all valid markers to roots vector
-    // filters by user input seeds if available
-#ifdef LOG
-    std::cout << "\tcreate seed pairs step\n";
-    std::cout << "\tmin allowed radius is " << args->min_radius_um << " µm\n";
-    std::cout << "\tmax allowed radius is " << args->max_radius_um << " µm\n";
-#endif
-    timer.restart();
-    // If you already filtered the grid with seed intersection there's no need
-    // to refilter by known seeds
-    seeds = create_seed_pairs(
-        components, this->topology_grid, this->args->voxel_size,
-        this->args->min_radius_um, this->args->max_radius_um,
-        this->args->output_type,
-        args->seed_intersection ? std::vector<Seed>{} : known_seeds);
-#ifdef LOG
-    std::cout << "\tsaving " << seeds.size()
-              << " seed coordinates to file ...\n";
-#endif
-    write_seeds(this->run_dir, seeds, this->args->voxel_size);
-
-    run_log << "Seed detection: seed pairs creation time, "
-            << timer.elapsed_formatted() << '\n'
-            << "Seed detection: final seed count, " << seeds.size() << '\n';
-    run_log.flush();
-    if (this->args->output_type == "seeds") {
-      exit(0); // exit
-    }
+  if (seeds.empty()) {
+    std::cerr
+        << "No somas found, possibly make --open-steps lower or --close-steps "
+           "higher (if using membrane labeling), also consider raising the fg "
+           "percent. Note that passing --seeds forces all found somas to be "
+           "filtered against those you specified, exiting...\n";
+    exit(1);
+  } else if (this->args->output_type == "seeds") {
+    exit(0); // exit
   }
-
-  if (seeds.empty())
-    throw std::runtime_error(
-        "No somas found, possibly make --open-steps lower or --close-steps "
-        "higher (if using membrane labeling), also consider raising the fg "
-        "percent. Note that passing --seeds forces all found somas to be "
-        "filtered against those you specified, exiting...");
 
   assertm(this->topology_grid,
           "Topology grid must be set before starting reconstruction");
