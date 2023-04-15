@@ -3113,10 +3113,11 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
 // values copied in topology and written z-plane by z-plane to individual tiff
 // files tiff component also saved
 template <typename GridT>
-std::string write_output_windows(GridT output_grid, fs::path dir,
-                                 std::ofstream &runtime, int index = 0,
-                                 bool output_vdb = false, bool paged = true,
-                                 CoordBBox bbox = {}, int channel = 0) {
+std::string write_output_windows(
+    GridT output_grid, fs::path dir,
+    std::ofstream &runtime, int index = 0,
+    bool output_vdb = false, bool paged = true, CoordBBox bbox = {},
+    int channel = 0) {
 
   auto base = dir / ("img-component-" + std::to_string(index) + "-ch" +
                      std::to_string(channel));
@@ -3834,4 +3835,3 @@ auto binarize_uint8_grid = [](auto image_grid) {
     }
   }
 };
-

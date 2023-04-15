@@ -1,10 +1,10 @@
 #pragma once
 
 #include "app2_helpers.hpp"
+#include "morphological_soma_segmentation.hpp"
 #include "recut_parameters.hpp"
 #include "tile_thresholds.hpp"
 #include "tree_ops.hpp"
-#include "morphological_soma_segmentation.hpp"
 #include "utils.hpp"
 #include <algorithm>
 #include <bits/stdc++.h>
@@ -3093,6 +3093,8 @@ template <class image_t> void Recut<image_t>::operator()() {
            "filtered against those you specified, exiting...\n";
     exit(1);
   } else if (this->args->output_type == "seeds") {
+    exit(0); // exit
+  } else if (this->args->output_type == "labels") {
     exit(0); // exit
   }
 

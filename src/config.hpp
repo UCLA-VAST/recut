@@ -92,3 +92,4 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 // Must be 1 or greater
 #define DILATION_FACTOR 1
 #define RECUT_LEVEL_SET_HALF_WIDTH 2
+#define SOMA_LABEL_LENGTH 128

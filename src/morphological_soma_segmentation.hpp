@@ -107,6 +107,7 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
                             std::string output_type,
                             std::vector<Seed> known_seeds = {}) {
   std::vector<Seed> seeds;
+  std::vector<openvdb::FloatGrid::Ptr> filtered_components;
   auto removed_by_inactivity = 0;
   auto removed_by_known_seeds = 0;
   auto removed_by_incorrect_sphere = 0;
@@ -201,6 +202,7 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
       seeds.emplace_back(coord_center, radius, radius_um,
                          adjust_volume_by_voxel_size(
                              component->activeVoxelCount(), voxel_size));
+      filtered_components.push_back(component);
     } else {
       ++removed_by_radii;
     }
@@ -218,7 +220,7 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
     std::cerr << "\tWarning: seeds removed by incorrect sphere "
               << removed_by_incorrect_sphere << '\n';
 #endif
-  return seeds;
+  return std::make_pair(seeds, components);
 };
 
 // define the filter for the morphological operations to the level set
@@ -263,6 +265,74 @@ create_filter(openvdb::FloatGrid::Ptr sdf_grid,
   }
   filter->setTemporalScheme(openvdb::math::TVD_RK1);
   return filter;
+}
+
+// You need to convert a SDF grid in its entirety to an interior mask grid
+// before cropping. If you crop an SDF before converting to a mask grid
+// the inside voxels may not be enclosed and may be counted as outside
+void create_label(Seed seed, fs::path dir, ImgGrid::Ptr image = nullptr,
+                  openvdb::MaskGrid::Ptr mask = nullptr, int index = 0,
+                  bool output_vdb = true, int channel = 0, bool paged = false) {
+
+  // build the bounding box:
+  // center the window around the center of the soma and give it a uniform width
+  // as all other crops/windows
+  auto offset = GridCoord(SOMA_LABEL_LENGTH / 2);
+  auto bbox = CoordBBox(seed.coord - offset, seed.coord + offset);
+  vb::BBoxd clipBox(bbox.min().asVec3d(), bbox.max().asVec3d());
+
+  std::ofstream runtime;
+  runtime.open(dir / ("log.csv"));
+
+  // write the mask
+  if (mask)
+    write_output_windows(mask, dir, runtime, index, output_vdb, paged, bbox,
+                         channel);
+
+  // optionally write out the original background subtracted image
+  // for this component
+  if (image)
+    write_output_windows(image, dir, runtime, index, output_vdb, paged, bbox,
+                         channel);
+}
+
+// takes a set of seeds and their corresponding sdf/isosurface
+// and writes to TIF their uint8
+void create_labels(std::vector<Seed> seeds, fs::path dir,
+                   ImgGrid::Ptr image = nullptr,
+                   std::vector<openvdb::FloatGrid::Ptr> *components = nullptr,
+                   bool output_vdb = false, int channel = 0,
+                   bool paged = false) {
+
+  auto soma_dir = [dir](int index) {
+    return dir / ("soma-" + std::to_string(index));
+  };
+
+  if (image) {
+    rng::for_each(seeds | rv::enumerate, [&](auto element) {
+      auto [index, seed] = element;
+      create_label(seed, soma_dir(index), image, nullptr, index, output_vdb,
+                   channel, paged);
+    });
+  }
+
+  // if (components) {
+  // auto elements = rng::zip(seeds, components.value());
+  // rng::for_each(element | rv::enumerate, [&](auto element) {
+  // auto [seed, component, index] = element;
+  // std::cout << "soma " << index << '\n';
+
+  // auto bbox = component->evalActiveVoxelBoundingBox();
+  // std::cout << '\t' << bbox << '\n';
+  // std::cout << '\t' << component->activeVoxelCount << '\n';
+
+  //// convert to mask type
+  // auto mask = vto::extractEnclosedRegion(component);
+  // create_label(seed, soma_dir(index), nullptr, mask, index, output_vdb,
+  // channel, paged);
+  // write_vdb_file({mask}, dir / "soma-" + index);
+  //});
+  //}
 }
 
 std::pair<std::vector<Seed>, EnlargedPointDataGrid::Ptr>
@@ -454,7 +524,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   timer.restart();
   // If you already filtered the grid with seed intersection there's no need
   // to refilter by known seeds
-  auto seeds = create_seed_pairs(
+  auto [seeds, filtered_components] = create_seed_pairs(
       components, topology_grid, args->voxel_size, args->min_radius_um,
       args->max_radius_um, args->output_type,
       args->seed_intersection ? std::vector<Seed>{} : known_seeds);
@@ -467,6 +537,23 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
           << timer.elapsed_formatted() << '\n'
           << "Seed detection: final seed count, " << seeds.size() << '\n';
   run_log.flush();
+
+  if (args->output_type == "labels") {
+    if (!args->window_grid_paths.empty()) {
+      std::cerr << "--output-type labels must also pass --output-windows "
+                   "uint8.vdb, exiting...\n";
+      exit(1);
+    }
+
+    // you need to load the passed image grids if you are outputting windows
+    auto window_grids =
+        args->window_grid_paths |
+        rv::transform([](const auto &gpath) { return read_vdb_file(gpath); }) |
+        rng::to_vector; // force reading once now
+
+    ImgGrid::Ptr image = openvdb::gridPtrCast<ImgGrid>(window_grids.front());
+    create_labels(seeds, run_dir / "image-labels", image);
+  }
 
   return std::make_pair(seeds, topology_grid);
 }
