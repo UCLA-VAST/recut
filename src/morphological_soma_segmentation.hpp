@@ -341,6 +341,23 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
 
   assertm(mask_grid, "Mask grid must be set before starting soma segmentation");
 
+  ImgGrid::Ptr image;
+  if (args->output_type == "labels") {
+    if (!args->window_grid_paths.empty()) {
+      std::cerr << "--output-type labels must also pass --output-windows "
+                   "uint8.vdb, exiting...\n";
+      exit(1);
+    }
+
+    // you need to load the passed image grids if you are outputting windows
+    auto window_grids =
+        args->window_grid_paths |
+        rv::transform([](const auto &gpath) { return read_vdb_file(gpath); }) |
+        rng::to_vector; // force reading once now
+
+    image = openvdb::gridPtrCast<ImgGrid>(window_grids.front());
+  }
+
   // if (args->save_vdbs && args->input_type != "mask")
   // write_vdb_file({mask_grid}, run_dir / "mask.vdb");
 
@@ -444,13 +461,18 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   // collects user passed seeds if any
   auto known_seeds = process_marker_dir(args->seed_path, args->voxel_size);
   if (known_seeds.size()) {
-    // these strategies permanently modify the  mask_grid for both soma
-    // detection and neurite reconstruction, the image grid uint8 that is
-    // output in windows is unaffected however
+    if (args->output_type == "labels") {
+      create_labels(known_seeds, run_dir / "known-seeds", image);
+    }
+
     auto mask_of_known_seeds = create_seed_sphere_grid(known_seeds);
     if (args->save_vdbs)
       write_vdb_file({mask_of_known_seeds}, run_dir / "known_seeds.vdb");
+
     timer.restart();
+    // these strategies permanently modify the  mask_grid for both soma
+    // detection and neurite reconstruction, the image grid uint8 that is
+    // output in windows is unaffected however
     if (args->seed_intersection) {
       // grids passed as args are unchanged, a new grid copy is created only
       // where both the image mask and the seed mask are active
@@ -539,19 +561,6 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   run_log.flush();
 
   if (seeds.size() && args->output_type == "labels") {
-    if (!args->window_grid_paths.empty()) {
-      std::cerr << "--output-type labels must also pass --output-windows "
-                   "uint8.vdb, exiting...\n";
-      exit(1);
-    }
-
-    // you need to load the passed image grids if you are outputting windows
-    auto window_grids =
-        args->window_grid_paths |
-        rv::transform([](const auto &gpath) { return read_vdb_file(gpath); }) |
-        rng::to_vector; // force reading once now
-
-    ImgGrid::Ptr image = openvdb::gridPtrCast<ImgGrid>(window_grids.front());
     create_labels(seeds, run_dir / "final-somas", image);
   }
 
