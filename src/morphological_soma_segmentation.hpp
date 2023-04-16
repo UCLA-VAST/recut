@@ -538,7 +538,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
           << "Seed detection: final seed count, " << seeds.size() << '\n';
   run_log.flush();
 
-  if (args->output_type == "labels") {
+  if (seeds.size() && args->output_type == "labels") {
     if (!args->window_grid_paths.empty()) {
       std::cerr << "--output-type labels must also pass --output-windows "
                    "uint8.vdb, exiting...\n";
@@ -552,7 +552,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
         rng::to_vector; // force reading once now
 
     ImgGrid::Ptr image = openvdb::gridPtrCast<ImgGrid>(window_grids.front());
-    create_labels(seeds, run_dir / "image-labels", image);
+    create_labels(seeds, run_dir / "final-somas", image);
   }
 
   return std::make_pair(seeds, topology_grid);
