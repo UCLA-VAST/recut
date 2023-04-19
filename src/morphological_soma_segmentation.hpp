@@ -343,7 +343,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
 
   ImgGrid::Ptr image;
   if (args->output_type == "labels") {
-    if (!args->window_grid_paths.empty()) {
+    if (args->window_grid_paths.empty()) {
       std::cerr << "--output-type labels must also pass --output-windows "
                    "uint8.vdb, exiting...\n";
       exit(1);
