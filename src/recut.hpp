@@ -2051,10 +2051,12 @@ void Recut<image_t>::io_tile(int tile_id, T1 &grids, T2 &uint8_grids,
         dense_tile, tile_thresholds, histogram);
 
     active_tiles[tile_id] = false;
-#ifdef LOG_FULL
-    std::cout << "Completed tile " << tile_id + 1 << " of " << grid_tile_size
-              << " in " << tile_timer.elapsed() << " s\n";
-    //" converted in " << (tile_timer.elapsed() - convert_start) <<
+#ifdef LOG
+    if (args->input_type == "ims") {
+      std::cout << "Completed tile " << tile_id + 1 << " of " << grid_tile_size
+                << " in " << tile_timer.elapsed() << " s\n";
+      //" converted in " << (tile_timer.elapsed() - convert_start) <<
+    }
 #endif
   } else {
     // note openvdb::initialize() must have been called before this point
@@ -2715,8 +2717,8 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     timer.restart();
     auto refined_markers =
         this->args->mean_shift_factor.has_value()
-            ? mean_shift(markers, this->args->mean_shift_max_iters, this->args->mean_shift_factor.value(),
-                         coord_to_idx)
+            ? mean_shift(markers, this->args->mean_shift_max_iters,
+                         this->args->mean_shift_factor.value(), coord_to_idx)
             : markers;
     auto mean_shift_elapsed = timer.elapsed();
     timer.restart();
