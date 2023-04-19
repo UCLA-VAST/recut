@@ -49,6 +49,7 @@ void RecutCommandLineArgs::PrintUsage() {
          "threads\n";
   std::cout << "--mean-shift         radius to mean shift nodes towards local "
                "mean which aids pruning; default 0\n";
+  std::cout << "--mean-shift-iters     max iterations allowed for mean shift convergence; most smoothing converges by the default 4 iterations\n";
   std::cout << "--output-windows     list 1 or more uint8 vdb files in channel "
                "order to create "
                "image windows for each neuron cluster/component\n";
@@ -261,6 +262,9 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         ++i;
       } else if (strcmp(argv[i], "--mean-shift") == 0) {
         args.mean_shift_factor = atof(argv[i + 1]);
+        ++i;
+      } else if (strcmp(argv[i], "--mean-shift-iters") == 0) {
+        args.mean_shift_max_iters = atoi(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--close-steps") == 0) {
         args.close_steps = atof(argv[i + 1]);

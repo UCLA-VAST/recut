@@ -2715,7 +2715,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     timer.restart();
     auto refined_markers =
         this->args->mean_shift_factor.has_value()
-            ? mean_shift(markers, 4, this->args->mean_shift_factor.value(),
+            ? mean_shift(markers, this->args->mean_shift_max_iters, this->args->mean_shift_factor.value(),
                          coord_to_idx)
             : markers;
     auto mean_shift_elapsed = timer.elapsed();
