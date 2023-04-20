@@ -81,8 +81,8 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "--close-steps        morphological closing level "
                "to fill existing voids inside somata; "
                "defaults to 8.\n";
-  std::cout << "--close-topology     also apply the close-steps to the "
-               "neurites of the image; defaults to false\n";
+  std::cout << "--preserve-topology     do not apply morphological closing to the "
+               "neurites of the image; defaults to closing both somas and topology (neurites)\n";
   std::cout << "--open-steps         2nd morphological opening level "
                "to clear neurites and keep somata in the image only; "
                "defaults to 5 and disabled by passing 0 (no-opening)\n";
@@ -269,8 +269,8 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--close-steps") == 0) {
         args.close_steps = atof(argv[i + 1]);
         ++i;
-      } else if (strcmp(argv[i], "--close-topology") == 0) {
-        args.close_topology = true;
+      } else if (strcmp(argv[i], "--preserve-topology") == 0) {
+        args.close_topology = false;
       } else if (strcmp(argv[i], "--order") == 0) {
         args.morphological_operations_order = atoi(argv[i + 1]);
         ++i;

@@ -30,7 +30,7 @@ public:
         morphological_operations_order(1), min_radius_um(MIN_SOMA_RADIUS_UM),
         max_radius_um(MAX_SOMA_RADIUS_UM), voxel_size({1., 1., 1.}),
         save_vdbs(false), seed_intersection(false),
-        ignore_multifurcations(false), close_topology(false), mean_shift_max_iters(4) {}
+        ignore_multifurcations(false), close_topology(true), mean_shift_max_iters(4) {}
 
   static void PrintUsage();
   std::string MetaString();
