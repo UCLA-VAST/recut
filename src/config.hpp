@@ -76,8 +76,13 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 
 #define SWC_MIN_LINE 110
 #define SOMA_PRUNE_RADIUS 1.6
-#define MIN_SOMA_RADIUS_UM 3.0
-#define MAX_SOMA_RADIUS_UM 18.0
+// no filtering by default below
+#define MIN_SOMA_RADIUS_UM 0 
+#define MAX_SOMA_RADIUS_UM 100
+// these are more specific to experimental conditions in 
+// original datasets Recut was tested with: 
+//#define MIN_SOMA_RADIUS_UM 3.0
+//#define MAX_SOMA_RADIUS_UM 18.0
 #define MIN_Z_DEPTH 30
 // euclidean voxel path distance of branches to prune
 #define MIN_BRANCH_LENGTH 20
