@@ -49,7 +49,9 @@ void RecutCommandLineArgs::PrintUsage() {
          "threads\n";
   std::cout << "--mean-shift         radius to mean shift nodes towards local "
                "mean which aids pruning; default 0\n";
-  std::cout << "--mean-shift-iters     max iterations allowed for mean shift convergence; most smoothing converges by the default 4 iterations\n";
+  std::cout
+      << "--mean-shift-iters   max iterations allowed for mean shift "
+         "convergence; most smoothing converges by the default 4 iterations\n";
   std::cout << "--output-windows     list 1 or more uint8 vdb files in channel "
                "order to create "
                "image windows for each neuron cluster/component\n";
@@ -81,8 +83,10 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "--close-steps        morphological closing level "
                "to fill existing voids inside somata; "
                "defaults to 8.\n";
-  std::cout << "--preserve-topology     do not apply morphological closing to the "
-               "neurites of the image; defaults to closing both somas and topology (neurites)\n";
+  std::cout
+      << "--preserve-topology  do not apply morphological closing to the "
+         "neurites of the image; defaults to closing both somas and topology "
+         "(neurites)\n";
   std::cout << "--open-steps         2nd morphological opening level "
                "to clear neurites and keep somata in the image only; "
                "defaults to 5 and disabled by passing 0 (no-opening)\n";
@@ -143,6 +147,11 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         }
       } else if (strcmp(argv[i], "--seeds") == 0 ||
                  strcmp(argv[i], "-s") == 0) {
+        // need to pass in at least 1 seed path
+        if ((i + 1 == argc) || (argv[i + 1][0] == '-')) {
+          RecutCommandLineArgs::PrintUsage();
+          exit(1);
+        }
         // canonical removes the trailing slash
         args.seed_path = std::filesystem::canonical(argv[i + 1]);
         if (!std::filesystem::exists(args.seed_path)) {
@@ -153,8 +162,14 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
           cerr << "--seeds must be a directory\n";
           exit(1);
         }
-
         ++i;
+
+        // check for a specified seed action type
+        //if (!((i + 1 == argc) || (argv[i + 1][0] == '-'))) {
+          //switch (argv[i + 1]) {
+            //case 
+            //++i;
+        //}
       } else if (strcmp(argv[i], "--resolution-level") == 0 ||
                  strcmp(argv[i], "-rl") == 0) {
         args.resolution_level = atoi(argv[i + 1]);
@@ -213,8 +228,8 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         ++i;
       } else if (strcmp(argv[i], "--save-vdbs") == 0) {
         args.save_vdbs = true;
-      } else if (strcmp(argv[i], "--seed-intersection") == 0) {
-        args.seed_intersection = true;
+      //} else if (strcmp(argv[i], "--seed-intersection") == 0) {
+        //args.seed_intersection = true;
       } else if (strcmp(argv[i], "--ignore-multifurcations") == 0) {
         args.ignore_multifurcations = true;
       } else if (strcmp(argv[i], "--channel") == 0 ||
