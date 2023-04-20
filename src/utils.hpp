@@ -1053,7 +1053,7 @@ auto create_vdb_grid = [](auto lengths, float requested_fg_pct = -1) {
 };
 
 auto get_metadata = [](auto vdb_grid) -> std::pair<GridCoord, float> {
-  GridCoord image_lengths(0, 0, 0);
+  GridCoord image_lengths;
   float requested_fg_pct = -1; // default value if not found acceptable
   for (openvdb::MetaMap::MetaIterator iter = vdb_grid->beginMeta();
        iter != vdb_grid->endMeta(); ++iter) {
@@ -1061,12 +1061,9 @@ auto get_metadata = [](auto vdb_grid) -> std::pair<GridCoord, float> {
     const std::string &name = iter->first;
     openvdb::Metadata::Ptr value = iter->second;
 
-    if (name == "original_bounding_extent_x") {
-      image_lengths[0] = static_cast<openvdb::FloatMetadata &>(*value).value();
-    } else if (name == "original_bounding_extent_y") {
-      image_lengths[1] = static_cast<openvdb::FloatMetadata &>(*value).value();
-    } else if (name == "original_bounding_extent_z") {
-      image_lengths[2] = static_cast<openvdb::FloatMetadata &>(*value).value();
+    if (name == "file_bbox_max") {
+      openvdb::Vec3I v = static_cast<openvdb::Vec3IMetadata &>(*value).value();
+      image_lengths = GridCoord(v);
     } else if (name == "requested_fg_pct") {
       requested_fg_pct = static_cast<openvdb::FloatMetadata &>(*value).value();
     }
@@ -3113,11 +3110,10 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
 // values copied in topology and written z-plane by z-plane to individual tiff
 // files tiff component also saved
 template <typename GridT>
-std::string write_output_windows(
-    GridT output_grid, fs::path dir,
-    std::ofstream &runtime, int index = 0,
-    bool output_vdb = false, bool paged = true, CoordBBox bbox = {},
-    int channel = 0) {
+std::string write_output_windows(GridT output_grid, fs::path dir,
+                                 std::ofstream &runtime, int index = 0,
+                                 bool output_vdb = false, bool paged = true,
+                                 CoordBBox bbox = {}, int channel = 0) {
 
   auto base = dir / ("img-component-" + std::to_string(index) + "-ch" +
                      std::to_string(channel));

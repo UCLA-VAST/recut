@@ -2950,6 +2950,8 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
 #ifdef LOG
     std::ofstream convert_log(this->log_fn);
     convert_log << "Thread count, " << args->user_thread_count << '\n';
+    convert_log << "Upsample z, " << args->upsample_z << '\n';
+    convert_log << "Final voxel size, " << args->upsample_z << '\n';
     convert_log << "Original voxel count, "
                 << coord_prod_accum(this->image_lengths) << '\n';
 #endif
