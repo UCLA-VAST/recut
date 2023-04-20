@@ -2128,24 +2128,24 @@ void Recut<image_t>::update(std::string stage, Container &fifo) {
 
       set_grid_meta(this->topology_grid, this->image_lengths,
                     args->foreground_percent, args->channel,
-                    args->resolution_level, this->args->output_name);
+                    args->resolution_level, this->args->output_name, args->upsample_z);
 
     } else {
       if (this->args->output_type == "float") {
         this->input_grid = merge_grids(float_grids);
         set_grid_meta(this->input_grid, this->image_lengths,
                       args->foreground_percent, args->channel,
-                      args->resolution_level, this->args->output_name);
+                      args->resolution_level, this->args->output_name, args->upsample_z);
       } else if (this->args->output_type == "uint8") {
         this->img_grid = merge_grids(uint8_grids);
         set_grid_meta(this->img_grid, this->image_lengths,
                       args->foreground_percent, args->channel,
-                      args->resolution_level, this->args->output_name);
+                      args->resolution_level, this->args->output_name, args->upsample_z);
       } else if (this->args->output_type == "mask") {
         this->mask_grid = merge_grids(mask_grids);
         set_grid_meta(this->mask_grid, this->image_lengths,
                       args->foreground_percent, args->channel,
-                      args->resolution_level, this->args->output_name);
+                      args->resolution_level, this->args->output_name, args->upsample_z);
       }
 
       if (args->histogram) {

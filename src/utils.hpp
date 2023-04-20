@@ -955,7 +955,7 @@ template <typename T> void print_grid_metadata(T vdb_grid) {
 
 auto set_grid_meta = [](auto grid, auto lengths, float requested_fg_pct = -1,
                         int channel = 0, int resolution_level = 0,
-                        std::string name = "topology") {
+                        std::string name = "topology", int upsample_z=1) {
   grid->setName(name);
   grid->setCreator("recut");
   grid->setIsInWorldSpace(true);
@@ -971,6 +971,8 @@ auto set_grid_meta = [](auto grid, auto lengths, float requested_fg_pct = -1,
                    openvdb::FloatMetadata(static_cast<float>(lengths[2])));
   grid->insertMeta("requested_fg_pct",
                    openvdb::FloatMetadata(requested_fg_pct));
+  grid->insertMeta("upsample_z_factor",
+                   openvdb::Int32Metadata(upsample_z));
 };
 
 auto copy_to_point_grid = [](openvdb::FloatGrid::Ptr other, auto lengths,
