@@ -6,10 +6,10 @@ void RecutCommandLineArgs::PrintUsage() {
                "[-o <output_vdb_file_name>] "
                "[--bkg-thresh <int>] [--fg-percent <double>]\n\n";
   std::cout << "<image file or dir>  file or directory of input image(s)\n";
-  std::cout << "--seeds              [-s] optional option to pass a directory "
-               "of SWC files with 1 root/soma per file "
+  std::cout << "--seeds <dir> [action] option to pass a directory "
+               "of SWC files with 1 soma node per file "
                "to filter by, when --seeds are passed all other auto-found "
-               "seeds will be discarded\n";
+               "seeds will be discarded, action is 'intersect' or 'fill', defaults to 'intersect'\n";
   std::cout << "--output-name        [-o] give converted vdb a custom name "
                "defaults to "
                "naming with useful image attributes\n";
@@ -165,11 +165,17 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         ++i;
 
         // check for a specified seed action type
-        //if (!((i + 1 == argc) || (argv[i + 1][0] == '-'))) {
-          //switch (argv[i + 1]) {
-            //case 
-            //++i;
-        //}
+        if (!((i + 1 == argc) || (argv[i + 1][0] == '-'))) {
+          if (strcmp(argv[i + 1], "intersect") == 0) {
+            args.seed_intersection = true; // default
+          } else if (strcmp(argv[i + 1], "fill") == 0) {
+            args.seed_intersection = false;
+          } else {
+            RecutCommandLineArgs::PrintUsage();
+            exit(1);
+          }
+          ++i;
+        }
       } else if (strcmp(argv[i], "--resolution-level") == 0 ||
                  strcmp(argv[i], "-rl") == 0) {
         args.resolution_level = atoi(argv[i + 1]);
@@ -228,8 +234,6 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         ++i;
       } else if (strcmp(argv[i], "--save-vdbs") == 0) {
         args.save_vdbs = true;
-      //} else if (strcmp(argv[i], "--seed-intersection") == 0) {
-        //args.seed_intersection = true;
       } else if (strcmp(argv[i], "--ignore-multifurcations") == 0) {
         args.ignore_multifurcations = true;
       } else if (strcmp(argv[i], "--channel") == 0 ||

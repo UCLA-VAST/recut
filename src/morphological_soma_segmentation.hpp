@@ -101,7 +101,7 @@ openvdb::FloatGrid::Ptr create_seed_sphere_grid(std::vector<Seed> seeds) {
 // If you already filtered the grid with seed intersection there's no need
 // to refilter by known seeds
 auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
-                            EnlargedPointDataGrid::Ptr topology_grid,
+                            openvdb::FloatGrid::Ptr topology_sdf,
                             std::array<float, 3> voxel_size,
                             float min_radius_um, float max_radius_um,
                             std::string output_type,
@@ -165,7 +165,7 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
     // auto [coord_center, radius_voxels] = *seed;
     // std::cout << "radius voxels " << radius_voxels << '\n';
 
-    if (is_coordinate_active(topology_grid, coord_center)) {
+    if (topology_sdf->tree().isValueOn(coord_center)) {
       if (!known_seeds.empty()) {
         // convert to fog so that isValueOn returns whether it is
         // within the
@@ -335,7 +335,7 @@ void create_labels(std::vector<Seed> seeds, fs::path dir,
   //}
 }
 
-std::pair<std::vector<Seed>, EnlargedPointDataGrid::Ptr>
+std::pair<std::vector<Seed>, openvdb::FloatGrid::Ptr>
 soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
                   GridCoord image_lengths, fs::path log_fn, fs::path run_dir) {
 
@@ -527,15 +527,6 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   // if (args->save_vdbs)
   // write_vdb_file({masked_sdf}, run_dir / "connected_sdf.vdb");
 
-#ifdef LOG
-  std::cout << "\tSDF to point step\n";
-#endif
-  auto topology_grid = convert_sdf_to_points(masked_sdf, image_lengths,
-                                             args->foreground_percent);
-
-  // if (args->save_vdbs)
-  // write_vdb_file({topology_grid}, run_dir / "point.vdb");
-
   // adds all valid markers to roots vector
   // filters by user input seeds if available
 #ifdef LOG
@@ -547,7 +538,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   // If you already filtered the grid with seed intersection there's no need
   // to refilter by known seeds
   auto [seeds, filtered_components] = create_seed_pairs(
-      components, topology_grid, args->voxel_size, args->min_radius_um,
+      components, masked_sdf, args->voxel_size, args->min_radius_um,
       args->max_radius_um, args->output_type,
       args->seed_intersection ? std::vector<Seed>{} : known_seeds);
 #ifdef LOG
@@ -564,5 +555,5 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
     create_labels(seeds, run_dir / "final-somas", image);
   }
 
-  return std::make_pair(seeds, topology_grid);
+  return std::make_pair(seeds, masked_sdf);
 }

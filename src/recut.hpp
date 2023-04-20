@@ -3086,7 +3086,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     this->input_is_vdb = true;
   }
 
-  auto [seeds, topology_grid] =
+  auto [seeds, masked_sdf] =
       soma_segmentation(mask_grid, args, this->image_lengths, log_fn, run_dir);
 
   if (seeds.empty()) {
@@ -3102,8 +3102,13 @@ template <class image_t> void Recut<image_t>::operator()() {
     exit(0); // exit
   }
 
-  assertm(this->topology_grid,
+#ifdef LOG
+  std::cout << "\tSDF to point step\n";
+#endif
+  assertm(masked_sdf,
           "Topology grid must be set before starting reconstruction");
+  auto topology_grid = convert_sdf_to_points(masked_sdf, image_lengths,
+                                             args->foreground_percent);
 
   initialize_globals(this->grid_tile_size, this->tile_block_size);
 

@@ -3599,6 +3599,7 @@ auto convert_sdf_to_points = [](auto sdf, auto image_lengths,
                                 auto foreground_percent) {
   // write_vdb_file({sdf}, "fog.vdb");
   std::vector<PositionT> positions;
+  sdf->tree().isValueOn(GridCoord(0,0,0));
   for (auto iter = sdf->cbeginValueOn(); iter.test(); ++iter) {
     auto coord = iter.getCoord();
     positions.push_back(PositionT(coord.x(), coord.y(), coord.z()));
