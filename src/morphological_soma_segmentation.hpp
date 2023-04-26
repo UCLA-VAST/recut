@@ -385,10 +385,18 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
       *mask_grid, /*halfwidth voxels*/ RECUT_LEVEL_SET_HALF_WIDTH,
       /*closing steps*/ args->open_denoise == 0 ? args->close_steps : 0);
 
-  // get an unaltered sdf copy of the image, you must close at least 1 step
-  auto raw_image_sdf = vto::topologyToLevelSet(
-      *mask_grid, /*halfwidth voxels*/ RECUT_LEVEL_SET_HALF_WIDTH,
-      /*closing steps*/ 1);
+  // the raw image is only needed if you are not closing topology
+  openvdb::FloatGrid::Ptr raw_image_sdf;
+  if (!args->close_topology) {
+    // get an unaltered sdf copy of the image, you must close at least 1 step
+    raw_image_sdf = vto::topologyToLevelSet(
+        *mask_grid, /*halfwidth voxels*/ RECUT_LEVEL_SET_HALF_WIDTH,
+        /*closing steps*/ 1);
+  }
+#ifdef LOG
+  std::cout << "\t  finished mask to sdf\n";
+#endif
+
   run_log << "Seed detection: mask to SDF conversion time, "
           << timer.elapsed_formatted() << '\n'
           << "Seed detection: SDF (topology) voxel count, "
@@ -468,6 +476,13 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
     auto mask_of_known_seeds = create_seed_sphere_grid(known_seeds);
     if (args->save_vdbs)
       write_vdb_file({mask_of_known_seeds}, run_dir / "known_seeds.vdb");
+
+    // auto [seeds, filtered_components] = create_seed_pairs(
+    // components, masked_sdf, args->voxel_size, args->min_radius_um,
+    // args->max_radius_um, args->output_type,
+    // args->seed_intersection ? std::vector<Seed>{} : known_seeds);
+    // std::cout << "\tsaving " << seeds.size()
+    //<< " seed coordinates to file ...\n";
 
     timer.restart();
     // these strategies permanently modify the  mask_grid for both soma
