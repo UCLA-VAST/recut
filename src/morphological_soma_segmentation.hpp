@@ -5,6 +5,7 @@
 #include <openvdb/tools/FastSweeping.h> //maskSDF
 #include <openvdb/tools/Mask.h>         // interiorMask()
 #include <openvdb/tools/TopologyToLevelSet.h>
+#include <tbb/parallel_for_each.h>
 
 // adds all markers to seeds
 // recut operates in voxel units (image space) therefore whenever marker/node
@@ -301,18 +302,25 @@ void create_label(Seed seed, fs::path dir, ImgGrid::Ptr image = nullptr,
 void create_labels(std::vector<Seed> seeds, fs::path dir,
                    ImgGrid::Ptr image = nullptr,
                    std::vector<openvdb::FloatGrid::Ptr> *components = nullptr,
+                   int threads=1,
                    bool output_vdb = false, int channel = 0,
-                   bool paged = false) {
+                   bool paged = true) {
 
-  auto soma_dir = [dir](int index) {
-    return dir / ("soma-" + std::to_string(index));
+  auto soma_dir = [dir](Seed seed) {
+    return dir / ("soma-" + std::to_string(seed.coord.x()) + '-' +
+                  std::to_string(seed.coord.y()) + '-' +
+                  std::to_string(seed.coord.z()));
   };
 
+  // if uint8 is passed to create crop windows
   if (image) {
-    rng::for_each(seeds | rv::enumerate, [&](auto element) {
-      auto [index, seed] = element;
-      create_label(seed, soma_dir(index), image, nullptr, index, output_vdb,
-                   channel, paged);
+    tbb::task_arena arena(threads);
+    arena.execute([&] {
+      tbb::parallel_for_each(seeds | rv::enumerate | rng::to_vector, [&](auto element) {
+        auto [index, seed] = element;
+        create_label(seed, soma_dir(seed), image, nullptr, index, output_vdb,
+                     channel, paged);
+      });
     });
   }
 
@@ -470,7 +478,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   auto known_seeds = process_marker_dir(args->seed_path, args->voxel_size);
   if (known_seeds.size()) {
     if (args->output_type == "labels") {
-      create_labels(known_seeds, run_dir / "known-seeds", image);
+      create_labels(known_seeds, run_dir / "known-seeds", image, nullptr, args->user_thread_count);
     }
 
     auto mask_of_known_seeds = create_seed_sphere_grid(known_seeds);
@@ -567,7 +575,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   run_log.flush();
 
   if (seeds.size() && args->output_type == "labels") {
-    create_labels(seeds, run_dir / "final-somas", image);
+    create_labels(seeds, run_dir / "final-somas", image, nullptr, args->user_thread_count);
   }
 
   return std::make_pair(seeds, masked_sdf);

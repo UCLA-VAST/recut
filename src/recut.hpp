@@ -22,7 +22,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <tbb/global_control.h>
-#include <tbb/parallel_for_each.h>
 #include <type_traits>
 #include <unistd.h>
 #include <unordered_set>
