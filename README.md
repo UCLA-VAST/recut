@@ -224,6 +224,10 @@ This program relies on:
 - Optionally: python3.8 matplotlib, gdb, clang-tools, linux-perf for development
 - Note: to increase reproducibility and dependencies issues we recommend developing within the Nix package environment (see the Troubleshooting section)
 
+### Pipeline Overview
+
+![pipeline](/images/whole-pipeline.png)
+
 ### Known Issues
 Where possible Recut attempts to use the maximum threads available to your system by default. This can be a problem when converting large images or when using the `--output-windows` with multiple large grids since each thread is grabbing large chunks of images and operating on them in DRAM. Meanwhile reconstruction alone consumes very little memory since it operates on images that have already been compressed to VDB grids. In general you should use the system with the maximum amount of DRAM that you can. When you are still limited on DRAM you should lower the thread count used by recut by specifying the threads like `--parallel 2`. When recut consumes too much memory you will see erros like `Segmentation fault` or `SIGKILL`. Lower the thread count until the process can complete, you can monitor the dynamic usage of your DRAM during execution by running the command `htop` in a separate terminal. This can be helpful to guage what parallel factor you want to use.
 
