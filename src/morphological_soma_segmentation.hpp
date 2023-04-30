@@ -271,8 +271,8 @@ create_filter(openvdb::FloatGrid::Ptr sdf_grid,
 // You need to convert a SDF grid in its entirety to an interior mask grid
 // before cropping. If you crop an SDF before converting to a mask grid
 // the inside voxels may not be enclosed and may be counted as outside
-void create_label(Seed seed, fs::path dir, ImgGrid::Ptr image = nullptr,
-                  openvdb::MaskGrid::Ptr mask = nullptr,
+template <typename GridT>
+void create_label(Seed seed, fs::path dir, GridT grid,
                   openvdb::FloatGrid::Ptr keep_if_empty_grid = nullptr,
                   int index = 0, bool output_vdb = true, int channel = 0,
                   bool paged = false) {
@@ -284,34 +284,27 @@ void create_label(Seed seed, fs::path dir, ImgGrid::Ptr image = nullptr,
   auto bbox = CoordBBox(seed.coord - offset, seed.coord + offset);
   vb::BBoxd clipBox(bbox.min().asVec3d(), bbox.max().asVec3d());
 
-  auto write_grid = [&](auto grid) {
-    if (!grid) {
+  if (!grid) {
+    return; // do nothing
+  }
+
+  // if the surface SDF (keep_if_empty_grid) was passed then only write
+  // windows where it is empty, this is vital for visualizing the problem
+  // somas the somas that get deleted for unknown reasons
+  if (keep_if_empty_grid) {
+    const auto output_grid = vto::clip(*keep_if_empty_grid, clipBox);
+    if (output_grid->activeVoxelCount() > 0) {
       return; // do nothing
     }
+  }
 
-    // if the surface SDF (keep_if_empty_grid) was passed then only write
-    // windows where it is empty, this is vital for visualizing the problem
-    // somas the somas that get deleted for unknown reasons
-    if (keep_if_empty_grid) {
-      const auto output_grid = vto::clip(*keep_if_empty_grid, clipBox);
-      if (output_grid->activeVoxelCount() > 0) {
-        return; // do nothing
-      }
-    }
+  // prepare the directory and log
+  fs::create_directories(dir);
+  std::ofstream runtime;
+  runtime.open(dir / ("log.csv"));
 
-    // prepare the directory and log
-    fs::create_directories(dir);
-    std::ofstream runtime;
-    runtime.open(dir / ("log.csv"));
-
-    write_output_windows(mask, dir, runtime, index, output_vdb, paged, bbox,
-                         channel);
-  };
-
-  write_grid(mask);
-  // optionally write out the original background subtracted image
-  // for this component
-  write_grid(image);
+  write_output_windows(grid, dir, runtime, index, output_vdb, paged, bbox,
+                       channel);
 }
 
 // takes a set of seeds and their corresponding sdf/isosurface
@@ -337,8 +330,8 @@ void create_labels(std::vector<Seed> seeds, fs::path dir,
       tbb::parallel_for_each(
           seeds | rv::enumerate | rng::to_vector, [&](auto element) {
             auto [index, seed] = element;
-            create_label(seed, soma_dir(seed), image, nullptr,
-                         keep_if_empty_grid, index, output_vdb, channel, paged);
+            create_label(seed, soma_dir(seed), image, keep_if_empty_grid, index,
+                         output_vdb, channel, paged);
           });
     });
   }
@@ -355,7 +348,7 @@ void create_labels(std::vector<Seed> seeds, fs::path dir,
 
   //// convert to mask type
   // auto mask = vto::extractEnclosedRegion(component);
-  // create_label(seed, soma_dir(index), nullptr, mask, keep_if_empty_grid,
+  // create_label(seed, soma_dir(index), mask, keep_if_empty_grid,
   // index, output_vdb, channel, paged); write_vdb_file({mask}, dir / "soma-" +
   // index);
   //});
