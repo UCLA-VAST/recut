@@ -311,7 +311,7 @@ void create_label(Seed seed, fs::path dir, GridT grid,
 // and writes to TIF their uint8
 void create_labels(std::vector<Seed> seeds, fs::path dir,
                    ImgGrid::Ptr image = nullptr,
-                   std::vector<openvdb::FloatGrid::Ptr> *components = nullptr,
+                   openvdb::MaskGrid::Ptr mask = nullptr,
                    openvdb::FloatGrid::Ptr keep_if_empty_grid = nullptr,
                    int threads = 1, bool output_vdb = false, int channel = 0,
                    bool paged = true) {
@@ -331,7 +331,9 @@ void create_labels(std::vector<Seed> seeds, fs::path dir,
           seeds | rv::enumerate | rng::to_vector, [&](auto element) {
             auto [index, seed] = element;
             create_label(seed, soma_dir(seed), image, keep_if_empty_grid, index,
-                         output_vdb, channel, paged);
+                         output_vdb, 0, paged);
+            create_label(seed, soma_dir(seed), mask, keep_if_empty_grid, index,
+                         output_vdb, 1, paged);
           });
     });
   }
@@ -490,11 +492,11 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   auto known_seeds = process_marker_dir(args->seed_path, args->voxel_size);
   if (known_seeds.size()) {
     if (args->output_type == "labels") {
-      create_labels(known_seeds, run_dir / "known-seeds", image, nullptr,
+      create_labels(known_seeds, run_dir / "known-seeds", image, mask_grid,
                     nullptr, args->user_thread_count);
       create_labels(known_seeds, run_dir / "missing-after-close", image,
-                    nullptr, closed_sdf, args->user_thread_count);
-      create_labels(known_seeds, run_dir / "missing-after-open", image, nullptr,
+                    mask_grid, closed_sdf, args->user_thread_count);
+      create_labels(known_seeds, run_dir / "missing-after-open", image, mask_grid,
                     sdf_grid, args->user_thread_count);
     }
 
@@ -592,7 +594,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   run_log.flush();
 
   if (seeds.size() && args->output_type == "labels") {
-    create_labels(seeds, run_dir / "final-somas", image, nullptr, nullptr,
+    create_labels(seeds, run_dir / "final-somas", image, mask_grid, nullptr,
                   args->user_thread_count);
   }
 
