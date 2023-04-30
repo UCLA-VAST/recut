@@ -272,8 +272,10 @@ create_filter(openvdb::FloatGrid::Ptr sdf_grid,
 // before cropping. If you crop an SDF before converting to a mask grid
 // the inside voxels may not be enclosed and may be counted as outside
 void create_label(Seed seed, fs::path dir, ImgGrid::Ptr image = nullptr,
-                  openvdb::MaskGrid::Ptr mask = nullptr, int index = 0,
-                  bool output_vdb = true, int channel = 0, bool paged = false) {
+                  openvdb::MaskGrid::Ptr mask = nullptr,
+                  openvdb::FloatGrid::Ptr keep_if_empty_grid = nullptr,
+                  int index = 0, bool output_vdb = true, int channel = 0,
+                  bool paged = false) {
 
   // build the bounding box:
   // center the window around the center of the soma and give it a uniform width
@@ -282,19 +284,34 @@ void create_label(Seed seed, fs::path dir, ImgGrid::Ptr image = nullptr,
   auto bbox = CoordBBox(seed.coord - offset, seed.coord + offset);
   vb::BBoxd clipBox(bbox.min().asVec3d(), bbox.max().asVec3d());
 
-  std::ofstream runtime;
-  runtime.open(dir / ("log.csv"));
+  auto write_grid = [&](auto grid) {
+    if (!grid) {
+      return; // do nothing
+    }
 
-  // write the mask
-  if (mask)
+    // if the surface SDF (keep_if_empty_grid) was passed then only write
+    // windows where it is empty, this is vital for visualizing the problem
+    // somas the somas that get deleted for unknown reasons
+    if (keep_if_empty_grid) {
+      const auto output_grid = vto::clip(*keep_if_empty_grid, clipBox);
+      if (output_grid->activeVoxelCount() > 0) {
+        return; // do nothing
+      }
+    }
+
+    // prepare the directory and log
+    fs::create_directories(dir);
+    std::ofstream runtime;
+    runtime.open(dir / ("log.csv"));
+
     write_output_windows(mask, dir, runtime, index, output_vdb, paged, bbox,
                          channel);
+  };
 
+  write_grid(mask);
   // optionally write out the original background subtracted image
   // for this component
-  if (image)
-    write_output_windows(image, dir, runtime, index, output_vdb, paged, bbox,
-                         channel);
+  write_grid(image);
 }
 
 // takes a set of seeds and their corresponding sdf/isosurface
@@ -302,10 +319,11 @@ void create_label(Seed seed, fs::path dir, ImgGrid::Ptr image = nullptr,
 void create_labels(std::vector<Seed> seeds, fs::path dir,
                    ImgGrid::Ptr image = nullptr,
                    std::vector<openvdb::FloatGrid::Ptr> *components = nullptr,
-                   int threads=1,
-                   bool output_vdb = false, int channel = 0,
+                   openvdb::FloatGrid::Ptr keep_if_empty_grid = nullptr,
+                   int threads = 1, bool output_vdb = false, int channel = 0,
                    bool paged = true) {
 
+  fs::create_directories(dir);
   auto soma_dir = [dir](Seed seed) {
     return dir / ("soma-" + std::to_string(seed.coord.x()) + '-' +
                   std::to_string(seed.coord.y()) + '-' +
@@ -316,11 +334,12 @@ void create_labels(std::vector<Seed> seeds, fs::path dir,
   if (image) {
     tbb::task_arena arena(threads);
     arena.execute([&] {
-      tbb::parallel_for_each(seeds | rv::enumerate | rng::to_vector, [&](auto element) {
-        auto [index, seed] = element;
-        create_label(seed, soma_dir(seed), image, nullptr, index, output_vdb,
-                     channel, paged);
-      });
+      tbb::parallel_for_each(
+          seeds | rv::enumerate | rng::to_vector, [&](auto element) {
+            auto [index, seed] = element;
+            create_label(seed, soma_dir(seed), image, nullptr,
+                         keep_if_empty_grid, index, output_vdb, channel, paged);
+          });
     });
   }
 
@@ -336,9 +355,9 @@ void create_labels(std::vector<Seed> seeds, fs::path dir,
 
   //// convert to mask type
   // auto mask = vto::extractEnclosedRegion(component);
-  // create_label(seed, soma_dir(index), nullptr, mask, index, output_vdb,
-  // channel, paged);
-  // write_vdb_file({mask}, dir / "soma-" + index);
+  // create_label(seed, soma_dir(index), nullptr, mask, keep_if_empty_grid,
+  // index, output_vdb, channel, paged); write_vdb_file({mask}, dir / "soma-" +
+  // index);
   //});
   //}
 }
@@ -478,7 +497,12 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   auto known_seeds = process_marker_dir(args->seed_path, args->voxel_size);
   if (known_seeds.size()) {
     if (args->output_type == "labels") {
-      create_labels(known_seeds, run_dir / "known-seeds", image, nullptr, args->user_thread_count);
+      create_labels(known_seeds, run_dir / "known-seeds", image, nullptr,
+                    nullptr, args->user_thread_count);
+      create_labels(known_seeds, run_dir / "missing-after-close", image,
+                    nullptr, closed_sdf, args->user_thread_count);
+      create_labels(known_seeds, run_dir / "missing-after-open", image, nullptr,
+                    sdf_grid, args->user_thread_count);
     }
 
     auto mask_of_known_seeds = create_seed_sphere_grid(known_seeds);
@@ -575,7 +599,8 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   run_log.flush();
 
   if (seeds.size() && args->output_type == "labels") {
-    create_labels(seeds, run_dir / "final-somas", image, nullptr, args->user_thread_count);
+    create_labels(seeds, run_dir / "final-somas", image, nullptr, nullptr,
+                  args->user_thread_count);
   }
 
   return std::make_pair(seeds, masked_sdf);
