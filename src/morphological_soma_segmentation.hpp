@@ -309,9 +309,10 @@ void create_label(Seed seed, fs::path dir, GridT grid,
 
 // takes a set of seeds and their corresponding sdf/isosurface
 // and writes to TIF their uint8
+template <typename GridT>
 void create_labels(std::vector<Seed> seeds, fs::path dir,
                    ImgGrid::Ptr image = nullptr,
-                   openvdb::MaskGrid::Ptr mask = nullptr,
+                   GridT mask = nullptr,
                    openvdb::FloatGrid::Ptr keep_if_empty_grid = nullptr,
                    int threads = 1, bool output_vdb = false, int channel = 0,
                    bool paged = true) {
@@ -492,12 +493,19 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   auto known_seeds = process_marker_dir(args->seed_path, args->voxel_size);
   if (known_seeds.size()) {
     if (args->output_type == "labels") {
-      create_labels(known_seeds, run_dir / "known-seeds", image, mask_grid,
-                    nullptr, args->user_thread_count);
-      create_labels(known_seeds, run_dir / "missing-after-close", image,
-                    mask_grid, closed_sdf, args->user_thread_count);
-      create_labels(known_seeds, run_dir / "missing-after-open", image, mask_grid,
-                    sdf_grid, args->user_thread_count);
+      // convert active regions and capped concativities like hollow centers
+      openvdb::BoolGrid::Ptr opened_bool_grid =
+          vto::extractEnclosedRegion(*sdf_grid);
+      // convert bool -> mask
+      auto opened_mask_grid = vto::interiorMask(*opened_bool_grid);
+      create_labels(known_seeds, run_dir / "ml-train-and-test", image,
+                    opened_mask_grid, nullptr, args->user_thread_count);
+      // create_labels(known_seeds, run_dir / "known-seeds", image, mask_grid,
+      // nullptr, args->user_thread_count);
+      // create_labels(known_seeds, run_dir / "missing-after-close", image,
+      // mask_grid, closed_sdf, args->user_thread_count);
+      // create_labels(known_seeds, run_dir / "missing-after-open", image,
+      // mask_grid, sdf_grid, args->user_thread_count);
     }
 
     auto mask_of_known_seeds = create_seed_sphere_grid(known_seeds);
@@ -593,10 +601,10 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
           << "Seed detection: final seed count, " << seeds.size() << '\n';
   run_log.flush();
 
-  if (seeds.size() && args->output_type == "labels") {
-    create_labels(seeds, run_dir / "final-somas", image, mask_grid, nullptr,
-                  args->user_thread_count);
-  }
+  // if (seeds.size() && args->output_type == "labels") {
+  // create_labels(seeds, run_dir / "final-somas", image, mask_grid, nullptr,
+  // args->user_thread_count);
+  //}
 
   return std::make_pair(seeds, masked_sdf);
 }
