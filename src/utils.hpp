@@ -1152,11 +1152,6 @@ void write_vdb_file(openvdb::GridPtrVec vdb_grids, fs::path fp = "") {
   openvdb::io::File vdb_file(fp.string());
   vdb_file.write(vdb_grids);
   vdb_file.close();
-
-#ifdef LOG
-  // cout << "Finished write whole grid in: " << timer->elapsed() << " sec\n";
-  std::cout << "\tWrote to " << fp << '\n';
-#endif
 }
 
 /*
