@@ -3,7 +3,6 @@
 #include "utils.hpp"
 #include <openvdb/tools/Composite.h>
 #include <openvdb/tools/FastSweeping.h> //maskSDF
-#include <openvdb/tools/Mask.h>         // interiorMask()
 #include <openvdb/tools/TopologyToLevelSet.h>
 #include <tbb/parallel_for_each.h>
 
@@ -272,7 +271,7 @@ create_filter(openvdb::FloatGrid::Ptr sdf_grid,
 // before cropping. If you crop an SDF before converting to a mask grid
 // the inside voxels may not be enclosed and may be counted as outside
 template <typename GridT>
-void create_label(Seed seed, fs::path dir, GridT grid,
+GridT create_label(Seed seed, fs::path dir, GridT grid,
                   openvdb::FloatGrid::Ptr keep_if_empty_grid = nullptr,
                   int index = 0, bool output_vdb = true, int channel = 0,
                   bool paged = true) {
@@ -285,7 +284,7 @@ void create_label(Seed seed, fs::path dir, GridT grid,
   vb::BBoxd clipBox(bbox.min().asVec3d(), bbox.max().asVec3d());
 
   if (!grid) {
-    return; // do nothing
+    return nullptr; // do nothing
   }
 
   // if the surface SDF (keep_if_empty_grid) was passed then only write
@@ -294,8 +293,27 @@ void create_label(Seed seed, fs::path dir, GridT grid,
   if (keep_if_empty_grid) {
     const auto output_grid = vto::clip(*keep_if_empty_grid, clipBox);
     if (output_grid->activeVoxelCount() > 0) {
-      return; // do nothing
+      return nullptr; // do nothing
     }
+  }
+
+  std::vector<GridT> window_components;
+  if (channel) {
+    // works on grids of arbitrary type, placing all disjoint segments
+    // (components) in decreasing size order in window_components
+    vto::segmentActiveVoxels(*grid, window_components);
+
+    // find the component that has the seed within it
+    auto known_component = window_components |
+                           rv::filter([&seed](auto component) {
+                             auto mask = vto::extractEnclosedRegion(*component);
+                             return mask->tree().isValueOn(seed.coord);
+                           }) |
+                           rng::to_vector;
+
+    // otherwise use the largest (first) component in the window
+    grid = known_component.size() ? known_component.front()
+                                  : window_components.front();
   }
 
   // prepare the directory and log
@@ -305,6 +323,7 @@ void create_label(Seed seed, fs::path dir, GridT grid,
 
   write_output_windows(grid, dir, runtime, index, output_vdb, paged, bbox,
                        channel);
+  return grid;
 }
 
 fs::path soma_dir(fs::path dir, Seed seed) {
@@ -332,7 +351,7 @@ void create_labels(std::vector<Seed> seeds, fs::path dir,
             auto [index, seed] = element;
             create_label(seed, soma_dir(dir, seed), image, keep_if_empty_grid,
                          index, output_vdb, 0, paged);
-            create_label(seed, soma_dir(dir, seed), mask, keep_if_empty_grid,
+            auto sdf_soma = create_label(seed, soma_dir(dir, seed), mask, keep_if_empty_grid,
                          index, output_vdb, 1, paged);
           });
     });
@@ -351,8 +370,8 @@ void create_labels(std::vector<Seed> seeds, fs::path dir,
   //// convert to mask type
   // auto mask = vto::extractEnclosedRegion(component);
   // create_label(seed, soma_dir(index), mask, keep_if_empty_grid,
-  // index, output_vdb, channel, paged); write_vdb_file({mask}, dir / "soma-" +
-  // index);
+  // index, output_vdb, channel, paged); write_vdb_file({mask}, dir / "soma-"
+  // + index);
   //});
   //}
 }
@@ -495,16 +514,9 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
       //// convert active regions and capped concativities like hollow centers
       // openvdb::BoolGrid::Ptr opened_bool_grid =
       // vto::extractEnclosedRegion(*sdf_grid);
-      //// not sure if this is necessary
-      // auto opened_mask_grid = vto::interiorMask(*opened_bool_grid);
-      // create_labels(known_seeds, run_dir / "ml-train-and-test", image,
-      // opened_mask_grid, nullptr, args->user_thread_count, args->save_vdbs);
-      // create_labels(known_seeds, run_dir / "known-seeds", image, mask_grid,
-      // nullptr, args->user_thread_count);
-      // create_labels(known_seeds, run_dir / "missing-after-close", image,
-      // mask_grid, closed_sdf, args->user_thread_count);
-      // create_labels(known_seeds, run_dir / "missing-after-open", image,
-      // mask_grid, sdf_grid, args->user_thread_count);
+      create_labels(known_seeds, run_dir / "ml-train-and-test", image, sdf_grid,
+                    nullptr, args->user_thread_count, args->save_vdbs);
+      std::cout << "Label creation completed and safe to open\n";
     }
 
     auto mask_of_known_seeds = create_seed_sphere_grid(known_seeds);
@@ -610,22 +622,19 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
     auto dir = run_dir / "true-positive-labels";
     tbb::task_arena arena(args->user_thread_count);
     arena.execute([&] {
-      tbb::parallel_for_each(
-          zipped | rng::to_vector, [&](auto element) {
-            auto [seed, component, index] = element;
-            //auto [seed, component] = seedp;
+      tbb::parallel_for_each(zipped | rng::to_vector, [&](auto element) {
+        auto [seed, component, index] = element;
+        // auto [seed, component] = seedp;
 
-            // convert active regions and capped concativities like hollow
-            // centers
-            openvdb::BoolGrid::Ptr bool_component =
-                vto::extractEnclosedRegion(*sdf_grid);
-            // not sure if this is necessary
-            // auto opened_mask_grid = vto::interiorMask(*opened_bool_grid);
-            create_label(seed, soma_dir(dir, seed), image, nullptr, index,
-                         args->save_vdbs, 0);
-            create_label(seed, soma_dir(dir, seed), bool_component, nullptr,
-                         index, args->save_vdbs, 1);
-          });
+        // convert active regions and capped concativities like hollow
+        // centers
+        openvdb::BoolGrid::Ptr bool_component =
+            vto::extractEnclosedRegion(*sdf_grid);
+        create_label(seed, soma_dir(dir, seed), image, nullptr, index,
+                     args->save_vdbs, 0);
+        create_label(seed, soma_dir(dir, seed), bool_component, nullptr, index,
+                     args->save_vdbs, 1);
+      });
     });
   }
 
