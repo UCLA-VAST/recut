@@ -3106,7 +3106,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 #endif
   assertm(masked_sdf,
           "Topology grid must be set before starting reconstruction");
-  auto topology_grid = convert_sdf_to_points(masked_sdf, image_lengths,
+  this->topology_grid = convert_sdf_to_points(masked_sdf, image_lengths,
                                              args->foreground_percent);
 
   initialize_globals(this->grid_tile_size, this->tile_block_size);
