@@ -267,14 +267,11 @@ create_filter(openvdb::FloatGrid::Ptr sdf_grid,
   return filter;
 }
 
-// You need to convert a SDF grid in its entirety to an interior mask grid
-// before cropping. If you crop an SDF before converting to a mask grid
-// the inside voxels may not be enclosed and may be counted as outside
-template <typename GridT>
-GridT create_label(Seed seed, fs::path dir, GridT grid,
-                  openvdb::FloatGrid::Ptr keep_if_empty_grid = nullptr,
-                  int index = 0, bool output_vdb = true, int channel = 0,
-                  bool paged = true) {
+// replace the original grid, with a grid only containing the soma component
+// this prevents the soma labels and their grid from contain other components
+GridT find_soma_component(Seed seed, GridT sdf_grid,
+                          openvdb::FloatGrid::Ptr keep_if_empty_grid = nullptr,
+                          channel = 0) {
 
   // build the bounding box:
   // center the window around the center of the soma and give it a uniform width
@@ -297,8 +294,8 @@ GridT create_label(Seed seed, fs::path dir, GridT grid,
     }
   }
 
-  std::vector<GridT> window_components;
   if (channel) {
+    std::vector<GridT> window_components;
     // works on grids of arbitrary type, placing all disjoint segments
     // (components) in decreasing size order in window_components
     vto::segmentActiveVoxels(*grid, window_components);
@@ -315,15 +312,54 @@ GridT create_label(Seed seed, fs::path dir, GridT grid,
     grid = known_component.size() ? known_component.front()
                                   : window_components.front();
   }
-
-  // prepare the directory and log
-  fs::create_directories(dir);
-  std::ofstream runtime;
-  runtime.open(dir / ("log.csv"));
-
-  write_output_windows(grid, dir, runtime, index, output_vdb, paged, bbox,
-                       channel);
   return grid;
+}
+
+// takes a set of seeds and their corresponding sdf/isosurface
+// and writes to TIF their uint8
+template <typename GridT>
+std::vector<openvdb::FloatGrid::Ptr>
+find_soma_components(std::vector<Seed> seeds,
+                     openvdb::FloatGrid::Ptr sdf_grid, int threads = 1) {
+  std::vector<openvdb::FloatGrid::Ptr> temp_vec;
+  temp_vec.reserve(seeds.size());
+
+  tbb::task_arena arena(threads);
+  arena.execute([&] {
+    tbb::parallel_for_each(
+        seeds | rv::enumerate | rng::to_vector, [&](auto element) {
+          auto [index, seed] = element;
+          temp_vec[index] = find_soma_component(seed, sdf_grid, nullptr, 1);
+        });
+  });
+
+  // keep valid ptrs
+  return temp_vec | rv::filter([](auto ptr) { return ptr; }) | rng::to_vector;
+}
+
+// You need to convert a SDF grid in its entirety to an interior mask grid
+// before cropping. If you crop an SDF before converting to a mask grid
+// the inside voxels may not be enclosed and may be counted as outside
+template <typename GridT>
+GridT create_label(Seed seed, fs::path dir, GridT grid,
+                   openvdb::FloatGrid::Ptr keep_if_empty_grid = nullptr,
+                   int index = 0, bool output_vdb = true, int channel = 0,
+                   bool paged = true) {
+
+  grid = find_soma_component(seed, grid, keep_if_empty_grid, channel);
+
+  if (grid) {
+    // prepare the directory and log
+    fs::create_directories(dir);
+    std::ofstream runtime;
+    runtime.open(dir / ("log.csv"));
+
+    write_output_windows(grid, dir, runtime, index, output_vdb, paged, bbox,
+                         channel);
+    return grid;
+  }
+
+  return nullptr;
 }
 
 fs::path soma_dir(fs::path dir, Seed seed) {
@@ -336,7 +372,7 @@ fs::path soma_dir(fs::path dir, Seed seed) {
 // and writes to TIF their uint8
 template <typename GridT>
 void create_labels(std::vector<Seed> seeds, fs::path dir,
-                   ImgGrid::Ptr image = nullptr, GridT mask = nullptr,
+                   ImgGrid::Ptr image = nullptr, GridT sdf_grid = nullptr,
                    openvdb::FloatGrid::Ptr keep_if_empty_grid = nullptr,
                    int threads = 1, bool output_vdb = false,
                    bool paged = true) {
@@ -351,8 +387,9 @@ void create_labels(std::vector<Seed> seeds, fs::path dir,
             auto [index, seed] = element;
             create_label(seed, soma_dir(dir, seed), image, keep_if_empty_grid,
                          index, output_vdb, 0, paged);
-            auto sdf_soma = create_label(seed, soma_dir(dir, seed), mask, keep_if_empty_grid,
-                         index, output_vdb, 1, paged);
+            auto sdf_soma =
+                create_label(seed, soma_dir(dir, seed), sdf_grid,
+                             keep_if_empty_grid, index, output_vdb, 1, paged);
           });
     });
   }
@@ -369,7 +406,7 @@ void create_labels(std::vector<Seed> seeds, fs::path dir,
 
   //// convert to mask type
   // auto mask = vto::extractEnclosedRegion(component);
-  // create_label(seed, soma_dir(index), mask, keep_if_empty_grid,
+  // create_label(seed, soma_dir(index), sdf_grid, keep_if_empty_grid,
   // index, output_vdb, channel, paged); write_vdb_file({mask}, dir / "soma-"
   // + index);
   //});
@@ -382,6 +419,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
 
   assertm(mask_grid, "Mask grid must be set before starting soma segmentation");
 
+  // for labels output .. load the uint8 image
   ImgGrid::Ptr image;
   if (args->output_type == "labels") {
     if (args->window_grid_paths.empty()) {
@@ -399,20 +437,65 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
     image = openvdb::gridPtrCast<ImgGrid>(window_grids.front());
   }
 
+  auto known_seeds = process_marker_dir(args->seed_path, args->voxel_size);
+  openvdb::FloatGrid::Ptr mask_of_known_seeds;
+  if (known_seeds.size()) {
+    // when --seeds are passed gather them and turn them into a joined SDF grid
+    mask_of_known_seeds = create_seed_sphere_grid(known_seeds);
+    if (args->save_vdbs)
+      write_vdb_file({mask_of_known_seeds}, run_dir / "known_seeds.vdb");
+
+    // labels need somas as intact / unmodified therefore they should
+    // neither be intersected nor unioned
+    if (args->output_type != "labels") {
+      //// these strategies permanently modify the  mask_grid for both soma
+      //// detection and neurite reconstruction, the image grid uint8 that is
+      //// output in windows is unaffected however
+      // if (args->seed_intersection) {
+      //// grids passed as args are unchanged, a new grid copy is created only
+      //// where both the image mask and the seed mask are active
+      //// this new grid is finally reassigned to the temporary
+      //// starting_grid ptr for use only in soma detection but not
+      //// in neurite reconstruction
+      // vto::csgIntersection(*sdf_grid, *mask_of_known_seeds, true, true);
+      //#ifdef LOG
+      // std::cout << "\tFinished csgIntersection in " << timer.elapsed()
+      //<< '\n';
+      //#endif
+      // if (args->save_vdbs) {
+      // write_vdb_file({sdf_grid}, run_dir / "intersection.vdb");
+      //}
+      //} else {
+
+      // fills in spheres where the user passed seeds are
+      // known to be located
+      timer.restart();
+      vto::csgUnion(*sdf_grid, *mask_of_known_seeds, true, true);
+      std::cout << "\tFinished csgUnion in " << timer.elapsed() << '\n';
+
+      // if (args->save_vdbs) {
+      // write_vdb_file({sdf_grid}, run_dir / "union.vdb");
+      //}
+
+      final_soma_sdfs = find_soma_components(known_seeds, sdf_grid,
+                    nullptr, args->user_thread_count, args->save_vdbs);
+    }
+  }
+
   // if (args->save_vdbs && args->input_type != "mask")
   // write_vdb_file({mask_grid}, run_dir / "mask.vdb");
 
   std::ofstream run_log;
   run_log.open(log_fn, std::ios::app);
 
-  // mask grids are a fog volume of sparse active values in space
-  // change the fog volume into an SDF by holding values on the border between
-  // active an inactive voxels
-  // the new SDF wraps (dilates by 1) the original active voxels, and
-  // additionally holds values across the interface of the surface
-  //
-  // this function additionally adds a morphological closing step such that
-  // holes and valleys in the SDF are filled
+// mask grids are a fog volume of sparse active values in space
+// change the fog volume into an SDF by holding values on the border between
+// active an inactive voxels
+// the new SDF wraps (dilates by 1) the original active voxels, and
+// additionally holds values across the interface of the surface
+//
+// this function additionally adds a morphological closing step such that
+// holes and valleys in the SDF are filled
 #ifdef LOG
   std::cout << "starting seed (soma) detection:\n";
   std::cout << "\tmask to sdf step\n";
@@ -434,9 +517,6 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
         *mask_grid, /*halfwidth voxels*/ RECUT_LEVEL_SET_HALF_WIDTH,
         /*closing steps*/ 1);
   }
-#ifdef LOG
-  std::cout << "\t  finished mask to sdf\n";
-#endif
 
   run_log << "Seed detection: mask to SDF conversion time, "
           << timer.elapsed_formatted() << '\n'
@@ -507,8 +587,6 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   if (args->save_vdbs)
     write_vdb_file({sdf_grid}, run_dir / "opened_sdf.vdb");
 
-  // collects user passed seeds if any
-  auto known_seeds = process_marker_dir(args->seed_path, args->voxel_size);
   if (known_seeds.size()) {
     if (args->output_type == "labels") {
       //// convert active regions and capped concativities like hollow centers
@@ -516,51 +594,10 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
       // vto::extractEnclosedRegion(*sdf_grid);
       create_labels(known_seeds, run_dir / "ml-train-and-test", image, sdf_grid,
                     nullptr, args->user_thread_count, args->save_vdbs);
-      std::cout << "Label creation completed and safe to open\n";
-    }
-
-    auto mask_of_known_seeds = create_seed_sphere_grid(known_seeds);
-    if (args->save_vdbs)
-      write_vdb_file({mask_of_known_seeds}, run_dir / "known_seeds.vdb");
-
-    // auto [seeds, filtered_components] = create_seed_pairs(
-    // components, masked_sdf, args->voxel_size, args->min_radius_um,
-    // args->max_radius_um, args->output_type,
-    // args->seed_intersection ? std::vector<Seed>{} : known_seeds);
-    // std::cout << "\tsaving " << seeds.size()
-    //<< " seed coordinates to file ...\n";
-
-    // labels need somas as intact / unmodified therefore they should
-    // neither be intersected of unioned
-    if (args->output_type != "labels") {
-      timer.restart();
-      // these strategies permanently modify the  mask_grid for both soma
-      // detection and neurite reconstruction, the image grid uint8 that is
-      // output in windows is unaffected however
-      if (args->seed_intersection) {
-        // grids passed as args are unchanged, a new grid copy is created only
-        // where both the image mask and the seed mask are active
-        // this new grid is finally reassigned to the temporary
-        // starting_grid ptr for use only in soma detection but not
-        // in neurite reconstruction
-        vto::csgIntersection(*sdf_grid, *mask_of_known_seeds, true, true);
 #ifdef LOG
-        std::cout << "\tFinished csgIntersection in " << timer.elapsed()
-                  << '\n';
+      std::cout << "\tLabel creation completed and safe to open\n";
 #endif
-        if (args->save_vdbs) {
-          write_vdb_file({sdf_grid}, run_dir / "intersection.vdb");
-        }
-      } else {
-        // fills in spheres where the user passed seeds are
-        // known to be located
-        vto::csgUnion(*sdf_grid, *mask_of_known_seeds, true, true);
-        std::cout << "\tFinished csgUnion in " << timer.elapsed() << '\n';
-
-        if (args->save_vdbs) {
-          write_vdb_file({sdf_grid}, run_dir / "union.vdb");
-        }
-      }
+      return std::make_pair(std::vector<Seed>{}, nullptr);
     }
   }
 
@@ -576,7 +613,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
           << '\n';
   run_log.flush();
 
-  // build full SDF by extending known somas into reachable neurites
+// build full SDF by extending known somas into reachable neurites
 #ifdef LOG
   std::cout << "\tmasking step\n";
 #endif
@@ -590,11 +627,11 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
           << masked_sdf->activeVoxelCount() << '\n';
   run_log.flush();
 
-  // if (args->save_vdbs)
-  // write_vdb_file({masked_sdf}, run_dir / "connected_sdf.vdb");
+// if (args->save_vdbs)
+// write_vdb_file({masked_sdf}, run_dir / "connected_sdf.vdb");
 
-  // adds all valid markers to roots vector
-  // filters by user input seeds if available
+// adds all valid markers to roots vector
+// filters by user input seeds if available
 #ifdef LOG
   std::cout << "\tcreate seed pairs step\n";
   std::cout << "\tmin allowed radius is " << args->min_radius_um << " µm\n";
@@ -617,26 +654,26 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
           << "Seed detection: final seed count, " << seeds.size() << '\n';
   run_log.flush();
 
-  if (seeds.size() && args->output_type == "labels") {
-    auto zipped = rv::zip(seeds, filtered_components, rv::iota(0));
-    auto dir = run_dir / "true-positive-labels";
-    tbb::task_arena arena(args->user_thread_count);
-    arena.execute([&] {
-      tbb::parallel_for_each(zipped | rng::to_vector, [&](auto element) {
-        auto [seed, component, index] = element;
-        // auto [seed, component] = seedp;
+  // if (seeds.size() && args->output_type == "labels") {
+  // auto zipped = rv::zip(seeds, filtered_components, rv::iota(0));
+  // auto dir = run_dir / "true-positive-labels";
+  // tbb::task_arena arena(args->user_thread_count);
+  // arena.execute([&] {
+  // tbb::parallel_for_each(zipped | rng::to_vector, [&](auto element) {
+  // auto [seed, component, index] = element;
+  //// auto [seed, component] = seedp;
 
-        // convert active regions and capped concativities like hollow
-        // centers
-        openvdb::BoolGrid::Ptr bool_component =
-            vto::extractEnclosedRegion(*sdf_grid);
-        create_label(seed, soma_dir(dir, seed), image, nullptr, index,
-                     args->save_vdbs, 0);
-        create_label(seed, soma_dir(dir, seed), bool_component, nullptr, index,
-                     args->save_vdbs, 1);
-      });
-    });
-  }
+  //// convert active regions and capped concativities like hollow
+  //// centers
+  // openvdb::BoolGrid::Ptr bool_component =
+  // vto::extractEnclosedRegion(*sdf_grid);
+  // create_label(seed, soma_dir(dir, seed), image, nullptr, index,
+  // args->save_vdbs, 0);
+  // create_label(seed, soma_dir(dir, seed), bool_component, nullptr, index,
+  // args->save_vdbs, 1);
+  //});
+  //});
+  //}
 
   return std::make_pair(seeds, masked_sdf);
 }

@@ -3088,7 +3088,9 @@ template <class image_t> void Recut<image_t>::operator()() {
   auto [seeds, masked_sdf] =
       soma_segmentation(mask_grid, args, this->image_lengths, log_fn, run_dir);
 
-  if (seeds.empty()) {
+  if (this->args->output_type == "labels") {
+    exit(0); // exit
+  } else if (seeds.empty()) {
     std::cerr
         << "No somas found, possibly make --open-steps lower or --close-steps "
            "higher (if using membrane labeling), also consider raising the fg "
@@ -3096,8 +3098,6 @@ template <class image_t> void Recut<image_t>::operator()() {
            "filtered against those you specified, exiting...\n";
     exit(1);
   } else if (this->args->output_type == "seeds") {
-    exit(0); // exit
-  } else if (this->args->output_type == "labels") {
     exit(0); // exit
   }
 
