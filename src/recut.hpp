@@ -2127,24 +2127,28 @@ void Recut<image_t>::update(std::string stage, Container &fifo) {
 
       set_grid_meta(this->topology_grid, this->image_lengths,
                     args->foreground_percent, args->channel,
-                    args->resolution_level, this->args->output_name, args->upsample_z);
+                    args->resolution_level, this->args->output_name,
+                    args->upsample_z);
 
     } else {
       if (this->args->output_type == "float") {
         this->input_grid = merge_grids(float_grids);
         set_grid_meta(this->input_grid, this->image_lengths,
                       args->foreground_percent, args->channel,
-                      args->resolution_level, this->args->output_name, args->upsample_z);
+                      args->resolution_level, this->args->output_name,
+                      args->upsample_z);
       } else if (this->args->output_type == "uint8") {
         this->img_grid = merge_grids(uint8_grids);
         set_grid_meta(this->img_grid, this->image_lengths,
                       args->foreground_percent, args->channel,
-                      args->resolution_level, this->args->output_name, args->upsample_z);
+                      args->resolution_level, this->args->output_name,
+                      args->upsample_z);
       } else if (this->args->output_type == "mask") {
         this->mask_grid = merge_grids(mask_grids);
         set_grid_meta(this->mask_grid, this->image_lengths,
                       args->foreground_percent, args->channel,
-                      args->resolution_level, this->args->output_name, args->upsample_z);
+                      args->resolution_level, this->args->output_name,
+                      args->upsample_z);
       }
 
       if (args->histogram) {
@@ -2441,7 +2445,6 @@ template <class image_t> void Recut<image_t>::initialize() {
   }
 
 #ifdef LOG
-  cout << "Thread count " << args->user_thread_count << '\n';
   cout << "User specified image " << args->input_path << '\n';
 #endif
 
@@ -3013,6 +3016,15 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
 }
 
 template <class image_t> void Recut<image_t>::operator()() {
+
+  // Thread count is enforced across recut and dependencies (openvdb)
+  // as long as control object is alive
+  std::unique_ptr<tbb::global_control> control;
+#ifdef LOG
+  std::cout << "Global max thread count " << args->user_thread_count << '\n';
+#endif
+  control.reset(new tbb::global_control(
+      tbb::global_control::max_allowed_parallelism, args->user_thread_count));
 
   if (!args->second_grid.empty()) {
     // simply combine the passed grids then exit program immediately
