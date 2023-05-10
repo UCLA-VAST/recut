@@ -306,16 +306,26 @@ find_soma_component(Seed seed, GridT grid,
     std::vector<GridT> window_components;
     // works on grids of arbitrary type, placing all disjoint segments
     // (components) in decreasing size order in window_components
-    std::cout << "Active voxel count " << grid->activeVoxelCount() << '\n';
     vto::segmentActiveVoxels(*grid, window_components);
+
+    if (window_components.size() == 0) {
+      std::cout << "No window components\n";
+      return std::nullopt; // do nothing
+    }
 
     // find the component that has the seed within it
     auto known_component = window_components |
                            rv::filter([&seed](auto component) {
-                             auto mask = vto::extractEnclosedRegion(*component);
-                             return mask->tree().isValueOn(seed.coord);
+                             // auto mask =
+                             // vto::extractEnclosedRegion(*component); return
+                             // mask->tree().isValueOn(seed.coord);
+                             return component->tree().isValueOn(seed.coord);
                            }) |
                            rng::to_vector;
+
+    if (known_component.size() == 0) {
+      std::cout << "No known component\n";
+    }
 
     // otherwise use the largest (first) component in the window
     grid = known_component.size() ? known_component.front()
