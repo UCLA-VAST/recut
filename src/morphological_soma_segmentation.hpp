@@ -298,10 +298,15 @@ find_soma_component(Seed seed, GridT grid,
 
   grid = vto::clip(*grid, clipBox);
 
+  if (!grid || (grid->activeVoxelCount() == 0)) {
+    return std::nullopt; // do nothing
+  }
+
   if (channel) {
     std::vector<GridT> window_components;
     // works on grids of arbitrary type, placing all disjoint segments
     // (components) in decreasing size order in window_components
+    std::cout << "Active voxel count " << grid->activeVoxelCount() << '\n';
     vto::segmentActiveVoxels(*grid, window_components);
 
     // find the component that has the seed within it
@@ -358,8 +363,7 @@ GridT create_label(Seed seed, fs::path dir, GridT grid,
                    int index = 0, bool output_vdb = true, int channel = 0,
                    bool paged = true) {
 
-  auto opt = 
-      find_soma_component(seed, grid, keep_if_empty_grid, channel);
+  auto opt = find_soma_component(seed, grid, keep_if_empty_grid, channel);
   if (!opt)
     return nullptr;
   auto [clipped_grid, bbox] = opt.value();
@@ -523,12 +527,17 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
       // write_vdb_file({sdf_grid}, run_dir / "union.vdb");
       //}
 
+      timer.restart();
       final_soma_sdfs =
           find_soma_components(known_seeds, sdf_grid, args->user_thread_count);
+      std::cout << "\tFinished finding " << final_soma_sdfs.size()
+                << " soma components in " << timer.elapsed() << '\n';
     }
 
     // TODO replace with sumMergeOp which is parallel and more efficient
+    timer.restart();
     final_soma_sdf_merged = merge_grids(final_soma_sdfs);
+    std::cout << "\tFinished merge final somas in " << timer.elapsed() << '\n';
   }
 
   // if (args->save_vdbs)
