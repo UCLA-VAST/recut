@@ -316,9 +316,9 @@ find_soma_component(Seed seed, GridT grid,
     // find the component that has the seed within it
     auto known_component = window_components |
                            rv::filter([&seed](auto component) {
-                             // auto mask =
-                             // vto::extractEnclosedRegion(*component); return
-                             // mask->tree().isValueOn(seed.coord);
+                              //auto mask =
+                              //vto::extractEnclosedRegion(*component); 
+                              //mask->tree().isValueOn(seed.coord);
                              return component->tree().isValueOn(seed.coord);
                            }) |
                            rng::to_vector;
@@ -342,18 +342,18 @@ find_soma_components(std::vector<Seed> seeds, openvdb::FloatGrid::Ptr sdf_grid,
   std::vector<openvdb::FloatGrid::Ptr> temp_vec;
   temp_vec.reserve(seeds.size());
 
-  tbb::task_arena arena(threads);
-  arena.execute([&] {
-    tbb::parallel_for_each(
-        seeds | rv::enumerate | rng::to_vector, [&](auto element) {
-          auto [index, seed] = element;
-          auto opt = find_soma_component(seed, sdf_grid, nullptr, 1);
-          if (opt) {
-            auto [ptr, _] = opt.value();
-            temp_vec[index] = ptr;
-          }
-        });
+  // tbb::task_arena arena(threads);
+  // arena.execute([&] {
+  // tbb::parallel_for_each(
+  rng::for_each(seeds | rv::enumerate | rng::to_vector, [&](auto element) {
+    auto [index, seed] = element;
+    auto opt = find_soma_component(seed, sdf_grid, nullptr, 1);
+    if (opt) {
+      auto [ptr, _] = opt.value();
+      temp_vec[index] = ptr;
+    }
   });
+  //});
 
   // keep valid ptrs
   std::vector<openvdb::FloatGrid::Ptr> final_vec;
