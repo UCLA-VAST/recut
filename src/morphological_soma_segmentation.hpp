@@ -314,13 +314,23 @@ find_soma_component(Seed seed, GridT grid,
     }
 
     // find the component that has the seed within it
-    auto known_component = window_components |
-                           rv::filter([&seed](auto component) {
-                             auto mask = vto::extractEnclosedRegion(*component);
-                             return mask->tree().isValueOn(seed.coord);
-                             //return component->tree().isValueOn(seed.coord);
-                           }) |
-                           rng::to_vector;
+    auto known_component =
+        window_components | rv::filter([&seed](auto component) {
+          auto mask = vto::extractEnclosedRegion(*component);
+          auto test = vto::sdfInteriorMask(*component);
+          if (mask) {
+            std::cout << "\tenclosed voxel count: " << mask->activeVoxelCount()
+                      << " on " << mask->tree().isValueOn(seed.coord) << '\n';
+          }
+          if (test) {
+            std::cout << "\tinterior voxel count: " << test->activeVoxelCount()
+                      << " on " << test->tree().isValueOn(seed.coord) << '\n';
+          }
+          std::cout << '\n';
+          return mask ? mask->tree().isValueOn(seed.coord) : false;
+          // return component->tree().isValueOn(seed.coord);
+        }) |
+        rng::to_vector;
 
     if (known_component.size() == 0) {
       std::cout << "\tNo known component\n";
@@ -344,9 +354,9 @@ find_soma_components(std::vector<Seed> seeds, openvdb::FloatGrid::Ptr sdf_grid,
   // tbb::task_arena arena(threads);
   // arena.execute([&] {
   // tbb::parallel_for_each(
-  //rng::for_each(seeds | rv::enumerate | rng::to_vector, [&](auto element) {
-  for (int i=0; i < seeds.size(); ++i) {
-    //auto [index, seed] = element;
+  // rng::for_each(seeds | rv::enumerate | rng::to_vector, [&](auto element) {
+  for (int i = 0; i < seeds.size(); ++i) {
+    // auto [index, seed] = element;
     auto seed = seeds[i];
     std::cout << "Checking " << i << '\n';
     auto opt = find_soma_component(seed, sdf_grid, nullptr, 1);
