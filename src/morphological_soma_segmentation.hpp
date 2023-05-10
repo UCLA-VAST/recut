@@ -352,7 +352,7 @@ find_soma_components(std::vector<Seed> seeds, openvdb::FloatGrid::Ptr sdf_grid,
     auto opt = find_soma_component(seed, sdf_grid, nullptr, 1);
     if (opt) {
       auto [ptr, _] = opt.value();
-      temp_vec[index] = ptr;
+      temp_vec[i] = ptr;
     } else {
       std::cout << "\tno window\n";
     }
