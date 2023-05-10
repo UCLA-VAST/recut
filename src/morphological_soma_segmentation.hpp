@@ -327,7 +327,9 @@ find_soma_component(Seed seed, GridT grid,
                       << " on " << test->tree().isValueOn(seed.coord) << '\n';
           }
           std::cout << '\n';
-          return mask ? mask->tree().isValueOn(seed.coord) : false;
+          if (mask && mask->activeVoxelCount())
+            return mask->tree().isValueOn(seed.coord);
+          return false;
           // return component->tree().isValueOn(seed.coord);
         }) |
         rng::to_vector;
