@@ -309,22 +309,21 @@ find_soma_component(Seed seed, GridT grid,
     vto::segmentActiveVoxels(*grid, window_components);
 
     if (window_components.size() == 0) {
-      std::cout << "No window components\n";
+      std::cout << "\tNo window components\n";
       return std::nullopt; // do nothing
     }
 
     // find the component that has the seed within it
     auto known_component = window_components |
                            rv::filter([&seed](auto component) {
-                              //auto mask =
-                              //vto::extractEnclosedRegion(*component); 
-                              //mask->tree().isValueOn(seed.coord);
-                             return component->tree().isValueOn(seed.coord);
+                             auto mask = vto::extractEnclosedRegion(*component);
+                             return mask->tree().isValueOn(seed.coord);
+                             //return component->tree().isValueOn(seed.coord);
                            }) |
                            rng::to_vector;
 
     if (known_component.size() == 0) {
-      std::cout << "No known component\n";
+      std::cout << "\tNo known component\n";
     }
 
     // otherwise use the largest (first) component in the window
@@ -345,14 +344,20 @@ find_soma_components(std::vector<Seed> seeds, openvdb::FloatGrid::Ptr sdf_grid,
   // tbb::task_arena arena(threads);
   // arena.execute([&] {
   // tbb::parallel_for_each(
-  rng::for_each(seeds | rv::enumerate | rng::to_vector, [&](auto element) {
-    auto [index, seed] = element;
+  //rng::for_each(seeds | rv::enumerate | rng::to_vector, [&](auto element) {
+  for (int i=0; i < seeds.size(); ++i) {
+    //auto [index, seed] = element;
+    auto seed = seeds[i];
+    std::cout << "Checking " << i << '\n';
     auto opt = find_soma_component(seed, sdf_grid, nullptr, 1);
     if (opt) {
       auto [ptr, _] = opt.value();
       temp_vec[index] = ptr;
+    } else {
+      std::cout << "\tno window\n";
     }
-  });
+  }
+  //});
   //});
 
   // keep valid ptrs
