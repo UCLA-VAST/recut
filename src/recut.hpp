@@ -3097,7 +3097,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     this->input_is_vdb = true;
   }
 
-  auto [seeds, masked_sdf] =
+  auto [seeds, soma_sdf, neurite_sdf] =
       soma_segmentation(mask_grid, args, this->image_lengths, log_fn, run_dir);
 
   if (this->args->output_type == "labels") {
@@ -3113,13 +3113,29 @@ template <class image_t> void Recut<image_t>::operator()() {
     exit(0); // exit
   }
 
+// build full SDF by extending known somas into reachable neurites
+#ifdef LOG
+  std::cout << "\tmasking step\n";
+#endif
+  auto timer = high_resolution_timer();
+  // if user passed known seeds then use the pretermined merged sdf grid
+  // else use the result of the open and close steps above
+  auto somas_connected_to_neurites = vto::maskSdf(*soma_sdf, *neurite_sdf);
+  std::ofstream run_log;
+  run_log.open(log_fn, std::ios::app);
+  run_log << "Seed detection: masking time, " << timer.elapsed_formatted()
+          << '\n'
+          << "Seed detection: masked SDF voxel count, "
+          << somas_connected_to_neurites->activeVoxelCount() << '\n';
+  run_log.flush();
+
 #ifdef LOG
   std::cout << "\tSDF to point step\n";
 #endif
-  assertm(masked_sdf,
+  assertm(somas_connected_to_neurites,
           "Topology grid must be set before starting reconstruction");
-  this->topology_grid = convert_sdf_to_points(masked_sdf, image_lengths,
-                                             args->foreground_percent);
+  this->topology_grid = convert_sdf_to_points(somas_connected_to_neurites, image_lengths,
+                                              args->foreground_percent);
 
   initialize_globals(this->grid_tile_size, this->tile_block_size);
 

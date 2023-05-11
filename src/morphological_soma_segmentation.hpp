@@ -101,14 +101,12 @@ openvdb::FloatGrid::Ptr create_seed_sphere_grid(std::vector<Seed> seeds) {
 // If you already filtered the grid with seed intersection there's no need
 // to refilter by known seeds
 auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
-                            openvdb::FloatGrid::Ptr topology_sdf,
                             std::array<float, 3> voxel_size,
                             float min_radius_um, float max_radius_um,
                             std::string output_type,
                             std::vector<Seed> known_seeds = {}) {
   std::vector<Seed> seeds;
   std::vector<openvdb::FloatGrid::Ptr> filtered_components;
-  auto removed_by_inactivity = 0;
   auto removed_by_known_seeds = 0;
   auto removed_by_incorrect_sphere = 0;
   auto removed_by_radii = 0;
@@ -165,23 +163,18 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
     // auto [coord_center, radius_voxels] = *seed;
     // std::cout << "radius voxels " << radius_voxels << '\n';
 
-    if (topology_sdf->tree().isValueOn(coord_center)) {
-      if (!known_seeds.empty()) {
-        // convert to fog so that isValueOn returns whether it is
-        // within the
-        vto::sdfToFogVolume(*component);
-        // component if no known seed is an active voxel in this
-        // component then remove this component
-        if (rng::none_of(known_seeds, [&component](const auto &known_seed) {
-              return component->tree().isValueOn(known_seed.coord);
-            })) {
-          ++removed_by_known_seeds;
-          continue;
-        }
+    if (!known_seeds.empty()) {
+      // convert to fog so that isValueOn returns whether it is
+      // within the
+      vto::sdfToFogVolume(*component);
+      // component if no known seed is an active voxel in this
+      // component then remove this component
+      if (rng::none_of(known_seeds, [&component](const auto &known_seed) {
+            return component->tree().isValueOn(known_seed.coord);
+          })) {
+        ++removed_by_known_seeds;
+        continue;
       }
-    } else {
-      ++removed_by_inactivity;
-      continue;
     }
 
     // the radius is calculated by the distance of the center point
@@ -210,9 +203,6 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
 #ifdef LOG
   std::cout << "\tseeds removed by radii min and max criteria "
             << removed_by_radii << '\n';
-  if (removed_by_inactivity)
-    std::cerr << "\tWarning: seeds removed by inactivity "
-              << removed_by_inactivity << '\n';
   if (removed_by_known_seeds)
     std::cerr << "\tWarning: seeds removed by known seeds "
               << removed_by_known_seeds << '\n';
@@ -461,7 +451,7 @@ void create_labels(std::vector<Seed> seeds, fs::path dir,
   //}
 }
 
-std::pair<std::vector<Seed>, openvdb::FloatGrid::Ptr>
+std::tuple<std::vector<Seed>, openvdb::FloatGrid::Ptr, openvdb::FloatGrid::Ptr>
 soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
                   GridCoord image_lengths, fs::path log_fn, fs::path run_dir) {
 
@@ -640,7 +630,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
 #ifdef LOG
       std::cout << "\tLabel creation completed and safe to open\n";
 #endif
-      return std::make_pair(std::vector<Seed>{}, nullptr);
+      return std::make_tuple(std::vector<Seed>{}, nullptr, nullptr);
     }
   }
 
@@ -660,25 +650,6 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
     run_log.flush();
   }
 
-// build full SDF by extending known somas into reachable neurites
-#ifdef LOG
-  std::cout << "\tmasking step\n";
-#endif
-  timer.restart();
-  // if user passed known seeds then use the pretermined merged sdf grid
-  // else use the result of the open and close steps above
-  auto somas_connected_to_neurites =
-      vto::maskSdf(known_seeds.size() ? *final_soma_sdf_merged : *sdf_grid,
-                   args->close_topology ? *closed_sdf : *raw_image_sdf);
-  run_log << "Seed detection: masking time, " << timer.elapsed_formatted()
-          << '\n'
-          << "Seed detection: masked SDF voxel count, "
-          << somas_connected_to_neurites->activeVoxelCount() << '\n';
-  run_log.flush();
-
-// if (args->save_vdbs)
-// write_vdb_file({somas_connected_to_neurites}, run_dir / "connected_sdf.vdb");
-
 // adds all valid markers to roots vector
 // filters by user input seeds if available
 #ifdef LOG
@@ -690,8 +661,8 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   // If you already filtered the grid with seed intersection there's no need
   // to refilter by known seeds
   auto [seeds, filtered_components] = create_seed_pairs(
-      final_soma_sdfs, somas_connected_to_neurites, args->voxel_size,
-      args->min_radius_um, args->max_radius_um, args->output_type,
+      final_soma_sdfs, args->voxel_size, args->min_radius_um,
+      args->max_radius_um, args->output_type,
       args->seed_intersection ? std::vector<Seed>{} : known_seeds);
 #ifdef LOG
   std::cout << "\tsaving " << seeds.size() << " seed coordinates to file ...\n";
@@ -724,5 +695,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   //});
   //}
 
-  return std::make_pair(seeds, somas_connected_to_neurites);
+  return std::make_tuple(seeds,
+                         known_seeds.size() ? final_soma_sdf_merged : sdf_grid,
+                         args->close_topology ? closed_sdf : raw_image_sdf);
 }
