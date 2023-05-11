@@ -259,9 +259,8 @@ create_filter(openvdb::FloatGrid::Ptr sdf_grid,
 
 // replace the original grid, with a grid only containing the soma component
 // this prevents the soma labels and their grid from contain other components
-template <typename GridT>
-std::optional<std::pair<GridT, CoordBBox>>
-find_soma_component(Seed seed, GridT grid,
+std::optional<std::pair<openvdb::FloatGrid::Ptr, CoordBBox>>
+find_soma_component(Seed seed, openvdb::FloatGrid::Ptr grid,
                     openvdb::FloatGrid::Ptr keep_if_empty_grid = nullptr,
                     int channel = 0) {
 
@@ -293,7 +292,7 @@ find_soma_component(Seed seed, GridT grid,
   }
 
   if (channel) {
-    std::vector<GridT> window_components;
+    std::vector<openvdb::FloatGrid::Ptr> window_components;
     // works on grids of arbitrary type, placing all disjoint segments
     // (components) in decreasing size order in window_components
     vto::segmentActiveVoxels(*grid, window_components);
@@ -304,32 +303,56 @@ find_soma_component(Seed seed, GridT grid,
     }
 
     // find the component that has the seed within it
-    auto known_component =
-        window_components | rv::filter([&seed](auto component) {
-          auto mask = vto::extractEnclosedRegion(*component);
-          auto test = vto::sdfInteriorMask(*component);
-          if (mask) {
-            std::cout << "\tenclosed voxel count: " << mask->activeVoxelCount()
-                      << " on " << mask->tree().isValueOn(seed.coord) << '\n';
-          }
-          if (test) {
-            std::cout << "\tinterior voxel count: " << test->activeVoxelCount()
-                      << " on " << test->tree().isValueOn(seed.coord) << '\n';
-          }
-          std::cout << '\n';
-          if (mask && mask->activeVoxelCount())
-            return mask->tree().isValueOn(seed.coord);
-          return false;
-          // return component->tree().isValueOn(seed.coord);
-        }) |
-        rng::to_vector;
+    std::vector<openvdb::FloatGrid::Ptr> known_component;
+    for (int i = 0; i < window_components.size(); ++i) {
+      openvdb::FloatGrid::Ptr component = window_components[i];
+      if (!component || component->activeVoxelCount() == 0)
+        continue;
+      auto mask = vto::extractEnclosedRegion(*component);
+      // auto test = vto::sdfInteriorMask(*component);
+      if (mask) {
+        std::cout << "\tenclosed voxel count: " << mask->activeVoxelCount()
+                  << " on " << mask->tree().isValueOn(seed.coord) << '\n';
+      }
+      // if (test) {
+      // std::cout << "\tinterior voxel count: " << test->activeVoxelCount()
+      //<< " on " << test->tree().isValueOn(seed.coord) << '\n';
+      //}
+      std::cout << '\n';
+      if (mask && mask->activeVoxelCount()) {
+        if (mask->tree().isValueOn(seed.coord))
+          known_component.push_back(component);
+      }
+    }
+
+    // auto known_component =
+    // window_components | rv::filter([&seed](auto component) {
+    // if (!component || component->activeVoxelCount() == 0)
+    // return false;
+    // auto mask = vto::extractEnclosedRegion(*component);
+    //// auto test = vto::sdfInteriorMask(*component);
+    // if (mask) {
+    // std::cout << "\tenclosed voxel count: " << mask->activeVoxelCount()
+    //<< " on " << mask->tree().isValueOn(seed.coord) << '\n';
+    //}
+    //// if (test) {
+    //// std::cout << "\tinterior voxel count: " << test->activeVoxelCount()
+    ////<< " on " << test->tree().isValueOn(seed.coord) << '\n';
+    ////}
+    // std::cout << '\n';
+    // if (mask && mask->activeVoxelCount())
+    // return mask->tree().isValueOn(seed.coord);
+    // return false;
+    //// return component->tree().isValueOn(seed.coord);
+    //}) |
+    // rng::to_vector;
 
     if (known_component.size() == 0) {
       std::cout << "\tNo known component\n";
     }
 
     // otherwise use the largest (first) component in the window
-    grid = known_component.size() ? known_component.front()
+    grid = known_component.size() > 0 ? known_component.front()
                                   : window_components.front();
   }
   return std::make_pair(grid, bbox);
@@ -406,6 +429,7 @@ fs::path soma_dir(fs::path dir, Seed seed) {
                 std::to_string(seed.coord.z()));
 }
 
+/*
 // takes a set of seeds and their corresponding sdf/isosurface
 // and writes to TIF their uint8
 template <typename GridT>
@@ -450,6 +474,7 @@ void create_labels(std::vector<Seed> seeds, fs::path dir,
   //});
   //}
 }
+*/
 
 std::tuple<std::vector<Seed>, openvdb::FloatGrid::Ptr, openvdb::FloatGrid::Ptr>
 soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
@@ -522,7 +547,8 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   std::vector<openvdb::FloatGrid::Ptr> final_soma_sdfs;
   openvdb::FloatGrid::Ptr final_soma_sdf_merged;
   if (known_seeds.size()) {
-    // when --seeds are passed gather them and turn them into a joined SDF grid
+    // when --seeds are passed gather them and turn them into a joined SDF
+    // grid
     openvdb::FloatGrid::Ptr known_seed_sphere_merged =
         create_seed_sphere_grid(known_seeds);
     if (args->save_vdbs)
@@ -625,8 +651,8 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
       //// convert active regions and capped concativities like hollow centers
       // openvdb::BoolGrid::Ptr opened_bool_grid =
       // vto::extractEnclosedRegion(*sdf_grid);
-      create_labels(known_seeds, run_dir / "ml-train-and-test", image, sdf_grid,
-                    nullptr, args->user_thread_count, args->save_vdbs);
+      //create_labels(known_seeds, run_dir / "ml-train-and-test", image, sdf_grid,
+                    //nullptr, args->user_thread_count, args->save_vdbs);
 #ifdef LOG
       std::cout << "\tLabel creation completed and safe to open\n";
 #endif
