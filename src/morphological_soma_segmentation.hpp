@@ -285,9 +285,9 @@ find_soma_component(Seed seed, openvdb::FloatGrid::Ptr grid,
     }
   }
 
-  grid = vto::clip(*grid, clipBox);
+  auto clipped_grid = vto::clip(*grid, clipBox);
 
-  if (!grid || (grid->activeVoxelCount() == 0)) {
+  if (!clipped_grid || (clipped_grid->activeVoxelCount() == 0)) {
     return std::nullopt; // do nothing
   }
 
@@ -296,8 +296,8 @@ find_soma_component(Seed seed, openvdb::FloatGrid::Ptr grid,
     // works on grids of arbitrary type, placing all disjoint segments
     // (components) in decreasing size order in window_components
     // causes seg fault
-    //vto::segmentActiveVoxels(*grid, window_components);
-    vto::segmentSDF(*grid, window_components);
+    //vto::segmentActiveVoxels(*clipped_grid, window_components);
+    vto::segmentSDF(*clipped_grid, window_components);
 
     if (window_components.size() == 0) {
       std::cout << "\tNo window components\n";
@@ -364,10 +364,10 @@ find_soma_component(Seed seed, openvdb::FloatGrid::Ptr grid,
     }
 
     // otherwise use the largest (first) component in the window
-    grid = known_component.size() > 0 ? known_component.front()
+    clipped_grid = known_component.size() > 0 ? known_component.front()
                                       : window_components.front();
   }
-  return std::make_pair(grid, bbox);
+  return std::make_pair(clipped_grid, bbox);
 }
 
 // takes a set of seeds and their corresponding sdf/isosurface
