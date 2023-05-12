@@ -295,7 +295,9 @@ find_soma_component(Seed seed, openvdb::FloatGrid::Ptr grid,
     std::vector<openvdb::FloatGrid::Ptr> window_components;
     // works on grids of arbitrary type, placing all disjoint segments
     // (components) in decreasing size order in window_components
-    vto::segmentActiveVoxels(*grid, window_components);
+    // causes seg fault
+    //vto::segmentActiveVoxels(*grid, window_components);
+    vto::segmentSDF(*grid, window_components);
 
     if (window_components.size() == 0) {
       std::cout << "\tNo window components\n";
