@@ -306,29 +306,33 @@ find_soma_component(Seed seed, openvdb::FloatGrid::Ptr grid,
     std::vector<openvdb::FloatGrid::Ptr> known_component;
     for (int i = 0; i < window_components.size(); ++i) {
       openvdb::FloatGrid::Ptr component = window_components[i];
-      if (!component || component->activeVoxelCount() == 0)
-        continue;
-      auto mask = vto::extractEnclosedRegion(*component);
-      auto fog = component->deepCopy();
-      vto::sdfToFogVolume(*fog);
-      // auto test = vto::sdfInteriorMask(*component);
-      if (mask) {
-        std::cout << "\tenclosed voxel count: " << mask->activeVoxelCount()
-                  << " on " << mask->tree().isValueOn(seed.coord) << '\n';
-      }
-      // if (test) {
-      // std::cout << "\tinterior voxel count: " << test->activeVoxelCount()
-      //<< " on " << test->tree().isValueOn(seed.coord) << '\n';
-      //}
-      if (fog) {
-        std::cout << "\tfog voxel count: " << fog->activeVoxelCount()
-                  << " on " << fog->tree().isValueOn(seed.coord) << '\n';
-      }
-      std::cout << '\n';
-      if (mask && mask->activeVoxelCount()) {
-        if (mask->tree().isValueOn(seed.coord))
+      if (component->evalActiveVoxelBoundingBox().isInside(seed.coord)) {
           known_component.push_back(component);
+          continue;
       }
+      //if (!component || component->activeVoxelCount() == 0)
+        //continue;
+      //auto mask = vto::extractEnclosedRegion(*component);
+      //auto fog = component->deepCopy();
+      //vto::sdfToFogVolume(*fog);
+      //// auto test = vto::sdfInteriorMask(*component);
+      //if (mask) {
+        //std::cout << "\tenclosed voxel count: " << mask->activeVoxelCount()
+                  //<< " on " << mask->tree().isValueOn(seed.coord) << '\n';
+      //}
+      //// if (test) {
+      //// std::cout << "\tinterior voxel count: " << test->activeVoxelCount()
+      ////<< " on " << test->tree().isValueOn(seed.coord) << '\n';
+      ////}
+      //if (fog) {
+        //std::cout << "\tfog voxel count: " << fog->activeVoxelCount()
+                  //<< " on " << fog->tree().isValueOn(seed.coord) << '\n';
+      //}
+      //std::cout << '\n';
+      //if (mask && mask->activeVoxelCount()) {
+        //if (mask->tree().isValueOn(seed.coord))
+          //known_component.push_back(component);
+      //}
     }
 
     // auto known_component =
