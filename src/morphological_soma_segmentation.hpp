@@ -309,6 +309,8 @@ find_soma_component(Seed seed, openvdb::FloatGrid::Ptr grid,
       if (!component || component->activeVoxelCount() == 0)
         continue;
       auto mask = vto::extractEnclosedRegion(*component);
+      auto fog = component->deepCopy();
+      vto::sdfToFogVolume(*fog);
       // auto test = vto::sdfInteriorMask(*component);
       if (mask) {
         std::cout << "\tenclosed voxel count: " << mask->activeVoxelCount()
@@ -318,6 +320,10 @@ find_soma_component(Seed seed, openvdb::FloatGrid::Ptr grid,
       // std::cout << "\tinterior voxel count: " << test->activeVoxelCount()
       //<< " on " << test->tree().isValueOn(seed.coord) << '\n';
       //}
+      if (fog) {
+        std::cout << "\tfog voxel count: " << fog->activeVoxelCount()
+                  << " on " << fog->tree().isValueOn(seed.coord) << '\n';
+      }
       std::cout << '\n';
       if (mask && mask->activeVoxelCount()) {
         if (mask->tree().isValueOn(seed.coord))
@@ -353,7 +359,7 @@ find_soma_component(Seed seed, openvdb::FloatGrid::Ptr grid,
 
     // otherwise use the largest (first) component in the window
     grid = known_component.size() > 0 ? known_component.front()
-                                  : window_components.front();
+                                      : window_components.front();
   }
   return std::make_pair(grid, bbox);
 }
@@ -651,8 +657,8 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
       //// convert active regions and capped concativities like hollow centers
       // openvdb::BoolGrid::Ptr opened_bool_grid =
       // vto::extractEnclosedRegion(*sdf_grid);
-      //create_labels(known_seeds, run_dir / "ml-train-and-test", image, sdf_grid,
-                    //nullptr, args->user_thread_count, args->save_vdbs);
+      // create_labels(known_seeds, run_dir / "ml-train-and-test", image,
+      // sdf_grid, nullptr, args->user_thread_count, args->save_vdbs);
 #ifdef LOG
       std::cout << "\tLabel creation completed and safe to open\n";
 #endif
