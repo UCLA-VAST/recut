@@ -186,8 +186,6 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
     // along the z-dimension therefore scale with the voxel dimension
     // with the largest length
     auto radius_um = radius_voxels * std::pow(max_voxel_size, 3);
-    if (radius_um > max_radius_um || !radius_um)
-      std::cout << radius_um << " ";
     if (min_radius_um <= radius_um && radius_um <= max_radius_um) {
       // round to the nearest 8-bit unsigned integer between 0 and 255
       auto radius = static_cast<uint8_t>(radius_voxels + 0.5);

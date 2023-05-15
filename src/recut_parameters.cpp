@@ -37,7 +37,7 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "--bg-thresh          [-bt] all pixels greater than this passed "
                "intensity value are treated as foreground\n";
   std::cout
-      << "--min-branch-length  prune leaf branches lower, defaults to 20\n";
+      << "--min-branch-length  prune leaf branches lower than path length, defaults to " << MIN_BRANCH_LENGTH << "µm\n";
   std::cout
       << "--fg-percent         [-fp] auto calculate a bg-thresh value closest "
          "to the passed "

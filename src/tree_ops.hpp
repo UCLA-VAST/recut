@@ -359,7 +359,7 @@ VID_t count_leaves(std::vector<MyMarker *> &tree) {
 
 // returns a new set of valid markers
 std::vector<MyMarker *>
-prune_short_branches(std::vector<MyMarker *> &tree,
+prune_short_branches(std::vector<MyMarker *> &tree, float voxel_scale,
                      int min_branch_length = MIN_BRANCH_LENGTH) {
   auto child_count = create_child_count(tree);
 
@@ -379,7 +379,7 @@ prune_short_branches(std::vector<MyMarker *> &tree,
   auto filtered_tree =
       tree |
       rv::remove_if(
-          [&min_branch_length, &is_a_leaf, &is_a_branch](auto marker) {
+          [&](auto marker) {
             // only check non roots
             if (marker->parent) {
               // only check from leafs, since they define the beginning of a
@@ -396,7 +396,7 @@ prune_short_branches(std::vector<MyMarker *> &tree,
               if (min_branch_length > 0) {
                 auto accum_euc_dist = 0.;
                 do {
-                  accum_euc_dist += marker_dist(marker, marker->parent);
+                  accum_euc_dist += voxel_scale * marker_dist(marker, marker->parent);
                   // recurse upwards until finding branch or root
                   marker = marker->parent; // known to exist already
                   // stop recursing when you find a soma or branch

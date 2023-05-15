@@ -2782,7 +2782,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     adjust_parent_ptrs(cluster);
 
     auto pruned_cluster =
-        prune_short_branches(cluster, this->args->min_branch_length);
+        prune_short_branches(cluster, args->voxel_size[0], this->args->min_branch_length);
 
     if (!is_cluster_self_contained(pruned_cluster))
       throw std::runtime_error("Pruned cluster not self contained");
@@ -3006,9 +3006,9 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << args->mean_shift_factor.value_or(0) << '\n'
             << "Skeletonization: neurites prune radius, "
             << args->prune_radius.value_or(0) << '\n'
-            << "Skeletonization: soma prune radius, " << SOMA_PRUNE_RADIUS
+            << "Skeletonization: soma prune radius factor, " << SOMA_PRUNE_RADIUS
             << '\n'
-            << "Skeletonization: min branch, " << args->min_branch_length
+            << "Skeletonization: min branch length µm, " << args->min_branch_length
             << '\n'
             << "Benchmarking: run app2, " << args->run_app2 << '\n';
     run_log.flush();
