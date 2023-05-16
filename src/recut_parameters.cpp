@@ -82,14 +82,14 @@ void RecutCommandLineArgs::PrintUsage() {
                "defaults to 0 (no-opening)\n";
   std::cout << "--close-steps        morphological closing level "
                "to fill existing voids inside somata; "
-               "defaults to 8.\n";
+               "defaults to 0.\n";
   std::cout
       << "--preserve-topology  do not apply morphological closing to the "
          "neurites of the image; defaults to closing both somas and topology "
          "(neurites)\n";
   std::cout << "--open-steps         2nd morphological opening level "
                "to clear neurites and keep somata in the image only; "
-               "defaults to 5 and disabled by passing 0 (no-opening)\n";
+               "defaults to 0 (no-opening)\n";
   std::cout << "--order              morphological operations (open/close) "
                "order. An integer between 1 to 5 that defines the mathematical "
                "complexity (order) of operations. "

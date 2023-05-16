@@ -69,7 +69,8 @@ std::vector<Seed> process_marker_dir(
   return seeds;
 }
 
-openvdb::FloatGrid::Ptr create_seed_sphere_grid(std::vector<Seed> seeds) {
+std::pair<openvdb::FloatGrid::Ptr, std::vector<openvdb::FloatGrid::Ptr>>
+create_seed_sphere_grid(std::vector<Seed> seeds) {
   auto timer = high_resolution_timer();
 
   auto component_grids = seeds | rv::transform([](const Seed &seed) {
@@ -89,7 +90,7 @@ openvdb::FloatGrid::Ptr create_seed_sphere_grid(std::vector<Seed> seeds) {
 #ifdef LOG
   std::cout << "\tFinished sphere merge in " << timer.elapsed() << '\n';
 #endif
-  return merged;
+  return std::make_pair(merged, component_grids);
 }
 
 // establish highest performance most basic filter for morphological
@@ -294,7 +295,7 @@ find_soma_component(Seed seed, openvdb::FloatGrid::Ptr grid,
     // works on grids of arbitrary type, placing all disjoint segments
     // (components) in decreasing size order in window_components
     // causes seg fault
-    //vto::segmentActiveVoxels(*clipped_grid, window_components);
+    // vto::segmentActiveVoxels(*clipped_grid, window_components);
     vto::segmentSDF(*clipped_grid, window_components);
 
     if (window_components.size() == 0) {
@@ -307,31 +308,31 @@ find_soma_component(Seed seed, openvdb::FloatGrid::Ptr grid,
     for (int i = 0; i < window_components.size(); ++i) {
       openvdb::FloatGrid::Ptr component = window_components[i];
       if (component->evalActiveVoxelBoundingBox().isInside(seed.coord)) {
-          known_component.push_back(component);
-          continue;
+        known_component.push_back(component);
+        continue;
       }
-      //if (!component || component->activeVoxelCount() == 0)
-        //continue;
-      //auto mask = vto::extractEnclosedRegion(*component);
-      //auto fog = component->deepCopy();
-      //vto::sdfToFogVolume(*fog);
+      // if (!component || component->activeVoxelCount() == 0)
+      // continue;
+      // auto mask = vto::extractEnclosedRegion(*component);
+      // auto fog = component->deepCopy();
+      // vto::sdfToFogVolume(*fog);
       //// auto test = vto::sdfInteriorMask(*component);
-      //if (mask) {
-        //std::cout << "\tenclosed voxel count: " << mask->activeVoxelCount()
-                  //<< " on " << mask->tree().isValueOn(seed.coord) << '\n';
+      // if (mask) {
+      // std::cout << "\tenclosed voxel count: " << mask->activeVoxelCount()
+      //<< " on " << mask->tree().isValueOn(seed.coord) << '\n';
       //}
       //// if (test) {
       //// std::cout << "\tinterior voxel count: " << test->activeVoxelCount()
       ////<< " on " << test->tree().isValueOn(seed.coord) << '\n';
       ////}
-      //if (fog) {
-        //std::cout << "\tfog voxel count: " << fog->activeVoxelCount()
-                  //<< " on " << fog->tree().isValueOn(seed.coord) << '\n';
+      // if (fog) {
+      // std::cout << "\tfog voxel count: " << fog->activeVoxelCount()
+      //<< " on " << fog->tree().isValueOn(seed.coord) << '\n';
       //}
-      //std::cout << '\n';
-      //if (mask && mask->activeVoxelCount()) {
-        //if (mask->tree().isValueOn(seed.coord))
-          //known_component.push_back(component);
+      // std::cout << '\n';
+      // if (mask && mask->activeVoxelCount()) {
+      // if (mask->tree().isValueOn(seed.coord))
+      // known_component.push_back(component);
       //}
     }
 
@@ -363,7 +364,7 @@ find_soma_component(Seed seed, openvdb::FloatGrid::Ptr grid,
 
     // otherwise use the largest (first) component in the window
     clipped_grid = known_component.size() > 0 ? known_component.front()
-                                      : window_components.front();
+                                              : window_components.front();
   }
   return std::make_pair(clipped_grid, bbox);
 }
@@ -553,16 +554,17 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
           << sdf_grid->activeVoxelCount() << '\n';
   run_log.flush();
 
-  auto known_seeds = process_marker_dir(args->seed_path, args->voxel_size);
+  auto seeds = process_marker_dir(args->seed_path, args->voxel_size);
   std::vector<openvdb::FloatGrid::Ptr> final_soma_sdfs;
   openvdb::FloatGrid::Ptr final_soma_sdf_merged;
-  if (known_seeds.size()) {
+  if (seeds.size()) {
     // when --seeds are passed gather them and turn them into a joined SDF
     // grid
-    openvdb::FloatGrid::Ptr known_seed_sphere_merged =
-        create_seed_sphere_grid(known_seeds);
-    if (args->save_vdbs)
-      write_vdb_file({known_seed_sphere_merged}, run_dir / "known_seeds.vdb");
+    auto finals = create_seed_sphere_grid(seeds);
+    final_soma_sdf_merged = finals.first;
+    final_soma_sdfs = finals.second;
+    // if (args->save_vdbs)
+    // write_vdb_file({known_seed_sphere_merged}, run_dir / "known_seeds.vdb");
 
     // labels need somas as intact / unmodified therefore they should
     // not be unioned
@@ -573,24 +575,25 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
       // fills in spheres where the user passed seeds are
       // known to be located
       timer.restart();
-      vto::csgUnion(*sdf_grid, *known_seed_sphere_merged, true, true);
+      vto::csgUnion(*sdf_grid, *final_soma_sdf_merged, true, true);
       std::cout << "\tFinished csgUnion in " << timer.elapsed() << '\n';
 
       // if (args->save_vdbs) {
       // write_vdb_file({sdf_grid}, run_dir / "union.vdb");
       //}
 
-      timer.restart();
-      final_soma_sdfs =
-          find_soma_components(known_seeds, sdf_grid, args->user_thread_count);
-      std::cout << "\tFinished finding " << final_soma_sdfs.size()
-                << " soma components in " << timer.elapsed() << '\n';
+      // timer.restart();
+      // final_soma_sdfs =
+      // find_soma_components(seeds, sdf_grid, args->user_thread_count);
+      // std::cout << "\tFinished finding " << final_soma_sdfs.size()
+      //<< " soma components in " << timer.elapsed() << '\n';
     }
 
     // TODO replace with sumMergeOp which is parallel and more efficient
-    timer.restart();
-    final_soma_sdf_merged = merge_grids(final_soma_sdfs);
-    std::cout << "\tFinished merge final somas in " << timer.elapsed() << '\n';
+    // timer.restart();
+    // final_soma_sdf_merged = merge_grids(final_soma_sdfs);
+    // std::cout << "\tFinished merge final somas in " << timer.elapsed() <<
+    // '\n';
   }
 
   // if (args->save_vdbs)
@@ -656,12 +659,12 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   if (args->save_vdbs)
     write_vdb_file({sdf_grid}, run_dir / "opened_sdf.vdb");
 
-  if (known_seeds.size()) {
+  if (seeds.size()) {
     if (args->output_type == "labels") {
       //// convert active regions and capped concativities like hollow centers
       // openvdb::BoolGrid::Ptr opened_bool_grid =
       // vto::extractEnclosedRegion(*sdf_grid);
-      // create_labels(known_seeds, run_dir / "ml-train-and-test", image,
+      // create_labels(seeds, run_dir / "ml-train-and-test", image,
       // sdf_grid, nullptr, args->user_thread_count, args->save_vdbs);
 #ifdef LOG
       std::cout << "\tLabel creation completed and safe to open\n";
@@ -671,7 +674,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   }
 
   // only overwrite final_soma_sdfs if user did not pass their own seeds
-  if (!known_seeds.size()) {
+  if (seeds.size() == 0) {
 #ifdef LOG
     std::cout << "\tsegmentation step\n";
 #endif
@@ -684,31 +687,34 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
             << "Seed detection: initial seed count, " << final_soma_sdfs.size()
             << '\n';
     run_log.flush();
+
+#ifdef LOG
+    std::cout << "\tcreate seed pairs step\n";
+    std::cout << "\tmin allowed radius is " << args->min_radius_um << " µm\n";
+    std::cout << "\tmax allowed radius is " << args->max_radius_um << " µm\n";
+#endif
+    timer.restart();
+    // adds all valid markers to roots vector
+    // filters by user input seeds if available
+    // If you already filtered the grid with seed intersection there's no need
+    // to refilter by known seeds
+    auto pairs = create_seed_pairs(
+        final_soma_sdfs, args->voxel_size, args->min_radius_um,
+        args->max_radius_um, args->output_type,
+        args->seed_intersection ? std::vector<Seed>{} : seeds);
+    seeds = pairs.first;
+    final_soma_sdfs = pairs.second;
+    run_log << "Seed detection: seed pairs creation time, "
+            << timer.elapsed_formatted() << '\n';
+    run_log.flush();
   }
 
-// adds all valid markers to roots vector
-// filters by user input seeds if available
-#ifdef LOG
-  std::cout << "\tcreate seed pairs step\n";
-  std::cout << "\tmin allowed radius is " << args->min_radius_um << " µm\n";
-  std::cout << "\tmax allowed radius is " << args->max_radius_um << " µm\n";
-#endif
-  timer.restart();
-  // If you already filtered the grid with seed intersection there's no need
-  // to refilter by known seeds
-  auto [seeds, filtered_components] = create_seed_pairs(
-      final_soma_sdfs, args->voxel_size, args->min_radius_um,
-      args->max_radius_um, args->output_type,
-      args->seed_intersection ? std::vector<Seed>{} : known_seeds);
 #ifdef LOG
   std::cout << "\tsaving " << seeds.size() << " seed coordinates to file ...\n";
 #endif
-  write_seeds(run_dir, seeds, args->voxel_size);
-
-  run_log << "Seed detection: seed pairs creation time, "
-          << timer.elapsed_formatted() << '\n'
-          << "Seed detection: final seed count, " << seeds.size() << '\n';
+  run_log << "Seed detection: final seed count, " << seeds.size() << '\n';
   run_log.flush();
+  write_seeds(run_dir, seeds, args->voxel_size);
 
   // if (seeds.size() && args->output_type == "labels") {
   // auto zipped = rv::zip(seeds, filtered_components, rv::iota(0));
@@ -731,7 +737,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   //});
   //}
 
-  return std::make_tuple(seeds,
-                         known_seeds.size() ? final_soma_sdf_merged : sdf_grid,
-                         args->close_topology ? closed_sdf : raw_image_sdf);
+  return std::make_tuple(
+      seeds, !args->seed_path.empty() ? final_soma_sdf_merged : sdf_grid,
+      args->close_topology ? closed_sdf : raw_image_sdf);
 }
