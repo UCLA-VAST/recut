@@ -888,7 +888,8 @@ TEST(TreeOps, MeanShiftTiny) {
     coord_to_idx[coord] = i;
   });
 
-  auto refined_tree = mean_shift(tree, max_iterations, 1, coord_to_idx);
+  auto refined_tree_opt = mean_shift(tree, max_iterations, 1, coord_to_idx);
+  auto refined_tree = refined_tree_opt.value();
 
   print_markers(refined_tree);
 
@@ -932,8 +933,10 @@ TEST(TreeOps, MeanShiftAndPruneSingle) {
 
   std::cout << "Sphere tree\n";
   print_markers(sphere_tree);
-  auto refined_sphere_tree = mean_shift(sphere_tree, max_iterations,
+  auto refined_sphere_tree_opt = mean_shift(sphere_tree, max_iterations,
                                         prune_radius_factor, coord_to_idx);
+  auto refined_sphere_tree = refined_sphere_tree_opt.value();
+
   std::cout << "Refined sphere tree\n";
   print_markers(refined_sphere_tree);
 
@@ -1006,8 +1009,10 @@ TEST(TreeOps, MeanShiftAndPrune) {
 
   std::cout << "Sphere tree\n";
   print_markers(sphere_tree);
-  auto refined_sphere_tree = mean_shift(sphere_tree, max_iterations,
+  auto refined_sphere_tree_opt = mean_shift(sphere_tree, max_iterations,
                                         prune_radius_factor, coord_to_idx);
+  auto refined_sphere_tree = refined_sphere_tree_opt.value();
+
   std::cout << "Refined sphere tree\n";
   print_markers(refined_sphere_tree);
 

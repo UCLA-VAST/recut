@@ -2712,36 +2712,6 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
       // return; // skip
     }
 
-    auto timer = high_resolution_timer();
-    auto [markers, coord_to_idx] = convert_float_to_markers(
-        component, this->topology_grid, this->args->prune_radius.value());
-
-    timer.restart();
-    auto refined_markers =
-        this->args->mean_shift_factor.has_value()
-            ? mean_shift(markers, this->args->mean_shift_max_iters,
-                         this->args->mean_shift_factor.value(), coord_to_idx)
-            : markers;
-    auto mean_shift_elapsed = timer.elapsed();
-    timer.restart();
-
-    // rebuild coord to idx for prune
-    auto coord_to_indices = create_coord_to_indices(refined_markers);
-    timer.restart();
-
-    // prune radius already set when converting from markers above
-    auto pruned_markers = advantra_prune(
-        refined_markers, /*prune_radius*/ this->args->prune_radius.value(),
-        coord_to_indices);
-    if (pruned_markers.size() < 3) {
-      std::cerr
-          << "Non fatal error: extracted pruned trees contains too few nodes "
-             "skipping " +
-                 std::to_string(index)
-          << '\n';
-      return; // skip
-    }
-
     // is a fresh run_dir
     auto component_dir_fn =
         this->run_dir / (prefix + "component-" + std::to_string(index));
@@ -2755,70 +2725,120 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     component_log << std::fixed << std::setprecision(6);
     component_log << "Thread count, " << args->user_thread_count << '\n';
     component_log << "Soma count, " << component_seeds.size() << '\n';
-    component_log << "Component count, " << markers.size() << '\n';
-    component_log << "TC count, " << pruned_markers.size() << '\n';
-    component_log << "MS elapsed time, " << mean_shift_elapsed << '\n';
-    component_log << "TC elapsed time, " << timer.elapsed() << '\n';
+    component_log << "Component active voxel count, "
+                  << voxel_count << '\n';
     component_log << "Mean shift factor, "
                   << this->args->mean_shift_factor.value_or(0) << '\n';
 #endif
 
-    // extract a new tree via bfs
-    timer.restart();
-    auto cluster = extract_trees(pruned_markers, true);
-#ifdef LOG
-    component_log << "ET, " << timer.elapsed() << '\n';
-#endif
-    timer.restart();
+    // seeds are always in voxel units and output with respect to the whole
+    // volume
+    write_seeds(component_dir_fn, component_seeds, this->args->voxel_size);
 
-    if (!is_cluster_self_contained(cluster)) {
-      std::cerr << "Non fatal error: extracted cluster not self contained, "
-                   "skipping " +
-                       std::to_string(index)
-                << '\n';
-      return; // skip this component
+    if (args->save_vdbs) { // save a grid corresponding to this component
+      write_vdb_file({component}, component_dir_fn / "float.vdb");
     }
 
-    adjust_parent_ptrs(cluster);
+    auto timer = high_resolution_timer();
+    auto [markers, coord_to_idx] = convert_float_to_markers(
+        component, this->topology_grid, this->args->prune_radius.value());
 
-    auto pruned_cluster =
-        prune_short_branches(cluster, args->voxel_size[0], this->args->min_branch_length);
+    timer.restart();
+    std::vector<MyMarker *> refined_markers;
+    auto refined_markers_opt =
+        this->args->mean_shift_factor.has_value()
+            ? mean_shift(markers, this->args->mean_shift_max_iters,
+                         this->args->mean_shift_factor.value(), coord_to_idx)
+            : markers;
 
-    if (!is_cluster_self_contained(pruned_cluster))
-      throw std::runtime_error("Pruned cluster not self contained");
+    // if mean shifting didn't timeout
+    std::vector<std::vector<MyMarker*>> trees;
+    if (refined_markers_opt) {
+      refined_markers = refined_markers_opt.value();
+      auto mean_shift_elapsed = timer.elapsed();
+      timer.restart();
 
-    // auto fixed_cluster = pruned_cluster;
-    // if (!args->ignore_multifurcations) {
-    // auto fixed_cluster = fix_trifurcations(pruned_cluster);
-    //{ // check
-    // auto trifurcations = tree_is_valid(fixed_cluster);
-    // if (!trifurcations.empty()) {
-    // auto soma = fixed_cluster[0];
-    // std::cout << "Warning tree in component-" + std::to_string(index)
-    //<< " with soma " << soma->x << ' ' << soma->y << ' '
-    //<< soma->z << " has trifurcations listed below:\n";
-    // rng::for_each(trifurcations, [](auto mismatch) {
-    // std::cout << "    " << *mismatch << '\n';
-    //});
-    //// throw std::runtime_error("Tree has trifurcations" +
-    //// std::to_string(index));
-    //}
-    // if (!is_cluster_self_contained(fixed_cluster)) {
-    // std::cout << "Warning a tree in component-" + std::to_string(index)
-    //<< " contains at least 1 node with an invalid parent\n";
-    //// throw std::runtime_error("Trifurc cluster not self contained" +
-    //// std::to_string(index));
-    //}
-    //}
-    //}
+      // rebuild coord to idx for prune
+      auto coord_to_indices = create_coord_to_indices(refined_markers);
+      timer.restart();
 
-    // auto trees = partition_cluster(fixed_cluster);
-    auto trees = partition_cluster(pruned_cluster);
+      // prune radius already set when converting from markers above
+      auto pruned_markers = advantra_prune(
+          refined_markers, /*prune_radius*/ this->args->prune_radius.value(),
+          coord_to_indices);
+      if (pruned_markers.size() < 3) {
+        std::cerr
+            << "Non fatal error: extracted pruned trees contains too few nodes "
+               "skipping " +
+                   std::to_string(index)
+            << '\n';
+        return; // skip
+      }
 
 #ifdef LOG
-    component_log << "TP, " << timer.elapsed() << '\n';
-    component_log << "TP count, " << pruned_cluster.size() << '\n';
+      component_log << "Component count, " << markers.size() << '\n';
+      component_log << "TC count, " << pruned_markers.size() << '\n';
+      component_log << "MS elapsed time, " << mean_shift_elapsed << '\n';
+      component_log << "TC elapsed time, " << timer.elapsed() << '\n';
 #endif
+
+      // extract a new tree via bfs
+      timer.restart();
+      auto cluster = extract_trees(pruned_markers, true);
+#ifdef LOG
+      component_log << "ET, " << timer.elapsed() << '\n';
+#endif
+      timer.restart();
+
+      if (!is_cluster_self_contained(cluster)) {
+        std::cerr << "Non fatal error: extracted cluster not self contained, "
+                     "skipping " +
+                         std::to_string(index)
+                  << '\n';
+        return; // skip this component
+      }
+
+      adjust_parent_ptrs(cluster);
+
+      auto pruned_cluster = prune_short_branches(cluster, args->voxel_size[0],
+                                                 this->args->min_branch_length);
+
+      if (!is_cluster_self_contained(pruned_cluster))
+        throw std::runtime_error("Pruned cluster not self contained");
+
+      // auto fixed_cluster = pruned_cluster;
+      // if (!args->ignore_multifurcations) {
+      // auto fixed_cluster = fix_trifurcations(pruned_cluster);
+      //{ // check
+      // auto trifurcations = tree_is_valid(fixed_cluster);
+      // if (!trifurcations.empty()) {
+      // auto soma = fixed_cluster[0];
+      // std::cout << "Warning tree in component-" + std::to_string(index)
+      //<< " with soma " << soma->x << ' ' << soma->y << ' '
+      //<< soma->z << " has trifurcations listed below:\n";
+      // rng::for_each(trifurcations, [](auto mismatch) {
+      // std::cout << "    " << *mismatch << '\n';
+      //});
+      //// throw std::runtime_error("Tree has trifurcations" +
+      //// std::to_string(index));
+      //}
+      // if (!is_cluster_self_contained(fixed_cluster)) {
+      // std::cout << "Warning a tree in component-" + std::to_string(index)
+      //<< " contains at least 1 node with an invalid parent\n";
+      //// throw std::runtime_error("Trifurc cluster not self contained" +
+      //// std::to_string(index));
+      //}
+      //}
+      //}
+
+      // auto trees = partition_cluster(fixed_cluster);
+      trees = partition_cluster(pruned_cluster);
+
+#ifdef LOG
+      component_log << "TP, " << timer.elapsed() << '\n';
+      component_log << "TP count, " << pruned_cluster.size() << '\n';
+#endif
+    }
 
     if (!window_grids.empty()) {
       // the first grid passed from CL sets the bbox for the
@@ -2876,37 +2896,39 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     } // end window created if any
 
 #ifdef LOG
-    VID_t total_leaves = rng::accumulate(
-        trees | rv::transform([](auto tree) { return count_leaves(tree); }),
-        0LL);
-    VID_t total_furcations = rng::accumulate(
-        trees | rv::transform([](auto tree) { return count_furcations(tree); }),
-        0LL);
-
     component_log << "Volume, " << bbox.volume() << '\n';
     component_log << "Bounding box, " << bbox << '\n';
-    component_log << "Final leaf count, " << total_leaves << '\n';
-    component_log << "Final branching node count, " << total_furcations << '\n';
 #endif
 
-    rng::for_each(trees, [&, this](auto tree) {
-      write_swc(tree, this->args->voxel_size, component_dir_fn, bbox,
-                /*bbox_adjust*/ !args->window_grid_paths.empty(),
-                this->args->output_type == "eswc");
-      if (!parent_listed_above(tree)) {
-        throw std::runtime_error("Tree is not properly sorted");
-      }
-    });
+    if (refined_markers_opt) {
+#ifdef LOG
+      VID_t total_leaves = rng::accumulate(
+          trees | rv::transform([](auto tree) { return count_leaves(tree); }),
+          0LL);
+      VID_t total_furcations =
+          rng::accumulate(trees | rv::transform([](auto tree) {
+                            return count_furcations(tree);
+                          }),
+                          0LL);
 
-    // seeds are always in voxel units and output with respect to the whole
-    // volume
-    write_seeds(component_dir_fn, component_seeds, this->args->voxel_size);
+      component_log << "Final leaf count, " << total_leaves << '\n';
+      component_log << "Final branching node count, " << total_furcations
+                    << '\n';
+#endif
 
-    if (args->save_vdbs) { // save a mask grid corresponding to this component
-      write_vdb_file({component}, component_dir_fn / "float.vdb");
+      rng::for_each(trees, [&, this](auto tree) {
+        write_swc(tree, this->args->voxel_size, component_dir_fn, bbox,
+                  /*bbox_adjust*/ !args->window_grid_paths.empty(),
+                  this->args->output_type == "eswc");
+        if (!parent_listed_above(tree)) {
+          throw std::runtime_error("Tree is not properly sorted");
+        }
+      });
+
+      std::cout << "Component " << index << " complete and safe to open\n";
+    } else {
+      std::cout << "Component " << index << " SWC timeout, image, seed, (and vdb saved)\n";
     }
-
-    std::cout << "Component " << index << " complete and safe to open\n";
   }; // for each component
 
   auto enum_components = components | rv::enumerate | rng::to_vector;
@@ -3006,10 +3028,10 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << args->mean_shift_factor.value_or(0) << '\n'
             << "Skeletonization: neurites prune radius, "
             << args->prune_radius.value_or(0) << '\n'
-            << "Skeletonization: soma prune radius factor, " << SOMA_PRUNE_RADIUS
-            << '\n'
-            << "Skeletonization: min branch length µm, " << args->min_branch_length
-            << '\n'
+            << "Skeletonization: soma prune radius factor, "
+            << SOMA_PRUNE_RADIUS << '\n'
+            << "Skeletonization: min branch length µm, "
+            << args->min_branch_length << '\n'
             << "Benchmarking: run app2, " << args->run_app2 << '\n';
     run_log.flush();
   }
@@ -3134,8 +3156,8 @@ template <class image_t> void Recut<image_t>::operator()() {
 #endif
   assertm(somas_connected_to_neurites,
           "Topology grid must be set before starting reconstruction");
-  this->topology_grid = convert_sdf_to_points(somas_connected_to_neurites, image_lengths,
-                                              args->foreground_percent);
+  this->topology_grid = convert_sdf_to_points(
+      somas_connected_to_neurites, image_lengths, args->foreground_percent);
 
   initialize_globals(this->grid_tile_size, this->tile_block_size);
 

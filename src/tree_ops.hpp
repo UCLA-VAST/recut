@@ -545,10 +545,11 @@ auto sphere_iterator = [](const GridCoord &center, const float radiusf) {
 
 // From Advantra pnr implementation: mean-shift (non-blurring) uses
 // neighbourhood of pixels determined by the current nodes radius
-std::vector<MyMarker *>
+std::optional<std::vector<MyMarker *>>
 mean_shift(std::vector<MyMarker *> nX, int max_iterations, float shift_radius,
            std::unordered_map<GridCoord, VID_t> coord_to_idx) {
 
+  auto timer = high_resolution_timer();
   int checkpoint = round(nX.size() / 10.0);
 
   double conv[4], next[4]; // x y z radius
@@ -561,6 +562,9 @@ mean_shift(std::vector<MyMarker *> nX, int max_iterations, float shift_radius,
   // go through nY[i], initiate with nX[i] values and refine by mean-shift
   // averaging
   for (long i = 0; i < nX.size(); ++i) {
+    if (timer.elapsed() > MEAN_SHIFT_TIMEOUT)
+      return std::nullopt;
+
     // adjust_marker = new MyMarker
     // type, x, y, z, radius, nbr,
     //  create a new copy
