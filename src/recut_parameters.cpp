@@ -105,6 +105,7 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout
       << "--run-app2           for benchmarks and comparisons runs app2 on "
          "the vdb passed to --output-windows\n";
+  std::cout << "--timeout            time in minutes to automatically cancel pruning of a single component\n";
   std::cout << "--help               [-h] print this example usage summary\n";
 }
 
@@ -335,6 +336,9 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         ++i;
       } else if (strcmp(argv[i], "--run-app2") == 0) {
         args.run_app2 = true;
+        ++i;
+      } else if (strcmp(argv[i], "--timeout") == 0) {
+        args.timeout = 60* atoi(argv[i + 1]);
         ++i;
       } else {
         std::cerr << "unknown option \"" << argv[i] << "\"  ...exiting\n\n";
