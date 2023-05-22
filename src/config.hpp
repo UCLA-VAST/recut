@@ -98,5 +98,5 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 #define DILATION_FACTOR 1
 #define RECUT_LEVEL_SET_HALF_WIDTH 2
 #define SOMA_LABEL_LENGTH 128
-// 30 minutes in unit seconds
-#define MEAN_SHIFT_TIMEOUT 60 * 30
+// 10 minutes in unit seconds
+#define MEAN_SHIFT_TIMEOUT 60 * 10

@@ -157,9 +157,9 @@ auto is_cluster_self_contained = [](const std::vector<MyMarker *> &cluster) {
         const auto parent_coord = std::array<double, 3>{
             marker->parent->x, marker->parent->y, marker->parent->z};
         const auto parent_pair = coord_to_idx.find(parent_coord);
-        //if (parent_pair == coord_to_idx.end()) {
-          //std::cout << "marker: " << *marker << " parent " << marker->parent
-                    //<< '\n';
+        // if (parent_pair == coord_to_idx.end()) {
+        // std::cout << "marker: " << *marker << " parent " << marker->parent
+        //<< '\n';
         //}
         return parent_pair == coord_to_idx.end();
       });
@@ -377,41 +377,40 @@ prune_short_branches(std::vector<MyMarker *> &tree, float voxel_scale,
   // otherwise persistence homology in TMD (Kanari et al.) has difficult to
   // diagnose bug
   auto filtered_tree =
-      tree |
-      rv::remove_if(
-          [&](auto marker) {
-            // only check non roots
-            if (marker->parent) {
-              // only check from leafs, since they define the beginning of a
-              // branch
-              if (!is_a_leaf(marker))
-                return false;
+      tree | rv::remove_if([&](auto marker) {
+        // only check non roots
+        if (marker->parent) {
+          // only check from leafs, since they define the beginning of a
+          // branch
+          if (!is_a_leaf(marker))
+            return false;
 
-              // prune if immediate parent is branch
-              // marker passed must be valid
-              if (is_a_branch(marker->parent))
-                return true;
+          // prune if immediate parent is branch
+          // marker passed must be valid
+          if (is_a_branch(marker->parent))
+            return true;
 
-              // filter short branches below min_branch_length
-              if (min_branch_length > 0) {
-                auto accum_euc_dist = 0.;
-                do {
-                  accum_euc_dist += voxel_scale * marker_dist(marker, marker->parent);
-                  // recurse upwards until finding branch or root
-                  marker = marker->parent; // known to exist already
-                  // stop recursing when you find a soma or branch
-                  // since that defines the end of the branch
-                } while (marker->parent &&
-                         !is_a_branch(marker)); // not a root and not a branch
+          // filter short branches below min_branch_length
+          if (min_branch_length > 0) {
+            auto accum_euc_dist = 0.;
+            do {
+              accum_euc_dist +=
+                  voxel_scale * marker_dist(marker, marker->parent);
+              // recurse upwards until finding branch or root
+              marker = marker->parent; // known to exist already
+              // stop recursing when you find a soma or branch
+              // since that defines the end of the branch
+            } while (marker->parent &&
+                     !is_a_branch(marker)); // not a root and not a branch
 
-                return accum_euc_dist < min_branch_length; // remove if true
+            return accum_euc_dist < min_branch_length; // remove if true
 
-              } else {
-                return false; // keep
-              }
-            }
-            return false; // keep somas -- soma parent can be undefined
-          }) |
+          } else {
+            return false; // keep
+          }
+        }
+        return false; // keep somas -- soma parent can be undefined
+      }) |
       rng::to_vector;
 
   const auto pruned_count = tree.size() - filtered_tree.size();
@@ -547,7 +546,8 @@ auto sphere_iterator = [](const GridCoord &center, const float radiusf) {
 // neighbourhood of pixels determined by the current nodes radius
 std::optional<std::vector<MyMarker *>>
 mean_shift(std::vector<MyMarker *> nX, int max_iterations, float shift_radius,
-           std::unordered_map<GridCoord, VID_t> coord_to_idx) {
+           std::unordered_map<GridCoord, VID_t> coord_to_idx,
+           int timeout = std::numeric_limits<int>::max()) {
 
   auto timer = high_resolution_timer();
   int checkpoint = round(nX.size() / 10.0);
@@ -562,9 +562,6 @@ mean_shift(std::vector<MyMarker *> nX, int max_iterations, float shift_radius,
   // go through nY[i], initiate with nX[i] values and refine by mean-shift
   // averaging
   for (long i = 0; i < nX.size(); ++i) {
-    if (timer.elapsed() > MEAN_SHIFT_TIMEOUT)
-      return std::nullopt;
-
     // adjust_marker = new MyMarker
     // type, x, y, z, radius, nbr,
     //  create a new copy
@@ -588,6 +585,11 @@ mean_shift(std::vector<MyMarker *> nX, int max_iterations, float shift_radius,
     for (int iter = 0; iter < max_iterations &&
                        last_distance_delta > distance_delta_criterion;
          ++iter) {
+      if (timer.elapsed() > timeout) {
+        std::cout << "timeout after: " << timer.elapsed_formatted() << '\n';
+        return std::nullopt;
+      }
+
       int cnt = 1;
 
       next[0] = conv[0]; // local mean is the follow-up location
