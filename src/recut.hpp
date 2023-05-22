@@ -2,6 +2,7 @@
 
 #include "app2_helpers.hpp"
 #include "morphological_soma_segmentation.hpp"
+#include "mesh_reconstruction.hpp"
 #include "recut_parameters.hpp"
 #include "tile_thresholds.hpp"
 #include "tree_ops.hpp"
@@ -3150,6 +3151,11 @@ template <class image_t> void Recut<image_t>::operator()() {
           << "Seed detection: masked SDF voxel count, "
           << somas_connected_to_neurites->activeVoxelCount() << '\n';
   run_log.flush();
+
+#ifdef LOG
+  std::cout << "\tTopology to tree step\n";
+#endif
+  topology_to_tree(somas_connected_to_neurites, this->run_dir, this->args->save_vdbs);
 
 #ifdef LOG
   std::cout << "\tSDF to point step\n";
