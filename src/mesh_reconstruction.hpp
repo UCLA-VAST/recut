@@ -3,6 +3,7 @@
 
 void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
                       bool save_vdbs = false) {
+  write_vdb_file({topology}, run_dir / "whole-topology.vdb");
   std::vector<openvdb::FloatGrid::Ptr> components;
   vto::segmentSDF(*topology, components);
 

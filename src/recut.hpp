@@ -1,8 +1,8 @@
 #pragma once
 
 #include "app2_helpers.hpp"
-#include "morphological_soma_segmentation.hpp"
 #include "mesh_reconstruction.hpp"
+#include "morphological_soma_segmentation.hpp"
 #include "recut_parameters.hpp"
 #include "tile_thresholds.hpp"
 #include "tree_ops.hpp"
@@ -19,6 +19,7 @@
 #include <future>
 #include <iostream>
 #include <map>
+#include <openvdb/tools/LevelSetRebuild.h>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -2726,8 +2727,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     component_log << std::fixed << std::setprecision(6);
     component_log << "Thread count, " << args->user_thread_count << '\n';
     component_log << "Soma count, " << component_seeds.size() << '\n';
-    component_log << "Component active voxel count, "
-                  << voxel_count << '\n';
+    component_log << "Component active voxel count, " << voxel_count << '\n';
     component_log << "Mean shift factor, "
                   << this->args->mean_shift_factor.value_or(0) << '\n';
 #endif
@@ -2749,11 +2749,12 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     auto refined_markers_opt =
         this->args->mean_shift_factor.has_value()
             ? mean_shift(markers, this->args->mean_shift_max_iters,
-                         this->args->mean_shift_factor.value(), coord_to_idx, args->timeout)
+                         this->args->mean_shift_factor.value(), coord_to_idx,
+                         args->timeout)
             : markers;
 
     // if mean shifting didn't timeout
-    std::vector<std::vector<MyMarker*>> trees;
+    std::vector<std::vector<MyMarker *>> trees;
     if (refined_markers_opt) {
       refined_markers = refined_markers_opt.value();
       auto mean_shift_elapsed = timer.elapsed();
@@ -2928,7 +2929,8 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 
       std::cout << "Component " << index << " complete and safe to open\n";
     } else {
-      std::cout << "Component " << index << " SWC timeout, image, seed, (and vdb saved)\n";
+      std::cout << "Component " << index
+                << " SWC timeout, image, seed, (and vdb saved)\n";
     }
   }; // for each component
 
@@ -3143,7 +3145,10 @@ template <class image_t> void Recut<image_t>::operator()() {
   auto timer = high_resolution_timer();
   // if user passed known seeds then use the pretermined merged sdf grid
   // else use the result of the open and close steps above
-  auto somas_connected_to_neurites = vto::maskSdf(*soma_sdf, *neurite_sdf);
+  auto temp = vto::maskSdf(*soma_sdf, *neurite_sdf);
+  //auto somas_connected_to_neurites = vto::levelSetRebuild(*temp);
+  auto somas_connected_to_neurites = vto::fogToSdf(*temp, 0);
+
   std::ofstream run_log;
   run_log.open(log_fn, std::ios::app);
   run_log << "Seed detection: masking time, " << timer.elapsed_formatted()
@@ -3155,7 +3160,8 @@ template <class image_t> void Recut<image_t>::operator()() {
 #ifdef LOG
   std::cout << "\tTopology to tree step\n";
 #endif
-  topology_to_tree(somas_connected_to_neurites, this->run_dir, this->args->save_vdbs);
+  topology_to_tree(somas_connected_to_neurites, this->run_dir,
+                   this->args->save_vdbs);
 
 #ifdef LOG
   std::cout << "\tSDF to point step\n";
@@ -3188,6 +3194,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   }
 
   partition_components(seeds, false);
+  exit(0);
 
   // old prune strategy
   //{
