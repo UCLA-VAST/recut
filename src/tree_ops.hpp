@@ -547,7 +547,7 @@ auto sphere_iterator = [](const GridCoord &center, const float radiusf) {
 std::optional<std::vector<MyMarker *>>
 mean_shift(std::vector<MyMarker *> nX, int max_iterations, float shift_radius,
            std::unordered_map<GridCoord, VID_t> coord_to_idx,
-           int timeout = std::numeric_limits<int>::max()) {
+           double timeout) {
 
   auto timer = high_resolution_timer();
   int checkpoint = round(nX.size() / 10.0);

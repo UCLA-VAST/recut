@@ -2728,7 +2728,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     component_log << "Component active voxel count, "
                   << voxel_count << '\n';
     component_log << "Mean shift factor, "
-                  << this->args->mean_shift_factor.value_or(0) << '\n';
+                  << this->args->mean_shift_factor << '\n';
 #endif
 
     // seeds are always in voxel units and output with respect to the whole
@@ -2746,16 +2746,19 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     timer.restart();
     std::vector<MyMarker *> refined_markers;
     auto refined_markers_opt =
-        this->args->mean_shift_factor.has_value()
+        this->args->mean_shift_factor > 0
             ? mean_shift(markers, this->args->mean_shift_max_iters,
-                         this->args->mean_shift_factor.value(), coord_to_idx, args->timeout)
+                         this->args->mean_shift_factor, coord_to_idx, args->timeout)
             : markers;
+
+#ifdef LOG
+      component_log << "MS elapsed time, " << timer.elapsed() << '\n';
+#endif
 
     // if mean shifting didn't timeout
     std::vector<std::vector<MyMarker*>> trees;
     if (refined_markers_opt) {
       refined_markers = refined_markers_opt.value();
-      auto mean_shift_elapsed = timer.elapsed();
       timer.restart();
 
       // rebuild coord to idx for prune
@@ -2778,7 +2781,6 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 #ifdef LOG
       component_log << "Component count, " << markers.size() << '\n';
       component_log << "TC count, " << pruned_markers.size() << '\n';
-      component_log << "MS elapsed time, " << mean_shift_elapsed << '\n';
       component_log << "TC elapsed time, " << timer.elapsed() << '\n';
 #endif
 
@@ -3025,7 +3027,7 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << "Seed detection: max allowed soma radius in µm, "
             << args->max_radius_um << '\n'
             << "Skeletonization: neurites mean shift radius, "
-            << args->mean_shift_factor.value_or(0) << '\n'
+            << args->mean_shift_factor << '\n'
             << "Skeletonization: neurites prune radius, "
             << args->prune_radius.value_or(0) << '\n'
             << "Skeletonization: soma prune radius factor, "
