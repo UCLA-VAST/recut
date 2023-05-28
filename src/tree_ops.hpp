@@ -562,7 +562,6 @@ mean_shift(std::vector<MyMarker *> nX, int max_iterations, float shift_radius,
   // go through nY[i], initiate with nX[i] values and refine by mean-shift
   // averaging
   for (long i = 0; i < nX.size(); ++i) {
-    std::cout << "i " << i << " of " << nX.size() << '\n';
     if (timer.elapsed() > timeout) {
       std::cout << "timeout after: " << timer.elapsed_formatted() << '\n';
       return std::nullopt;
