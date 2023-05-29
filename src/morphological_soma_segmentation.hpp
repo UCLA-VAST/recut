@@ -676,7 +676,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
 
   // only overwrite final_soma_sdfs if user did not pass their own seeds
   // or seed intersection is on
-  if (!args->seed_intersection || seeds.size() == 0) {
+  if (args->seed_intersection || seeds.size() == 0) {
 #ifdef LOG
     std::cout << "\tsegmentation step\n";
 #endif
