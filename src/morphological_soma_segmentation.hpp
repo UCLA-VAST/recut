@@ -614,7 +614,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
     run_log << "Seed detection: denoise time, " << timer.elapsed_formatted()
             << "\n";
   } else {
-    run_log << "Seed detection: denoise time, 00:00:00:00 d:h:m:s\n";
+    run_log << "Seed detection: denoise time, 00:00:00:00\n";
   }
   run_log << "Seed detection: denoised SDF voxel count, "
           << sdf_grid->activeVoxelCount() << '\n';

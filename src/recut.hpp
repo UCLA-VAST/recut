@@ -2178,13 +2178,13 @@ void Recut<image_t>::update(std::string stage, Container &fifo) {
     if (stage == "convert")
       stage_acr = "VC";
     if (stage == "connected")
-      stage_acr = "connected components";
+      stage_acr = "CC";
     if (stage == "radius")
-      stage_acr = "SDF radius";
+      stage_acr = "SDF";
 
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
-    run_log << "Skeletonization: " << stage_acr << " time, "
+    run_log << stage_acr << ", "
             << timer.elapsed_formatted() << '\n';
     run_log.flush();
   }
@@ -3203,7 +3203,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   //// produces bad reach-back artifact
   //// prune_branch();
-  //// adjust_parent();
+  //// adjust_parent();; //
 
   // print_to_swc();
   //}
