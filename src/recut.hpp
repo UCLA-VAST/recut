@@ -2184,8 +2184,7 @@ void Recut<image_t>::update(std::string stage, Container &fifo) {
 
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
-    run_log << stage_acr << ", "
-            << timer.elapsed_formatted() << '\n';
+    run_log << stage_acr << ", " << timer.elapsed_formatted() << '\n';
     run_log.flush();
   }
 
@@ -2725,10 +2724,9 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     component_log << std::fixed << std::setprecision(6);
     component_log << "Thread count, " << args->user_thread_count << '\n';
     component_log << "Soma count, " << component_seeds.size() << '\n';
-    component_log << "Component active voxel count, "
-                  << voxel_count << '\n';
-    component_log << "Mean shift factor, "
-                  << this->args->mean_shift_factor << '\n';
+    component_log << "Component active voxel count, " << voxel_count << '\n';
+    component_log << "Mean shift factor, " << this->args->mean_shift_factor
+                  << '\n';
 #endif
 
     // seeds are always in voxel units and output with respect to the whole
@@ -2748,15 +2746,16 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     auto refined_markers_opt =
         this->args->mean_shift_factor > 0
             ? mean_shift(markers, this->args->mean_shift_max_iters,
-                         this->args->mean_shift_factor, coord_to_idx, args->timeout)
+                         this->args->mean_shift_factor, coord_to_idx,
+                         args->timeout)
             : markers;
 
 #ifdef LOG
-      component_log << "MS elapsed time, " << timer.elapsed() << '\n';
+    component_log << "MS elapsed time, " << timer.elapsed() << '\n';
 #endif
 
     // if mean shifting didn't timeout
-    std::vector<std::vector<MyMarker*>> trees;
+    std::vector<std::vector<MyMarker *>> trees;
     if (refined_markers_opt) {
       refined_markers = refined_markers_opt.value();
       timer.restart();
@@ -2929,7 +2928,8 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 
       std::cout << "Component " << index << " complete and safe to open\n";
     } else {
-      std::cout << "Component " << index << " SWC timeout, image, seed, (and vdb saved)\n";
+      std::cout << "Component " << index
+                << " SWC timeout, image, seed, (and vdb saved)\n";
     }
   }; // for each component
 
@@ -3160,6 +3160,12 @@ template <class image_t> void Recut<image_t>::operator()() {
           "Topology grid must be set before starting reconstruction");
   this->topology_grid = convert_sdf_to_points(
       somas_connected_to_neurites, image_lengths, args->foreground_percent);
+
+  // filter seeds with respect to topology
+  seeds = seeds | rv::filter([this](Seed seed) {
+            return this->topology_grid->tree().isValueOn(seed.coord);
+          }) |
+          rng::to_vector;
 
   initialize_globals(this->grid_tile_size, this->tile_block_size);
 
