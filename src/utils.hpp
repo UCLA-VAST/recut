@@ -244,7 +244,7 @@ struct high_resolution_timer {
     std::stringstream s;
     s << std::setfill('0') << std::setw(2) << days << ':' << std::setw(2)
       << hours << ':' << std::setw(2) << minutes << ':' << std::setw(2)
-      << seconds << " d:h:m:s";
+      << seconds; // << " d:h:m:s";
     return s.str();
   }
   std::uint64_t elapsed_nanoseconds() const {

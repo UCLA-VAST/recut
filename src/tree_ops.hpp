@@ -547,7 +547,7 @@ auto sphere_iterator = [](const GridCoord &center, const float radiusf) {
 std::optional<std::vector<MyMarker *>>
 mean_shift(std::vector<MyMarker *> nX, int max_iterations, float shift_radius,
            std::unordered_map<GridCoord, VID_t> coord_to_idx,
-           int timeout = std::numeric_limits<int>::max()) {
+           double timeout = std::numeric_limits<double>::max()) {
 
   auto timer = high_resolution_timer();
   int checkpoint = round(nX.size() / 10.0);
@@ -562,6 +562,11 @@ mean_shift(std::vector<MyMarker *> nX, int max_iterations, float shift_radius,
   // go through nY[i], initiate with nX[i] values and refine by mean-shift
   // averaging
   for (long i = 0; i < nX.size(); ++i) {
+    if (timer.elapsed() > timeout) {
+      std::cout << "timeout after: " << timer.elapsed_formatted() << '\n';
+      return std::nullopt;
+    }
+
     // adjust_marker = new MyMarker
     // type, x, y, z, radius, nbr,
     //  create a new copy
@@ -585,11 +590,6 @@ mean_shift(std::vector<MyMarker *> nX, int max_iterations, float shift_radius,
     for (int iter = 0; iter < max_iterations &&
                        last_distance_delta > distance_delta_criterion;
          ++iter) {
-      if (timer.elapsed() > timeout) {
-        std::cout << "timeout after: " << timer.elapsed_formatted() << '\n';
-        return std::nullopt;
-      }
-
       int cnt = 1;
 
       next[0] = conv[0]; // local mean is the follow-up location

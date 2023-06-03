@@ -568,7 +568,8 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
 
     // labels need somas as intact / unmodified therefore they should
     // not be unioned
-    if (args->output_type != "labels") {
+    // do not union if you will later intersect
+    if (args->output_type != "labels" && !args->seed_intersection) {
       // this strategies permanently modify the  mask_grid for both soma
       // detection and neurite reconstruction, the image grid uint8 that is
       // output in windows is unaffected however
@@ -588,12 +589,6 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
       // std::cout << "\tFinished finding " << final_soma_sdfs.size()
       //<< " soma components in " << timer.elapsed() << '\n';
     }
-
-    // TODO replace with sumMergeOp which is parallel and more efficient
-    // timer.restart();
-    // final_soma_sdf_merged = merge_grids(final_soma_sdfs);
-    // std::cout << "\tFinished merge final somas in " << timer.elapsed() <<
-    // '\n';
   }
 
   // if (args->save_vdbs)
@@ -614,7 +609,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
     run_log << "Seed detection: denoise time, " << timer.elapsed_formatted()
             << "\n";
   } else {
-    run_log << "Seed detection: denoise time, 00:00:00:00 d:h:m:s\n";
+    run_log << "Seed detection: denoise time, 00:00:00:00\n";
   }
   run_log << "Seed detection: denoised SDF voxel count, "
           << sdf_grid->activeVoxelCount() << '\n';
@@ -671,10 +666,17 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
 #endif
       return std::make_tuple(std::vector<Seed>{}, nullptr, nullptr);
     }
+    if (args->seed_intersection) {
+      timer.restart();
+      // replace sdf_grid with intersection of sdf_grid and final_soma_sdf_merged
+      vto::csgIntersection(*sdf_grid, *final_soma_sdf_merged, true, true);
+      std::cout << "\tFinished csgIntersection in " << timer.elapsed() << '\n';
+    }
   }
 
   // only overwrite final_soma_sdfs if user did not pass their own seeds
-  if (seeds.size() == 0) {
+  // or seed intersection is on
+  if (args->seed_intersection || seeds.size() == 0) {
 #ifdef LOG
     std::cout << "\tsegmentation step\n";
 #endif
@@ -738,6 +740,6 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   //}
 
   return std::make_tuple(
-      seeds, !args->seed_path.empty() ? final_soma_sdf_merged : sdf_grid,
+      seeds, args->seed_path.empty() || args->seed_intersection ? sdf_grid : final_soma_sdf_merged,
       args->close_topology ? closed_sdf : raw_image_sdf);
 }

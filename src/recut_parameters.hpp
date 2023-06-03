@@ -30,7 +30,9 @@ public:
         morphological_operations_order(1), min_radius_um(MIN_SOMA_RADIUS_UM),
         max_radius_um(MAX_SOMA_RADIUS_UM), voxel_size({1., 1., 1.}),
         save_vdbs(false), seed_intersection(true),
-        ignore_multifurcations(false), close_topology(true), mean_shift_max_iters(4), timeout(MEAN_SHIFT_TIMEOUT) {}
+        ignore_multifurcations(false), close_topology(true),
+        mean_shift_max_iters(4), timeout(MEAN_SHIFT_TIMEOUT),
+        mean_shift_factor(0) {}
 
   static void PrintUsage();
   std::string MetaString();
@@ -56,18 +58,18 @@ public:
   std::string input_type, output_type, output_name, second_grid;
   std::vector<std::string> window_grid_paths;
   uint16_t user_thread_count, min_branch_length, resolution_level, channel,
-      upsample_z, downsample_factor, morphological_operations_order, mean_shift_max_iters;
+      upsample_z, downsample_factor, morphological_operations_order,
+      mean_shift_max_iters;
   int background_thresh, max_intensity, min_intensity, tcase, timeout;
   double foreground_percent, slt_pct;
   float min_window_um, expand_window_um, min_radius_um, max_radius_um,
-      open_denoise, open_steps, close_steps;
+      open_denoise, open_steps, close_steps, mean_shift_factor;
   VID_t selected, root_vid;
   bool run_app2, convert_only, combine, histogram, save_vdbs, seed_intersection,
       ignore_multifurcations, close_topology;
   std::array<int, 3> tile_lengths;
   std::array<float, 3> voxel_size;
   std::optional<float> prune_radius;
-  std::optional<float> mean_shift_factor;
 };
 
 RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]);
