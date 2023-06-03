@@ -3145,9 +3145,9 @@ template <class image_t> void Recut<image_t>::operator()() {
   auto timer = high_resolution_timer();
   // if user passed known seeds then use the pretermined merged sdf grid
   // else use the result of the open and close steps above
-  auto temp = vto::maskSdf(*soma_sdf, *neurite_sdf);
+  auto somas_connected_to_neurites = vto::maskSdf(*soma_sdf, *neurite_sdf);
   //auto somas_connected_to_neurites = vto::levelSetRebuild(*temp);
-  auto somas_connected_to_neurites = vto::fogToSdf(*temp, 0);
+  //auto somas_connected_to_neurites = vto::fogToSdf(*temp, 0);
 
   std::ofstream run_log;
   run_log.open(log_fn, std::ios::app);

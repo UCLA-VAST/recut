@@ -1,5 +1,25 @@
 {
   "nodes": {
+    "gel": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1684811390,
+        "narHash": "sha256-e57fT4p1epMR01/dgap3Ciz8alLbQpcK3VoT60iOnaE=",
+        "owner": "UCLA-VAST",
+        "repo": "GEL",
+        "rev": "695168a20c0fdf0edcad30a3fb59a1d1490336f8",
+        "type": "github"
+      },
+      "original": {
+        "owner": "UCLA-VAST",
+        "repo": "GEL",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1640718479,
@@ -38,6 +58,7 @@
     },
     "root": {
       "inputs": {
+        "gel": "gel",
         "nixpkgs": "nixpkgs",
         "openvdb": "openvdb"
       }

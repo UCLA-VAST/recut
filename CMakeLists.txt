@@ -263,6 +263,10 @@ foreach (I ${ALL_TARGETS})
     target_link_libraries(${I} PRIVATE OpenVDB::openvdb)
     message(STATUS "Linked OpenVDB")
 
+    #find_package(GEL REQUIRED)
+    target_link_libraries(${I} PRIVATE ${GEL_PATH})
+    message(STATUS "Linked GEL")
+
     # make Recut libraries truly relocatable when linking from downstream programs
     set_target_properties(${I} PROPERTIES INSTALL_RPATH "$ORIGIN/../bin")
 endforeach ()
