@@ -3161,7 +3161,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 #ifdef LOG
   std::cout << "\tTopology to tree step\n";
 #endif
-  topology_to_tree(somas_connected_to_neurites, this->run_dir,
+  topology_to_tree(somas_connected_to_neurites, this->run_dir, seeds,
                    this->args->save_vdbs);
 
 #ifdef LOG
