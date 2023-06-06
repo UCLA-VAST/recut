@@ -1,3 +1,5 @@
+#pragma once
+
 struct ArrayHasher {
   std::size_t operator()(const std::array<double, 3> &a) const {
     std::size_t h = 0;

@@ -1,3 +1,6 @@
+#pragma once
+
+#include "tree_ops.hpp"
 #include <GEL/Geometry/Graph.h>
 #include <GEL/Geometry/graph_skeletonize.h>
 #include <openvdb/tools/LevelSetUtil.h>
@@ -12,7 +15,8 @@ auto euc_dist = [](auto a, auto b) -> float {
   return std::sqrt(diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]);
 };
 
-std::set<size_t> find_soma_nodes(Geometry::AMGraph3D graph, std::vector<Seed> seeds) {
+std::set<size_t> find_soma_nodes(Geometry::AMGraph3D graph,
+                                 std::vector<Seed> seeds) {
   std::set<size_t> soma_ids;
   rng::for_each(seeds, [&](Seed seed) {
     int max_val = 0;
@@ -35,7 +39,7 @@ std::set<size_t> find_soma_nodes(Geometry::AMGraph3D graph, std::vector<Seed> se
 }
 
 void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
-                      std::vector<Seed> seeds, bool save_vdbs = false) {
+                      std::vector<Seed> seeds, RecutCommandLineArgs *args) {
   write_vdb_file({topology}, run_dir / "whole-topology.vdb");
   std::vector<openvdb::FloatGrid::Ptr> components;
   // vto::segmentSDF(*topology, components);
@@ -65,7 +69,7 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
         rng::for_each(points, [&](auto point) {
           auto p = CGLA::Vec3d(point[0], point[1], point[2]);
           auto node_id = g.add_node(p);
-          std::cout << "add node: " << node_id << '\n';
+          //std::cout << "add node: " << node_id << '\n';
           mesh_file << "n " << point[0] << ' ' << point[1] << ' ' << point[2]
                     << '\n';
         });
@@ -76,7 +80,7 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
             auto a = quad[i];
             auto b = quad[(i + 1) % 4];
             g.connect_nodes(a, b);
-            std::cout << "c " << a << ' ' << b << '\n';
+            //std::cout << "c " << a << ' ' << b << '\n';
             mesh_file << "c " << a << ' ' << b << '\n';
           }
         });
@@ -102,31 +106,46 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
         for (auto i : component_graph.node_ids()) {
           auto color = component_graph.node_color[i].get();
           // radius is in the green channel
-          auto radius = color[1];
+          //auto radius = color[1];
+          auto radius = 1;
           auto pos = g.pos[i].get();
-          component_tree.emplace_back(pos[0], pos[1], pos[2], radius);
+          // TODO
+          auto marker = new MyMarker(pos[0], pos[1], pos[2], radius);
+          // component_tree.emplace_back(pos[0], pos[1], pos[2], radius);
+          component_tree.push_back(marker);
         }
 
         // assign all parents via BFS
         // traverse graph outwards from any soma, does not matter which
+        Geometry::BreadthFirstSearch bfs(component_graph);
         size_t root = *soma_ids.begin();
-        auto ms_tree = minimum_spanning_tree(component_graph, root);
-        Geometry::BreadthFirstSearch bfs(ms_tree);
         bfs.add_init_node(root);
         while (bfs.Prim_step()) {
           auto last = bfs.get_last();
-          auto marker = ms_tree[last];
-          if (last == soma_id) {
+          auto marker = component_tree[last];
+          if (soma_ids.find(last) != soma_ids.end()) {
+            // soma
             marker->parent = 0;
             marker->type = 0;
           } else {
-            marker->parent = component_tree(bfs.pred[last]));
+            marker->parent = component_tree[bfs.pred[last]];
           }
         }
 
         auto trees = partition_cluster(component_tree);
 
-        if (save_vdbs) {
+        // TODO setTransform?
+        auto bbox = component->evalActiveVoxelBoundingBox();
+        rng::for_each(trees, [&](auto tree) {
+          write_swc(tree, args->voxel_size, component_dir_fn, bbox,
+                    /*bbox_adjust*/ !args->window_grid_paths.empty(),
+                    args->output_type == "eswc");
+          if (!parent_listed_above(tree)) {
+            throw std::runtime_error("Tree is not properly sorted");
+          }
+        });
+
+        if (args->save_vdbs) {
           write_vdb_file({component}, component_dir_fn / "sdf.vdb");
         }
       });
