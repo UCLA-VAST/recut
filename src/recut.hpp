@@ -3157,15 +3157,18 @@ template <class image_t> void Recut<image_t>::operator()() {
           << somas_connected_to_neurites->activeVoxelCount() << '\n';
   run_log.flush();
 
-  //Openvdb::FloatGrid::Ptr temp;
-  //for (auto iter = sdf->cbeginValueOn(); iter.test(); ++iter) {
-    //auto coord = iter.getCoord();
-  //}
+  auto temp = openvdb::FloatGrid::create();
+  temp->setTransform(get_transform());
+  auto accessor = temp->getAccessor();
+  for (auto iter = somas_connected_to_neurites->cbeginValueOn(); iter.test(); ++iter) {
+    auto coord = iter.getCoord();
+    accessor.setValue(coord, 1.);
+  }
 
 #ifdef LOG
   std::cout << "\tTopology to tree step\n";
 #endif
-  topology_to_tree(somas_connected_to_neurites, this->run_dir, seeds, this->args);
+  topology_to_tree(temp, this->run_dir, seeds, this->args);
 
 #ifdef LOG
   std::cout << "\tSDF to point step\n";

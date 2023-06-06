@@ -6,6 +6,7 @@
 #include <openvdb/tools/LevelSetUtil.h>
 #include <openvdb/tools/TopologyToLevelSet.h>
 #include <openvdb/tools/VolumeToMesh.h>
+#include <openvdb/tools/FastSweeping.h> // fogToSdf
 
 auto euc_dist = [](auto a, auto b) -> float {
   std::array<float, 3> diff = {
@@ -44,11 +45,13 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
   std::vector<openvdb::FloatGrid::Ptr> components;
   // vto::segmentSDF(*topology, components);
   vto::segmentActiveVoxels(*topology, components);
+  std::cout << "Total components: " << components.size() << '\n';
 
   rng::for_each(
       components | rv::take(1) | rv::enumerate | rng::to_vector,
       [&](auto cpair) {
-        auto [index, component] = cpair;
+        auto [index, fog] = cpair;
+        auto component = vto::fogToSdf(*fog, 0);
         std::vector<openvdb::Vec3s> points;
         // quad index list, which can be post-processed to
         // find a triangle mesh
@@ -69,7 +72,7 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
         rng::for_each(points, [&](auto point) {
           auto p = CGLA::Vec3d(point[0], point[1], point[2]);
           auto node_id = g.add_node(p);
-          //std::cout << "add node: " << node_id << '\n';
+          // std::cout << "add node: " << node_id << '\n';
           mesh_file << "n " << point[0] << ' ' << point[1] << ' ' << point[2]
                     << '\n';
         });
@@ -80,7 +83,7 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
             auto a = quad[i];
             auto b = quad[(i + 1) % 4];
             g.connect_nodes(a, b);
-            //std::cout << "c " << a << ' ' << b << '\n';
+            // std::cout << "c " << a << ' ' << b << '\n';
             mesh_file << "c " << a << ' ' << b << '\n';
           }
         });
@@ -106,7 +109,7 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
         for (auto i : component_graph.node_ids()) {
           auto color = component_graph.node_color[i].get();
           // radius is in the green channel
-          //auto radius = color[1];
+          // auto radius = color[1];
           auto radius = 1;
           auto pos = g.pos[i].get();
           // TODO
