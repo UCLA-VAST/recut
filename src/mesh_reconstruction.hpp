@@ -89,7 +89,9 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
         });
 
         // make local separators
-        auto separators = local_separators(g, Geometry::SamplingType::Basic);
+        auto quality_score = .9; // lower is higher quality, default is .09
+        auto adv_samp_thresh = 8; // higher is higher quality at cost of runtime
+        auto separators = local_separators(g, Geometry::SamplingType::None, quality_score, adv_samp_thresh);
         auto [component_graph, mapping] =
             skeleton_from_node_set_vec(g, separators);
 
