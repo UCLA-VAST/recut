@@ -272,7 +272,9 @@ template <class T>
 bool fastmarching_tree(std::vector<MyMarker *> roots, vector<MyMarker> &target,
                        const T *inimg1d, vector<MyMarker *> &outtree, long sz0,
                        long sz1, long sz2, int cnn_type, double bkg_thresh,
+                       double timeout = std::numeric_limits<double>::max(),
                        double max_int = 0., double min_int = INF) {
+  auto timer = high_resolution_timer();
   enum { ALIVE = -1, TRIAL = 0, FAR = 1 };
 
   long tol_sz = sz0 * sz1 * sz2;
@@ -941,7 +943,8 @@ template <class T>
 bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
           const long sz0, const long sz1, const long sz2, T bkg_thresh,
           double length_thresh = 2.0, double SR_ratio = 1.0 / 9.0,
-          bool is_leaf_prune = true, bool is_smooth = true) {
+          bool is_leaf_prune = true, bool is_smooth = true,
+          double timeout = std::numeric_limits<double>::max()) {
   double T_max = (1ll << sizeof(T));
   // cout << "Input SR_ratio: " << SR_ratio << '\n';
 
@@ -1661,7 +1664,8 @@ template <typename ValuedGrid>
 void run_app2(ValuedGrid component_with_values,
               std::vector<Seed> component_seeds, fs::path component_dir_fn,
               int index, int min_branch_length, std::ofstream &component_log,
-              bool global_bbox_adjust = false) {
+              bool global_bbox_adjust = false,
+              double timeout = std::numeric_limits<double>::max()) {
   // the bkg_thresh is 0 for vdb to dense
   uint16_t bkg_thresh = 0;
   auto window = convert_vdb_to_dense(component_with_values);
@@ -1692,7 +1696,7 @@ void run_app2(ValuedGrid component_with_values,
   fastmarching_tree(component_markers, targets, window.data(), app2_output_tree,
                     window.bbox().dim()[0], window.bbox().dim()[1],
                     window.bbox().dim()[2],
-                    /* cnn_type*/ 1, bkg_thresh);
+                    /* cnn_type*/ 1, bkg_thresh, timeout);
 #ifdef LOG
   component_log << "Fast Marching time, " << timer.elapsed_formatted() << '\n';
 #endif
@@ -1704,7 +1708,7 @@ void run_app2(ValuedGrid component_with_values,
        window.bbox().dim()[0], window.bbox().dim()[1], window.bbox().dim()[2],
        bkg_thresh,
        /*length thresh*/ min_branch_length,
-       /*sr_ratio*/ 1. / 3);
+       /*sr_ratio*/ 1. / 3, true, true, timeout);
 #ifdef LOG
   component_log << "HAPP time, " << timer.elapsed_formatted() << '\n';
 #endif

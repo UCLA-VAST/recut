@@ -2892,7 +2892,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
         // for comparison/benchmark/testing purposes
         run_app2(valued_window_grid, component_seeds, component_dir_fn, index,
                  this->args->min_branch_length, component_log,
-                 args->window_grid_paths.empty());
+                 args->window_grid_paths.empty(), args->timeout);
       }
     } // end window created if any
 
