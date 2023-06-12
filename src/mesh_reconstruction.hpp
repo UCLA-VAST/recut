@@ -3,10 +3,10 @@
 #include "tree_ops.hpp"
 #include <GEL/Geometry/Graph.h>
 #include <GEL/Geometry/graph_skeletonize.h>
+#include <openvdb/tools/FastSweeping.h> // fogToSdf
 #include <openvdb/tools/LevelSetUtil.h>
 #include <openvdb/tools/TopologyToLevelSet.h>
 #include <openvdb/tools/VolumeToMesh.h>
-#include <openvdb/tools/FastSweeping.h> // fogToSdf
 
 auto euc_dist = [](auto a, auto b) -> float {
   std::array<float, 3> diff = {
@@ -56,7 +56,9 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
         // quad index list, which can be post-processed to
         // find a triangle mesh
         std::vector<openvdb::Vec4I> quads;
-        vto::volumeToMesh(*component, points, quads);
+        std::vector<openvdb::Vec3I> tris;
+        // vto::volumeToMesh(*component, points, quads);
+        vto::volumeToMesh(*component, points, tris, quads, 0, args->mesh_grain);
         std::cout << "Component active voxel count: "
                   << component->activeVoxelCount() << '\n';
         std::cout << "points size: " << points.size() << '\n';
@@ -77,23 +79,40 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
                     << '\n';
         });
 
-        // list all connections of the 0-indexed points
-        rng::for_each(quads, [&](auto quad) {
-          for (int i = 0; i < 4; ++i) {
-            auto a = quad[i];
-            auto b = quad[(i + 1) % 4];
-            g.connect_nodes(a, b);
-            // std::cout << "c " << a << ' ' << b << '\n';
-            mesh_file << "c " << a << ' ' << b << '\n';
-          }
-        });
+        auto unroll_polygons = [&](auto polys, unsigned int order) {
+          // list all connections of the 0-indexed points
+          rng::for_each(polys, [&](auto poly) {
+            for (unsigned int i = 0; i < order; ++i) {
+              auto a = poly[i];
+              auto b = poly[(i + 1) % order];
+              g.connect_nodes(a, b);
+              mesh_file << "c " << a << ' ' << b << '\n';
+            }
+          });
+        };
 
-        // make local separators
-        auto quality_score = .9; // lower is higher quality, default is .09
-        auto adv_samp_thresh = 8; // higher is higher quality at cost of runtime
-        auto separators = local_separators(g, Geometry::SamplingType::None, quality_score, adv_samp_thresh);
+        unroll_polygons(tris, 3);
+        unroll_polygons(quads, 4);
+
+        uint desired_node_count = 10000;
+        auto msg = Geometry::multiscale_graph(g, desired_node_count, true);
+        g = msg.layers.back();
+        std::cout << "input graph size: " << g.no_nodes() << '\n';
+
+        // classic local separators
+        // auto adv_samp_thresh = 8; // higher is higher quality at cost of
+        // runtime auto separators = local_separators(g,
+        // Geometry::SamplingType::None, args->skeleton_grain, adv_samp_thresh);
+
+        uint grow_threshold = 64; // 4 had lowest resolution, higher is finer granularity
+        // multi-scale is faste and scales linearly with input graph size at the
+        // cost of difficulty in choosing a grow threshold
+        auto separators =
+            multiscale_local_separators(g, Geometry::SamplingType::Advanced,
+                                        grow_threshold, args->skeleton_grain);
         auto [component_graph, mapping] =
             skeleton_from_node_set_vec(g, separators);
+        std::cout << "graph size: " << component_graph.no_nodes() << '\n';
 
         // sweep through various soma ids
         auto soma_ids = find_soma_nodes(component_graph, seeds);

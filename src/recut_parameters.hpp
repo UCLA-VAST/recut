@@ -32,6 +32,8 @@ public:
         save_vdbs(false), seed_intersection(true),
         ignore_multifurcations(false), close_topology(true),
         mean_shift_max_iters(4), timeout(MEAN_SHIFT_TIMEOUT),
+        skeleton_grain(SKELETON_GRAIN),
+        mesh_grain(MESH_GRAIN),
         mean_shift_factor(0) {}
 
   static void PrintUsage();
@@ -63,7 +65,7 @@ public:
   int background_thresh, max_intensity, min_intensity, tcase, timeout;
   double foreground_percent, slt_pct;
   float min_window_um, expand_window_um, min_radius_um, max_radius_um,
-      open_denoise, open_steps, close_steps, mean_shift_factor;
+      open_denoise, open_steps, close_steps, mean_shift_factor, skeleton_grain, mesh_grain;
   VID_t selected, root_vid;
   bool run_app2, convert_only, combine, histogram, save_vdbs, seed_intersection,
       ignore_multifurcations, close_topology;
