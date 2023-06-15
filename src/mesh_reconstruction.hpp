@@ -2,6 +2,7 @@
 
 #include "tree_ops.hpp"
 #include <GEL/Geometry/Graph.h>
+#include <GEL/Geometry/graph_io.h>
 #include <GEL/Geometry/graph_skeletonize.h>
 #include <openvdb/tools/FastSweeping.h> // fogToSdf
 #include <openvdb/tools/LevelSetUtil.h>
@@ -39,6 +40,61 @@ std::set<size_t> find_soma_nodes(Geometry::AMGraph3D graph,
   return soma_ids;
 }
 
+void write_graph(Geometry::AMGraph3D &g, fs::path fn) {
+  // std::ofstream graph_file;
+  // graph_file.open(fn, std::ios::app);
+  // for (auto i : g.node_ids()) {
+  // auto pos = g.pos[i].get();
+  // graph_file << "n " << pos[0] << ' ' << pos[1] << ' ' << pos[2] << '\n';
+  //}
+  // for (auto i : g.edge_ids()) {
+  // graph_file << "c " << a << ' ' << b << '\n';
+  //}
+  // graph_file.close();
+  Geometry::graph_save(fn.generic_string(), g);
+
+  std::cout << "Wrote: " << fn << " nodes: " << g.no_nodes()
+            << " edges: " << g.no_edges() << '\n';
+}
+
+template <typename Poly>
+auto unroll_polygons(std::vector<Poly> polys, Geometry::AMGraph3D &g,
+                     unsigned int order) {
+  // list all connections of the 0-indexed points
+  rng::for_each(polys, [&](auto poly) {
+    for (unsigned int i = 0; i < order; ++i) {
+      auto a = poly[i];
+      auto b = poly[(i + 1) % order];
+      g.connect_nodes(a, b);
+    }
+  });
+};
+
+Geometry::AMGraph3D vdb_to_mesh(openvdb::FloatGrid::Ptr component,
+                                RecutCommandLineArgs *args) {
+  std::vector<openvdb::Vec3s> points;
+  // quad index list, which can be post-processed to
+  // find a triangle mesh
+  std::vector<openvdb::Vec4I> quads;
+  std::vector<openvdb::Vec3I> tris;
+  // vto::volumeToMesh(*component, points, quads);
+  vto::volumeToMesh(*component, points, tris, quads, 0, args->mesh_grain);
+  std::cout << "Component active voxel count: " << component->activeVoxelCount()
+            << '\n';
+  std::cout << "points size: " << points.size() << '\n';
+
+  Geometry::AMGraph3D g;
+  rng::for_each(points, [&](auto point) {
+    auto p = CGLA::Vec3d(point[0], point[1], point[2]);
+    auto node_id = g.add_node(p);
+  });
+
+  unroll_polygons(tris, g, 3);
+  unroll_polygons(quads, g, 4);
+
+  return g;
+}
+
 void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
                       std::vector<Seed> seeds, RecutCommandLineArgs *args) {
   write_vdb_file({topology}, run_dir / "whole-topology.vdb");
@@ -51,60 +107,30 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
       components | rv::take(1) | rv::enumerate | rng::to_vector,
       [&](auto cpair) {
         auto [index, fog] = cpair;
-        auto component = vto::fogToSdf(*fog, 0);
-        std::vector<openvdb::Vec3s> points;
-        // quad index list, which can be post-processed to
-        // find a triangle mesh
-        std::vector<openvdb::Vec4I> quads;
-        std::vector<openvdb::Vec3I> tris;
-        // vto::volumeToMesh(*component, points, quads);
-        vto::volumeToMesh(*component, points, tris, quads, 0, args->mesh_grain);
-        std::cout << "Component active voxel count: "
-                  << component->activeVoxelCount() << '\n';
-        std::cout << "points size: " << points.size() << '\n';
-
-        // write to file
         auto component_dir_fn =
             run_dir / ("component-" + std::to_string(index));
         fs::create_directories(component_dir_fn);
-        std::ofstream mesh_file;
-        mesh_file.open(component_dir_fn / ("mesh_graph.gel"), std::ios::app);
 
-        Geometry::AMGraph3D g;
-        rng::for_each(points, [&](auto point) {
-          auto p = CGLA::Vec3d(point[0], point[1], point[2]);
-          auto node_id = g.add_node(p);
-          // std::cout << "add node: " << node_id << '\n';
-          mesh_file << "n " << point[0] << ' ' << point[1] << ' ' << point[2]
-                    << '\n';
-        });
+        auto component = vto::fogToSdf(*fog, 0);
+        if (args->save_vdbs) {
+          write_vdb_file({component}, component_dir_fn / "sdf.vdb");
+        }
+        auto g = vdb_to_mesh(component, args);
+        write_graph(g, component_dir_fn / ("mesh.graph"));
 
-        auto unroll_polygons = [&](auto polys, unsigned int order) {
-          // list all connections of the 0-indexed points
-          rng::for_each(polys, [&](auto poly) {
-            for (unsigned int i = 0; i < order; ++i) {
-              auto a = poly[i];
-              auto b = poly[(i + 1) % order];
-              g.connect_nodes(a, b);
-              mesh_file << "c " << a << ' ' << b << '\n';
-            }
-          });
-        };
-
-        unroll_polygons(tris, 3);
-        unroll_polygons(quads, 4);
-
-        uint desired_node_count = 10000;
+        uint desired_node_count = 1000;
         auto msg = Geometry::multiscale_graph(g, desired_node_count, true);
-        g = msg.layers.back();
-        std::cout << "input graph size: " << g.no_nodes() << '\n';
+        g = msg.layers.back(); // get the coarsest (smallest) graph
+                               // representation in the hierarchy
+        write_graph(g, component_dir_fn / ("coarse.graph"));
 
         // classic local separators
         // auto adv_samp_thresh = 8; // higher is higher quality at cost of
         // runtime auto separators = local_separators(g,
         // Geometry::SamplingType::None, args->skeleton_grain, adv_samp_thresh);
 
-        uint grow_threshold = 64; // 4 had lowest resolution, higher is finer granularity
+        uint grow_threshold =
+            64; // 4 had lowest resolution, higher is finer granularity
         // multi-scale is faste and scales linearly with input graph size at the
         // cost of difficulty in choosing a grow threshold
         auto separators =
@@ -112,7 +138,7 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
                                         grow_threshold, args->skeleton_grain);
         auto [component_graph, mapping] =
             skeleton_from_node_set_vec(g, separators);
-        std::cout << "graph size: " << component_graph.no_nodes() << '\n';
+        write_graph(g, component_dir_fn / ("skeleton.graph"));
 
         // sweep through various soma ids
         auto soma_ids = find_soma_nodes(component_graph, seeds);
@@ -168,10 +194,6 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
             throw std::runtime_error("Tree is not properly sorted");
           }
         });
-
-        if (args->save_vdbs) {
-          write_vdb_file({component}, component_dir_fn / "sdf.vdb");
-        }
       });
 
   exit(0);
