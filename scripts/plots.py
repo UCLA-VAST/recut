@@ -200,6 +200,71 @@ def throughput(args):
     ax.legend(loc='lower left')
     plt.show()
 
+def get_sec(time_str):
+    """Get seconds from time."""
+    d, h, m, s = time_str.split(':')
+    return int(d) * 24 * 3600 + int(h) * 3600 + int(m) * 60 + int(s)
+
+def scalability2(args):
+    ''' Show runtime comparison of stages'''
+    # aggregate data
+    stage_names = ['CC', 'SDF']
+    cols = ['CC', 'SDF', 'Seed detection: mask to SDF conversion time', 'Seed detection: opening time', 'Seed detection: segmentation time', 'Seed detection: masking time']
+    textures = ['///', '...', '', 'OOO']
+    bar_width = 1
+    xscale = 4.5
+    frames = []
+    # convert_frames = []
+    for root, dirs, files in os.walk(args.output):
+        for file in files:
+            name = os.path.join(root, file)
+            try:
+                if ".csv" in file:
+                    print(name)
+                    f = pd.read_csv(name, header=None).T
+                    f = f.rename(columns=f.iloc[0]).drop(f.index[0])[['CC', 'SDF', 'Seed detection: mask to SDF conversion time', 'Seed detection: opening time', 'Seed detection: segmentation time', 'Seed detection: masking time', 'Thread count']].astype({'Thread count':'int'})
+                    frames.append(f)
+                # take VC stage only with rest of stages
+                # elif 'point.vdb-log-' in file:
+                    # print(name)
+                    # f = pd.read_csv(name, header=None).T
+                    # f = f.rename(columns=f.iloc[0]).drop(f.index[0])[['VC', 'Thread count']].astype({'Thread count':'int'})
+                    # convert_frames.append(f)
+            except:
+              print("Could not process file: " + name)
+    # aggregate all log files into rows of a single dataframe 
+    df = pd.concat(frames)
+
+    # save the proper thread count
+    # convert str time object into a scalar (s) value
+    for col in cols:
+        df[col] = df[col].apply(get_sec)
+    df = df.astype(np.float64).sort_values('Thread count')
+    xlabel = df['Thread count'].astype('int32').astype('str')
+
+    # calculate cumulative soma detection time
+    df['SD'] = df.iloc[:,2:-2].sum(axis=1)
+
+    # convert rows to speedup relative to thread count 1
+    sequential_runtimes = df.iloc[0]
+    for row in range(0,df.shape[0]):
+        df.iloc[row] = sequential_runtimes / df.iloc[row]
+    # restore actual thread count
+    df['Thread count'] = xlabel
+
+    # import pdb; pdb.set_trace()
+    ax = plt.gca()
+    df.plot(x='Thread count', y='SD', color='silver', ax=ax, marker="o")
+    df.plot(x='Thread count', y='CC', color='gray', ax=ax, marker=">")
+    df.plot(x='Thread count', y='SDF', color='black', ax=ax, marker="+")
+    # df.plot(x='Thread count', y='Thread count', label='Linear', color='black', ax=ax)
+    plt.ylabel('Speedup')
+    plt.title('Algorithmic Scalability')
+    plt.tight_layout()
+    plt.legend()
+    # ax.legend(loc='upper left', bbox_to_anchor=loc)
+    plt.show()
+
 def stages(args):
     ''' Show runtime comparison of stages'''
     # aggregate data
@@ -576,6 +641,8 @@ def main(args):
         read(args)
     if args.case == 'scalability':
         scalability(args)
+    if args.case == 'scalability2':
+        scalability2(args)
     if args.case == 'stages':
         stages(args)
     if args.case == 'throughput':
@@ -589,7 +656,7 @@ if __name__ == '__main__':
     group.add_argument('-a', '--all', help="Use all known cases",
             action="store_true")
     group.add_argument('-c', '--case', help="Specify which case to use",
-            choices=['stages', 'throughput', 'radius', 'scalability', 'value', 'read'])
+            choices=['stages', 'throughput', 'radius', 'scalability', 'scalability2', 'value', 'read'])
 
     parser.add_argument('-r', '--rerun', help="Rerun all to generate new test data", action="store_true")
     parser.add_argument('-w', '--save', help="save all plots to file", action="store_true")
