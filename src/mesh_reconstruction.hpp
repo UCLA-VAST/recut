@@ -67,18 +67,26 @@ auto unroll_polygons(std::vector<Poly> polys, Geometry::AMGraph3D &g,
       auto b = poly[(i + 1) % order];
       g.connect_nodes(a, b);
     }
+
+    // quads can not be directly skeletonized by the local separator approach
+    // so you must create connections along a diagonal
+    // do both diagonals for coarser final skeletons
+    if (order == 4) {
+      g.connect_nodes(poly[0], poly[2]);
+      g.connect_nodes(poly[1], poly[3]);
+    }
   });
 };
 
-Geometry::AMGraph3D vdb_to_mesh(openvdb::FloatGrid::Ptr component,
-                                RecutCommandLineArgs *args) {
+Geometry::AMGraph3D vdb_to_graph(openvdb::FloatGrid::Ptr component,
+                                 RecutCommandLineArgs *args) {
   std::vector<openvdb::Vec3s> points;
   // quad index list, which can be post-processed to
   // find a triangle mesh
   std::vector<openvdb::Vec4I> quads;
   std::vector<openvdb::Vec3I> tris;
-  // vto::volumeToMesh(*component, points, quads);
-  vto::volumeToMesh(*component, points, tris, quads, 0, args->mesh_grain);
+  vto::volumeToMesh(*component, points, quads);
+  // vto::volumeToMesh(*component, points, tris, quads, 0, args->mesh_grain);
   std::cout << "Component active voxel count: " << component->activeVoxelCount()
             << '\n';
   std::cout << "points size: " << points.size() << '\n';
@@ -89,10 +97,57 @@ Geometry::AMGraph3D vdb_to_mesh(openvdb::FloatGrid::Ptr component,
     auto node_id = g.add_node(p);
   });
 
-  unroll_polygons(tris, g, 3);
+  // unroll_polygons(tris, g, 3);
   unroll_polygons(quads, g, 4);
 
   return g;
+}
+
+HMesh::Manifold vdb_to_mesh(openvdb::FloatGrid::Ptr component,
+                            RecutCommandLineArgs *args) {
+  std::vector<openvdb::Vec3s> points;
+  // quad index list, which can be post-processed to
+  // find a triangle mesh
+  std::vector<openvdb::Vec4I> quads;
+  std::vector<openvdb::Vec3I> tris;
+  vto::volumeToMesh(*component, points, quads);
+  // vto::volumeToMesh(*component, points, tris, quads, 0, args->mesh_grain);
+  std::cout << "Component active voxel count: " << component->activeVoxelCount()
+            << '\n';
+  std::cout << "points size: " << points.size() << '\n';
+
+  // convert points to GEL vertices
+  std::vector<Vec3f> vertices;
+  vertices.reserve(points.size());
+  rng::for_each(points | rv::enumerate, [&](auto pointp) {
+    auto [i, point] = pointp;
+    auto p = CGLA::Vec3f(point[0], point[1], point[2]);
+    auto vertices[i] = p;
+  });
+
+  // convert polygonal faces to manifold edges
+  std::vector<int> faces, indices;
+  faces.reserve(quads.size());
+  indices.reserve(4 * quads.size());
+  rng::for_each(polys | rv::enumerate, [&](auto polyp) {
+    auto [i, poly] = polyp;
+    faces[i] = 3; // quads only
+    // FIXME check this to in counter clockwise order
+    for (unsigned int j = 0; j < order; ++j) {
+      auto a = poly[j];
+      auto b = poly[(j + 1) % order];
+      g.connect_nodes(a, b);
+    }
+    // quads can not be directly skeletonized by the local separator approach
+    // so you must create connections along a diagonal
+    // do both diagonals for coarser final skeletons
+    if (order == 4) {
+      g.connect_nodes(poly[0], poly[2]);
+      g.connect_nodes(poly[1], poly[3]);
+    }
+  });
+
+  return m;
 }
 
 void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
@@ -115,14 +170,16 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
         if (args->save_vdbs) {
           write_vdb_file({component}, component_dir_fn / "sdf.vdb");
         }
-        auto g = vdb_to_mesh(component, args);
+        auto g = vdb_to_graph(component, args);
         write_graph(g, component_dir_fn / ("mesh.graph"));
 
-        uint desired_node_count = 1000;
-        auto msg = Geometry::multiscale_graph(g, desired_node_count, true);
-        g = msg.layers.back(); // get the coarsest (smallest) graph
-                               // representation in the hierarchy
-        write_graph(g, component_dir_fn / ("coarse.graph"));
+        if (false) {
+          uint desired_node_count = 1000;
+          auto msg = Geometry::multiscale_graph(g, desired_node_count, true);
+          g = msg.layers.back(); // get the coarsest (smallest) graph
+                                 // representation in the hierarchy
+          write_graph(g, component_dir_fn / ("coarse.graph"));
+        }
 
         // classic local separators
         // auto adv_samp_thresh = 8; // higher is higher quality at cost of
@@ -130,12 +187,12 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
         // Geometry::SamplingType::None, args->skeleton_grain, adv_samp_thresh);
 
         uint grow_threshold =
-            64; // 4 had lowest resolution, higher is finer granularity
-        // multi-scale is faste and scales linearly with input graph size at the
-        // cost of difficulty in choosing a grow threshold
-        auto separators =
-            multiscale_local_separators(g, Geometry::SamplingType::Advanced,
-                                        grow_threshold, args->skeleton_grain);
+            4; // 4 had lowest resolution, higher is finer granularity
+        // multi-scale is faster and scales linearly with input graph size at
+        // the cost of difficulty in choosing a grow threshold
+        auto separators = multiscale_local_separators(
+            g, Geometry::SamplingType::Advanced, grow_threshold, .999);
+        // grow_threshold, args->skeleton_grain);
         auto [component_graph, mapping] =
             skeleton_from_node_set_vec(g, separators);
         write_graph(g, component_dir_fn / ("skeleton.graph"));
