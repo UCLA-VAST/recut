@@ -117,35 +117,48 @@ HMesh::Manifold vdb_to_mesh(openvdb::FloatGrid::Ptr component,
   std::cout << "points size: " << points.size() << '\n';
 
   // convert points to GEL vertices
-  std::vector<Vec3f> vertices;
+  std::vector<CGLA::Vec3f> vertices;
   vertices.reserve(points.size());
   rng::for_each(points | rv::enumerate, [&](auto pointp) {
     auto [i, point] = pointp;
     auto p = CGLA::Vec3f(point[0], point[1], point[2]);
-    auto vertices[i] = p;
+    vertices[i] = p;
   });
 
   // convert polygonal faces to manifold edges
   std::vector<int> faces, indices;
-  faces.reserve(quads.size());
-  indices.reserve(4 * quads.size());
-  rng::for_each(polys | rv::enumerate, [&](auto polyp) {
-    auto [i, poly] = polyp;
-    faces[i] = 3; // quads only
+  auto triangle_count = 2 * quads.size();
+  faces.reserve(triangle_count);
+  indices.reserve(3 * triangle_count);
+  rng::for_each(quads | rv::enumerate, [&](auto quadp) {
+    // this quad has 2 tris devoted to it
+    auto [i, quad] = quadp;
+    faces[2 * i] = 3;
+    faces[2 * i + 1] = 3;
+
     // FIXME check this to in counter clockwise order
-    for (unsigned int j = 0; j < order; ++j) {
-      auto a = poly[j];
-      auto b = poly[(j + 1) % order];
-      g.connect_nodes(a, b);
-    }
+    // this quad has 6 indices devoted to it
+    auto offset = 2 * 3 * i;
+    // triangle 0 1 2
+    indices[offset] = quad[0];
+    indices[offset + 1] = quad[1];
+    indices[offset + 2] = quad[2];
+
     // quads can not be directly skeletonized by the local separator approach
     // so you must create connections along a diagonal
-    // do both diagonals for coarser final skeletons
-    if (order == 4) {
-      g.connect_nodes(poly[0], poly[2]);
-      g.connect_nodes(poly[1], poly[3]);
-    }
+    // triangle 0 2 3
+    indices[offset + 3] = quad[0];
+    indices[offset + 4] = quad[2];
+    indices[offset + 5] = quad[3];
   });
+
+  HMesh::Manifold m;
+  HMesh::build(m,vertices.size(), reinterpret_cast<float *>(&vertices[0]),
+          faces.size(), &faces[0], &indices[0]);
+
+  if (HMesh::valid(m)) 
+    std::cout << "HMesh valid\n";
+  //std::cout << "no vertices " << m.geometry.no_vertices() << '\n'
 
   return m;
 }
@@ -172,6 +185,9 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
         }
         auto g = vdb_to_graph(component, args);
         write_graph(g, component_dir_fn / ("mesh.graph"));
+
+        auto m = vdb_to_mesh(component, args);
+        HMesh::obj_save(component_dir_fn / ("mesh.obj"), m);
 
         if (false) {
           uint desired_node_count = 1000;
