@@ -117,13 +117,18 @@ HMesh::Manifold vdb_to_mesh(openvdb::FloatGrid::Ptr component,
   std::cout << "points size: " << points.size() << '\n';
 
   // convert points to GEL vertices
-  std::vector<CGLA::Vec3f> vertices;
-  vertices.reserve(points.size());
-  rng::for_each(points | rv::enumerate, [&](auto pointp) {
-    auto [i, point] = pointp;
-    auto p = CGLA::Vec3f(point[0], point[1], point[2]);
-    vertices[i] = p;
-  });
+  auto vertices = points | rv::transform([](auto point) {
+                    return CGLA::Vec3f(point[0], point[1], point[2]);
+                  }) |
+                  rng::to_vector;
+  // std::vector<CGLA::Vec3f> vertices;
+  // vertices.reserve(points.size());
+  // rng::for_each(points | rv::enumerate, [&](auto pointp) {
+  // auto [i, point] = pointp;
+  ////auto p = CGLA::Vec3f(point[0], point[1], point[2]);
+  ////vertices[i] = p;
+  // vertices.emplace_back(point[0], point[1], point[2]);
+  //});
 
   // convert polygonal faces to manifold edges
   std::vector<int> faces, indices;
@@ -133,34 +138,66 @@ HMesh::Manifold vdb_to_mesh(openvdb::FloatGrid::Ptr component,
   rng::for_each(quads | rv::enumerate, [&](auto quadp) {
     // this quad has 2 tris devoted to it
     auto [i, quad] = quadp;
-    faces[2 * i] = 3;
-    faces[2 * i + 1] = 3;
+    faces.push_back(3);
+    faces.push_back(3);
+    // faces[2 * i] = 3;
+    // faces[2 * i + 1] = 3;
 
     // FIXME check this to in counter clockwise order
     // this quad has 6 indices devoted to it
     auto offset = 2 * 3 * i;
     // triangle 0 1 2
-    indices[offset] = quad[0];
-    indices[offset + 1] = quad[1];
-    indices[offset + 2] = quad[2];
+    indices.push_back(quad[0]);
+    indices.push_back(quad[1]);
+    indices.push_back(quad[2]);
+    // indices[offset] = quad[0];
+    // indices[offset + 1] = quad[1];
+    // indices[offset + 2] = quad[2];
+    // indices[offset] = quad[0];
+    // indices[offset + 1] = quad[2];
+    // indices[offset + 2] = quad[1];
 
     // quads can not be directly skeletonized by the local separator approach
     // so you must create connections along a diagonal
     // triangle 0 2 3
-    indices[offset + 3] = quad[0];
-    indices[offset + 4] = quad[2];
-    indices[offset + 5] = quad[3];
+    indices.push_back(quad[0]);
+    indices.push_back(quad[2]);
+    indices.push_back(quad[3]);
+    // indices[offset + 3] = quad[0];
+    // indices[offset + 4] = quad[2];
+    // indices[offset + 5] = quad[3];
+    // indices[offset + 3] = quad[0];
+    // indices[offset + 4] = quad[3];
+    // indices[offset + 5] = quad[2];
   });
 
   HMesh::Manifold m;
-  HMesh::build(m,vertices.size(), reinterpret_cast<float *>(&vertices[0]),
-          faces.size(), &faces[0], &indices[0]);
+  std::cout << "verts: " << vertices.size() << "faces: " << faces.size()
+            << '\n';
+  HMesh::build(m, vertices.size(), reinterpret_cast<float *>(&vertices[0]),
+               faces.size(), &faces[0], &indices[0]);
 
-  if (HMesh::valid(m)) 
+  if (HMesh::valid(m) && m.no_vertices())
     std::cout << "HMesh valid\n";
-  //std::cout << "no vertices " << m.geometry.no_vertices() << '\n'
+  std::cout << "no vertices " << m.no_vertices() << '\n';
 
   return m;
+}
+
+// Taken directly from PyGEL library
+Geometry::AMGraph3D graph_from_mesh(HMesh::Manifold &m) {
+  HMesh::VertexAttributeVector<Geometry::AMGraph::NodeID> v2n;
+  Geometry::AMGraph3D g;
+
+  for (auto v : m.vertices())
+    v2n[v] = g.add_node(m.pos(v));
+  for (auto h : m.halfedges()) {
+    HMesh::Walker w = m.walker(h);
+    if (h < w.opp().halfedge())
+      g.connect_nodes(v2n[w.opp().vertex()], v2n[w.vertex()]);
+  }
+
+  return g;
 }
 
 void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
@@ -183,11 +220,12 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
         if (args->save_vdbs) {
           write_vdb_file({component}, component_dir_fn / "sdf.vdb");
         }
-        auto g = vdb_to_graph(component, args);
-        write_graph(g, component_dir_fn / ("mesh.graph"));
 
         auto m = vdb_to_mesh(component, args);
         HMesh::obj_save(component_dir_fn / ("mesh.obj"), m);
+
+        auto g = graph_from_mesh(m);
+        write_graph(g, component_dir_fn / ("mesh.graph"));
 
         if (false) {
           uint desired_node_count = 1000;
@@ -197,7 +235,7 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
           write_graph(g, component_dir_fn / ("coarse.graph"));
         }
 
-        // classic local separators
+        // classic local separatorsn
         // auto adv_samp_thresh = 8; // higher is higher quality at cost of
         // runtime auto separators = local_separators(g,
         // Geometry::SamplingType::None, args->skeleton_grain, adv_samp_thresh);
@@ -211,7 +249,7 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
         // grow_threshold, args->skeleton_grain);
         auto [component_graph, mapping] =
             skeleton_from_node_set_vec(g, separators);
-        write_graph(g, component_dir_fn / ("skeleton.graph"));
+        //write_graph(component_graph, component_dir_fn / ("skeleton.graph"));
 
         // sweep through various soma ids
         auto soma_ids = find_soma_nodes(component_graph, seeds);
