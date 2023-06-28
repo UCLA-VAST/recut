@@ -4,6 +4,7 @@
 #include <GEL/Geometry/Graph.h>
 #include <GEL/Geometry/graph_io.h>
 #include <GEL/Geometry/graph_skeletonize.h>
+#include <GEL/Geometry/KDTree.h>
 #include <openvdb/tools/FastSweeping.h> // fogToSdf
 #include <openvdb/tools/LevelSetUtil.h>
 #include <openvdb/tools/TopologyToLevelSet.h>
@@ -19,38 +20,47 @@ auto euc_dist = [](auto a, auto b) -> float {
 
 std::set<size_t> find_soma_nodes(Geometry::AMGraph3D graph,
                                  std::vector<Seed> seeds) {
+
+  // build kdtree, highly efficient for nearest point computations
+  Geometry::KDTree<CGLA::Vec3d, int> tree;
+  for (auto i : graph.node_ids()) {
+    CGLA::Vec3d p0 = graph.pos[i];
+    tree.insert(p0, i);
+  }
+  tree.build();
+
   std::set<size_t> soma_ids;
   rng::for_each(seeds, [&](Seed seed) {
-    int max_val = 0;
+    // find existing skeletal node within the radius of the soma
+    auto coord = seed.coord;
+    CGLA::Vec3d p0(coord[0], coord[1], coord[2]);
+    std::vector<CGLA::Vec3d> keys;
+    std::vector<int> vals;
+    int within_count = tree.in_sphere(p0, seed.radius, keys, vals);
+
+    // pick skeletal node within radii with highest number of edges (valence)
+    int max_valence = 0;
     std::optional<size_t> max_index;
-    for (auto i : graph.node_ids()) {
-      if (euc_dist(graph.pos[i].get(), seed.coord) < seed.radius) {
-        auto valence = graph.valence(i);
-        if (valence > max_val) {
-          max_index = i;
-          max_val = valence;
-        }
+    for (int i = 0; i < within_count; ++i) {
+      int idx = vals[i];
+      auto valence = graph.valence(idx);
+      if (valence > max_valence) {
+        max_index = idx;
+        max_valence = valence;
       }
     }
+
+    std::cout << "max_valence " << max_valence << '\n';
+
     if (max_index)
       soma_ids.insert(max_index.value());
     else
-      std::cout << "Warning no seed found\n";
+      std::cout << "Warning lost 1 seed during skeletonization\n";
   });
   return soma_ids;
 }
 
 void write_graph(Geometry::AMGraph3D &g, fs::path fn) {
-  // std::ofstream graph_file;
-  // graph_file.open(fn, std::ios::app);
-  // for (auto i : g.node_ids()) {
-  // auto pos = g.pos[i].get();
-  // graph_file << "n " << pos[0] << ' ' << pos[1] << ' ' << pos[2] << '\n';
-  //}
-  // for (auto i : g.edge_ids()) {
-  // graph_file << "c " << a << ' ' << b << '\n';
-  //}
-  // graph_file.close();
   Geometry::graph_save(fn.generic_string(), g);
 
   std::cout << "Wrote: " << fn << " nodes: " << g.no_nodes()
@@ -121,14 +131,6 @@ HMesh::Manifold vdb_to_mesh(openvdb::FloatGrid::Ptr component,
                     return CGLA::Vec3f(point[0], point[1], point[2]);
                   }) |
                   rng::to_vector;
-  // std::vector<CGLA::Vec3f> vertices;
-  // vertices.reserve(points.size());
-  // rng::for_each(points | rv::enumerate, [&](auto pointp) {
-  // auto [i, point] = pointp;
-  ////auto p = CGLA::Vec3f(point[0], point[1], point[2]);
-  ////vertices[i] = p;
-  // vertices.emplace_back(point[0], point[1], point[2]);
-  //});
 
   // convert polygonal faces to manifold edges
   std::vector<int> faces, indices;
@@ -140,8 +142,6 @@ HMesh::Manifold vdb_to_mesh(openvdb::FloatGrid::Ptr component,
     auto [i, quad] = quadp;
     faces.push_back(3);
     faces.push_back(3);
-    // faces[2 * i] = 3;
-    // faces[2 * i + 1] = 3;
 
     // FIXME check this to in counter clockwise order
     // this quad has 6 indices devoted to it
@@ -150,12 +150,6 @@ HMesh::Manifold vdb_to_mesh(openvdb::FloatGrid::Ptr component,
     indices.push_back(quad[0]);
     indices.push_back(quad[1]);
     indices.push_back(quad[2]);
-    // indices[offset] = quad[0];
-    // indices[offset + 1] = quad[1];
-    // indices[offset + 2] = quad[2];
-    // indices[offset] = quad[0];
-    // indices[offset + 1] = quad[2];
-    // indices[offset + 2] = quad[1];
 
     // quads can not be directly skeletonized by the local separator approach
     // so you must create connections along a diagonal
@@ -163,12 +157,6 @@ HMesh::Manifold vdb_to_mesh(openvdb::FloatGrid::Ptr component,
     indices.push_back(quad[0]);
     indices.push_back(quad[2]);
     indices.push_back(quad[3]);
-    // indices[offset + 3] = quad[0];
-    // indices[offset + 4] = quad[2];
-    // indices[offset + 5] = quad[3];
-    // indices[offset + 3] = quad[0];
-    // indices[offset + 4] = quad[3];
-    // indices[offset + 5] = quad[2];
   });
 
   HMesh::Manifold m;
@@ -227,29 +215,22 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
         auto g = graph_from_mesh(m);
         write_graph(g, component_dir_fn / ("mesh.graph"));
 
-        if (false) {
-          uint desired_node_count = 1000;
-          auto msg = Geometry::multiscale_graph(g, desired_node_count, true);
-          g = msg.layers.back(); // get the coarsest (smallest) graph
-                                 // representation in the hierarchy
-          write_graph(g, component_dir_fn / ("coarse.graph"));
-        }
-
         // classic local separatorsn
         // auto adv_samp_thresh = 8; // higher is higher quality at cost of
         // runtime auto separators = local_separators(g,
         // Geometry::SamplingType::None, args->skeleton_grain, adv_samp_thresh);
 
-        uint grow_threshold =
-            4; // 4 had lowest resolution, higher is finer granularity
+        // 4 had lowest resolution, higher is finer granularity
+        uint grow_threshold = 64;
         // multi-scale is faster and scales linearly with input graph size at
         // the cost of difficulty in choosing a grow threshold
-        auto separators = multiscale_local_separators(
-            g, Geometry::SamplingType::Advanced, grow_threshold, .999);
+        auto separators =
+            multiscale_local_separators(g, Geometry::SamplingType::Advanced,
+                                        grow_threshold, args->skeleton_grain);
         // grow_threshold, args->skeleton_grain);
         auto [component_graph, mapping] =
             skeleton_from_node_set_vec(g, separators);
-        //write_graph(component_graph, component_dir_fn / ("skeleton.graph"));
+        write_graph(component_graph, component_dir_fn / ("skeleton.graph"));
 
         // sweep through various soma ids
         auto soma_ids = find_soma_nodes(component_graph, seeds);
@@ -267,12 +248,9 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
         for (auto i : component_graph.node_ids()) {
           auto color = component_graph.node_color[i].get();
           // radius is in the green channel
-          // auto radius = color[1];
-          auto radius = 1;
-          auto pos = g.pos[i].get();
-          // TODO
+          auto radius = color[1]; // RGB
+          auto pos = component_graph.pos[i].get();
           auto marker = new MyMarker(pos[0], pos[1], pos[2], radius);
-          // component_tree.emplace_back(pos[0], pos[1], pos[2], radius);
           component_tree.push_back(marker);
         }
 
@@ -294,6 +272,7 @@ void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
         }
 
         auto trees = partition_cluster(component_tree);
+        // std::vector<std::vector<MyMarker *>> trees = {component_tree};
 
         // TODO setTransform?
         auto bbox = component->evalActiveVoxelBoundingBox();
