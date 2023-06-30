@@ -903,3 +903,100 @@ extract_trees(std::vector<MyMarker *> nlist,
 
   return tree;
 }
+
+std::optional<std::vector<MyMarker *>>
+classic_prune(EnlargedPointDataGrid::Ptr topology_grid,
+              openvdb::FloatGrid::Ptr component, int index,
+              RecutCommandLineArgs *args, std::ofstream &component_log) {
+  auto timer = high_resolution_timer();
+  auto [markers, coord_to_idx] = convert_float_to_markers(
+      component, topology_grid, args->prune_radius.value());
+
+  timer.restart();
+  std::vector<MyMarker *> refined_markers;
+  auto refined_markers_opt =
+      args->mean_shift_factor > 0
+          ? mean_shift(markers, args->mean_shift_max_iters,
+                       args->mean_shift_factor, coord_to_idx, args->timeout)
+          : markers;
+
+#ifdef LOG
+  component_log << "MS elapsed time, " << timer.elapsed() << '\n';
+#endif
+
+  // if mean shifting didn't timeout
+  if (refined_markers_opt) {
+    refined_markers = refined_markers_opt.value();
+    timer.restart();
+
+    // rebuild coord to idx for prune
+    auto coord_to_indices = create_coord_to_indices(refined_markers);
+    timer.restart();
+
+    // prune radius already set when converting from markers above
+    auto pruned_markers = advantra_prune(
+        refined_markers, /*prune_radius*/ args->prune_radius.value(),
+        coord_to_indices);
+    if (pruned_markers.size() < 3) {
+      std::cerr
+          << "Non fatal error: extracted pruned trees contains too few nodes "
+             "skipping " +
+                 std::to_string(index)
+          << '\n';
+      return std::nullopt; // skip
+    }
+
+#ifdef LOG
+    component_log << "Component count, " << markers.size() << '\n';
+    component_log << "TC count, " << pruned_markers.size() << '\n';
+    component_log << "TC elapsed time, " << timer.elapsed() << '\n';
+#endif
+
+    // extract a new tree via bfs
+    timer.restart();
+    auto cluster = extract_trees(pruned_markers, true);
+#ifdef LOG
+    component_log << "ET, " << timer.elapsed() << '\n';
+#endif
+    timer.restart();
+
+    if (!is_cluster_self_contained(cluster)) {
+      std::cerr << "Non fatal error: extracted cluster not self contained, "
+                   "skipping " +
+                       std::to_string(index)
+                << '\n';
+      return std::nullopt; // skip this component
+    }
+
+    adjust_parent_ptrs(cluster);
+
+    return cluster;
+  }
+  return std::nullopt;
+}
+
+      // auto fixed_cluster = pruned_cluster;
+      // if (!args->ignore_multifurcations) {
+      // auto fixed_cluster = fix_trifurcations(pruned_cluster);
+      //{ // check
+      // auto trifurcations = tree_is_valid(fixed_cluster);
+      // if (!trifurcations.empty()) {
+      // auto soma = fixed_cluster[0];
+      // std::cout << "Warning tree in component-" + std::to_string(index)
+      //<< " with soma " << soma->x << ' ' << soma->y << ' '
+      //<< soma->z << " has trifurcations listed below:\n";
+      // rng::for_each(trifurcations, [](auto mismatch) {
+      // std::cout << "    " << *mismatch << '\n';
+      //});
+      //// throw std::runtime_error("Tree has trifurcations" +
+      //// std::to_string(index));
+      //}
+      // if (!is_cluster_self_contained(fixed_cluster)) {
+      // std::cout << "Warning a tree in component-" + std::to_string(index)
+      //<< " contains at least 1 node with an invalid parent\n";
+      //// throw std::runtime_error("Trifurc cluster not self contained" +
+      //// std::to_string(index));
+      //}
+      //}
+      //}
+

@@ -191,100 +191,108 @@ Geometry::AMGraph3D graph_from_mesh(HMesh::Manifold &m) {
 void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
                       std::vector<Seed> seeds, RecutCommandLineArgs *args) {
   write_vdb_file({topology}, run_dir / "whole-topology.vdb");
-  std::vector<openvdb::FloatGrid::Ptr> components;
-  // vto::segmentSDF(*topology, components);
-  vto::segmentActiveVoxels(*topology, components);
+  std::vector<openvdb::FloatGrid::Ptr> all_components;
+  vto::segmentActiveVoxels(*topology, all_components);
+
+  auto components =
+      all_components | rv::remove_if([&seeds](auto component) {
+        // convert to fog so that isValueOn returns whether it is
+        // within the
+        //auto fog = vto::sdfToFogVolume(*component); // or find extractEnclosedRegion or sdfInteriorMask
+        //auto fog = vto::extractEnclosedRegion(*component); 
+        // component if no known seed is an active voxel in this
+        // component then remove this component
+        return rng::none_of(seeds, [component](const auto &seed) {
+          return component->tree().isValueOn(seed.coord);
+        });
+      }) |
+      rng::to_vector;
   std::cout << "Total components: " << components.size() << '\n';
 
-  rng::for_each(
-      components | rv::take(1) | rv::enumerate | rng::to_vector,
-      [&](auto cpair) {
-        auto [index, fog] = cpair;
-        auto component_dir_fn =
-            run_dir / ("component-" + std::to_string(index));
-        fs::create_directories(component_dir_fn);
+  rng::for_each(components | rv::enumerate | rng::to_vector, [&](auto cpair) {
+    auto [index, fog] = cpair;
+    auto component_dir_fn = run_dir / ("component-" + std::to_string(index));
+    fs::create_directories(component_dir_fn);
 
-        auto component = vto::fogToSdf(*fog, 0);
-        if (args->save_vdbs) {
-          write_vdb_file({component}, component_dir_fn / "sdf.vdb");
-        }
+    auto component = vto::fogToSdf(*fog, 0);
+    if (args->save_vdbs) {
+      write_vdb_file({component}, component_dir_fn / "sdf.vdb");
+    }
 
-        auto m = vdb_to_mesh(component, args);
-        HMesh::obj_save(component_dir_fn / ("mesh.obj"), m);
+    auto m = vdb_to_mesh(component, args);
+    HMesh::obj_save(component_dir_fn / ("mesh.obj"), m);
 
-        auto g = graph_from_mesh(m);
-        write_graph(g, component_dir_fn / ("mesh.graph"));
+    auto g = graph_from_mesh(m);
+    write_graph(g, component_dir_fn / ("mesh.graph"));
 
-        // classic local separatorsn
-        // auto adv_samp_thresh = 8; // higher is higher quality at cost of
-        // runtime auto separators = local_separators(g,
-        // Geometry::SamplingType::None, args->skeleton_grain, adv_samp_thresh);
+    // classic local separatorsn
+    // auto adv_samp_thresh = 8; // higher is higher quality at cost of
+    // runtime auto separators = local_separators(g,
+    // Geometry::SamplingType::None, args->skeleton_grain, adv_samp_thresh);
 
-        // 4 had lowest resolution, higher is finer granularity
-        uint grow_threshold = 64;
-        // multi-scale is faster and scales linearly with input graph size at
-        // the cost of difficulty in choosing a grow threshold
-        auto separators =
-            multiscale_local_separators(g, Geometry::SamplingType::Advanced,
-                                        grow_threshold, args->skeleton_grain);
-        // grow_threshold, args->skeleton_grain);
-        auto [component_graph, mapping] =
-            skeleton_from_node_set_vec(g, separators);
-        write_graph(component_graph, component_dir_fn / ("skeleton.graph"));
+    // 4 had lowest resolution, higher is finer granularity
+    uint grow_threshold = 64;
+    // multi-scale is faster and scales linearly with input graph size at
+    // the cost of difficulty in choosing a grow threshold
+    auto separators =
+        multiscale_local_separators(g, Geometry::SamplingType::Advanced,
+                                    grow_threshold, args->skeleton_grain);
+    // grow_threshold, args->skeleton_grain);
+    auto [component_graph, mapping] = skeleton_from_node_set_vec(g, separators);
+    write_graph(component_graph, component_dir_fn / ("skeleton.graph"));
 
-        // sweep through various soma ids
-        auto soma_ids = find_soma_nodes(component_graph, seeds);
-        if (soma_ids.size() == 0) {
-          std::cout << "Warning no soma_ids found for component " << index
-                    << '\n';
-          // assign a soma randomly if none are found
-          soma_ids.insert(0);
-        }
+    // sweep through various soma ids
+    auto soma_ids = find_soma_nodes(component_graph, seeds);
+    if (soma_ids.size() == 0) {
+      std::cout << "Warning no soma_ids found for component " << index << '\n';
+      // assign a soma randomly if none are found
+      soma_ids.insert(0);
+    }
 
-        // std::unordered_map<GridCoord, MyMarker *> coord_to_marker_ptr;
-        // save this marker ptr to a map
-        // coord_to_marker_ptr.emplace(coord, marker);
-        std::vector<MyMarker *> component_tree;
-        for (auto i : component_graph.node_ids()) {
-          auto color = component_graph.node_color[i].get();
-          // radius is in the green channel
-          auto radius = color[1]; // RGB
-          auto pos = component_graph.pos[i].get();
-          auto marker = new MyMarker(pos[0], pos[1], pos[2], radius);
-          component_tree.push_back(marker);
-        }
+    // std::unordered_map<GridCoord, MyMarker *> coord_to_marker_ptr;
+    // save this marker ptr to a map
+    // coord_to_marker_ptr.emplace(coord, marker);
+    std::vector<MyMarker *> component_tree;
+    for (auto i : component_graph.node_ids()) {
+      auto color = component_graph.node_color[i].get();
+      // radius is in the green channel
+      auto radius = color[1]; // RGB
+      auto pos = component_graph.pos[i].get();
+      auto marker = new MyMarker(pos[0], pos[1], pos[2], radius);
+      component_tree.push_back(marker);
+    }
 
-        // assign all parents via BFS
-        // traverse graph outwards from any soma, does not matter which
-        Geometry::BreadthFirstSearch bfs(component_graph);
-        size_t root = *soma_ids.begin();
-        bfs.add_init_node(root);
-        while (bfs.Prim_step()) {
-          auto last = bfs.get_last();
-          auto marker = component_tree[last];
-          if (soma_ids.find(last) != soma_ids.end()) {
-            // soma
-            marker->parent = 0;
-            marker->type = 0;
-          } else {
-            marker->parent = component_tree[bfs.pred[last]];
-          }
-        }
+    // assign all parents via BFS
+    // traverse graph outwards from any soma, does not matter which
+    Geometry::BreadthFirstSearch bfs(component_graph);
+    size_t root = *soma_ids.begin();
+    bfs.add_init_node(root);
+    while (bfs.Prim_step()) {
+      auto last = bfs.get_last();
+      auto marker = component_tree[last];
+      if (soma_ids.find(last) != soma_ids.end()) {
+        // soma
+        marker->parent = 0;
+        marker->type = 0;
+      } else {
+        marker->parent = component_tree[bfs.pred[last]];
+      }
+    }
 
-        auto trees = partition_cluster(component_tree);
-        // std::vector<std::vector<MyMarker *>> trees = {component_tree};
+    auto trees = partition_cluster(component_tree);
+    // std::vector<std::vector<MyMarker *>> trees = {component_tree};
 
-        // TODO setTransform?
-        auto bbox = component->evalActiveVoxelBoundingBox();
-        rng::for_each(trees, [&](auto tree) {
-          write_swc(tree, args->voxel_size, component_dir_fn, bbox,
-                    /*bbox_adjust*/ !args->window_grid_paths.empty(),
-                    args->output_type == "eswc");
-          if (!parent_listed_above(tree)) {
-            throw std::runtime_error("Tree is not properly sorted");
-          }
-        });
-      });
+    // TODO setTransform?
+    auto bbox = component->evalActiveVoxelBoundingBox();
+    rng::for_each(trees, [&](auto tree) {
+      write_swc(tree, args->voxel_size, component_dir_fn, bbox,
+                /*bbox_adjust*/ !args->window_grid_paths.empty(),
+                args->output_type == "eswc");
+      if (!parent_listed_above(tree)) {
+        throw std::runtime_error("Tree is not properly sorted");
+      }
+    });
+  });
 
   exit(0);
 }

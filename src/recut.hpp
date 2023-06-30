@@ -2739,107 +2739,29 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     }
 
     auto timer = high_resolution_timer();
-    auto [markers, coord_to_idx] = convert_float_to_markers(
-        component, this->topology_grid, this->args->prune_radius.value());
-
-    timer.restart();
-    std::vector<MyMarker *> refined_markers;
-    auto refined_markers_opt =
-        this->args->mean_shift_factor > 0
-            ? mean_shift(markers, this->args->mean_shift_max_iters,
-                         this->args->mean_shift_factor, coord_to_idx,
-                         args->timeout)
-            : markers;
-
-#ifdef LOG
-    component_log << "MS elapsed time, " << timer.elapsed() << '\n';
-#endif
-
-    // if mean shifting didn't timeout
     std::vector<std::vector<MyMarker *>> trees;
-    if (refined_markers_opt) {
-      refined_markers = refined_markers_opt.value();
-      timer.restart();
+    std::optional<std::vector<MyMarker *>> cluster_opt;
+    if (CLASSIC_PRUNE) {
+      cluster_opt =
+          classic_prune(topology_grid, component, index, args, component_log);
+    } else {
+      // cluster_opt =
+      // classic_prune(topology_grid, component, index, args, component_log);
+    }
 
-      // rebuild coord to idx for prune
-      auto coord_to_indices = create_coord_to_indices(refined_markers);
-      timer.restart();
-
-      // prune radius already set when converting from markers above
-      auto pruned_markers = advantra_prune(
-          refined_markers, /*prune_radius*/ this->args->prune_radius.value(),
-          coord_to_indices);
-      if (pruned_markers.size() < 3) {
-        std::cerr
-            << "Non fatal error: extracted pruned trees contains too few nodes "
-               "skipping " +
-                   std::to_string(index)
-            << '\n';
-        return; // skip
-      }
-
-#ifdef LOG
-      component_log << "Component count, " << markers.size() << '\n';
-      component_log << "TC count, " << pruned_markers.size() << '\n';
-      component_log << "TC elapsed time, " << timer.elapsed() << '\n';
-#endif
-
-      // extract a new tree via bfs
-      timer.restart();
-      auto cluster = extract_trees(pruned_markers, true);
-#ifdef LOG
-      component_log << "ET, " << timer.elapsed() << '\n';
-#endif
-      timer.restart();
-
-      if (!is_cluster_self_contained(cluster)) {
-        std::cerr << "Non fatal error: extracted cluster not self contained, "
-                     "skipping " +
-                         std::to_string(index)
-                  << '\n';
-        return; // skip this component
-      }
-
-      adjust_parent_ptrs(cluster);
-
+    if (cluster_opt) {
+      auto cluster = cluster_opt.value();
       auto pruned_cluster = prune_short_branches(cluster, args->voxel_size[0],
                                                  this->args->min_branch_length);
-
-      if (!is_cluster_self_contained(pruned_cluster))
-        throw std::runtime_error("Pruned cluster not self contained");
-
-      // auto fixed_cluster = pruned_cluster;
-      // if (!args->ignore_multifurcations) {
-      // auto fixed_cluster = fix_trifurcations(pruned_cluster);
-      //{ // check
-      // auto trifurcations = tree_is_valid(fixed_cluster);
-      // if (!trifurcations.empty()) {
-      // auto soma = fixed_cluster[0];
-      // std::cout << "Warning tree in component-" + std::to_string(index)
-      //<< " with soma " << soma->x << ' ' << soma->y << ' '
-      //<< soma->z << " has trifurcations listed below:\n";
-      // rng::for_each(trifurcations, [](auto mismatch) {
-      // std::cout << "    " << *mismatch << '\n';
-      //});
-      //// throw std::runtime_error("Tree has trifurcations" +
-      //// std::to_string(index));
-      //}
-      // if (!is_cluster_self_contained(fixed_cluster)) {
-      // std::cout << "Warning a tree in component-" + std::to_string(index)
-      //<< " contains at least 1 node with an invalid parent\n";
-      //// throw std::runtime_error("Trifurc cluster not self contained" +
-      //// std::to_string(index));
-      //}
-      //}
-      //}
-
-      // auto trees = partition_cluster(fixed_cluster);
-      trees = partition_cluster(pruned_cluster);
-
 #ifdef LOG
       component_log << "TP, " << timer.elapsed() << '\n';
       component_log << "TP count, " << pruned_cluster.size() << '\n';
 #endif
+
+      if (!is_cluster_self_contained(pruned_cluster))
+        throw std::runtime_error("Pruned cluster not self contained");
+
+      trees = partition_cluster(pruned_cluster);
     }
 
     if (!window_grids.empty()) {
@@ -2902,7 +2824,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     component_log << "Bounding box, " << bbox << '\n';
 #endif
 
-    if (refined_markers_opt) {
+    if (cluster_opt) {
 #ifdef LOG
       VID_t total_leaves = rng::accumulate(
           trees | rv::transform([](auto tree) { return count_leaves(tree); }),
@@ -3146,6 +3068,9 @@ template <class image_t> void Recut<image_t>::operator()() {
   // if user passed known seeds then use the pretermined merged sdf grid
   // else use the result of the open and close steps above
   auto somas_connected_to_neurites = vto::maskSdf(*soma_sdf, *neurite_sdf);
+  // write_vdb_file({somas_connected_to_neurites}, run_dir /
+  // "somas_connected_to_neurites.vdb");
+
   // auto somas_connected_to_neurites = vto::levelSetRebuild(*temp);
   // auto somas_connected_to_neurites = vto::fogToSdf(*temp, 0);
 
@@ -3157,18 +3082,19 @@ template <class image_t> void Recut<image_t>::operator()() {
           << somas_connected_to_neurites->activeVoxelCount() << '\n';
   run_log.flush();
 
+  /*
   auto temp = openvdb::FloatGrid::create();
   temp->setTransform(get_transform());
   auto accessor = temp->getAccessor();
-  for (auto iter = somas_connected_to_neurites->cbeginValueOn(); iter.test(); ++iter) {
-    auto coord = iter.getCoord();
-    accessor.setValue(coord, 1.);
+  for (auto iter = somas_connected_to_neurites->cbeginValueOn(); iter.test();
+++iter) { auto coord = iter.getCoord(); accessor.setValue(coord, 1.);
   }
 
 #ifdef LOG
   std::cout << "\tTopology to tree step\n";
 #endif
   topology_to_tree(temp, this->run_dir, seeds, this->args);
+  */
 
 #ifdef LOG
   std::cout << "\tSDF to point step\n";
@@ -3196,6 +3122,14 @@ template <class image_t> void Recut<image_t>::operator()() {
     // first stage of the pipeline
     this->update(stage, map_fifo);
   }
+
+  auto global_timer = high_resolution_timer();
+  // this copies only vertices that have already had flags marked as selected.
+  // selected means they are reachable from a known vertex during traversal
+  // in either a connected or value stage.
+  auto float_grid = copy_selected(this->topology_grid);
+  cout << "Topo to float time " << global_timer.elapsed_formatted() << '\n';
+  topology_to_tree(float_grid, this->run_dir, seeds, this->args);
 
   // radius stage will consume fifo surface vertices
   {
