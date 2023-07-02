@@ -9,7 +9,7 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "--seeds <dir> [action] option to pass a directory "
                "of SWC files with 1 soma node per file "
                "to filter by, when --seeds are passed all other auto-found "
-               "seeds will be discarded, action is 'intersect' or 'fill', defaults to 'intersect'\n";
+               "seeds will be discarded, action is 'intersect' or 'fill', defaults to 'fill'\n";
   std::cout << "--output-name        [-o] give converted vdb a custom name "
                "defaults to "
                "naming with useful image attributes\n";
@@ -25,6 +25,9 @@ void RecutCommandLineArgs::PrintUsage() {
          "default 0 0 0\n";
   std::cout << "--voxel-size         µm lengths of voxel in x y z order "
                "default 1.0 1.0 1.0 determines prune radius\n";
+  std::cout << "--skeleton-grain     granularity of final skeletons, lower value result in higher detailed skeletons (SWC trees) with more points; default is " << SKELETON_GRAIN << '\n';
+  std::cout << "--skeleton-grow      affects granularity of final skeletons, higher value results in higher detailed skeletons (SWC trees) with more points; default is " << GROW_THRESHOLD << '\n';
+  //std::cout << "--mesh-grain         granularity of component mesh, lower value result in higher polygon count to represent the surface; default is " << MESH_GRAIN << '\n';
   std::cout
       << "--prune-radius       larger values decrease node sampling density "
          "along paths, default is set by the anisotropic factor of "
@@ -37,7 +40,7 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "--bg-thresh          [-bt] all pixels greater than this passed "
                "intensity value are treated as foreground\n";
   std::cout
-      << "--min-branch-length  prune leaf branches lower, defaults to 20\n";
+      << "--min-branch-length  prune leaf branches lower than path length, defaults to " << MIN_BRANCH_LENGTH << "µm\n";
   std::cout
       << "--fg-percent         [-fp] auto calculate a bg-thresh value closest "
          "to the passed "
@@ -82,14 +85,14 @@ void RecutCommandLineArgs::PrintUsage() {
                "defaults to 0 (no-opening)\n";
   std::cout << "--close-steps        morphological closing level "
                "to fill existing voids inside somata; "
-               "defaults to 8.\n";
+               "defaults to 0.\n";
   std::cout
       << "--preserve-topology  do not apply morphological closing to the "
          "neurites of the image; defaults to closing both somas and topology "
          "(neurites)\n";
   std::cout << "--open-steps         2nd morphological opening level "
                "to clear neurites and keep somata in the image only; "
-               "defaults to 5 and disabled by passing 0 (no-opening)\n";
+               "defaults to 0 (no-opening)\n";
   std::cout << "--order              morphological operations (open/close) "
                "order. An integer between 1 to 5 that defines the mathematical "
                "complexity (order) of operations. "
@@ -105,6 +108,7 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout
       << "--run-app2           for benchmarks and comparisons runs app2 on "
          "the vdb passed to --output-windows\n";
+  std::cout << "--timeout            time in minutes to automatically cancel pruning of a single component\n";
   std::cout << "--help               [-h] print this example usage summary\n";
 }
 
@@ -167,7 +171,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         // check for a specified seed action type
         if (!((i + 1 == argc) || (argv[i + 1][0] == '-'))) {
           if (strcmp(argv[i + 1], "intersect") == 0) {
-            args.seed_intersection = true; // default
+            args.seed_intersection = true;
           } else if (strcmp(argv[i + 1], "fill") == 0) {
             args.seed_intersection = false;
           } else {
@@ -242,6 +246,15 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         ++i;
       } else if (strcmp(argv[i], "--prune-radius") == 0) {
         args.prune_radius = atof(argv[i + 1]);
+        ++i;
+      } else if (strcmp(argv[i], "--skeleton-grain") == 0) {
+        args.skeleton_grain = atof(argv[i + 1]);
+        ++i;
+      } else if (strcmp(argv[i], "--skeleton-grow") == 0) {
+        args.skeleton_grow = atoi(argv[i + 1]);
+        ++i;
+      } else if (strcmp(argv[i], "--mesh-grain") == 0) {
+        args.mesh_grain = atof(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--bg-thresh") == 0 ||
                  strcmp(argv[i], "-bt") == 0) {
@@ -335,6 +348,9 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         ++i;
       } else if (strcmp(argv[i], "--run-app2") == 0) {
         args.run_app2 = true;
+        ++i;
+      } else if (strcmp(argv[i], "--timeout") == 0) {
+        args.timeout = 60* atoi(argv[i + 1]);
         ++i;
       } else {
         std::cerr << "unknown option \"" << argv[i] << "\"  ...exiting\n\n";

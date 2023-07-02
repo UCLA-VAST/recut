@@ -257,11 +257,17 @@ foreach (I ${ALL_TARGETS})
         target_link_libraries(${I} PRIVATE ${HDF5_LIBRARIES})
     endif ()
 
-    # USE_VDB
     message(STATUS "CMAKE_MODULE_PATH: ${CMAKE_MODULE_PATH}")
     find_package(OpenVDB REQUIRED)
     target_link_libraries(${I} PRIVATE OpenVDB::openvdb)
     message(STATUS "Linked OpenVDB")
+
+    #find_package(GEL REQUIRED)
+    #find_package(OpenGL REQUIRED)
+    #find_package(glfw3 3.3 REQUIRED)
+    #target_link_libraries(${I} PUBLIC ${GEL_PATH} OpenGL::GLU OpenGL::GL glfw)
+    target_link_libraries(${I} PUBLIC ${GEL_PATH})
+    message(STATUS "Linked GEL")
 
     # make Recut libraries truly relocatable when linking from downstream programs
     set_target_properties(${I} PROPERTIES INSTALL_RPATH "$ORIGIN/../bin")

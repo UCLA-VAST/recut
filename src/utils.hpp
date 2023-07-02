@@ -244,7 +244,7 @@ struct high_resolution_timer {
     std::stringstream s;
     s << std::setfill('0') << std::setw(2) << days << ':' << std::setw(2)
       << hours << ':' << std::setw(2) << minutes << ':' << std::setw(2)
-      << seconds << " d:h:m:s";
+      << seconds; // << " d:h:m:s";
     return s.str();
   }
   std::uint64_t elapsed_nanoseconds() const {
@@ -1152,11 +1152,6 @@ void write_vdb_file(openvdb::GridPtrVec vdb_grids, fs::path fp = "") {
   openvdb::io::File vdb_file(fp.string());
   vdb_file.write(vdb_grids);
   vdb_file.close();
-
-#ifdef LOG
-  // cout << "Finished write whole grid in: " << timer->elapsed() << " sec\n";
-  std::cout << "\tWrote to " << fp << '\n';
-#endif
 }
 
 /*

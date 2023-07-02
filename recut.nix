@@ -1,4 +1,4 @@
-{ nixpkgs, openvdb, ... }:
+{ nixpkgs, openvdb, gel, ... }:
 let
   pkgs = import nixpkgs {
     system = "x86_64-linux";
@@ -19,7 +19,7 @@ in
 
   enableParallelBuilding = true;
 
-  cmakeFlags = ["-DLOG=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MODULE_PATH=${openvdb.defaultPackage.x86_64-linux}/lib/cmake/OpenVDB"];
+  cmakeFlags = ["-DLOG=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MODULE_PATH=${openvdb.defaultPackage.x86_64-linux}/lib/cmake/OpenVDB -DGEL_PATH=${gel.defaultPackage.x86_64-linux}/lib/libGEL.a"];
 
   nativeBuildInputs = [ cmake gcc11 ];
 
@@ -33,6 +33,7 @@ in
 
     # optional dependencies
     openvdb.defaultPackage.x86_64-linux
+    gel.defaultPackage.x86_64-linux
     gbenchmark
 
     # For debug purposes only:

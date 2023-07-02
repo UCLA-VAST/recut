@@ -84,8 +84,8 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 //#define MIN_SOMA_RADIUS_UM 3.0
 //#define MAX_SOMA_RADIUS_UM 18.0
 #define MIN_Z_DEPTH 30
-// euclidean voxel path distance of branches to prune
-#define MIN_BRANCH_LENGTH 20
+// path distance in um of branches to prune
+#define MIN_BRANCH_LENGTH 60
 #define MIN_WINDOW_UM 150.0
 #define EXPAND_WINDOW_UM 30.0
 #define SWC_PRECISION 3
@@ -98,3 +98,9 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 #define DILATION_FACTOR 1
 #define RECUT_LEVEL_SET_HALF_WIDTH 2
 #define SOMA_LABEL_LENGTH 128
+// 10 minutes in unit seconds
+#define MEAN_SHIFT_TIMEOUT 60 * 10
+#define GROW_THRESHOLD 64
+#define SKELETON_GRAIN .09
+#define MESH_GRAIN .999
+#define CLASSIC_PRUNE 0
