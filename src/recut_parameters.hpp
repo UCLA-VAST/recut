@@ -33,6 +33,7 @@ public:
         ignore_multifurcations(false), close_topology(true),
         mean_shift_max_iters(4), timeout(MEAN_SHIFT_TIMEOUT),
         skeleton_grain(SKELETON_GRAIN),
+        skeleton_grow(GROW_THRESHOLD),
         mesh_grain(MESH_GRAIN),
         mean_shift_factor(0) {}
 
@@ -62,7 +63,7 @@ public:
   uint16_t user_thread_count, min_branch_length, resolution_level, channel,
       upsample_z, downsample_factor, morphological_operations_order,
       mean_shift_max_iters;
-  int background_thresh, max_intensity, min_intensity, tcase, timeout;
+  int background_thresh, max_intensity, min_intensity, tcase, timeout, skeleton_grow;
   double foreground_percent, slt_pct;
   float min_window_um, expand_window_um, min_radius_um, max_radius_um,
       open_denoise, open_steps, close_steps, mean_shift_factor, skeleton_grain, mesh_grain;

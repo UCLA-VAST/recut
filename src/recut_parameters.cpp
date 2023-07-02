@@ -26,7 +26,8 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "--voxel-size         µm lengths of voxel in x y z order "
                "default 1.0 1.0 1.0 determines prune radius\n";
   std::cout << "--skeleton-grain     granularity of final skeletons, lower value result in higher detailed skeletons (SWC trees) with more points; default is " << SKELETON_GRAIN << '\n';
-  std::cout << "--mesh-grain     granularity of component mesh, lower value result in higher polygon count to represent the surface; default is " << MESH_GRAIN << '\n';
+  std::cout << "--skeleton-grow      affects granularity of final skeletons, higher value results in higher detailed skeletons (SWC trees) with more points; default is " << GROW_THRESHOLD << '\n';
+  //std::cout << "--mesh-grain         granularity of component mesh, lower value result in higher polygon count to represent the surface; default is " << MESH_GRAIN << '\n';
   std::cout
       << "--prune-radius       larger values decrease node sampling density "
          "along paths, default is set by the anisotropic factor of "
@@ -248,6 +249,9 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         ++i;
       } else if (strcmp(argv[i], "--skeleton-grain") == 0) {
         args.skeleton_grain = atof(argv[i + 1]);
+        ++i;
+      } else if (strcmp(argv[i], "--skeleton-grow") == 0) {
+        args.skeleton_grow = atoi(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--mesh-grain") == 0) {
         args.mesh_grain = atof(argv[i + 1]);

@@ -2745,8 +2745,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
       cluster_opt =
           classic_prune(topology_grid, component, index, args, component_log);
     } else {
-      // cluster_opt =
-      // classic_prune(topology_grid, component, index, args, component_log);
+      cluster_opt = vdb_to_markers(component, component_seeds, index, args, component_dir_fn);
     }
 
     if (cluster_opt) {
@@ -3124,15 +3123,18 @@ template <class image_t> void Recut<image_t>::operator()() {
   }
 
   auto global_timer = high_resolution_timer();
+
+  /*
   // this copies only vertices that have already had flags marked as selected.
   // selected means they are reachable from a known vertex during traversal
   // in either a connected or value stage.
   auto float_grid = copy_selected(this->topology_grid);
   cout << "Topo to float time " << global_timer.elapsed_formatted() << '\n';
   topology_to_tree(float_grid, this->run_dir, seeds, this->args);
+  */
 
   // radius stage will consume fifo surface vertices
-  {
+  if (CLASSIC_PRUNE) {
     stage = "radius";
     this->setup_radius(map_fifo);
     this->update(stage, map_fifo);
