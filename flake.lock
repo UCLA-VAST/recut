@@ -7,11 +7,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1688257059,
-        "narHash": "sha256-wGiyPyJlGhJb6o8r5/CksHd/p6ln06wD8n3xDynO+wE=",
+        "lastModified": 1688323853,
+        "narHash": "sha256-ttcXPiNXfhCjTSQ0pNA5CQL1joYyjC8uVU22Z0Iij78=",
         "owner": "UCLA-VAST",
         "repo": "GEL",
-        "rev": "c2ea18cfc1411aaf6253818d9354f4607e72dd94",
+        "rev": "07a2cbaaef5c4cf64bdd42a3cd90023e44ed9992",
         "type": "github"
       },
       "original": {

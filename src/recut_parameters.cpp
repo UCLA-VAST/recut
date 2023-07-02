@@ -9,7 +9,7 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "--seeds <dir> [action] option to pass a directory "
                "of SWC files with 1 soma node per file "
                "to filter by, when --seeds are passed all other auto-found "
-               "seeds will be discarded, action is 'intersect' or 'fill', defaults to 'intersect'\n";
+               "seeds will be discarded, action is 'intersect' or 'fill', defaults to 'fill'\n";
   std::cout << "--output-name        [-o] give converted vdb a custom name "
                "defaults to "
                "naming with useful image attributes\n";
@@ -171,7 +171,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         // check for a specified seed action type
         if (!((i + 1 == argc) || (argv[i + 1][0] == '-'))) {
           if (strcmp(argv[i + 1], "intersect") == 0) {
-            args.seed_intersection = true; // default
+            args.seed_intersection = true;
           } else if (strcmp(argv[i + 1], "fill") == 0) {
             args.seed_intersection = false;
           } else {

@@ -50,21 +50,12 @@ std::set<size_t> find_soma_nodes(Geometry::AMGraph3D graph,
       }
     }
 
-    std::cout << "max_valence " << max_valence << '\n';
-
     if (max_index)
       soma_ids.insert(max_index.value());
     else
       std::cout << "Warning lost 1 seed during skeletonization\n";
   });
   return soma_ids;
-}
-
-void write_graph(Geometry::AMGraph3D &g, fs::path fn) {
-  Geometry::graph_save(fn.generic_string(), g);
-
-  //std::cout << "Wrote: " << fn << " nodes: " << g.no_nodes()
-            //<< " edges: " << g.no_edges() << '\n';
 }
 
 template <typename Poly>
@@ -122,9 +113,10 @@ HMesh::Manifold vdb_to_mesh(openvdb::FloatGrid::Ptr component,
   std::vector<openvdb::Vec3I> tris;
   vto::volumeToMesh(*component, points, quads);
   // vto::volumeToMesh(*component, points, tris, quads, 0, args->mesh_grain);
-  //std::cout << "Component active voxel count: " << component->activeVoxelCount()
-            //<< '\n';
-  //std::cout << "points size: " << points.size() << '\n';
+  // std::cout << "Component active voxel count: " <<
+  // component->activeVoxelCount()
+  //<< '\n';
+  // std::cout << "points size: " << points.size() << '\n';
 
   // convert points to GEL vertices
   auto vertices = points | rv::transform([](auto point) {
@@ -182,10 +174,10 @@ Geometry::AMGraph3D graph_from_mesh(HMesh::Manifold &m) {
   return g;
 }
 
-std::optional<std::vector<MyMarker *>> vdb_to_markers(openvdb::FloatGrid::Ptr fog,
-                                       std::vector<Seed> component_seeds,
-                                       int index, RecutCommandLineArgs *args,
-                                       fs::path component_dir_fn) {
+std::optional<std::vector<MyMarker *>>
+vdb_to_markers(openvdb::FloatGrid::Ptr fog, std::vector<Seed> component_seeds,
+               int index, RecutCommandLineArgs *args,
+               fs::path component_dir_fn) {
   auto component = vto::fogToSdf(*fog, 0);
   if (args->save_vdbs) {
     write_vdb_file({component}, component_dir_fn / "sdf.vdb");
@@ -197,12 +189,7 @@ std::optional<std::vector<MyMarker *>> vdb_to_markers(openvdb::FloatGrid::Ptr fo
   HMesh::obj_save(component_dir_fn / ("mesh.obj"), m);
 
   auto g = graph_from_mesh(m);
-  write_graph(g, component_dir_fn / ("mesh.graph"));
-
-  // classic local separatorsn
-  // auto adv_samp_thresh = 8; // higher is higher quality at cost of
-  // runtime auto separators = local_separators(g,
-  // Geometry::SamplingType::None, args->skeleton_grain, adv_samp_thresh);
+  graph_save(component_dir_fn / ("mesh.graph"), g);
 
   // multi-scale is faster and scales linearly with input graph size at
   // the cost of difficulty in choosing a grow threshold
@@ -210,7 +197,7 @@ std::optional<std::vector<MyMarker *>> vdb_to_markers(openvdb::FloatGrid::Ptr fo
       multiscale_local_separators(g, Geometry::SamplingType::Advanced,
                                   args->skeleton_grow, args->skeleton_grain);
   auto [component_graph, mapping] = skeleton_from_node_set_vec(g, separators);
-  write_graph(component_graph, component_dir_fn / ("skeleton.graph"));
+  graph_save(component_dir_fn / ("skeleton.graph"), component_graph);
 
   // sweep through various soma ids
   auto soma_ids = find_soma_nodes(component_graph, component_seeds);
@@ -220,9 +207,6 @@ std::optional<std::vector<MyMarker *>> vdb_to_markers(openvdb::FloatGrid::Ptr fo
     soma_ids.insert(0);
   }
 
-  // std::unordered_map<GridCoord, MyMarker *> coord_to_marker_ptr;
-  // save this marker ptr to a map
-  // coord_to_marker_ptr.emplace(coord, marker);
   std::vector<MyMarker *> component_tree;
   for (auto i : component_graph.node_ids()) {
     auto color = component_graph.node_color[i].get();
