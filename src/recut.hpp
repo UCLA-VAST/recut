@@ -184,6 +184,12 @@ public:
                         ParentsT parents_handle, ValueT value_handle,
                         GridCoord current_coord, IndT current_ind,
                         float current_vox);
+  template <typename PointIter, typename UpdateIter, typename ConnectedIter>
+  bool accumulate_connected_mask(
+      GridCoord dst_coord, OffsetCoord offset_to_current, VID_t &revisits,
+      bool &found_adjacent_invalid, PointIter background_leaf,
+      UpdateIter update_leaf, ConnectedIter connected_leaf,
+      std::deque<VertexAttr> &connected_fifo);
   template <typename T2, typename FlagsT, typename ParentsT, typename PointIter,
             typename UpdateIter>
   bool accumulate_connected(const image_t *tile, VID_t tile_id, VID_t block_id,
@@ -232,6 +238,9 @@ public:
                       const TileThresholds<image_t> *tile_thresholds,
                       Container &connected_fifo, Container &fifo,
                       VID_t revisits, T2 leaf_iter);
+  template <class Container, typename T2>
+  void connected_mask_tile(Container &connected_fifo,
+                                           VID_t revisits, T2 background_leaf);
   template <class Container, typename T2>
   void radius_tile(const image_t *tile, VID_t tile_id, VID_t block_id,
                    std::string stage,
@@ -415,8 +424,8 @@ void Recut<image_t>::activate_vids_mask(
     edge_state = setbit(edge_state, 3); // root
     std::cout << +(edge_state) << '\n';
     assertm(edge_state == 9, "not 9");
-    //assertm(is_selected(edge_state), "selected");
-    //assertm(is_root(edge_state), "root");
+    // assertm(is_selected(edge_state), "selected");
+    // assertm(is_root(edge_state), "root");
     rng::for_each(leaf_seed_coords, [&](auto coord) {
       auto offsets = coord_mod(coord, temp_coord);
       connected_fifo[leaf_iter->origin()].emplace_back(edge_state, offsets,
@@ -833,6 +842,68 @@ bool Recut<image_t>::accumulate_value(
     return true;
   }
   return false;
+}
+
+/**
+ * accumulate is the core function of fast marching, it can only operate
+ * on VertexAttr that are within the current tile_id and block_id, since
+ * it is potentially adding these vertices to the unique heap of tile_id
+ * and block_id. only one parent when selected. If one of these vertexes on
+ * the edge but still within tile_id and block_id domain is updated it
+ * is the responsibility of check_ghost_update to take note of the update such
+ * that this update is propagated to the relevant tile and block see
+ * vertex in question block_id : current block id current : minimum vertex
+ * attribute selected
+ */
+template <class image_t>
+template <typename PointIter, typename UpdateIter, typename ConnectedIter>
+bool Recut<image_t>::accumulate_connected_mask(
+    GridCoord dst_coord, OffsetCoord offset_to_current, VID_t &revisits,
+    bool &found_adjacent_invalid, PointIter background_leaf,
+    UpdateIter update_leaf, ConnectedIter connected_leaf,
+    std::deque<VertexAttr> &connected_fifo) {
+
+#ifdef FULL_PRINT
+  cout << "\tcheck dst: " << coord_to_str(dst_coord);
+#endif
+
+  // skip backgrounds
+  // the image voxel of this dst vertex is the primary method to exclude this
+  // pixel/vertex for the remainder of all processing
+  auto found_background = false;
+  if (!background_leaf->isValueOn(dst_coord))
+    found_background = true;
+
+  if (found_background) {
+    found_adjacent_invalid = true;
+#ifdef FULL_PRINT
+    cout << "\t\tfailed tile_thresholds->bkg_thresh" << '\n';
+#endif
+    return false;
+  }
+
+  // all dsts are guaranteed within this domain
+  // skip already selected vertices too
+  if (connected_leaf->isValueOn(dst_coord)) {
+    revisits += 1;
+    return false;
+  }
+
+  // mark selected in topology
+  connected_leaf->setValueOn(dst_coord);
+  set_if_active(update_leaf, dst_coord);
+  auto offset = coord_mod(dst_coord, this->block_lengths);
+
+  // ensure traces a path back to root
+  // mark it as selected only, no need for any other flags in connected-mask
+  // stage
+  connected_fifo.emplace_back(Bitfield(1), offset,
+                              /*parent*/ offset_to_current);
+
+#ifdef FULL_PRINT
+  cout << "\tadded new dst to active set, vid: " << dst_coord << '\n';
+#endif
+  return true;
 }
 
 /**
@@ -1521,6 +1592,92 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t tile_id,
 
 template <class image_t>
 template <class Container, typename T2>
+void Recut<image_t>::connected_mask_tile(Container &connected_fifo,
+                                         VID_t revisits, T2 background_leaf) {
+  if (connected_fifo.empty())
+    return;
+
+  auto update_leaf =
+      this->update_grid->tree().probeLeaf(background_leaf->origin());
+  auto connected_leaf =
+      this->connected_mask_grid->tree().probeLeaf(background_leaf->origin());
+  auto bbox = background_leaf->getNodeBoundingBox();
+  assertm(background_leaf, "corresponding leaf does not exist");
+
+#ifdef FULL_PRINT
+  cout << "\nMarching " << bbox << '\n';
+#endif
+
+  VertexAttr *msg_vertex;
+  VID_t visited = 0;
+  while (!(connected_fifo.empty())) {
+
+#ifdef FULL_PRINT
+    visited += 1;
+#endif
+
+    // msg_vertex might become undefined during scatter
+    // or if popping from the fifo, take needed info
+    msg_vertex = &(connected_fifo.front());
+    const bool in_domain = msg_vertex->selected();
+    auto surface = msg_vertex->surface();
+    auto msg_coord = coord_add(msg_vertex->offsets, background_leaf->origin());
+    auto msg_off = coord_mod(msg_coord, this->block_lengths);
+    auto msg_ind = background_leaf->beginIndexVoxel(msg_coord);
+
+#ifdef FULL_PRINT
+    cout << "check current " << msg_coord << ' ' << in_domain << '\n';
+#endif
+
+    // invalid can either be out of range of the entire global image or it
+    // can be a background vertex which occurs due to pixel value below the
+    // threshold, previously selected vertices are considered valid
+    auto found_adjacent_invalid = false;
+    auto valids =
+        // star stencil offsets to img coords
+        this->stencil | rv::transform([&msg_coord](auto stencil_offset) {
+          return coord_add(msg_coord, stencil_offset);
+        }) |
+        // within image?
+        rv::remove_if([this, &found_adjacent_invalid](auto coord_img) {
+          if (this->image_bbox.isInside(coord_img))
+            return false;
+          found_adjacent_invalid = true;
+          return true;
+        }) |
+        // within leaf?
+        rv::remove_if([&](auto coord_img) {
+          auto mismatch = !bbox.isInside(coord_img);
+          if (mismatch) {
+            if (this->input_is_vdb) {
+              if (!this->topology_grid->tree().isValueOn(coord_img)) {
+                found_adjacent_invalid = true;
+              }
+            }
+          }
+          return mismatch;
+        }) |
+        // visit valid voxels
+        rv::remove_if([&](auto coord_img) {
+          auto offset_to_current = coord_sub(msg_coord, coord_img);
+          // is background?  ...has side-effects
+          return !accumulate_connected_mask(
+              coord_img, offset_to_current, revisits, found_adjacent_invalid,
+              background_leaf, update_leaf, connected_leaf, connected_fifo);
+        }) |
+        rng::to_vector; // force full evaluation via vector
+
+    // safe to remove msg now with no issue of invalidations
+    connected_fifo.pop_front(); // remove it
+  }
+
+#ifdef FULL_PRINT
+  cout << "visited vertices: " << visited << '\n';
+#endif
+}
+
+template <class image_t>
+template <class Container, typename T2>
 void Recut<image_t>::connected_tile(
     const image_t *tile, VID_t tile_id, VID_t block_id, std::string stage,
     const TileThresholds<image_t> *tile_thresholds, Container &connected_fifo,
@@ -1811,6 +1968,8 @@ void Recut<image_t>::march_narrow_band(
   } else if (stage == "connected") {
     connected_tile(tile, tile_id, block_id, stage, tile_thresholds,
                    connected_fifo, fifo, revisits, leaf_iter);
+  } else if (stage == "connected-mask") {
+    connected_mask_tile(connected_fifo, revisits, leaf_iter);
   } else if (stage == "radius") {
     radius_tile(tile, tile_id, block_id, stage, tile_thresholds, fifo, revisits,
                 leaf_iter);
