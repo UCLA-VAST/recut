@@ -99,6 +99,8 @@ public:
   openvdb::FloatGrid::Ptr input_grid;
   openvdb::BoolGrid::Ptr update_grid;
   openvdb::MaskGrid::Ptr mask_grid;
+  openvdb::BoolGrid::Ptr background_grid;
+  openvdb::BoolGrid::Ptr connected_mask_grid;
   ImgGrid::Ptr img_grid;
 
   std::vector<OffsetCoord> const lower_stencil{new_offset_coord(0, 0, -1),
@@ -139,6 +141,8 @@ public:
 
   void initialize_globals(const VID_t &grid_tile_size,
                           const VID_t &tile_block_size);
+  void initialize_globals_mask(const VID_t &grid_tile_size,
+                               const VID_t &tile_block_size);
 
   bool filter_by_label(VertexAttr *v, bool accept_tombstone);
 
@@ -261,6 +265,9 @@ public:
                 const std::string stage,
                 std::map<GridCoord, std::deque<VertexAttr>> &fifo,
                 std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo);
+  void activate_vids_mask(
+      openvdb::BoolGrid::Ptr grid, const std::vector<Seed> &seeds,
+      std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo);
   void set_parent_non_branch(const VID_t tile_id, const VID_t block_id,
                              VertexAttr *dst, VertexAttr *potential_new_parent);
 };
@@ -366,6 +373,55 @@ void Recut<image_t>::setup_radius(Container &fifo) {
 #ifdef FULL_PRINT
     cout << "Set tile " << tile_id << " to active\n";
 #endif
+  }
+}
+
+template <class image_t>
+void Recut<image_t>::activate_vids_mask(
+    openvdb::BoolGrid::Ptr grid, const std::vector<Seed> &seeds,
+    std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo) {
+  assertm(!(seeds.empty()), "Must have at least one seed");
+
+  // Iterate over leaf nodes that contain topology (active)
+  // checking for seed within them
+  for (auto leaf_iter = grid->tree().beginLeaf(); leaf_iter; ++leaf_iter) {
+    auto leaf_bbox = leaf_iter->getNodeBoundingBox();
+
+    // FILTER for those in this leaf
+    auto leaf_seed_coords = seeds | rv::transform(&Seed::coord) |
+                            rv::remove_if([&leaf_bbox](GridCoord coord) {
+                              return !leaf_bbox.isInside(coord);
+                            }) |
+                            rng::to_vector;
+
+    if (leaf_seed_coords.empty())
+      continue;
+
+    this->active_tiles[0] = true;
+
+    // Set Values
+    auto update_leaf = this->update_grid->tree().probeLeaf(leaf_bbox.min());
+    assertm(update_leaf, "Update must have a corresponding leaf");
+
+    rng::for_each(leaf_seed_coords, [&update_leaf](auto coord) {
+      // this only adds to update_grid if the root happens
+      // to be on a boundary
+      set_if_active(update_leaf, coord);
+    });
+
+    auto temp_coord = new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH);
+
+    auto edge_state = 1;                // selected
+    edge_state = setbit(edge_state, 3); // root
+    std::cout << +(edge_state) << '\n';
+    assertm(edge_state == 9, "not 9");
+    //assertm(is_selected(edge_state), "selected");
+    //assertm(is_root(edge_state), "root");
+    rng::for_each(leaf_seed_coords, [&](auto coord) {
+      auto offsets = coord_mod(coord, temp_coord);
+      connected_fifo[leaf_iter->origin()].emplace_back(edge_state, offsets,
+                                                       zeros_off());
+    });
   }
 }
 
@@ -679,8 +735,8 @@ void Recut<image_t>::accumulate_radius(VID_t tile_id, VID_t block_id,
 /**
  * accumulate is the smallest scope function of fast marching, it can only
  * operate on a VertexAttr (voxel) that are within the current tile_id and
- * block_id, since it is potentially adding these vertices to the unique heap of
- * tile_id and block_id. only one parent when selected. If one of these
+ * block_id, since it is potentially adding these vertices to the unique heap
+ * of tile_id and block_id. only one parent when selected. If one of these
  * vertexes on the edge but still within tile_id and block_id domain is
  * updated it is the responsibility of check_ghost_update to take note of the
  * update such that this update is propagated to the relevant tile and block
@@ -748,7 +804,8 @@ bool Recut<image_t>::accumulate_value(
   // starting background values are 0
   // traditionally background values should be INF or FLOAT_MAX
   // but 0s are more compressible and simpler
-  // must check all are not root though since root has distance 0 by definition
+  // must check all are not root though since root has distance 0 by
+  // definition
   if (((dst_value == 0) && !is_root(flags_handle, dst_ind)) ||
       (dst_value > updated_val_attr)) {
     // all dsts are guaranteed within this domain
@@ -1132,9 +1189,10 @@ void integrate_adj_leafs(GridCoord start_coord,
 }
 
 /* Core exchange step of the fastmarching algorithm, this processes and
- * sets update_grid values to false while leaving bit mask active set untouched.
- * tiles and blocks can receive all of their updates from the current
- * iterations run of march_narrow_band safely to complete the iteration
+ * sets update_grid values to false while leaving bit mask active set
+ * untouched. tiles and blocks can receive all of their updates from the
+ * current iterations run of march_narrow_band safely to complete the
+ * iteration
  */
 template <class image_t>
 void Recut<image_t>::integrate_update_grid(
@@ -1795,8 +1853,8 @@ std::atomic<double> Recut<image_t>::process_tile(
   };
 
   auto is_active = [&, this]() {
-    // connected or value stages are determined finished by the status of their
-    // fifo or heaps respectively
+    // connected or value stages are determined finished by the status of
+    // their fifo or heaps respectively
     if (stage == "connected") {
       return any_fifo_active(this->connected_map);
     } else if (stage == "value") {
@@ -2241,6 +2299,64 @@ inline VID_t Recut<image_t>::rotate_index(VID_t img_coord, const VID_t current,
 }
 
 template <class image_t>
+void Recut<image_t>::initialize_globals_mask(const VID_t &grid_tile_size,
+                                             const VID_t &tile_block_size) {
+
+  auto timer = high_resolution_timer();
+
+  auto is_boundary = [](auto coord) {
+    for (int i = 0; i < 3; ++i) {
+      if (coord[i]) {
+        if (coord[i] == (LEAF_LENGTH - 1))
+          return true;
+      } else {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  std::map<GridCoord, std::deque<VertexAttr>> inner;
+  VID_t tile_id = 0;
+
+  for (auto leaf_iter = this->mask_grid->tree().beginLeaf(); leaf_iter;
+       ++leaf_iter) {
+    auto origin = leaf_iter->getNodeBoundingBox().min();
+
+    // per leaf fifo/pq resources
+    inner[origin] = std::deque<VertexAttr>();
+    heap_map[origin] = local_heap();
+
+    // every topology_grid leaf must have a corresponding leaf explicitly
+    // created
+    auto update_leaf =
+        new openvdb::tree::LeafNode<bool, LEAF_LOG2DIM>(origin, false);
+
+    // init update grid with fixed topology (active state)
+    for (auto ind = leaf_iter->beginValueOn(); ind; ++ind) {
+      // get coord
+      auto coord = ind.getCoord();
+      auto leaf_coord = coord_mod(
+          coord, new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH));
+      if (is_boundary(leaf_coord)) {
+        update_leaf->setActiveState(coord, true);
+      }
+    }
+    this->update_grid->tree().addLeaf(update_leaf);
+  }
+
+  // fifo is a deque representing the vids left to
+  // process at each stage
+  this->map_fifo = inner;
+  this->connected_map = inner;
+  // global active vertex list
+
+#ifdef LOG_FULL
+  cout << "\tCreated fifos " << timer.elapsed() << 's' << '\n';
+#endif
+}
+
+template <class image_t>
 void Recut<image_t>::initialize_globals(const VID_t &grid_tile_size,
                                         const VID_t &tile_block_size) {
 
@@ -2350,10 +2466,11 @@ GridCoord Recut<image_t>::get_input_image_lengths(RecutCommandLineArgs *args) {
     }
 
     if (this->args->input_type != "mask" && this->args->seed_path == "") {
-      throw std::runtime_error(
-          "For soma segmentation you must pass a raw image or a mask grid. If "
-          "you start reconstruction from float or point you must also specify "
-          "a seeds path");
+      throw std::runtime_error("For soma segmentation you must pass a raw "
+                               "image or a mask grid. If "
+                               "you start reconstruction from float or point "
+                               "you must also specify "
+                               "a seeds path");
     }
 
 #ifdef LOG
@@ -2745,7 +2862,8 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
       cluster_opt =
           classic_prune(topology_grid, component, index, args, component_log);
     } else {
-      cluster_opt = vdb_to_markers(component, component_seeds, index, args, component_dir_fn);
+      cluster_opt = vdb_to_markers(component, component_seeds, index, args,
+                                   component_dir_fn);
     }
 
     if (cluster_opt) {
@@ -3050,8 +3168,10 @@ template <class image_t> void Recut<image_t>::operator()() {
     exit(0); // exit
   } else if (seeds.empty()) {
     std::cerr
-        << "No somas found, possibly make --open-steps lower or --close-steps "
-           "higher (if using membrane labeling), also consider raising the fg "
+        << "No somas found, possibly make --open-steps lower or "
+           "--close-steps "
+           "higher (if using membrane labeling), also consider raising the "
+           "fg "
            "percent. Note that passing --seeds forces all found somas to be "
            "filtered against those you specified, exiting...\n";
     exit(1);
@@ -3069,9 +3189,6 @@ template <class image_t> void Recut<image_t>::operator()() {
   auto somas_connected_to_neurites = vto::maskSdf(*soma_sdf, *neurite_sdf);
   // write_vdb_file({somas_connected_to_neurites}, run_dir /
   // "somas_connected_to_neurites.vdb");
-
-  // auto somas_connected_to_neurites = vto::levelSetRebuild(*temp);
-  // auto somas_connected_to_neurites = vto::fogToSdf(*temp, 0);
 
   std::ofstream run_log;
   run_log.open(log_fn, std::ios::app);
@@ -3095,32 +3212,44 @@ template <class image_t> void Recut<image_t>::operator()() {
   topology_to_tree(temp, this->run_dir, seeds, this->args);
   */
 
+  if (CLASSIC_PRUNE) {
 #ifdef LOG
-  std::cout << "\tSDF to point step\n";
+    std::cout << "\tSDF to point step\n";
 #endif
-  assertm(somas_connected_to_neurites,
-          "Topology grid must be set before starting reconstruction");
-  this->topology_grid = convert_sdf_to_points(
-      somas_connected_to_neurites, image_lengths, args->foreground_percent);
+    assertm(somas_connected_to_neurites,
+            "Topology grid must be set before starting reconstruction");
+    this->topology_grid = convert_sdf_to_points(
+        somas_connected_to_neurites, image_lengths, args->foreground_percent);
+  } else {
+    // overwrite mask grid
+    this->background_grid =
+        vto::extractEnclosedRegion(*somas_connected_to_neurites);
+  }
 
   // filter seeds with respect to topology
   seeds = seeds | rv::filter([this](Seed seed) {
-            return this->topology_grid->tree().isValueOn(seed.coord);
+            if (CLASSIC_PRUNE)
+              return this->topology_grid->tree().isValueOn(seed.coord);
+            // else
+            return this->background_grid->tree().isValueOn(seed.coord);
           }) |
           rng::to_vector;
 
   initialize_globals(this->grid_tile_size, this->tile_block_size);
 
   // constrain topology to only those reachable from roots
-  auto stage = "connected";
-  {
+  std::string stage;
+  if (CLASSIC_PRUNE) {
+    stage = "connected";
     // starting from the roots connected stage saves all surface vertices into
     // fifo
     this->activate_vids(this->topology_grid, seeds, stage, this->map_fifo,
                         this->connected_map);
-    // first stage of the pipeline
-    this->update(stage, map_fifo);
+  } else {
+    stage = "connected-bool";
+    this->activate_vids_mask(this->background_grid, seeds, this->connected_map);
   }
+  this->update(stage, map_fifo);
 
   auto global_timer = high_resolution_timer();
 
@@ -3144,27 +3273,4 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   partition_components(seeds, false);
   exit(0);
-
-  // old prune strategy
-  //{
-  //// starting from roots, prune stage will
-  //// create final list of vertices
-  // if (true) {
-  // stage = "prune";
-  // this->activate_vids(this->topology_grid, seeds, stage,
-  // this->map_fifo, this->connected_map); this->update(stage, map_fifo);
-  //// make all unpruned trace a back to a root
-  //// any time you remove a node you need to ensure tree validity
-  // adjust_parent();
-  //}
-
-  // prune_radii();
-  // adjust_parent();
-
-  //// produces bad reach-back artifact
-  //// prune_branch();
-  //// adjust_parent();; //
-
-  // print_to_swc();
-  //}
 }
