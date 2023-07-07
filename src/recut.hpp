@@ -1265,18 +1265,17 @@ void integrate_adj_leafs(GridCoord start_coord,
  * current iterations run of march_narrow_band safely to complete the
  * iteration
  */
-template <class image_t>
+template <class image_t, LeafT>
 void Recut<image_t>::integrate_update_grid(
     EnlargedPointDataGrid::Ptr grid,
-    vt::LeafManager<PointTree> grid_leaf_manager, std::string stage,
+    LeafT grid_leaf_manager, std::string stage,
     std::map<GridCoord, std::deque<VertexAttr>> &fifo,
     std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo,
     openvdb::BoolGrid::Ptr update_grid, VID_t tile_id) {
   // gather all changes on 6 boundary leafs
   {
     auto integrate_range =
-        [&, this](const openvdb::tree::LeafManager<
-                  openvdb::points::PointDataTree>::LeafRange &range) {
+        [&, this](const auto &range) {
           // for each leaf with active voxels i.e. containing topology
           for (auto leaf_iter = range.begin(); leaf_iter; ++leaf_iter) {
             // integrate_leaf(leaf_iter);
@@ -1994,6 +1993,7 @@ std::atomic<double> Recut<image_t>::process_tile(
   auto timer = high_resolution_timer();
 
   vt::LeafManager<PointTree> grid_leaf_manager(this->topology_grid->tree());
+  //vt::LeafManager<vb::BoolTree> grid_leaf_manager(this->background_grid->tree());
 
   integrate_update_grid(this->topology_grid, grid_leaf_manager, stage,
                         this->map_fifo, this->connected_map, this->update_grid,
