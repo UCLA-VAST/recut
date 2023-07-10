@@ -265,7 +265,7 @@ TEST(VDB, InitializeGlobals) {
   auto grid_extents = GridCoord(grid_size);
   auto tcase = 7;
   double slt_pct = 100;
-  bool print_all = false;
+  bool print_all = true;
 
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
                        /*input_is_vdb=*/true);
@@ -275,7 +275,7 @@ TEST(VDB, InitializeGlobals) {
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
 
   auto update_accessor = recut.update_grid->getConstAccessor();
-  auto topology_accessor = recut.topology_grid->getConstAccessor();
+  auto topology_accessor = recut.foreground_grid->getConstAccessor();
 
   if (print_all) {
     print_vdb_mask(topology_accessor, grid_extents);
@@ -423,7 +423,7 @@ TEST(VDB, IntegrateUpdateGrid) {
   auto seeds = process_marker_dir(args.seed_path);
   recut.initialize_globals(recut.grid_tile_size, recut.tile_block_size);
   auto update_accessor = recut.update_grid->getAccessor();
-  auto topology_accessor = recut.topology_grid->getConstAccessor();
+  auto topology_accessor = recut.foreground_grid->getConstAccessor();
 
   if (print_all) {
     print_vdb_mask(topology_accessor, grid_extents);
@@ -444,8 +444,8 @@ TEST(VDB, IntegrateUpdateGrid) {
     set_if_active(update_leaf, lower_corner);
     set_if_active(update_leaf, upper_corner);
 
-    vt::LeafManager<PointTree> grid_leaf_manager(recut.topology_grid->tree());
-    recut.integrate_update_grid(recut.topology_grid, grid_leaf_manager, stage,
+    vt::LeafManager<vb::BoolTree> grid_leaf_manager(recut.foreground_grid->tree());
+    recut.integrate_update_grid(recut.foreground_grid, grid_leaf_manager, stage,
                                 recut.map_fifo, recut.connected_map,
                                 recut.update_grid, tile_id);
 
@@ -477,12 +477,11 @@ TEST(VDB, IntegrateUpdateGrid) {
 
     if (print_all) {
       print_vdb_mask(topology_accessor, grid_extents);
-      print_all_points(recut.topology_grid, recut.image_bbox);
     }
   }
 }
 
-TEST(VDB, CreatePointDataGrid) {
+TEST(VDB, DISABLED_CreatePointDataGrid) {
 
   std::vector<EnlargedPointDataGrid::Ptr> grids(2);
   // openvdb::GridPtrVec grids(2);

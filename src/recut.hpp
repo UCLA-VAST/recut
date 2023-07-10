@@ -99,7 +99,7 @@ public:
   openvdb::FloatGrid::Ptr input_grid;
   openvdb::BoolGrid::Ptr update_grid;
   openvdb::MaskGrid::Ptr mask_grid;
-  openvdb::BoolGrid::Ptr background_grid;
+  openvdb::BoolGrid::Ptr foreground_grid;
   openvdb::FloatGrid::Ptr connected_grid;
   ImgGrid::Ptr img_grid;
 
@@ -184,11 +184,11 @@ public:
                         ParentsT parents_handle, ValueT value_handle,
                         GridCoord current_coord, IndT current_ind,
                         float current_vox);
-  template <typename PointIter, typename UpdateIter, typename ConnectedIter>
+  template <typename ForeIter, typename UpdateIter, typename ConnectedIter>
   bool
   accumulate_connected_mask(GridCoord dst_coord, OffsetCoord offset_to_current,
                             VID_t &revisits, bool &found_adjacent_invalid,
-                            PointIter background_leaf, UpdateIter update_leaf,
+                            ForeIter foreground_leaf, UpdateIter update_leaf,
                             ConnectedIter connected_leaf,
                             std::deque<VertexAttr> &connected_fifo);
   template <typename T2, typename FlagsT, typename ParentsT, typename PointIter,
@@ -241,7 +241,7 @@ public:
                       VID_t revisits, T2 leaf_iter);
   template <class Container, typename T2>
   void connected_mask_tile(Container &connected_fifo, VID_t revisits,
-                           T2 background_leaf);
+                           T2 foreground_leaf);
   template <class Container, typename T2>
   void radius_tile(const image_t *tile, VID_t tile_id, VID_t block_id,
                    std::string stage,
@@ -276,7 +276,7 @@ public:
                 std::map<GridCoord, std::deque<VertexAttr>> &fifo,
                 std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo);
   void activate_vids_mask(
-      openvdb::BoolGrid::Ptr background_grid,
+      openvdb::BoolGrid::Ptr foreground_grid,
       openvdb::FloatGrid::Ptr connected_grid, const std::vector<Seed> &seeds,
       std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo);
   void set_parent_non_branch(const VID_t tile_id, const VID_t block_id,
@@ -389,14 +389,14 @@ void Recut<image_t>::setup_radius(Container &fifo) {
 
 template <class image_t>
 void Recut<image_t>::activate_vids_mask(
-    openvdb::BoolGrid::Ptr background_grid,
+    openvdb::BoolGrid::Ptr foreground_grid,
     openvdb::FloatGrid::Ptr connected_grid, const std::vector<Seed> &seeds,
     std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo) {
   assertm(!(seeds.empty()), "Must have at least one seed");
 
   // Iterate over leaf nodes that contain topology (active)
   // checking for seed within them
-  for (auto leaf_iter = background_grid->tree().beginLeaf(); leaf_iter;
+  for (auto leaf_iter = foreground_grid->tree().beginLeaf(); leaf_iter;
        ++leaf_iter) {
     auto leaf_bbox = leaf_iter->getNodeBoundingBox();
 
@@ -861,10 +861,10 @@ bool Recut<image_t>::accumulate_value(
  * attribute selected
  */
 template <class image_t>
-template <typename PointIter, typename UpdateIter, typename ConnectedIter>
+template <typename ForeIter, typename UpdateIter, typename ConnectedIter>
 bool Recut<image_t>::accumulate_connected_mask(
     GridCoord dst_coord, OffsetCoord offset_to_current, VID_t &revisits,
-    bool &found_adjacent_invalid, PointIter background_leaf,
+    bool &found_adjacent_invalid, ForeIter foreground_leaf,
     UpdateIter update_leaf, ConnectedIter connected_leaf,
     std::deque<VertexAttr> &connected_fifo) {
 
@@ -876,8 +876,12 @@ bool Recut<image_t>::accumulate_connected_mask(
   // the image voxel of this dst vertex is the primary method to exclude this
   // pixel/vertex for the remainder of all processing
   auto found_background = false;
-  if (!background_leaf->isValueOn(dst_coord))
+  if (foreground_leaf) {
+    if (!foreground_leaf->isValueOn(dst_coord))
+      found_background = true;
+  } else { // not even a foreground leaf at this dst
     found_background = true;
+  }
 
   if (found_background) {
     found_adjacent_invalid = true;
@@ -889,14 +893,16 @@ bool Recut<image_t>::accumulate_connected_mask(
 
   // all dsts are guaranteed within this domain
   // skip already selected vertices too
-  if (connected_leaf && connected_leaf->isValueOn(dst_coord)) {
+  // if (connected_leaf && connected_leaf->isValueOn(dst_coord)) {
+  if (this->connected_grid->tree().isValueOn(dst_coord)) {
     revisits += 1;
     return false;
   }
 
   // mark selected in topology
   if (connected_leaf)
-    connected_leaf->setValue(dst_coord, 1.);
+    // connected_leaf->setValue(dst_coord, 1.);
+    this->connected_grid->tree().setValue(dst_coord, 1.);
   else
     this->connected_grid->tree().setValue(dst_coord, 1.);
   set_if_active(update_leaf, dst_coord);
@@ -907,10 +913,11 @@ bool Recut<image_t>::accumulate_connected_mask(
   // stage
   connected_fifo.emplace_back(Bitfield(1), offset,
                               /*parent*/ offset_to_current);
+  // std::cout << "size: " << connected_fifo.size() << '\n';
 
-#ifdef FULL_PRINT
-  cout << "\tadded new dst to active set, vid: " << dst_coord << '\n';
-#endif
+  //#ifdef FULL_PRINT
+  // cout << "\tadded new dst to active set, vid: " << dst_coord << '\n';
+  //#endif
   return true;
 }
 
@@ -1145,7 +1152,7 @@ void integrate_point(std::string stage, Container &fifo, T &connected_fifo,
     Bitfield bf;
     // indicate that this is just a message
     bf.unset(0);
-    // find coord in background_grid
+    // find coord in foreground_grid
     if (grid->tree().isValueOn(adj_coord))
       connected_fifo.emplace_back(bf, adj_offsets, 0);
     return;
@@ -1611,16 +1618,16 @@ void Recut<image_t>::value_tile(const image_t *tile, VID_t tile_id,
 template <class image_t>
 template <class Container, typename T2>
 void Recut<image_t>::connected_mask_tile(Container &connected_fifo,
-                                         VID_t revisits, T2 background_leaf) {
+                                         VID_t revisits, T2 foreground_leaf) {
   if (connected_fifo.empty())
     return;
 
   auto update_leaf =
-      this->update_grid->tree().probeLeaf(background_leaf->origin());
+      this->update_grid->tree().probeLeaf(foreground_leaf->origin());
   auto connected_leaf =
-      this->connected_grid->tree().probeLeaf(background_leaf->origin());
-  auto bbox = background_leaf->getNodeBoundingBox();
-  assertm(background_leaf, "corresponding leaf does not exist");
+      this->connected_grid->tree().probeLeaf(foreground_leaf->origin());
+  auto bbox = foreground_leaf->getNodeBoundingBox();
+  assertm(foreground_leaf, "corresponding leaf does not exist");
 
 #ifdef FULL_PRINT
   cout << "\nMarching " << bbox << '\n';
@@ -1639,7 +1646,7 @@ void Recut<image_t>::connected_mask_tile(Container &connected_fifo,
     msg_vertex = &(connected_fifo.front());
     const bool in_domain = msg_vertex->selected();
     auto surface = msg_vertex->surface();
-    auto msg_coord = coord_add(msg_vertex->offsets, background_leaf->origin());
+    auto msg_coord = coord_add(msg_vertex->offsets, foreground_leaf->origin());
     auto msg_off = coord_mod(msg_coord, this->block_lengths);
 
 #ifdef FULL_PRINT
@@ -1667,7 +1674,7 @@ void Recut<image_t>::connected_mask_tile(Container &connected_fifo,
           auto mismatch = !bbox.isInside(coord_img);
           if (mismatch) {
             if (this->input_is_vdb) {
-              if (!this->background_grid->tree().isValueOn(coord_img)) {
+              if (!this->foreground_grid->tree().isValueOn(coord_img)) {
                 found_adjacent_invalid = true;
               }
             }
@@ -1680,7 +1687,7 @@ void Recut<image_t>::connected_mask_tile(Container &connected_fifo,
           // is background?  ...has side-effects
           return !accumulate_connected_mask(
               coord_img, offset_to_current, revisits, found_adjacent_invalid,
-              background_leaf, update_leaf, connected_leaf, connected_fifo);
+              foreground_leaf, update_leaf, connected_leaf, connected_fifo);
         }) |
         rng::to_vector; // force full evaluation via vector
 
@@ -1971,7 +1978,7 @@ void Recut<image_t>::march_narrow_band(
     const TileThresholds<image_t> *tile_thresholds,
     std::deque<VertexAttr> &connected_fifo, std::deque<VertexAttr> &fifo,
     T2 leaf_iter) {
-#ifdef FULL_PRINT
+#ifdef LOG_FULL
   auto timer = high_resolution_timer();
   auto loc = tree_to_str(tile_id, block_id);
   std::cout << "\nMarching " << loc << ' ' << leaf_iter->origin() << '\n';
@@ -2001,7 +2008,7 @@ void Recut<image_t>::march_narrow_band(
 }
 */
 
-#ifdef FULL_PRINT
+#ifdef LOG_FULL
   std::cout << "Marched " << loc << " in " << timer.elapsed() << " s" << '\n';
 #endif
 
@@ -2016,9 +2023,9 @@ std::atomic<double> Recut<image_t>::process_tile(
 
   // vt::LeafManager<PointTree> grid_leaf_manager(this->topology_grid->tree());
   vt::LeafManager<vb::BoolTree> grid_leaf_manager(
-      this->background_grid->tree());
+      this->foreground_grid->tree());
 
-  integrate_update_grid(this->background_grid, grid_leaf_manager, stage,
+  integrate_update_grid(this->foreground_grid, grid_leaf_manager, stage,
                         this->map_fifo, this->connected_map, this->update_grid,
                         tile_id);
 
@@ -2061,7 +2068,7 @@ std::atomic<double> Recut<image_t>::process_tile(
 
     { // integrate
       auto integrate_start = timer.elapsed();
-      integrate_update_grid(this->topology_grid, grid_leaf_manager, stage,
+      integrate_update_grid(this->foreground_grid, grid_leaf_manager, stage,
                             this->map_fifo, this->connected_map,
                             this->update_grid, tile_id);
 #ifdef LOG_FULL
@@ -2559,7 +2566,7 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_tile_size,
 
   // for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
   //++leaf_iter) {
-  for (auto leaf_iter = this->background_grid->tree().beginLeaf(); leaf_iter;
+  for (auto leaf_iter = this->foreground_grid->tree().beginLeaf(); leaf_iter;
        ++leaf_iter) {
     auto origin = leaf_iter->getNodeBoundingBox().min();
 
@@ -2838,6 +2845,10 @@ template <class image_t> void Recut<image_t>::initialize() {
     }
 #endif
   }
+  this->foreground_grid = openvdb::BoolGrid::create();
+  this->foreground_grid->setTransform(get_transform());
+  this->connected_grid = openvdb::FloatGrid::create();
+  this->connected_grid->setTransform(get_transform());
 }
 
 // reject unvisited vertices
@@ -2934,12 +2945,6 @@ template <class image_t> void Recut<image_t>::prune_radii() {
 template <class image_t>
 void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 
-  openvdb::GridPtrVec grids;
-#ifdef LOG
-  // print_point_count(this->topology_grid);
-  std::cout << this->connected_grid->activeVoxelCount() << '\n';
-#endif
-
   auto global_timer = high_resolution_timer();
   // this copies only vertices that have already had flags marked as selected.
   // selected means they are reachable from a known vertex during traversal
@@ -2952,9 +2957,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     VID_t selected_count = this->connected_grid->activeVoxelCount();
     std::ofstream run_log;
     run_log.open(log_fn, std::ios::app);
-    run_log << "Skeletonization: topology grid active voxel count, "
-            << this->connected_grid->activeVoxelCount() << '\n';
-    run_log << "Skeletonization: topology grid selected voxel count, "
+    run_log << "Skeletonization: connected grid selected voxel count, "
             << selected_count << '\n';
     run_log.flush();
     assertm(selected_count, "active voxels in float grid must be > 0");
@@ -2977,10 +2980,6 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
       args->window_grid_paths |
       rv::transform([](const auto &gpath) { return read_vdb_file(gpath); }) |
       rng::to_vector; // force reading once now
-
-#ifdef LOG
-  cout << "Finished grid reads\n";
-#endif
 
   auto process_component = [this, &seeds,
                             &window_grids](const auto component_pair) {
@@ -3027,8 +3026,6 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     component_log << "Thread count, " << args->user_thread_count << '\n';
     component_log << "Soma count, " << component_seeds.size() << '\n';
     component_log << "Component active voxel count, " << voxel_count << '\n';
-    component_log << "Mean shift factor, " << this->args->mean_shift_factor
-                  << '\n';
 #endif
 
     // seeds are always in voxel units and output with respect to the whole
@@ -3159,9 +3156,10 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 
   auto enum_components = components | rv::enumerate | rng::to_vector;
   tbb::task_arena arena(args->user_thread_count);
-  arena.execute(
-      [&] { tbb::parallel_for_each(enum_components, process_component); });
+  // arena.execute(
+  //[&] { tbb::parallel_for_each(enum_components, process_component); });
   // rng::for_each(enum_components, process_component);
+  process_component(enum_components[1]);
 
   if (output_topology)
     write_vdb_file({this->topology_grid}, "final-point-grid.vdb");
@@ -3370,7 +3368,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   auto timer = high_resolution_timer();
   // if user passed known seeds then use the pretermined merged sdf grid
   // else use the result of the open and close steps above
-  auto somas_connected_to_neurites = vto::maskSdf(*soma_sdf, *neurite_sdf);
+  // auto somas_connected_to_neurites = vto::maskSdf(*soma_sdf, *neurite_sdf);
   // write_vdb_file({somas_connected_to_neurites}, run_dir /
   // "somas_connected_to_neurites.vdb");
 
@@ -3381,9 +3379,9 @@ template <class image_t> void Recut<image_t>::operator()() {
           << "Seed detection: soma sdf SDF voxel count, "
           << soma_sdf->activeVoxelCount() << '\n'
           << "Seed detection: neurite sdf SDF voxel count, "
-          << neurite_sdf->activeVoxelCount() << '\n'
-          << "Seed detection: masked SDF voxel count, "
-          << somas_connected_to_neurites->activeVoxelCount() << '\n';
+          << neurite_sdf->activeVoxelCount() << '\n';
+  //<< "Seed detection: masked SDF voxel count, "
+  //<< somas_connected_to_neurites->activeVoxelCount() << '\n';
   run_log.flush();
 
   /*
@@ -3404,16 +3402,15 @@ template <class image_t> void Recut<image_t>::operator()() {
 #ifdef LOG
     std::cout << "\tSDF to point step\n";
 #endif
-    assertm(somas_connected_to_neurites,
+    assertm(neurite_sdf,
             "Topology grid must be set before starting reconstruction");
-    this->topology_grid = convert_sdf_to_points(
-        somas_connected_to_neurites, image_lengths, args->foreground_percent);
+    this->topology_grid = convert_sdf_to_points(neurite_sdf, image_lengths,
+                                                args->foreground_percent);
   } else {
-    this->background_grid =
-        vto::extractEnclosedRegion(*somas_connected_to_neurites);
-    this->background_grid->setTransform(get_transform());
-    this->connected_grid = openvdb::FloatGrid::create();
-    this->connected_grid->setTransform(get_transform());
+    this->foreground_grid = vto::extractEnclosedRegion(*neurite_sdf);
+    if (args->save_vdbs) {
+      write_vdb_file({this->foreground_grid}, "foreground_grid.vdb");
+    }
   }
 
   // filter seeds with respect to topology
@@ -3421,7 +3418,7 @@ template <class image_t> void Recut<image_t>::operator()() {
             if (CLASSIC_PRUNE)
               return this->topology_grid->tree().isValueOn(seed.coord);
             // else
-            return this->background_grid->tree().isValueOn(seed.coord);
+            return this->foreground_grid->tree().isValueOn(seed.coord);
           }) |
           rng::to_vector;
 
@@ -3437,7 +3434,7 @@ template <class image_t> void Recut<image_t>::operator()() {
                         this->connected_map);
   } else {
     stage = "connected-mask";
-    this->activate_vids_mask(this->background_grid, this->connected_grid, seeds,
+    this->activate_vids_mask(this->foreground_grid, this->connected_grid, seeds,
                              this->connected_map);
   }
   this->update(stage, map_fifo);
