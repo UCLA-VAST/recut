@@ -380,6 +380,10 @@ prune_short_branches(std::vector<MyMarker *> &tree, float voxel_scale,
   // diagnose bug
   auto filtered_tree =
       tree | rv::remove_if([&](auto marker) {
+          // remove nodes that have no parent (and are not soma)
+        return marker->type && !marker->parent;
+      }) |
+      rv::remove_if([&](auto marker) {
         // only check non roots
         if (marker->parent) {
           // only check from leafs, since they define the beginning of a
@@ -975,28 +979,27 @@ classic_prune(EnlargedPointDataGrid::Ptr topology_grid,
   return std::nullopt;
 }
 
-      // auto fixed_cluster = pruned_cluster;
-      // if (!args->ignore_multifurcations) {
-      // auto fixed_cluster = fix_trifurcations(pruned_cluster);
-      //{ // check
-      // auto trifurcations = tree_is_valid(fixed_cluster);
-      // if (!trifurcations.empty()) {
-      // auto soma = fixed_cluster[0];
-      // std::cout << "Warning tree in component-" + std::to_string(index)
-      //<< " with soma " << soma->x << ' ' << soma->y << ' '
-      //<< soma->z << " has trifurcations listed below:\n";
-      // rng::for_each(trifurcations, [](auto mismatch) {
-      // std::cout << "    " << *mismatch << '\n';
-      //});
-      //// throw std::runtime_error("Tree has trifurcations" +
-      //// std::to_string(index));
-      //}
-      // if (!is_cluster_self_contained(fixed_cluster)) {
-      // std::cout << "Warning a tree in component-" + std::to_string(index)
-      //<< " contains at least 1 node with an invalid parent\n";
-      //// throw std::runtime_error("Trifurc cluster not self contained" +
-      //// std::to_string(index));
-      //}
-      //}
-      //}
-
+// auto fixed_cluster = pruned_cluster;
+// if (!args->ignore_multifurcations) {
+// auto fixed_cluster = fix_trifurcations(pruned_cluster);
+//{ // check
+// auto trifurcations = tree_is_valid(fixed_cluster);
+// if (!trifurcations.empty()) {
+// auto soma = fixed_cluster[0];
+// std::cout << "Warning tree in component-" + std::to_string(index)
+//<< " with soma " << soma->x << ' ' << soma->y << ' '
+//<< soma->z << " has trifurcations listed below:\n";
+// rng::for_each(trifurcations, [](auto mismatch) {
+// std::cout << "    " << *mismatch << '\n';
+//});
+//// throw std::runtime_error("Tree has trifurcations" +
+//// std::to_string(index));
+//}
+// if (!is_cluster_self_contained(fixed_cluster)) {
+// std::cout << "Warning a tree in component-" + std::to_string(index)
+//<< " contains at least 1 node with an invalid parent\n";
+//// throw std::runtime_error("Trifurc cluster not self contained" +
+//// std::to_string(index));
+//}
+//}
+//}

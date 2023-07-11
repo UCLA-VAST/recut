@@ -230,9 +230,22 @@ vdb_to_markers(openvdb::FloatGrid::Ptr fog, std::vector<Seed> component_seeds,
       marker->parent = 0;
       marker->type = 0;
     } else {
+      //std::cout << "->parent " << bfs.pred[last] << '\n';;
       marker->parent = component_tree[bfs.pred[last]];
     }
   }
+
+  /*
+  for (auto i : soma_ids) {
+    std::cout << "soma " << i << '\n';
+  }
+
+  for (auto i : component_graph.node_ids()) {
+    auto current = component_tree[i];
+    if ((current->type != 0) && !current->parent)
+      std::cout << i << ' ' << *current << '\n';
+  }
+  */
 
   return component_tree;
 }

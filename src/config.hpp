@@ -104,3 +104,5 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 #define SKELETON_GRAIN .09
 #define MESH_GRAIN .999
 #define CLASSIC_PRUNE 0
+//#define FULL_PRINT
+//#define LOG_FULL
