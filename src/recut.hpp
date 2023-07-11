@@ -2826,25 +2826,16 @@ template <class image_t> void Recut<image_t>::initialize() {
   }
 
 #ifdef LOG
-  print_coord(this->image_lengths, "image");
+  print_coord(this->image_lengths, "image voxel dimensions");
 #endif
   update_hierarchical_dims(this->tile_lengths);
 
-  // set the prune radius if not passed at command line
-  // based on the voxel size
-  if (!this->args->prune_radius.has_value()) {
-    this->args->prune_radius = anisotropic_factor(this->args->voxel_size);
 #ifdef LOG
     std::cout << "voxel sizes:"
-              << " x=" << this->args->voxel_size[0]
-              << " y=" << this->args->voxel_size[1]
-              << " z=" << this->args->voxel_size[2] << "\n";
-    if (!this->args->convert_only) {
-      std::cout << "prune radius: " << this->args->prune_radius.value()
-                << " . Calculated by the anisotropic factor of voxel sizes.\n";
-    }
+              << " x=" << this->args->voxel_size[0] << " µm"
+              << " y=" << this->args->voxel_size[1] << " µm"
+              << " z=" << this->args->voxel_size[2] << " µm\n";
 #endif
-  }
   this->foreground_grid = openvdb::BoolGrid::create();
   this->foreground_grid->setTransform(get_transform());
   this->connected_grid = openvdb::FloatGrid::create();
@@ -3156,10 +3147,8 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 
   auto enum_components = components | rv::enumerate | rng::to_vector;
   tbb::task_arena arena(args->user_thread_count);
-  // arena.execute(
-  //[&] { tbb::parallel_for_each(enum_components, process_component); });
-  // rng::for_each(enum_components, process_component);
-  process_component(enum_components[1]);
+  arena.execute(
+      [&] { tbb::parallel_for_each(enum_components, process_component); });
 
   if (output_topology)
     write_vdb_file({this->topology_grid}, "final-point-grid.vdb");
@@ -3361,42 +3350,13 @@ template <class image_t> void Recut<image_t>::operator()() {
     exit(0); // exit
   }
 
-// build full SDF by extending known somas into reachable neurites
-#ifdef LOG
-  std::cout << "\tmasking step\n";
-#endif
-  auto timer = high_resolution_timer();
-  // if user passed known seeds then use the pretermined merged sdf grid
-  // else use the result of the open and close steps above
-  // auto somas_connected_to_neurites = vto::maskSdf(*soma_sdf, *neurite_sdf);
-  // write_vdb_file({somas_connected_to_neurites}, run_dir /
-  // "somas_connected_to_neurites.vdb");
-
   std::ofstream run_log;
   run_log.open(log_fn, std::ios::app);
-  run_log << "Seed detection: masking time, " << timer.elapsed_formatted()
-          << '\n'
-          << "Seed detection: soma sdf SDF voxel count, "
+  run_log << "Seed detection: soma sdf SDF voxel count, "
           << soma_sdf->activeVoxelCount() << '\n'
           << "Seed detection: neurite sdf SDF voxel count, "
           << neurite_sdf->activeVoxelCount() << '\n';
-  //<< "Seed detection: masked SDF voxel count, "
-  //<< somas_connected_to_neurites->activeVoxelCount() << '\n';
   run_log.flush();
-
-  /*
-  auto temp = openvdb::FloatGrid::create();
-  temp->setTransform(get_transform());
-  auto accessor = temp->getAccessor();
-  for (auto iter = somas_connected_to_neurites->cbeginValueOn(); iter.test();
-++iter) { auto coord = iter.getCoord(); accessor.setValue(coord, 1.);
-  }
-
-#ifdef LOG
-  std::cout << "\tTopology to tree step\n";
-#endif
-  topology_to_tree(temp, this->run_dir, seeds, this->args);
-  */
 
   if (CLASSIC_PRUNE) {
 #ifdef LOG
@@ -3440,15 +3400,6 @@ template <class image_t> void Recut<image_t>::operator()() {
   this->update(stage, map_fifo);
 
   auto global_timer = high_resolution_timer();
-
-  /*
-  // this copies only vertices that have already had flags marked as selected.
-  // selected means they are reachable from a known vertex during traversal
-  // in either a connected or value stage.
-  auto float_grid = copy_selected(this->topology_grid);
-  cout << "Topo to float time " << global_timer.elapsed_formatted() << '\n';
-  topology_to_tree(float_grid, this->run_dir, seeds, this->args);
-  */
 
   // radius stage will consume fifo surface vertices
   if (CLASSIC_PRUNE) {

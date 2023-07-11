@@ -25,13 +25,13 @@ void RecutCommandLineArgs::PrintUsage() {
          "default 0 0 0\n";
   std::cout << "--voxel-size         µm lengths of voxel in x y z order "
                "default 1.0 1.0 1.0 determines prune radius\n";
-  std::cout << "--skeleton-grain     granularity of final skeletons, lower value result in higher detailed skeletons (SWC trees) with more points; default is " << SKELETON_GRAIN << '\n';
+  std::cout << "--skeleton-grain     granularity of final skeletons, lower value result in higher detailed skeletons (SWC trees) with more skeletal nodes; default is " << SKELETON_GRAIN << '\n';
   std::cout << "--skeleton-grow      affects granularity of final skeletons, higher value results in higher detailed skeletons (SWC trees) with more points; default is " << GROW_THRESHOLD << '\n';
   //std::cout << "--mesh-grain         granularity of component mesh, lower value result in higher polygon count to represent the surface; default is " << MESH_GRAIN << '\n';
-  std::cout
-      << "--prune-radius       larger values decrease node sampling density "
-         "along paths, default is set by the anisotropic factor of "
-         "--voxel-size\n";
+  //std::cout
+      //<< "--prune-radius       larger values decrease node sampling density "
+         //"along paths, default is set by the anisotropic factor of "
+         //"--voxel-size\n";
   std::cout
       << "--image-lengths      [-ie] lengths of subvolume as x y z "
          "defaults"
@@ -50,11 +50,11 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout
       << "--parallel           [-pl] thread count defaults to max hardware "
          "threads\n";
-  std::cout << "--mean-shift         radius to mean shift nodes towards local "
-               "mean which aids pruning; default 0\n";
-  std::cout
-      << "--mean-shift-iters   max iterations allowed for mean shift "
-         "convergence; most smoothing converges by the default 4 iterations\n";
+  //std::cout << "--mean-shift         radius to mean shift nodes towards local "
+               //"mean which aids pruning; default 0\n";
+  //std::cout
+      //<< "--mean-shift-iters   max iterations allowed for mean shift "
+         //"convergence; most smoothing converges by the default 4 iterations\n";
   std::cout << "--output-windows     list 1 or more uint8 vdb files in channel "
                "order to create "
                "image windows for each neuron cluster/component\n";
@@ -84,8 +84,8 @@ void RecutCommandLineArgs::PrintUsage() {
                "to denoise image before soma detection; "
                "defaults to 0 (no-opening)\n";
   std::cout << "--close-steps        morphological closing level "
-               "to fill existing voids inside somata; "
-               "defaults to 0.\n";
+               "to fill existing voids inside somata or to close path breaks "
+               "defaults to 7.\n";
   std::cout
       << "--preserve-topology  do not apply morphological closing to the "
          "neurites of the image; defaults to closing both somas and topology "
@@ -244,9 +244,9 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
                  strcmp(argv[i], "-c") == 0) {
         args.channel = atoi(argv[i + 1]);
         ++i;
-      } else if (strcmp(argv[i], "--prune-radius") == 0) {
-        args.prune_radius = atof(argv[i + 1]);
-        ++i;
+      //} else if (strcmp(argv[i], "--prune-radius") == 0) {
+        //args.prune_radius = atof(argv[i + 1]);
+        //++i;
       } else if (strcmp(argv[i], "--skeleton-grain") == 0) {
         args.skeleton_grain = atof(argv[i + 1]);
         ++i;
@@ -292,12 +292,12 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--open-steps") == 0) {
         args.open_steps = atof(argv[i + 1]);
         ++i;
-      } else if (strcmp(argv[i], "--mean-shift") == 0) {
-        args.mean_shift_factor = atof(argv[i + 1]);
-        ++i;
-      } else if (strcmp(argv[i], "--mean-shift-iters") == 0) {
-        args.mean_shift_max_iters = atoi(argv[i + 1]);
-        ++i;
+      //} else if (strcmp(argv[i], "--mean-shift") == 0) {
+        //args.mean_shift_factor = atof(argv[i + 1]);
+        //++i;
+      //} else if (strcmp(argv[i], "--mean-shift-iters") == 0) {
+        //args.mean_shift_max_iters = atoi(argv[i + 1]);
+        //++i;
       } else if (strcmp(argv[i], "--close-steps") == 0) {
         args.close_steps = atof(argv[i + 1]);
         ++i;
