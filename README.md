@@ -72,13 +72,8 @@ It's recommended to generate a first pass approximation of soma locations using 
 When you pass in seeds to a Recut run it will only reconstruct from the somas passed. This is the best way to get high recall and precision in your soma detection and neuron reconstructions.
 
 ## Tuning Recut's Parameters to Match Your Data
-Soma and neurites radii are calculated based off their voxel lengths and the input `--voxel-size` passed. This means if you have anisotropic, flat, signal smearing or scaling differences between the dimension of your image, the reconstruction accuracy could suffer. Since such asymmetries are common, Recut has two major parameters to mitigate the reconstruction. The first is the `--mean-shift`, which is a unitless factor which is multiplied by each nodes true radius when conducting laplacian smoothing. This smoothing gathers voxels points close to a centerline along neurites or axons. You should choose a `--mean-shift` which reflects the anisotropic factor of your image, for example, if your image has a voxel size with a z-dimension 5 times larger than x and y, the suggested mean-shift is 5.
-
-![mean-shift](/images/advantra-mean-shift.png)
-
-The second parameter controlling reconstruction is `--prune-radius`. The higher this number is the more coarse the final reconstructions are and the more sparse the sampling along neurites is. It should usually be set between 1 and 1.5. The prune radius relies on data that is natively isotropic or has been properly mean shifted to a centerline with the appopriate factor. Together, mean shifting and pruning produce more fine grained branch reconstructions with less spurious short branches.
-
-![prune](/images/advantra-prune.png)
+Soma and neurites radii are calculated based off their voxel lengths and the input `--voxel-size` passed. This means if you have anisotropic, flat, signal smearing or scaling differences between the dimension of your image, the reconstruction accuracy could suffer. Since such asymmetries are common, Recut has two major parameters to mitigate the reconstruction. The first is the `--skeleton-grain`, which is a ration (float) value between 0 and 1 exclusive. The closer to 1 the coarser and less fine grained reconstruction details will be, the default is .09 which works for the majority of cases.  The second parameter is `--skeleton-grow` which should fall between 4 and 128, the default is 64. However, this higher this number the *more* fine-grained the output skeleton will be, which may cause erroneous small branches especially around the soma. Higher values for `--skeleton-grow` also have longer runtimes.
+Together these parameters affect the coarseness of the final reconstructions and the sampling sparsity along neurites. Note that images that are natively isotropic can have both fine grained branch reconstructions without the issue of spurious short branches.
 
 ## Conversions
 Convert the folder `ch0` into a VDB point grid:
