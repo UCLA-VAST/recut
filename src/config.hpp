@@ -107,3 +107,4 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 //#define FULL_PRINT
 //#define LOG_FULL
 #define CLOSE_FACTOR 7
+#define OPEN_FACTOR 5

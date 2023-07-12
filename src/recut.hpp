@@ -2831,15 +2831,31 @@ template <class image_t> void Recut<image_t>::initialize() {
   update_hierarchical_dims(this->tile_lengths);
 
 #ifdef LOG
-    std::cout << "voxel sizes:"
-              << " x=" << this->args->voxel_size[0] << " µm"
-              << " y=" << this->args->voxel_size[1] << " µm"
-              << " z=" << this->args->voxel_size[2] << " µm\n";
+  std::cout << "voxel sizes:"
+            << " x=" << this->args->voxel_size[0] << " µm"
+            << " y=" << this->args->voxel_size[1] << " µm"
+            << " z=" << this->args->voxel_size[2] << " µm\n";
 #endif
   this->foreground_grid = openvdb::BoolGrid::create();
   this->foreground_grid->setTransform(get_transform());
   this->connected_grid = openvdb::FloatGrid::create();
   this->connected_grid->setTransform(get_transform());
+
+  if (!args->close_steps) {
+    args->close_steps = CLOSE_FACTOR / args->voxel_size[0];
+    args->close_steps = args->close_steps < 1 ? 1 : args->close_steps;
+    std::cout << "Close steps inferred to " << args->close_steps.value()
+              << " based on voxel size\n";
+  }
+
+  // infer open steps if it wasn't explicitly passed and seed intersection and
+  // no seeds were passed
+  if (!args->open_steps &&
+      (args->seed_intersection || args->seed_path.empty())) {
+    args->open_steps = OPEN_FACTOR / args->voxel_size[0];
+    std::cout << "Open steps inferred to " << args->open_steps.value()
+              << " based on voxel size\n";
+  }
 }
 
 // reject unvisited vertices
@@ -2861,12 +2877,6 @@ bool Recut<image_t>::filter_by_label(VertexAttr *v, bool accept_tombstone) {
     assertm(false, "can't accept a vertex with a radii < 1");
   }
   return true;
-
-  if (!args->close_steps) {
-    args->close_steps = CLOSE_FACTOR / args->voxel_size[0];
-    args->close_steps = args->close_steps < 1 ? 1 : args->close_steps;
-    std::cout << "Close steps inferred to " " based on voxel size\n";
-  }
 }
 
 template <class image_t> void Recut<image_t>::adjust_parent() {
@@ -3236,19 +3246,19 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << "Seed detection: morphological operations denoise steps, "
             << args->open_denoise << '\n'
             << "Seed detection: morphological operations close steps, "
-            << args->close_steps.value() << '\n'
+            << args->close_steps.value_or(0) << '\n'
             << "Seed detection: morphological operations open steps, "
-            << args->open_steps << '\n'
+            << args->open_steps.value_or(0) << '\n'
             << "Seed detection: min allowed soma radius in µm, "
             << args->min_radius_um << '\n'
             << "Seed detection: max allowed soma radius in µm, "
             << args->max_radius_um << '\n'
-            << "Skeletonization: neurites mean shift radius, "
-            << args->mean_shift_factor << '\n'
-            << "Skeletonization: neurites prune radius, "
-            << args->prune_radius.value_or(0) << '\n'
-            << "Skeletonization: soma prune radius factor, "
-            << SOMA_PRUNE_RADIUS << '\n'
+            //<< "Skeletonization: neurites mean shift radius, "
+            //<< args->mean_shift_factor << '\n'
+            //<< "Skeletonization: neurites prune radius, "
+            //<< args->prune_radius.value_or(0) << '\n'
+            //<< "Skeletonization: soma prune radius factor, "
+            //<< SOMA_PRUNE_RADIUS << '\n'
             << "Skeletonization: min branch length µm, "
             << args->min_branch_length << '\n'
             << "Benchmarking: run app2, " << args->run_app2 << '\n';
@@ -3389,7 +3399,8 @@ template <class image_t> void Recut<image_t>::operator()() {
           rng::to_vector;
 
   if (seeds.size() == 0)
-    throw std::runtime_error("No seeds are on with respect to foreground... exiting");
+    throw std::runtime_error(
+        "No seeds are on with respect to foreground... exiting");
 
   initialize_globals(this->grid_tile_size, this->tile_block_size);
 

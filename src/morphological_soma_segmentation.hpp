@@ -626,13 +626,13 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
     write_vdb_file({closed_sdf}, run_dir / "closed_sdf.vdb");
 
   // open again to filter axons and dendrites
-  if (args->open_steps > 0) {
+  if (args->open_steps) {
 #ifdef LOG
-    std::cout << "\topen step: open = " << args->open_steps << "\n";
+    std::cout << "\topen step: open = " << args->open_steps.value() << "\n";
 #endif
     timer.restart();
-    filter->offset(args->open_steps);
-    filter->offset(-args->open_steps);
+    filter->offset(args->open_steps.value());
+    filter->offset(-args->open_steps.value());
     run_log << "Seed detection: opening time, " << timer.elapsed_formatted()
             << "\n";
     run_log << "Seed detection: opened SDF voxel count, "

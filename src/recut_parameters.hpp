@@ -26,16 +26,13 @@ public:
         second_grid(std::string()), upsample_z(1), downsample_factor(1),
         max_intensity(-1), min_intensity(-1),
         expand_window_um(EXPAND_WINDOW_UM), min_window_um(MIN_WINDOW_UM),
-        open_denoise(0.), open_steps(0.),
-        morphological_operations_order(1), min_radius_um(MIN_SOMA_RADIUS_UM),
-        max_radius_um(MAX_SOMA_RADIUS_UM), voxel_size({1., 1., 1.}),
-        save_vdbs(false), seed_intersection(false),
-        ignore_multifurcations(false), //close_topology(true),
+        open_denoise(0.), morphological_operations_order(1),
+        min_radius_um(MIN_SOMA_RADIUS_UM), max_radius_um(MAX_SOMA_RADIUS_UM),
+        voxel_size({1., 1., 1.}), save_vdbs(false), seed_intersection(false),
+        ignore_multifurcations(false), // close_topology(true),
         mean_shift_max_iters(4), timeout(MEAN_SHIFT_TIMEOUT),
-        skeleton_grain(SKELETON_GRAIN),
-        skeleton_grow(GROW_THRESHOLD),
-        mesh_grain(MESH_GRAIN),
-        mean_shift_factor(0) {}
+        skeleton_grain(SKELETON_GRAIN), skeleton_grow(GROW_THRESHOLD),
+        mesh_grain(MESH_GRAIN), mean_shift_factor(0) {}
 
   static void PrintUsage();
   std::string MetaString();
@@ -63,17 +60,19 @@ public:
   uint16_t user_thread_count, min_branch_length, resolution_level, channel,
       upsample_z, downsample_factor, morphological_operations_order,
       mean_shift_max_iters;
-  int background_thresh, max_intensity, min_intensity, tcase, timeout, skeleton_grow;
+  int background_thresh, max_intensity, min_intensity, tcase, timeout,
+      skeleton_grow;
   double foreground_percent, slt_pct;
   float min_window_um, expand_window_um, min_radius_um, max_radius_um,
-      open_denoise, open_steps, mean_shift_factor, skeleton_grain, mesh_grain;
+      open_denoise, mean_shift_factor, skeleton_grain, mesh_grain;
   VID_t selected, root_vid;
   bool run_app2, convert_only, combine, histogram, save_vdbs, seed_intersection,
-      ignore_multifurcations; //close_topology;
+      ignore_multifurcations; // close_topology;
   std::array<int, 3> tile_lengths;
   std::array<float, 3> voxel_size;
   std::optional<float> prune_radius;
   std::optional<int> close_steps;
+  std::optional<int> open_steps;
 };
 
 RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]);

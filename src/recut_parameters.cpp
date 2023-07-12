@@ -89,9 +89,9 @@ void RecutCommandLineArgs::PrintUsage() {
       //<< "--preserve-topology    do not apply morphological closing to the "
          //"neurites of the image; defaults to closing both somas and topology "
          //"(neurites)\n";
-  std::cout << "--open-steps           2nd morphological opening level "
-               "to clear neurites and keep somata in the image only; "
-               "defaults to 0 (no-opening)\n";
+  std::cout << "--open-steps           iterations of morphological opening, "
+               "this will roughly erase neurites and blobs with voxel radius smaller than the integer value passed, thus yielding only the comparatively large somata; "
+               "defaults to " << OPEN_FACTOR << "/ x voxel size for soma inference and soma intersection runs, for --seeds X fill, opening is not applied\n";
   //std::cout << "--order               morphological operations (open/close) "
                //"order An integer between 1 to 5 that defines the mathematical "
                //"complexity (order) of operations "
@@ -114,8 +114,6 @@ void RecutCommandLineArgs::PrintUsage() {
 std::string RecutCommandLineArgs::MetaString() {
   std::stringstream meta_stream;
   meta_stream << "image file/dir = " << input_path << '\n';
-  meta_stream << "channel = " << channel << '\n';
-  meta_stream << "resolution level = " << resolution_level << '\n';
   meta_stream << "lengths (xyz) = " << image_lengths[0] << " "
               << image_lengths[1] << " " << image_lengths[2] << '\n';
   meta_stream << "foreground_percent = " << foreground_percent << '\n';
@@ -289,7 +287,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         args.open_denoise = atof(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--open-steps") == 0) {
-        args.open_steps = atof(argv[i + 1]);
+        args.open_steps = atoi(argv[i + 1]);
         ++i;
       //} else if (strcmp(argv[i], "--mean-shift") == 0) {
         //args.mean_shift_factor = atof(argv[i + 1]);
@@ -298,7 +296,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         //args.mean_shift_max_iters = atoi(argv[i + 1]);
         //++i;
       } else if (strcmp(argv[i], "--close-steps") == 0) {
-        auto val = atof(argv[i + 1]);
+        auto val = atoi(argv[i + 1]);
         args.close_steps = val < 1 ? 1 : val; // must be at least 1
         ++i;
       //} else if (strcmp(argv[i], "--preserve-topology") == 0) {
