@@ -7,109 +7,108 @@ void RecutCommandLineArgs::PrintUsage() {
                "[--bkg-thresh <int>] [--fg-percent <double>]\n\n";
   std::cout << "<image file or dir>  file or directory of input image(s)\n";
   std::cout << "--seeds <dir> [action] option to pass a directory "
-               "of SWC files with 1 soma node per file "
-               "to filter by, when --seeds are passed all other auto-found "
-               "seeds will be discarded, action is 'intersect' or 'fill', defaults to 'fill'\n";
-  std::cout << "--output-name        [-o] give converted vdb a custom name "
+               "of SWC files with 1 soma node per file, "
+               "action is either 'intersect' or 'fill' (default), intersection filters inferenced somas by the passed somas whereas 'fill' treats only the seeds passed as ground truth for reconstruction\n";
+  std::cout << "--output-name          [-o] give converted vdb a custom name "
                "defaults to "
                "naming with useful image attributes\n";
-  std::cout << "--input-type         input type img: 'ims', 'tiff' | "
+  std::cout << "--input-type           input type img: 'ims', 'tiff' | "
                "VDB: 'point', "
                "'uint8', 'mask' or 'float'\n";
-  std::cout << "--output-type        output type img: 'ims', 'tiff' | "
+  std::cout << "--output-type          output type img: 'ims', 'tiff' | "
                "VDB: 'point', "
                "'uint8', 'mask' or 'float' | 'swc', 'eswc', 'labels' | "
                "'seeds', default output is 'swc'\n";
   std::cout
-      << "--image-offsets      [-io] offsets of subvolume, in x y z order "
+      << "--image-offsets        [-io] offsets of subvolume, in x y z order "
          "default 0 0 0\n";
-  std::cout << "--voxel-size         µm lengths of voxel in x y z order "
+  std::cout << "--voxel-size           µm lengths of voxel in x y z order "
                "default 1.0 1.0 1.0 determines prune radius\n";
-  std::cout << "--skeleton-grain     granularity of final skeletons, lower value result in higher detailed skeletons (SWC trees) with more skeletal nodes; default is " << SKELETON_GRAIN << '\n';
-  std::cout << "--skeleton-grow      affects granularity of final skeletons, higher value results in higher detailed skeletons (SWC trees) with more points; default is " << GROW_THRESHOLD << '\n';
-  //std::cout << "--mesh-grain         granularity of component mesh, lower value result in higher polygon count to represent the surface; default is " << MESH_GRAIN << '\n';
+  std::cout << "--skeleton-grain       granularity of final skeletons, lower value result in higher detailed skeletons (SWC trees) with more skeletal nodes; default is " << SKELETON_GRAIN << '\n';
+  std::cout << "--skeleton-grow        affects granularity of final skeletons, higher value results in higher detailed skeletons (SWC trees) with more points; default is " << GROW_THRESHOLD << '\n';
+  //std::cout << "--mesh-grain          granularity of component mesh, lower value result in higher polygon count to represent the surface; default is " << MESH_GRAIN << '\n';
   //std::cout
       //<< "--prune-radius       larger values decrease node sampling density "
          //"along paths, default is set by the anisotropic factor of "
          //"--voxel-size\n";
   std::cout
-      << "--image-lengths      [-ie] lengths of subvolume as x y z "
+      << "--image-lengths        [-ie] lengths of subvolume as x y z "
          "defaults"
          " to max range from start to max length in each axis which could be "
          "specified by -1 -1 -1\n";
-  std::cout << "--bg-thresh          [-bt] all pixels greater than this passed "
+  std::cout << "--bg-thresh            [-bt] all pixels greater than this passed "
                "intensity value are treated as foreground\n";
   std::cout
-      << "--min-branch-length  prune leaf branches lower than path length, defaults to " << MIN_BRANCH_LENGTH << "µm\n";
+      << "--min-branch-length    prune leaf branches lower than path length, defaults to " << MIN_BRANCH_LENGTH << " µm\n";
   std::cout
-      << "--fg-percent         [-fp] auto calculate a bg-thresh value closest "
+      << "--fg-percent           [-fp] auto calculate a bg-thresh value closest "
          "to the passed "
-         "foreground % between (0-100], overriding any --bg-thresh args. "
-         "Value of .08 yields ~8 in 10,000 voxels "
+         "foreground % between (0-100], overriding any --bg-thresh args, "
+         "value of .08 yields ~8 in 10,000 voxels "
          "as foreground per z-plane\n";
   std::cout
-      << "--parallel           [-pl] thread count defaults to max hardware "
+      << "--parallel             [-pl] thread count defaults to max hardware "
          "threads\n";
   //std::cout << "--mean-shift         radius to mean shift nodes towards local "
                //"mean which aids pruning; default 0\n";
   //std::cout
       //<< "--mean-shift-iters   max iterations allowed for mean shift "
          //"convergence; most smoothing converges by the default 4 iterations\n";
-  std::cout << "--output-windows     list 1 or more uint8 vdb files in channel "
+  std::cout << "--output-windows       list 1 or more uint8 vdb files in channel "
                "order to create "
                "image windows for each neuron cluster/component\n";
+  //std::cout
+      //<< "--tile-lengths         dimensions for fg percentages and conversion, "
+         //"defaults to image sizes\n";
+  //std::cout
+      //<< "--downsample-factor    for images scaled down in x and z dimension "
+         //"scale the marker files by specified factor\n";
   std::cout
-      << "--tile-lengths       dimensions for fg percentages and conversion, "
-         "defaults to image sizes\n";
-  std::cout
-      << "--downsample-factor  for images scaled down in x and z dimension "
-         "scale the marker files by specified factor\n";
-  std::cout
-      << "--upsample-z         during conversion only z-dimension will be "
+      << "--upsample-z           during conversion only z-dimension will be "
          "upsampled (copied) by specified factor, default is 1 i.e. no "
          "upsampling\n";
   std::cout
-      << "--min-window         windows by default only extend to bounding "
+      << "--min-window           windows by default only extend to bounding "
          "volume "
          "of their component, this value (in µm units) specifies the minimum "
          "window border "
          "surrounding seeds, if no value is passed it will use "
       << MIN_WINDOW_UM << " µm\n";
   std::cout
-      << "--expand-window      windows by default only extend to bounding "
+      << "--expand-window        windows by default only extend to bounding "
          "volume of their component, this allows specifying an expansion "
          "factor around seeds, if no µm value is passed it will use "
       << EXPAND_WINDOW_UM << " µm\n";
-  std::cout << "--open-denoise       1st morphological opening level "
+  std::cout << "--open-denoise         1st morphological opening level "
                "to denoise image before soma detection; "
                "defaults to 0 (no-opening)\n";
-  std::cout << "--close-steps        morphological closing level "
-               "to fill existing voids inside somata or to close path breaks "
-               "defaults to 7.\n";
-  std::cout
-      << "--preserve-topology  do not apply morphological closing to the "
-         "neurites of the image; defaults to closing both somas and topology "
-         "(neurites)\n";
-  std::cout << "--open-steps         2nd morphological opening level "
+  std::cout << "--close-steps          morphological closing level "
+               "to fill hollow signals inside somata or to join path breaks "
+               "defaults to " << CLOSE_FACTOR<< "/ x voxel size, value passed must be >= 1\n";
+  //std::cout
+      //<< "--preserve-topology    do not apply morphological closing to the "
+         //"neurites of the image; defaults to closing both somas and topology "
+         //"(neurites)\n";
+  std::cout << "--open-steps           2nd morphological opening level "
                "to clear neurites and keep somata in the image only; "
                "defaults to 0 (no-opening)\n";
-  std::cout << "--order              morphological operations (open/close) "
-               "order. An integer between 1 to 5 that defines the mathematical "
-               "complexity (order) of operations. "
-               "defaults to 1.\n";
-  std::cout << "--min-radius         min allowed radius of the soma in µm. "
-               "used in the soma detection phase. defaults to "
-            << MIN_SOMA_RADIUS_UM << " µm.\n";
-  std::cout << "--max-radius         max allowed radius of the soma in µm. "
-               "used in the soma detection phase. defaults to "
-            << MAX_SOMA_RADIUS_UM << " µm.\n";
-  std::cout << "--save-vdbs          save intermediate VDB grids during "
+  //std::cout << "--order               morphological operations (open/close) "
+               //"order An integer between 1 to 5 that defines the mathematical "
+               //"complexity (order) of operations "
+               //"defaults to 1\n";
+  std::cout << "--min-radius           min allowed radius of the soma in µm "
+               "used in the soma detection phase, defaults to "
+            << MIN_SOMA_RADIUS_UM << " µm\n";
+  std::cout << "--max-radius           max allowed radius of the soma in µm "
+               "used in the soma detection phase, defaults to "
+            << MAX_SOMA_RADIUS_UM << " µm\n";
+  std::cout << "--save-vdbs            save intermediate VDB grids during "
                "reconstruction transformations\n";
   std::cout
-      << "--run-app2           for benchmarks and comparisons runs app2 on "
+      << "--run-app2             for benchmarks and comparisons runs app2 on "
          "the vdb passed to --output-windows\n";
-  std::cout << "--timeout            time in minutes to automatically cancel pruning of a single component\n";
-  std::cout << "--help               [-h] print this example usage summary\n";
+  //std::cout << "--timeout             time in minutes to automatically cancel pruning of a single component\n";
+  std::cout << "--help                 [-h] print this example usage summary\n";
 }
 
 std::string RecutCommandLineArgs::MetaString() {
@@ -299,10 +298,11 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         //args.mean_shift_max_iters = atoi(argv[i + 1]);
         //++i;
       } else if (strcmp(argv[i], "--close-steps") == 0) {
-        args.close_steps = atof(argv[i + 1]);
+        auto val = atof(argv[i + 1]);
+        args.close_steps = val < 1 ? 1 : val; // must be at least 1
         ++i;
-      } else if (strcmp(argv[i], "--preserve-topology") == 0) {
-        args.close_topology = false;
+      //} else if (strcmp(argv[i], "--preserve-topology") == 0) {
+        //args.close_topology = false;
       } else if (strcmp(argv[i], "--order") == 0) {
         args.morphological_operations_order = atoi(argv[i + 1]);
         ++i;

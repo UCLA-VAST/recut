@@ -227,23 +227,18 @@ create_filter(openvdb::FloatGrid::Ptr sdf_grid,
 
   switch (morphological_operations_order) {
   case 1:
-    std::cout << "\t1st order morphological operations\n";
     filter->setSpatialScheme(openvdb::math::FIRST_BIAS);
     break;
   case 2:
-    std::cout << "\t2nd order morphological operations\n";
     filter->setSpatialScheme(openvdb::math::SECOND_BIAS);
     break;
   case 3:
-    std::cout << "\t3rd order morphological operations\n";
     filter->setSpatialScheme(openvdb::math::THIRD_BIAS);
     break;
   case 4:
-    std::cout << "\t4th order morphological operations\n";
     filter->setSpatialScheme(openvdb::math::WENO5_BIAS);
     break;
   case 5:
-    std::cout << "\t5th order morphological operations\n";
     filter->setSpatialScheme(openvdb::math::HJWENO5_BIAS);
     break;
   default:
@@ -537,16 +532,16 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   // time of conversion to sdf for performance gain
   auto sdf_grid = vto::topologyToLevelSet(
       *mask_grid, /*halfwidth voxels*/ RECUT_LEVEL_SET_HALF_WIDTH,
-      /*closing steps*/ args->open_denoise == 0 ? args->close_steps : 0);
+      /*closing steps*/ args->open_denoise == 0 ? args->close_steps.value() : 0);
 
   // the raw image is only needed if you are not closing topology
-  openvdb::FloatGrid::Ptr raw_image_sdf;
-  if (!args->close_topology) {
-    // get an unaltered sdf copy of the image, you must close at least 1 step
-    raw_image_sdf = vto::topologyToLevelSet(
-        *mask_grid, /*halfwidth voxels*/ RECUT_LEVEL_SET_HALF_WIDTH,
-        /*closing steps*/ 1);
-  }
+  // openvdb::FloatGrid::Ptr raw_image_sdf;
+  // if (!args->close_topology) {
+  //// get an unaltered sdf copy of the image, you must close at least 1 step
+  // raw_image_sdf = vto::topologyToLevelSet(
+  //*mask_grid, [>halfwidth voxels<] RECUT_LEVEL_SET_HALF_WIDTH,
+  //[>closing steps<] 1);
+  //}
 
   run_log << "Seed detection: mask to SDF conversion time, "
           << timer.elapsed_formatted() << '\n'
@@ -608,21 +603,17 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
     filter->offset(-args->open_denoise);
     run_log << "Seed detection: denoise time, " << timer.elapsed_formatted()
             << "\n";
-  } else {
-    run_log << "Seed detection: denoise time, 00:00:00:00\n";
-  }
-  run_log << "Seed detection: denoised SDF voxel count, "
-          << sdf_grid->activeVoxelCount() << '\n';
-  run_log.flush();
+    run_log << "Seed detection: denoised SDF voxel count, "
+            << sdf_grid->activeVoxelCount() << '\n';
+    run_log.flush();
 
-  // close to fill the holes inside somata where cell nuclei are
-  if (args->open_denoise > 0) {
+    // close to fill the holes inside somata where cell nuclei are
 #ifdef LOG
-    std::cout << "\tclose step: close = " << args->close_steps << "\n";
+    std::cout << "\tclose step: close = " << args->close_steps.value() << "\n";
 #endif
     timer.restart();
-    filter->offset(-args->close_steps);
-    filter->offset(args->close_steps);
+    filter->offset(-args->close_steps.value());
+    filter->offset(args->close_steps.value());
     run_log << "Seed detection: closing time, " << timer.elapsed_formatted()
             << '\n'
             << "Seed detection: closed SDF voxel count, "
@@ -644,12 +635,10 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
     filter->offset(-args->open_steps);
     run_log << "Seed detection: opening time, " << timer.elapsed_formatted()
             << "\n";
-  } else {
-    run_log << "Seed detection: opening time, 00:00:00:00 d:h:m:s\n";
+    run_log << "Seed detection: opened SDF voxel count, "
+            << sdf_grid->activeVoxelCount() << "\n";
+    run_log.flush();
   }
-  run_log << "Seed detection: opened SDF voxel count, "
-          << sdf_grid->activeVoxelCount() << "\n";
-  run_log.flush();
 
   if (args->save_vdbs)
     write_vdb_file({sdf_grid}, run_dir / "opened_sdf.vdb");
@@ -668,7 +657,8 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
     }
     if (args->seed_intersection) {
       timer.restart();
-      // replace sdf_grid with intersection of sdf_grid and final_soma_sdf_merged
+      // replace sdf_grid with intersection of sdf_grid and
+      // final_soma_sdf_merged
       vto::csgIntersection(*sdf_grid, *final_soma_sdf_merged, true, true);
       std::cout << "\tFinished csgIntersection in " << timer.elapsed() << '\n';
     }
@@ -739,7 +729,9 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   //});
   //}
 
-  return std::make_tuple(
-      seeds, args->seed_path.empty() || args->seed_intersection ? sdf_grid : final_soma_sdf_merged,
-      args->close_topology ? closed_sdf : raw_image_sdf);
+  return std::make_tuple(seeds,
+                         args->seed_path.empty() || args->seed_intersection
+                             ? sdf_grid
+                             : final_soma_sdf_merged,
+                         closed_sdf);
 }

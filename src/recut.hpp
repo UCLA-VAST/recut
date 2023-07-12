@@ -2861,6 +2861,12 @@ bool Recut<image_t>::filter_by_label(VertexAttr *v, bool accept_tombstone) {
     assertm(false, "can't accept a vertex with a radii < 1");
   }
   return true;
+
+  if (!args->close_steps) {
+    args->close_steps = CLOSE_FACTOR / args->voxel_size[0];
+    args->close_steps = args->close_steps < 1 ? 1 : args->close_steps;
+    std::cout << "Close steps inferred to " " based on voxel size\n";
+  }
 }
 
 template <class image_t> void Recut<image_t>::adjust_parent() {
@@ -3230,7 +3236,7 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << "Seed detection: morphological operations denoise steps, "
             << args->open_denoise << '\n'
             << "Seed detection: morphological operations close steps, "
-            << args->close_steps << '\n'
+            << args->close_steps.value() << '\n'
             << "Seed detection: morphological operations open steps, "
             << args->open_steps << '\n'
             << "Seed detection: min allowed soma radius in µm, "
@@ -3381,6 +3387,9 @@ template <class image_t> void Recut<image_t>::operator()() {
             return this->foreground_grid->tree().isValueOn(seed.coord);
           }) |
           rng::to_vector;
+
+  if (seeds.size() == 0)
+    throw std::runtime_error("No seeds are on with respect to foreground... exiting");
 
   initialize_globals(this->grid_tile_size, this->tile_block_size);
 
