@@ -3330,6 +3330,8 @@ template <class image_t> void Recut<image_t>::operator()() {
       args->output_type = "mask";
       convert_topology();
       assertm(this->mask_grid, "Mask grid not properly set");
+      if (args->save_vdbs)
+        write_vdb_file({this->mask_grid}, "mask.vdb");
       // sets to this->mask_grid instead of reading from file
       //} else {
       // args->output_type = "point";
