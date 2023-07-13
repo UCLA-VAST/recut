@@ -622,8 +622,8 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   }
 
   auto closed_sdf = sdf_grid->deepCopy();
-  if (args->save_vdbs)
-    write_vdb_file({closed_sdf}, run_dir / "closed_sdf.vdb");
+  //if (args->save_vdbs)
+    //write_vdb_file({closed_sdf}, run_dir / "closed_sdf.vdb");
 
   // open again to filter axons and dendrites
   if (args->open_steps) {
@@ -640,8 +640,8 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
     run_log.flush();
   }
 
-  if (args->save_vdbs)
-    write_vdb_file({sdf_grid}, run_dir / "opened_sdf.vdb");
+  //if (args->save_vdbs)
+    //write_vdb_file({sdf_grid}, run_dir / "opened_sdf.vdb");
 
   if (seeds.size()) {
     if (args->output_type == "labels") {

@@ -2973,7 +2973,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
   // aggregate disjoint connected components
   global_timer.restart();
   std::vector<openvdb::FloatGrid::Ptr> components;
-  vto::segmentActiveVoxels(*connected_grid, components);
+  vto::segmentActiveVoxels(*this->connected_grid, components);
 #ifdef LOG
   cout << "Segment count: " << components.size() << " in "
        << global_timer.elapsed_formatted() << '\n';
@@ -3252,7 +3252,8 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << "Seed detection: min allowed soma radius in µm, "
             << args->min_radius_um << '\n'
             << "Seed detection: max allowed soma radius in µm, "
-            << args->max_radius_um << '\n'
+            << args->max_radius_um
+            << '\n'
             //<< "Skeletonization: neurites mean shift radius, "
             //<< args->mean_shift_factor << '\n'
             //<< "Skeletonization: neurites prune radius, "
@@ -3353,6 +3354,11 @@ template <class image_t> void Recut<image_t>::operator()() {
   auto [seeds, soma_sdf, neurite_sdf] =
       soma_segmentation(mask_grid, args, this->image_lengths, log_fn, run_dir);
 
+  if (args->save_vdbs) {
+    write_vdb_file({soma_sdf}, run_dir / ("soma_sdf.vdb"));
+    write_vdb_file({neurite_sdf}, run_dir / ("neurite_sdf.vdb"));
+  }
+
   if (this->args->output_type == "labels") {
     exit(0); // exit
   } else if (seeds.empty()) {
@@ -3387,7 +3393,8 @@ template <class image_t> void Recut<image_t>::operator()() {
   } else {
     this->foreground_grid = vto::extractEnclosedRegion(*neurite_sdf);
     if (args->save_vdbs) {
-      write_vdb_file({this->foreground_grid}, "foreground_grid.vdb");
+      write_vdb_file({this->foreground_grid},
+                     run_dir / ("foreground_grid.vdb"));
     }
   }
 
@@ -3399,6 +3406,7 @@ template <class image_t> void Recut<image_t>::operator()() {
             return this->foreground_grid->tree().isValueOn(seed.coord);
           }) |
           rng::to_vector;
+  run_log << "Filtered seed count, " << seeds.size() << '\n';
 
   if (seeds.size() == 0)
     throw std::runtime_error(
@@ -3419,7 +3427,14 @@ template <class image_t> void Recut<image_t>::operator()() {
     this->activate_vids_mask(this->foreground_grid, this->connected_grid, seeds,
                              this->connected_map);
   }
+
+  run_log << "Foreground active voxel count, "
+          << this->foreground_grid->activeVoxelCount() << '\n'
+          << "Connected grid after activate seeds voxel count, "
+          << this->connected_grid->activeVoxelCount() << '\n';
   this->update(stage, map_fifo);
+  run_log << "Connected grid after update, "
+          << this->connected_grid->activeVoxelCount() << '\n';
 
   auto global_timer = high_resolution_timer();
 
