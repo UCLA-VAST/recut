@@ -3407,6 +3407,7 @@ template <class image_t> void Recut<image_t>::operator()() {
           }) |
           rng::to_vector;
   run_log << "Filtered seed count, " << seeds.size() << '\n';
+  run_log.flush();
 
   if (seeds.size() == 0)
     throw std::runtime_error(
@@ -3432,9 +3433,11 @@ template <class image_t> void Recut<image_t>::operator()() {
           << this->foreground_grid->activeVoxelCount() << '\n'
           << "Connected grid after activate seeds voxel count, "
           << this->connected_grid->activeVoxelCount() << '\n';
+  run_log.flush();
   this->update(stage, map_fifo);
   run_log << "Connected grid after update, "
           << this->connected_grid->activeVoxelCount() << '\n';
+  run_log.flush();
 
   auto global_timer = high_resolution_timer();
 
