@@ -394,6 +394,30 @@ void Recut<image_t>::activate_vids_mask(
     std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo) {
   assertm(!(seeds.empty()), "Must have at least one seed");
 
+  this->active_tiles[0] = true;
+  rng::for_each(seeds, [this,foreground_grid, connected_grid,
+                        &connected_fifo](auto seed) {
+    auto coord = seed.coord;
+    // find corresponding leafs
+    auto foreground_leaf = foreground_grid->tree().probeLeaf(coord);
+    auto leaf_bbox = foreground_leaf->getNodeBoundingBox();
+    auto update_leaf = this->update_grid->tree().probeLeaf(leaf_bbox.min());
+    assertm(update_leaf, "Update must have a corresponding leaf");
+    // this only adds to update_grid if the root happens
+    // to be on a boundary
+    set_if_active(update_leaf, coord);
+
+    auto edge_state = 1;                // selected
+    edge_state = setbit(edge_state, 3); // root
+    connected_grid->tree().setValue(coord, 1.);
+    auto offsets =
+        coord_mod(coord, new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH));
+    connected_fifo[foreground_leaf->origin()].emplace_back(edge_state, offsets,
+                                                           zeros_off());
+  });
+}
+
+  /*
   // Iterate over leaf nodes that contain topology (active)
   // checking for seed within them
   for (auto leaf_iter = foreground_grid->tree().beginLeaf(); leaf_iter;
@@ -437,7 +461,7 @@ void Recut<image_t>::activate_vids_mask(
                                                        zeros_off());
     });
   }
-}
+  */
 
 template <class image_t>
 void Recut<image_t>::activate_vids(
