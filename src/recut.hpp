@@ -275,10 +275,7 @@ public:
                 const std::string stage,
                 std::map<GridCoord, std::deque<VertexAttr>> &fifo,
                 std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo);
-  void activate_vids_mask(
-      openvdb::BoolGrid::Ptr foreground_grid,
-      openvdb::FloatGrid::Ptr connected_grid, const std::vector<Seed> &seeds,
-      std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo);
+  void activate_vids_mask(const std::vector<Seed> &seeds);
   void set_parent_non_branch(const VID_t tile_id, const VID_t block_id,
                              VertexAttr *dst, VertexAttr *potential_new_parent);
 };
@@ -388,18 +385,18 @@ void Recut<image_t>::setup_radius(Container &fifo) {
 }
 
 template <class image_t>
-void Recut<image_t>::activate_vids_mask(
-    openvdb::BoolGrid::Ptr foreground_grid,
-    openvdb::FloatGrid::Ptr connected_grid, const std::vector<Seed> &seeds,
-    std::map<GridCoord, std::deque<VertexAttr>> &connected_fifo) {
+void Recut<image_t>::activate_vids_mask(const std::vector<Seed> &seeds) {
   assertm(!(seeds.empty()), "Must have at least one seed");
 
   this->active_tiles[0] = true;
-  rng::for_each(seeds, [this,foreground_grid, connected_grid,
-                        &connected_fifo](auto seed) {
+  for(Seed seed : seeds) {
     auto coord = seed.coord;
     // find corresponding leafs
-    auto foreground_leaf = foreground_grid->tree().probeLeaf(coord);
+    auto foreground_leaf = this->foreground_grid->tree().probeLeaf(coord);
+    if (!foreground_leaf) {
+       std::cout << "Lost 1 seed\n";
+       continue;
+    }
     auto leaf_bbox = foreground_leaf->getNodeBoundingBox();
     auto update_leaf = this->update_grid->tree().probeLeaf(leaf_bbox.min());
     assertm(update_leaf, "Update must have a corresponding leaf");
@@ -409,12 +406,12 @@ void Recut<image_t>::activate_vids_mask(
 
     auto edge_state = 1;                // selected
     edge_state = setbit(edge_state, 3); // root
-    connected_grid->tree().setValue(coord, 1.);
+    this->connected_grid->tree().setValue(coord, 1.);
     auto offsets =
         coord_mod(coord, new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH));
-    connected_fifo[foreground_leaf->origin()].emplace_back(edge_state, offsets,
+    this->connected_map[foreground_leaf->origin()].emplace_back(edge_state, offsets,
                                                            zeros_off());
-  });
+  }
 }
 
   /*
@@ -3426,8 +3423,11 @@ template <class image_t> void Recut<image_t>::operator()() {
   seeds = seeds | rv::filter([this](Seed seed) {
             if (CLASSIC_PRUNE)
               return this->topology_grid->tree().isValueOn(seed.coord);
-            // else
-            return this->foreground_grid->tree().isValueOn(seed.coord);
+            auto ison = this->foreground_grid->tree().isValueOn(seed.coord);
+            if (ison && !this->foreground_grid->tree().probeLeaf(seed.coord)) {
+               std::cout << "coord is on but prla " << seed.coord << '\n';
+}
+            return ison;
           }) |
           rng::to_vector;
   run_log << "Filtered seed count, " << seeds.size() << '\n';
@@ -3449,8 +3449,7 @@ template <class image_t> void Recut<image_t>::operator()() {
                         this->connected_map);
   } else {
     stage = "connected-mask";
-    this->activate_vids_mask(this->foreground_grid, this->connected_grid, seeds,
-                             this->connected_map);
+    this->activate_vids_mask(seeds);
   }
 
   run_log << "Foreground active voxel count, "
