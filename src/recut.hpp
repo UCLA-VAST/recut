@@ -3372,11 +3372,10 @@ template <class image_t> void Recut<image_t>::operator()() {
     this->input_is_vdb = true;
   }
 
-  auto [seeds, soma_sdf, neurite_sdf] =
+  auto [seeds, neurite_sdf] =
       soma_segmentation(mask_grid, args, this->image_lengths, log_fn, run_dir);
 
   if (args->save_vdbs) {
-    write_vdb_file({soma_sdf}, run_dir / ("soma_sdf.vdb"));
     write_vdb_file({neurite_sdf}, run_dir / ("neurite_sdf.vdb"));
   }
 
@@ -3397,9 +3396,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   std::ofstream run_log;
   run_log.open(log_fn, std::ios::app);
-  run_log << "Seed detection: soma sdf SDF voxel count, "
-          << soma_sdf->activeVoxelCount() << '\n'
-          << "Seed detection: neurite sdf SDF voxel count, "
+  run_log << "Neurite SDF voxel count, "
           << neurite_sdf->activeVoxelCount() << '\n';
   run_log.flush();
 

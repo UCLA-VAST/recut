@@ -253,8 +253,9 @@ create_filter(openvdb::FloatGrid::Ptr sdf_grid,
 
 // replace the original grid, with a grid only containing the soma component
 // this prevents the soma labels and their grid from contain other components
-std::optional<std::pair<openvdb::FloatGrid::Ptr, CoordBBox>>
-find_soma_component(Seed seed, openvdb::FloatGrid::Ptr grid,
+template <typename GridT>
+std::optional<std::pair<GridT, CoordBBox>>
+find_soma_component(Seed seed, GridT grid,
                     openvdb::FloatGrid::Ptr keep_if_empty_grid = nullptr,
                     int channel = 0) {
 
@@ -285,6 +286,7 @@ find_soma_component(Seed seed, openvdb::FloatGrid::Ptr grid,
     return std::nullopt; // do nothing
   }
 
+  /* Warning if you uncomment this you can no longer use segmentSDF
   if (channel) {
     std::vector<openvdb::FloatGrid::Ptr> window_components;
     // works on grids of arbitrary type, placing all disjoint segments
@@ -361,6 +363,7 @@ find_soma_component(Seed seed, openvdb::FloatGrid::Ptr grid,
     clipped_grid = known_component.size() > 0 ? known_component.front()
                                               : window_components.front();
   }
+  */
   return std::make_pair(clipped_grid, bbox);
 }
 
@@ -435,12 +438,10 @@ fs::path soma_dir(fs::path dir, Seed seed) {
                 std::to_string(seed.coord.z()));
 }
 
-/*
 // takes a set of seeds and their corresponding sdf/isosurface
 // and writes to TIF their uint8
-template <typename GridT>
 void create_labels(std::vector<Seed> seeds, fs::path dir,
-                   ImgGrid::Ptr image = nullptr, GridT sdf_grid = nullptr,
+                   ImgGrid::Ptr image = nullptr, openvdb::FloatGrid::Ptr sdf_grid = nullptr,
                    openvdb::FloatGrid::Ptr keep_if_empty_grid = nullptr,
                    int threads = 1, bool output_vdb = false,
                    bool paged = true) {
@@ -480,9 +481,8 @@ void create_labels(std::vector<Seed> seeds, fs::path dir,
   //});
   //}
 }
-*/
 
-std::tuple<std::vector<Seed>, openvdb::FloatGrid::Ptr, openvdb::FloatGrid::Ptr>
+std::pair<std::vector<Seed>, openvdb::FloatGrid::Ptr>
 soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
                   GridCoord image_lengths, fs::path log_fn, fs::path run_dir) {
 
@@ -532,7 +532,8 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   // time of conversion to sdf for performance gain
   auto sdf_grid = vto::topologyToLevelSet(
       *mask_grid, /*halfwidth voxels*/ RECUT_LEVEL_SET_HALF_WIDTH,
-      /*closing steps*/ args->open_denoise == 0 ? args->close_steps.value() : 0);
+      /*closing steps*/ args->open_denoise == 0 ? args->close_steps.value()
+                                                : 0);
 
   // the raw image is only needed if you are not closing topology
   // openvdb::FloatGrid::Ptr raw_image_sdf;
@@ -564,14 +565,18 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
     // labels need somas as intact / unmodified therefore they should
     // not be unioned
     // do not union if you will later intersect
-    if (args->output_type != "labels" && !args->seed_intersection) {
+    //if (args->output_type != "labels" && !args->seed_intersection) {
+    if (!args->seed_intersection) {
       // this strategies permanently modify the  mask_grid for both soma
       // detection and neurite reconstruction, the image grid uint8 that is
       // output in windows is unaffected however
       // fills in spheres where the user passed seeds are
       // known to be located
       timer.restart();
+      // ! destroys final_soma_sdf_merged grid silently !
       vto::csgUnion(*sdf_grid, *final_soma_sdf_merged, true, true);
+      // rebuild ls
+      vto::sdfToSdf(*sdf_grid);
       std::cout << "\tFinished csgUnion in " << timer.elapsed() << '\n';
 
       // if (args->save_vdbs) {
@@ -622,8 +627,8 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   }
 
   auto closed_sdf = sdf_grid->deepCopy();
-  //if (args->save_vdbs)
-    //write_vdb_file({closed_sdf}, run_dir / "closed_sdf.vdb");
+  // if (args->save_vdbs)
+  // write_vdb_file({closed_sdf}, run_dir / "closed_sdf.vdb");
 
   // open again to filter axons and dendrites
   if (args->open_steps) {
@@ -640,26 +645,27 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
     run_log.flush();
   }
 
-  //if (args->save_vdbs)
-    //write_vdb_file({sdf_grid}, run_dir / "opened_sdf.vdb");
+  // if (args->save_vdbs)
+  // write_vdb_file({sdf_grid}, run_dir / "opened_sdf.vdb");
 
   if (seeds.size()) {
     if (args->output_type == "labels") {
-      //// convert active regions and capped concativities like hollow centers
-      // openvdb::BoolGrid::Ptr opened_bool_grid =
-      // vto::extractEnclosedRegion(*sdf_grid);
-      // create_labels(seeds, run_dir / "ml-train-and-test", image,
-      // sdf_grid, nullptr, args->user_thread_count, args->save_vdbs);
+      // convert active regions and capped concativities like hollow centers
+      //openvdb::BoolGrid::Ptr opened_bool_grid =
+          //vto::extractEnclosedRegion(*sdf_grid);
+      create_labels(seeds, run_dir / "ml-train-and-test", image, sdf_grid,
+                    nullptr, args->user_thread_count, args->save_vdbs);
 #ifdef LOG
       std::cout << "\tLabel creation completed and safe to open\n";
 #endif
-      return std::make_tuple(std::vector<Seed>{}, nullptr, nullptr);
+      return std::make_pair(std::vector<Seed>{}, nullptr);
     }
     if (args->seed_intersection) {
       timer.restart();
       // replace sdf_grid with intersection of sdf_grid and
       // final_soma_sdf_merged
       vto::csgIntersection(*sdf_grid, *final_soma_sdf_merged, true, true);
+      vto::sdfToSdf(*sdf_grid);
       std::cout << "\tFinished csgIntersection in " << timer.elapsed() << '\n';
     }
   }
@@ -729,9 +735,5 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
   //});
   //}
 
-  return std::make_tuple(seeds,
-                         args->seed_path.empty() || args->seed_intersection
-                             ? sdf_grid
-                             : final_soma_sdf_merged,
-                         closed_sdf);
+  return std::make_pair(seeds, closed_sdf);
 }
