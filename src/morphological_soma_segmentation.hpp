@@ -517,9 +517,8 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
 // change the fog volume into an SDF by holding values on the border between
 // active an inactive voxels
 // the new SDF wraps (dilates by 1) the original active voxels, and
-// additionally holds values across the interface of the surface
-//
-// this function additionally adds a morphological closing step such that
+// additionally holds distance values across the interface of the surface
+// this function additionally adds a required morphological closing step such that
 // holes and valleys in the SDF are filled
 #ifdef LOG
   std::cout << "starting seed (soma) detection:\n";
