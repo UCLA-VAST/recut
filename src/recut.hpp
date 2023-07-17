@@ -394,7 +394,7 @@ void Recut<image_t>::activate_vids_mask(const std::vector<Seed> &seeds) {
     // find corresponding leafs
     auto foreground_leaf = this->mask_grid->tree().probeLeaf(coord);
     if (!foreground_leaf) {
-      std::cout << "Lost 1 seed\n";
+      //std::cout << "Lost 1 seed\n";
       continue;
     }
     auto leaf_bbox = foreground_leaf->getNodeBoundingBox();
@@ -3450,16 +3450,20 @@ mask_accessor.setValueOn(coord);
   // TODO create_labels
 
   // filter seeds with respect to topology
+  //int empty_leaf_seed_count = 0;
   seeds = seeds | rv::filter([this](Seed seed) {
             if (CLASSIC_PRUNE)
               return this->topology_grid->tree().isValueOn(seed.coord);
-            auto ison = this->mask_grid->tree().isValueOn(seed.coord);
-            if (ison && !this->mask_grid->tree().probeLeaf(seed.coord)) {
-              std::cout << "coord is on but prla " << seed.coord << '\n';
-            }
-            return ison;
+            return this->mask_grid->tree().isValueOn(seed.coord) && this->mask_grid->tree().probeLeaf(seed.coord);
+            //auto ison = this->mask_grid->tree().isValueOn(seed.coord);
+            //if (ison && !this->mask_grid->tree().probeLeaf(seed.coord)) {
+              ////std::cout << "coord is on but prla " << seed.coord << '\n';
+              //++empty_leaf_seed_count;
+            //}
+            //return ison;
           }) |
           rng::to_vector;
+  //run_log << "Empy leaf seed count, " << empty_leaf_seed_count << '\n';
   run_log << "Filtered seed count, " << seeds.size() << '\n';
   run_log.flush();
 
