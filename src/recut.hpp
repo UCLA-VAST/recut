@@ -99,7 +99,7 @@ public:
   openvdb::FloatGrid::Ptr input_grid;
   openvdb::BoolGrid::Ptr update_grid;
   openvdb::MaskGrid::Ptr mask_grid;
-  //openvdb::BoolGrid::Ptr foreground_grid;
+  // openvdb::BoolGrid::Ptr foreground_grid;
   openvdb::FloatGrid::Ptr connected_grid;
   ImgGrid::Ptr img_grid;
 
@@ -2043,8 +2043,7 @@ std::atomic<double> Recut<image_t>::process_tile(
   auto timer = high_resolution_timer();
 
   // vt::LeafManager<PointTree> grid_leaf_manager(this->topology_grid->tree());
-  vt::LeafManager<vb::MaskTree> grid_leaf_manager(
-      this->mask_grid->tree());
+  vt::LeafManager<vb::MaskTree> grid_leaf_manager(this->mask_grid->tree());
 
   integrate_update_grid(this->mask_grid, grid_leaf_manager, stage,
                         this->map_fifo, this->connected_map, this->update_grid,
@@ -2857,8 +2856,8 @@ template <class image_t> void Recut<image_t>::initialize() {
             << " y=" << this->args->voxel_size[1] << " µm"
             << " z=" << this->args->voxel_size[2] << " µm\n";
 #endif
-  //this->foreground_grid = openvdb::BoolGrid::create();
-  //this->foreground_grid->setTransform(get_transform());
+  // this->foreground_grid = openvdb::BoolGrid::create();
+  // this->foreground_grid->setTransform(get_transform());
   this->connected_grid = openvdb::FloatGrid::create();
   this->connected_grid->setTransform(get_transform());
 
@@ -3419,18 +3418,31 @@ template <class image_t> void Recut<image_t>::operator()() {
   // TODO move this chunk before morphological
   // TODO only enter soma detection if close is on
   auto seeds = process_marker_dir(args->seed_path, args->voxel_size);
-  auto [soma_sdf, _] = create_seed_sphere_grid(seeds);
-  //openvdb::BoolGrid::Ptr soma_mask = vto::extractEnclosedRegion(*soma_sdf);
-  openvdb::BoolGrid::Ptr soma_mask = vto::sdfInteriorMask(*soma_sdf);
-  // TODO you may need to convert this sdf to soma_mask first to get the 
-  // interior regions
+
+  // second brute force attempt
   auto mask_accessor = this->mask_grid->getAccessor();
-  for (auto iter = soma_mask->cbeginValueOn(); iter.test(); ++iter) {
-    auto coord = iter.getCoord();
-    mask_accessor.setValueOn(coord);
-  }
+  rng::for_each(seeds, [&mask_accessor](Seed seed) {
+    for (const auto coord : sphere_iterator(seed.coord, seed.radius)) {
+      mask_accessor.setValueOn(coord);
+    }
+  });
+
+  /*
+auto [soma_sdf, _] = create_seed_sphere_grid(seeds);
+//openvdb::BoolGrid::Ptr soma_mask = vto::extractEnclosedRegion(*soma_sdf);
+openvdb::BoolGrid::Ptr soma_mask = vto::sdfInteriorMask(*soma_sdf);
+// TODO you may need to convert this sdf to soma_mask first to get the
+// interior regions
+auto mask_accessor = this->mask_grid->getAccessor();
+for (auto iter = soma_mask->cbeginValueOn(); iter.test(); ++iter) {
+auto coord = iter.getCoord();
+mask_accessor.setValueOn(coord);
+}
+*/
+
   // union args must be of same vdb type
-  //openvdb::BoolGrid::Ptr neurite_mask = csgUnion(*this->mask_grid, *soma_mask);
+  // openvdb::BoolGrid::Ptr neurite_mask = csgUnion(*this->mask_grid,
+  // *soma_mask);
   // TODO create_labels
 
   // filter seeds with respect to topology
