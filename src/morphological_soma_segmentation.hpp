@@ -78,8 +78,6 @@ create_seed_sphere_grid(std::vector<Seed> seeds) {
                                RECUT_LEVEL_SET_HALF_WIDTH);
                          }) |
                          rng::to_vector;
-  timer.restart();
-
   auto merged = merge_grids(component_grids);
   return std::make_pair(merged, component_grids);
 }
