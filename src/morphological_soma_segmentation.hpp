@@ -71,8 +71,6 @@ std::vector<Seed> process_marker_dir(
 
 std::pair<openvdb::FloatGrid::Ptr, std::vector<openvdb::FloatGrid::Ptr>>
 create_seed_sphere_grid(std::vector<Seed> seeds) {
-  auto timer = high_resolution_timer();
-
   auto component_grids = seeds | rv::transform([](const Seed &seed) {
                            int voxel_size = 1;
                            return vto::createLevelSetSphere<openvdb::FloatGrid>(
@@ -80,16 +78,9 @@ create_seed_sphere_grid(std::vector<Seed> seeds) {
                                RECUT_LEVEL_SET_HALF_WIDTH);
                          }) |
                          rng::to_vector;
-#ifdef LOG
-  std::cout << "\tFinished create seed spheres in " << timer.elapsed() << '\n';
-#endif
   timer.restart();
 
-  // TODO replace with sumMergeOp which is parallel and more efficient
   auto merged = merge_grids(component_grids);
-#ifdef LOG
-  std::cout << "\tFinished sphere merge in " << timer.elapsed() << '\n';
-#endif
   return std::make_pair(merged, component_grids);
 }
 

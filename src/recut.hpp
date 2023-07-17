@@ -3450,7 +3450,9 @@ template <class image_t> void Recut<image_t>::operator()() {
     throw std::runtime_error(
         "No seeds are on with respect to foreground... exiting");
 
+  std::cout << "Start init globals\n";
   initialize_globals(this->grid_tile_size, this->tile_block_size);
+  std::cout << "Finished init globals\n";
 
   // constrain topology to only those reachable from roots
   std::string stage;
@@ -3462,7 +3464,9 @@ template <class image_t> void Recut<image_t>::operator()() {
                         this->connected_map);
   } else {
     stage = "connected-mask";
+    std::cout << "Start activate seeds\n";
     this->activate_vids_mask(seeds);
+    std::cout << "End activate seeds\n";
   }
 
   run_log << "Foreground active voxel count, "
