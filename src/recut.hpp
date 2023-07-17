@@ -3420,7 +3420,8 @@ template <class image_t> void Recut<image_t>::operator()() {
   // TODO only enter soma detection if close is on
   auto seeds = process_marker_dir(args->seed_path, args->voxel_size);
   auto [soma_sdf, _] = create_seed_sphere_grid(seeds);
-  openvdb::BoolGrid::Ptr soma_mask = vto::extractEnclosedRegion(*soma_sdf);
+  //openvdb::BoolGrid::Ptr soma_mask = vto::extractEnclosedRegion(*soma_sdf);
+  openvdb::BoolGrid::Ptr soma_mask = vto::sdfInteriorMask(*soma_sdf);
   // TODO you may need to convert this sdf to soma_mask first to get the 
   // interior regions
   auto mask_accessor = this->mask_grid->getAccessor();
