@@ -3420,10 +3420,11 @@ template <class image_t> void Recut<image_t>::operator()() {
   auto seeds = process_marker_dir(args->seed_path, args->voxel_size);
 
   // second brute force attempt
-  auto mask_accessor = this->mask_grid->getAccessor();
-  rng::for_each(seeds, [&mask_accessor](Seed seed) {
+  //auto mask_accessor = this->mask_grid->getAccessor();
+  rng::for_each(seeds, [this](Seed seed) {
     for (const auto coord : sphere_iterator(seed.coord, seed.radius)) {
-      mask_accessor.setValueOn(coord);
+      //mask_accessor.setValueOn(coord);
+      this->mask_grid->tree().setValueOn(coord);
     }
   });
 
