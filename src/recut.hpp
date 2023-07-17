@@ -2589,6 +2589,9 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_tile_size,
   for (auto leaf_iter = this->mask_grid->tree().beginLeaf(); leaf_iter;
        ++leaf_iter) {
     auto origin = leaf_iter->getNodeBoundingBox().min();
+    auto connected_leaf =
+        new openvdb::tree::LeafNode<float, LEAF_LOG2DIM>(origin, false);
+    this->connected_grid->tree().addLeaf(connected_leaf);
 
     // per leaf fifo/pq resources
     inner[origin] = std::deque<VertexAttr>();
@@ -3420,11 +3423,11 @@ template <class image_t> void Recut<image_t>::operator()() {
   auto seeds = process_marker_dir(args->seed_path, args->voxel_size);
 
   // second brute force attempt
-  //auto mask_accessor = this->mask_grid->getAccessor();
-  rng::for_each(seeds, [this](Seed seed) {
+  auto mask_accessor = this->mask_grid->getAccessor();
+  rng::for_each(seeds, [&mask_accessor](Seed seed) {
     for (const auto coord : sphere_iterator(seed.coord, seed.radius)) {
-      //mask_accessor.setValueOn(coord);
-      this->mask_grid->tree().setValueOn(coord);
+      mask_accessor.setValueOn(coord);
+      //this->mask_grid->tree().setValueOn(coord);
     }
   });
 
