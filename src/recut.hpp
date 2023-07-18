@@ -99,7 +99,7 @@ public:
   openvdb::FloatGrid::Ptr input_grid;
   openvdb::BoolGrid::Ptr update_grid;
   openvdb::MaskGrid::Ptr mask_grid;
-  openvdb::BoolGrid::Ptr foreground_grid;
+  // openvdb::BoolGrid::Ptr foreground_grid;
   openvdb::FloatGrid::Ptr connected_grid;
   ImgGrid::Ptr img_grid;
 
@@ -389,13 +389,13 @@ void Recut<image_t>::activate_vids_mask(const std::vector<Seed> &seeds) {
   assertm(!(seeds.empty()), "Must have at least one seed");
 
   this->active_tiles[0] = true;
-  for(Seed seed : seeds) {
+  for (Seed seed : seeds) {
     auto coord = seed.coord;
     // find corresponding leafs
-    auto foreground_leaf = this->foreground_grid->tree().probeLeaf(coord);
+    auto foreground_leaf = this->mask_grid->tree().probeLeaf(coord);
     if (!foreground_leaf) {
-       std::cout << "Lost 1 seed\n";
-       continue;
+      // std::cout << "Lost 1 seed\n";
+      continue;
     }
     auto leaf_bbox = foreground_leaf->getNodeBoundingBox();
     auto update_leaf = this->update_grid->tree().probeLeaf(leaf_bbox.min());
@@ -409,56 +409,56 @@ void Recut<image_t>::activate_vids_mask(const std::vector<Seed> &seeds) {
     this->connected_grid->tree().setValue(coord, 1.);
     auto offsets =
         coord_mod(coord, new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH));
-    this->connected_map[foreground_leaf->origin()].emplace_back(edge_state, offsets,
-                                                           zeros_off());
+    this->connected_map[foreground_leaf->origin()].emplace_back(
+        edge_state, offsets, zeros_off());
   }
 }
 
-  /*
-  // Iterate over leaf nodes that contain topology (active)
-  // checking for seed within them
-  for (auto leaf_iter = foreground_grid->tree().beginLeaf(); leaf_iter;
-       ++leaf_iter) {
-    auto leaf_bbox = leaf_iter->getNodeBoundingBox();
+/*
+// Iterate over leaf nodes that contain topology (active)
+// checking for seed within them
+for (auto leaf_iter = foreground_grid->tree().beginLeaf(); leaf_iter;
+     ++leaf_iter) {
+  auto leaf_bbox = leaf_iter->getNodeBoundingBox();
 
-    // FILTER for those in this leaf
-    auto leaf_seed_coords = seeds | rv::transform(&Seed::coord) |
-                            rv::remove_if([&leaf_bbox](GridCoord coord) {
-                              return !leaf_bbox.isInside(coord);
-                            }) |
-                            rng::to_vector;
+  // FILTER for those in this leaf
+  auto leaf_seed_coords = seeds | rv::transform(&Seed::coord) |
+                          rv::remove_if([&leaf_bbox](GridCoord coord) {
+                            return !leaf_bbox.isInside(coord);
+                          }) |
+                          rng::to_vector;
 
-    if (leaf_seed_coords.empty())
-      continue;
+  if (leaf_seed_coords.empty())
+    continue;
 
-    this->active_tiles[0] = true;
+  this->active_tiles[0] = true;
 
-    // Set Values
-    auto update_leaf = this->update_grid->tree().probeLeaf(leaf_bbox.min());
-    assertm(update_leaf, "Update must have a corresponding leaf");
+  // Set Values
+  auto update_leaf = this->update_grid->tree().probeLeaf(leaf_bbox.min());
+  assertm(update_leaf, "Update must have a corresponding leaf");
 
-    rng::for_each(leaf_seed_coords, [&update_leaf](auto coord) {
-      // this only adds to update_grid if the root happens
-      // to be on a boundary
-      set_if_active(update_leaf, coord);
-    });
+  rng::for_each(leaf_seed_coords, [&update_leaf](auto coord) {
+    // this only adds to update_grid if the root happens
+    // to be on a boundary
+    set_if_active(update_leaf, coord);
+  });
 
-    auto temp_coord = new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH);
+  auto temp_coord = new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH);
 
-    auto edge_state = 1;                // selected
-    edge_state = setbit(edge_state, 3); // root
-    // std::cout << +(edge_state) << '\n';
-    assertm(edge_state == 9, "not 9");
-    // assertm(is_selected(edge_state), "selected");
-    // assertm(is_root(edge_state), "root");
-    rng::for_each(leaf_seed_coords, [&](auto coord) {
-      connected_grid->tree().setValue(coord, 1.);
-      auto offsets = coord_mod(coord, temp_coord);
-      connected_fifo[leaf_iter->origin()].emplace_back(edge_state, offsets,
-                                                       zeros_off());
-    });
-  }
-  */
+  auto edge_state = 1;                // selected
+  edge_state = setbit(edge_state, 3); // root
+  // std::cout << +(edge_state) << '\n';
+  assertm(edge_state == 9, "not 9");
+  // assertm(is_selected(edge_state), "selected");
+  // assertm(is_root(edge_state), "root");
+  rng::for_each(leaf_seed_coords, [&](auto coord) {
+    connected_grid->tree().setValue(coord, 1.);
+    auto offsets = coord_mod(coord, temp_coord);
+    connected_fifo[leaf_iter->origin()].emplace_back(edge_state, offsets,
+                                                     zeros_off());
+  });
+}
+*/
 
 template <class image_t>
 void Recut<image_t>::activate_vids(
@@ -1695,7 +1695,7 @@ void Recut<image_t>::connected_mask_tile(Container &connected_fifo,
           auto mismatch = !bbox.isInside(coord_img);
           if (mismatch) {
             if (this->input_is_vdb) {
-              if (!this->foreground_grid->tree().isValueOn(coord_img)) {
+              if (!this->mask_grid->tree().isValueOn(coord_img)) {
                 found_adjacent_invalid = true;
               }
             }
@@ -2043,10 +2043,9 @@ std::atomic<double> Recut<image_t>::process_tile(
   auto timer = high_resolution_timer();
 
   // vt::LeafManager<PointTree> grid_leaf_manager(this->topology_grid->tree());
-  vt::LeafManager<vb::BoolTree> grid_leaf_manager(
-      this->foreground_grid->tree());
+  vt::LeafManager<vb::MaskTree> grid_leaf_manager(this->mask_grid->tree());
 
-  integrate_update_grid(this->foreground_grid, grid_leaf_manager, stage,
+  integrate_update_grid(this->mask_grid, grid_leaf_manager, stage,
                         this->map_fifo, this->connected_map, this->update_grid,
                         tile_id);
 
@@ -2089,7 +2088,7 @@ std::atomic<double> Recut<image_t>::process_tile(
 
     { // integrate
       auto integrate_start = timer.elapsed();
-      integrate_update_grid(this->foreground_grid, grid_leaf_manager, stage,
+      integrate_update_grid(this->mask_grid, grid_leaf_manager, stage,
                             this->map_fifo, this->connected_map,
                             this->update_grid, tile_id);
 #ifdef LOG_FULL
@@ -2587,9 +2586,12 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_tile_size,
 
   // for (auto leaf_iter = this->topology_grid->tree().beginLeaf(); leaf_iter;
   //++leaf_iter) {
-  for (auto leaf_iter = this->foreground_grid->tree().beginLeaf(); leaf_iter;
+  for (auto leaf_iter = this->mask_grid->tree().beginLeaf(); leaf_iter;
        ++leaf_iter) {
     auto origin = leaf_iter->getNodeBoundingBox().min();
+    auto connected_leaf =
+        new openvdb::tree::LeafNode<float, LEAF_LOG2DIM>(origin, false);
+    this->connected_grid->tree().addLeaf(connected_leaf);
 
     // per leaf fifo/pq resources
     inner[origin] = std::deque<VertexAttr>();
@@ -2857,25 +2859,27 @@ template <class image_t> void Recut<image_t>::initialize() {
             << " y=" << this->args->voxel_size[1] << " µm"
             << " z=" << this->args->voxel_size[2] << " µm\n";
 #endif
-  this->foreground_grid = openvdb::BoolGrid::create();
-  this->foreground_grid->setTransform(get_transform());
+  // this->foreground_grid = openvdb::BoolGrid::create();
+  // this->foreground_grid->setTransform(get_transform());
   this->connected_grid = openvdb::FloatGrid::create();
   this->connected_grid->setTransform(get_transform());
 
-  if (!args->close_steps) {
-    args->close_steps = CLOSE_FACTOR / args->voxel_size[0];
-    args->close_steps = args->close_steps < 1 ? 1 : args->close_steps;
-    std::cout << "Close steps inferred to " << args->close_steps.value()
-              << " based on voxel size\n";
-  }
+  if (args->seed_path.empty() || args->seed_intersection) {
+    if (!args->close_steps) {
+      args->close_steps = CLOSE_FACTOR / args->voxel_size[0];
+      args->close_steps = args->close_steps < 1 ? 1 : args->close_steps;
+      std::cout << "Close steps inferred to " << args->close_steps.value()
+                << " based on voxel size\n";
+    }
 
-  // infer open steps if it wasn't explicitly passed and seed intersection and
-  // no seeds were passed
-  if (!args->open_steps &&
-      (args->seed_intersection || args->seed_path.empty())) {
-    args->open_steps = OPEN_FACTOR / args->voxel_size[0];
-    std::cout << "Open steps inferred to " << args->open_steps.value()
-              << " based on voxel size\n";
+    // infer open steps if it wasn't explicitly passed and seed intersection and
+    // no seeds were passed
+    if (!args->open_steps &&
+        (args->seed_intersection || args->seed_path.empty())) {
+      args->open_steps = OPEN_FACTOR / args->voxel_size[0];
+      std::cout << "Open steps inferred to " << args->open_steps.value()
+                << " based on voxel size\n";
+    }
   }
 }
 
@@ -3376,61 +3380,93 @@ template <class image_t> void Recut<image_t>::operator()() {
     this->input_is_vdb = true;
   }
 
-  auto [seeds, neurite_sdf] =
-      soma_segmentation(mask_grid, args, this->image_lengths, log_fn, run_dir);
-
-  if (args->save_vdbs) {
-    write_vdb_file({neurite_sdf}, run_dir / ("neurite_sdf.vdb"));
-  }
-
-  if (this->args->output_type == "labels") {
-    exit(0); // exit
-  } else if (seeds.empty()) {
-    std::cerr
-        << "No somas found, possibly make --open-steps lower or "
-           "--close-steps "
-           "higher (if using membrane labeling), also consider raising the "
-           "fg "
-           "percent. Note that passing --seeds forces all found somas to be "
-           "filtered against those you specified, exiting...\n";
-    exit(1);
-  } else if (this->args->output_type == "seeds") {
-    exit(0); // exit
-  }
-
   std::ofstream run_log;
   run_log.open(log_fn, std::ios::app);
-  run_log << "Neurite SDF voxel count, "
-          << neurite_sdf->activeVoxelCount() << '\n';
-  run_log.flush();
 
-  if (CLASSIC_PRUNE) {
+  std::vector<Seed> seeds;
+  if (!args->seed_path.empty() && !args->seed_intersection) {
+    seeds = process_marker_dir(args->seed_path, args->voxel_size);
+    auto mask_accessor = this->mask_grid->getAccessor();
+    rng::for_each(seeds, [&mask_accessor](Seed seed) {
+      for (const auto coord : sphere_iterator(seed.coord, seed.radius)) {
+        mask_accessor.setValueOn(coord);
+      }
+    });
+  }
+
+  openvdb::FloatGrid::Ptr neurite_sdf;
+  if (args->close_steps) {
+    auto ppair = soma_segmentation(mask_grid, args, this->image_lengths, log_fn,
+                                   run_dir);
+    seeds = ppair.first;
+    neurite_sdf = ppair.second;
+
+    if (this->args->output_type == "labels") {
+      exit(0); // exit
+    } else if (seeds.empty()) {
+      std::cerr
+          << "No somas found, possibly make --open-steps lower or "
+             "--close-steps "
+             "higher (if using membrane labeling), also consider raising the "
+             "fg "
+             "percent. Note that passing --seeds forces all found somas to be "
+             "filtered against those you specified, exiting...\n";
+      exit(1);
+    } else if (this->args->output_type == "seeds") {
+      exit(0); // exit
+    }
+
+    if (CLASSIC_PRUNE) {
 #ifdef LOG
-    std::cout << "\tSDF to point step\n";
+      std::cout << "\tSDF to point step\n";
 #endif
-    assertm(neurite_sdf,
-            "Topology grid must be set before starting reconstruction");
-    this->topology_grid = convert_sdf_to_points(neurite_sdf, image_lengths,
-                                                args->foreground_percent);
-  } else {
-    this->foreground_grid = vto::extractEnclosedRegion(*neurite_sdf);
-    if (args->save_vdbs) {
-      write_vdb_file({this->foreground_grid},
-                     run_dir / ("foreground_grid.vdb"));
+      this->topology_grid = convert_sdf_to_points(neurite_sdf, image_lengths,
+                                                  args->foreground_percent);
+    } else {
+      // neurite sdf has been closed, so save back to the mask_grid
+      this->mask_grid = vto::clip_internal::convertToMaskGrid(*neurite_sdf);
     }
   }
 
+  if (seeds.size() == 0)
+    throw std::runtime_error(
+        "No seeds are on with respect to foreground... exiting");
+
+  /*
+auto [soma_sdf, _] = create_seed_sphere_grid(seeds);
+//openvdb::BoolGrid::Ptr soma_mask = vto::extractEnclosedRegion(*soma_sdf);
+openvdb::BoolGrid::Ptr soma_mask = vto::sdfInteriorMask(*soma_sdf);
+// TODO you may need to convert this sdf to soma_mask first to get the
+// interior regions
+auto mask_accessor = this->mask_grid->getAccessor();
+for (auto iter = soma_mask->cbeginValueOn(); iter.test(); ++iter) {
+auto coord = iter.getCoord();
+mask_accessor.setValueOn(coord);
+}
+*/
+
+  // union args must be of same vdb type
+  // openvdb::BoolGrid::Ptr neurite_mask = csgUnion(*this->mask_grid,
+  // *soma_mask);
+  // TODO create_labels
+
   // filter seeds with respect to topology
+  // int empty_leaf_seed_count = 0;
   seeds = seeds | rv::filter([this](Seed seed) {
             if (CLASSIC_PRUNE)
               return this->topology_grid->tree().isValueOn(seed.coord);
-            auto ison = this->foreground_grid->tree().isValueOn(seed.coord);
-            if (ison && !this->foreground_grid->tree().probeLeaf(seed.coord)) {
-               std::cout << "coord is on but prla " << seed.coord << '\n';
-}
-            return ison;
+            return this->mask_grid->tree().isValueOn(seed.coord) &&
+                   this->mask_grid->tree().probeLeaf(seed.coord);
+            // auto ison = this->mask_grid->tree().isValueOn(seed.coord);
+            // if (ison && !this->mask_grid->tree().probeLeaf(seed.coord)) {
+            ////std::cout << "coord is on but prla " << seed.coord << '\n';
+            //++empty_leaf_seed_count;
+            //}
+            // return ison;
           }) |
           rng::to_vector;
+
+  // run_log << "Empy leaf seed count, " << empty_leaf_seed_count << '\n';
   run_log << "Filtered seed count, " << seeds.size() << '\n';
   run_log.flush();
 
@@ -3438,7 +3474,9 @@ template <class image_t> void Recut<image_t>::operator()() {
     throw std::runtime_error(
         "No seeds are on with respect to foreground... exiting");
 
+  std::cout << "Start init globals\n";
   initialize_globals(this->grid_tile_size, this->tile_block_size);
+  std::cout << "Finished init globals\n";
 
   // constrain topology to only those reachable from roots
   std::string stage;
@@ -3450,11 +3488,13 @@ template <class image_t> void Recut<image_t>::operator()() {
                         this->connected_map);
   } else {
     stage = "connected-mask";
+    std::cout << "Start activate seeds\n";
     this->activate_vids_mask(seeds);
+    std::cout << "End activate seeds\n";
   }
 
   run_log << "Foreground active voxel count, "
-          << this->foreground_grid->activeVoxelCount() << '\n'
+          << this->mask_grid->activeVoxelCount() << '\n'
           << "Connected grid after activate seeds voxel count, "
           << this->connected_grid->activeVoxelCount() << '\n';
   run_log.flush();

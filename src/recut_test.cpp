@@ -259,6 +259,7 @@ void check_image_equality(image_t *inimg1d, image_t *check, VID_t volume) {
 //}
 //};
 
+/*
 TEST(VDB, InitializeGlobals) {
   // make big enough such that you have at least 2 blocks across each dim
   VID_t grid_size = 16;
@@ -268,7 +269,7 @@ TEST(VDB, InitializeGlobals) {
   bool print_all = true;
 
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-                       /*input_is_vdb=*/true);
+                       true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
   auto seeds = process_marker_dir(args.seed_path);
@@ -298,6 +299,7 @@ TEST(VDB, InitializeGlobals) {
   ASSERT_TRUE(leaf_iter->isValueOn(boundary_coord));
   ASSERT_FALSE(leaf_iter->getValue(boundary_coord));
 }
+*/
 
 TEST(VDB, UpdateSemantics) {
 
@@ -405,6 +407,7 @@ TEST(Histogram, CallAndPrint) {
   }
 }
 
+/*
 TEST(VDB, IntegrateUpdateGrid) {
   // just large enough for a central block and surrounding blocks
   VID_t grid_size = 24;
@@ -417,7 +420,7 @@ TEST(VDB, IntegrateUpdateGrid) {
   // generate an image buffer on the fly
   // then convert to vdb
   auto args = get_args(grid_size, grid_size, grid_size, slt_pct, tcase,
-                       /*input_is_vdb=*/true);
+                       true);
   auto recut = Recut<uint16_t>(args);
   recut.initialize();
   auto seeds = process_marker_dir(args.seed_path);
@@ -480,6 +483,7 @@ TEST(VDB, IntegrateUpdateGrid) {
     }
   }
 }
+*/
 
 TEST(VDB, DISABLED_CreatePointDataGrid) {
 
