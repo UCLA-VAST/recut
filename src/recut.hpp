@@ -3182,8 +3182,12 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     }
   }; // for each component
 
-  auto enum_components = components | rv::enumerate | rng::to_vector;
-  tbb::task_arena arena(args->user_thread_count);
+  auto enum_components = components | rv::enumerate | rv::reverse | rng::to_vector;
+  auto thread_count = args->user_thread_count;
+  if (args->window_grid_paths.size()) {
+    thread_count = 1;
+  }
+  tbb::task_arena arena(thread_count);
   arena.execute(
       [&] { tbb::parallel_for_each(enum_components, process_component); });
 
