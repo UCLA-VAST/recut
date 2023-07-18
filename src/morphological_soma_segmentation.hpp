@@ -71,8 +71,6 @@ std::vector<Seed> process_marker_dir(
 
 std::pair<openvdb::FloatGrid::Ptr, std::vector<openvdb::FloatGrid::Ptr>>
 create_seed_sphere_grid(std::vector<Seed> seeds) {
-  auto timer = high_resolution_timer();
-
   auto component_grids = seeds | rv::transform([](const Seed &seed) {
                            int voxel_size = 1;
                            return vto::createLevelSetSphere<openvdb::FloatGrid>(
@@ -80,16 +78,7 @@ create_seed_sphere_grid(std::vector<Seed> seeds) {
                                RECUT_LEVEL_SET_HALF_WIDTH);
                          }) |
                          rng::to_vector;
-#ifdef LOG
-  std::cout << "\tFinished create seed spheres in " << timer.elapsed() << '\n';
-#endif
-  timer.restart();
-
-  // TODO replace with sumMergeOp which is parallel and more efficient
   auto merged = merge_grids(component_grids);
-#ifdef LOG
-  std::cout << "\tFinished sphere merge in " << timer.elapsed() << '\n';
-#endif
   return std::make_pair(merged, component_grids);
 }
 
@@ -517,9 +506,8 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
 // change the fog volume into an SDF by holding values on the border between
 // active an inactive voxels
 // the new SDF wraps (dilates by 1) the original active voxels, and
-// additionally holds values across the interface of the surface
-//
-// this function additionally adds a morphological closing step such that
+// additionally holds distance values across the interface of the surface
+// this function additionally adds a required morphological closing step such that
 // holes and valleys in the SDF are filled
 #ifdef LOG
   std::cout << "starting seed (soma) detection:\n";
@@ -562,6 +550,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
     // if (args->save_vdbs)
     // write_vdb_file({known_seed_sphere_merged}, run_dir / "known_seeds.vdb");
 
+    /*
     // labels need somas as intact / unmodified therefore they should
     // not be unioned
     // do not union if you will later intersect
@@ -589,6 +578,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
       // std::cout << "\tFinished finding " << final_soma_sdfs.size()
       //<< " soma components in " << timer.elapsed() << '\n';
     }
+    */
   }
 
   // if (args->save_vdbs)
