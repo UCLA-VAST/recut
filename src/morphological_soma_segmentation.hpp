@@ -550,6 +550,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
     // if (args->save_vdbs)
     // write_vdb_file({known_seed_sphere_merged}, run_dir / "known_seeds.vdb");
 
+    /*
     // labels need somas as intact / unmodified therefore they should
     // not be unioned
     // do not union if you will later intersect
@@ -577,6 +578,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, RecutCommandLineArgs *args,
       // std::cout << "\tFinished finding " << final_soma_sdfs.size()
       //<< " soma components in " << timer.elapsed() << '\n';
     }
+    */
   }
 
   // if (args->save_vdbs)

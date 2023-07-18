@@ -394,7 +394,7 @@ void Recut<image_t>::activate_vids_mask(const std::vector<Seed> &seeds) {
     // find corresponding leafs
     auto foreground_leaf = this->mask_grid->tree().probeLeaf(coord);
     if (!foreground_leaf) {
-      //std::cout << "Lost 1 seed\n";
+      // std::cout << "Lost 1 seed\n";
       continue;
     }
     auto leaf_bbox = foreground_leaf->getNodeBoundingBox();
@@ -2864,20 +2864,22 @@ template <class image_t> void Recut<image_t>::initialize() {
   this->connected_grid = openvdb::FloatGrid::create();
   this->connected_grid->setTransform(get_transform());
 
-  if (!args->close_steps) {
-    args->close_steps = CLOSE_FACTOR / args->voxel_size[0];
-    args->close_steps = args->close_steps < 1 ? 1 : args->close_steps;
-    std::cout << "Close steps inferred to " << args->close_steps.value()
-              << " based on voxel size\n";
-  }
+  if (args->seed_path.empty() || args->seed_intersection) {
+    if (!args->close_steps) {
+      args->close_steps = CLOSE_FACTOR / args->voxel_size[0];
+      args->close_steps = args->close_steps < 1 ? 1 : args->close_steps;
+      std::cout << "Close steps inferred to " << args->close_steps.value()
+                << " based on voxel size\n";
+    }
 
-  // infer open steps if it wasn't explicitly passed and seed intersection and
-  // no seeds were passed
-  if (!args->open_steps &&
-      (args->seed_intersection || args->seed_path.empty())) {
-    args->open_steps = OPEN_FACTOR / args->voxel_size[0];
-    std::cout << "Open steps inferred to " << args->open_steps.value()
-              << " based on voxel size\n";
+    // infer open steps if it wasn't explicitly passed and seed intersection and
+    // no seeds were passed
+    if (!args->open_steps &&
+        (args->seed_intersection || args->seed_path.empty())) {
+      args->open_steps = OPEN_FACTOR / args->voxel_size[0];
+      std::cout << "Open steps inferred to " << args->open_steps.value()
+                << " based on voxel size\n";
+    }
   }
 }
 
@@ -3376,60 +3378,55 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   std::ofstream run_log;
   run_log.open(log_fn, std::ios::app);
-  /*
-  auto [seeds, neurite_sdf] =
-      soma_segmentation(mask_grid, args, this->image_lengths, log_fn, run_dir);
-  if (args->save_vdbs) {
-    write_vdb_file({neurite_sdf}, run_dir / ("neurite_sdf.vdb"));
+
+  std::vector<Seed> seeds;
+  if (!args->seed_path.empty() && !args->seed_intersection) {
+    seeds = process_marker_dir(args->seed_path, args->voxel_size);
+    auto mask_accessor = this->mask_grid->getAccessor();
+    rng::for_each(seeds, [&mask_accessor](Seed seed) {
+      for (const auto coord : sphere_iterator(seed.coord, seed.radius)) {
+        mask_accessor.setValueOn(coord);
+      }
+    });
   }
 
-  run_log << "Neurite SDF voxel count, " << neurite_sdf->activeVoxelCount()
-          << '\n';
-  run_log.flush();
+  openvdb::FloatGrid::Ptr neurite_sdf;
+  if (args->close_steps) {
+    auto ppair = soma_segmentation(mask_grid, args, this->image_lengths, log_fn,
+                                   run_dir);
+    seeds = ppair.first;
+    neurite_sdf = ppair.second;
 
+    if (this->args->output_type == "labels") {
+      exit(0); // exit
+    } else if (seeds.empty()) {
+      std::cerr
+          << "No somas found, possibly make --open-steps lower or "
+             "--close-steps "
+             "higher (if using membrane labeling), also consider raising the "
+             "fg "
+             "percent. Note that passing --seeds forces all found somas to be "
+             "filtered against those you specified, exiting...\n";
+      exit(1);
+    } else if (this->args->output_type == "seeds") {
+      exit(0); // exit
+    }
 
-  if (this->args->output_type == "labels") {
-    exit(0); // exit
-  } else if (seeds.empty()) {
-    std::cerr
-        << "No somas found, possibly make --open-steps lower or "
-           "--close-steps "
-           "higher (if using membrane labeling), also consider raising the "
-           "fg "
-           "percent. Note that passing --seeds forces all found somas to be "
-           "filtered against those you specified, exiting...\n";
-    exit(1);
-  } else if (this->args->output_type == "seeds") {
-    exit(0); // exit
-  }
-
-  if (CLASSIC_PRUNE) {
+    if (CLASSIC_PRUNE) {
 #ifdef LOG
-    std::cout << "\tSDF to point step\n";
+      std::cout << "\tSDF to point step\n";
 #endif
-    this->topology_grid = convert_sdf_to_points(neurite_sdf, image_lengths,
-                                                args->foreground_percent);
-  } else {
-    this->foreground_grid = vto::extractEnclosedRegion(*neurite_sdf);
-    if (args->save_vdbs) {
-      write_vdb_file({this->foreground_grid},
-                     run_dir / ("foreground_grid.vdb"));
+      this->topology_grid = convert_sdf_to_points(neurite_sdf, image_lengths,
+                                                  args->foreground_percent);
+    } else {
+      // neurite sdf has been closed, so save back to the mask_grid
+      this->mask_grid = vto::clip_internal::convertToMaskGrid(*neurite_sdf);
     }
   }
-  */
 
-  // TODO move this chunk before morphological
-  // TODO only enter soma detection if close is on
-  auto seeds = process_marker_dir(args->seed_path, args->voxel_size);
-
-  // second brute force attempt
-  auto mask_accessor = this->mask_grid->getAccessor();
-  rng::for_each(seeds, [&mask_accessor](Seed seed) {
-    for (const auto coord : sphere_iterator(seed.coord, seed.radius)) {
-      mask_accessor.setValueOn(coord);
-      //this->mask_grid->tree().setValueOn(coord);
-    }
-  });
+  if (seeds.size() == 0)
+    throw std::runtime_error(
+        "No seeds are on with respect to foreground... exiting");
 
   /*
 auto [soma_sdf, _] = create_seed_sphere_grid(seeds);
@@ -3450,20 +3447,22 @@ mask_accessor.setValueOn(coord);
   // TODO create_labels
 
   // filter seeds with respect to topology
-  //int empty_leaf_seed_count = 0;
+  // int empty_leaf_seed_count = 0;
   seeds = seeds | rv::filter([this](Seed seed) {
             if (CLASSIC_PRUNE)
               return this->topology_grid->tree().isValueOn(seed.coord);
-            return this->mask_grid->tree().isValueOn(seed.coord) && this->mask_grid->tree().probeLeaf(seed.coord);
-            //auto ison = this->mask_grid->tree().isValueOn(seed.coord);
-            //if (ison && !this->mask_grid->tree().probeLeaf(seed.coord)) {
-              ////std::cout << "coord is on but prla " << seed.coord << '\n';
-              //++empty_leaf_seed_count;
+            return this->mask_grid->tree().isValueOn(seed.coord) &&
+                   this->mask_grid->tree().probeLeaf(seed.coord);
+            // auto ison = this->mask_grid->tree().isValueOn(seed.coord);
+            // if (ison && !this->mask_grid->tree().probeLeaf(seed.coord)) {
+            ////std::cout << "coord is on but prla " << seed.coord << '\n';
+            //++empty_leaf_seed_count;
             //}
-            //return ison;
+            // return ison;
           }) |
           rng::to_vector;
-  //run_log << "Empy leaf seed count, " << empty_leaf_seed_count << '\n';
+
+  // run_log << "Empy leaf seed count, " << empty_leaf_seed_count << '\n';
   run_log << "Filtered seed count, " << seeds.size() << '\n';
   run_log.flush();
 
