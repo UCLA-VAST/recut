@@ -3389,7 +3389,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   // labels need somas as intact / unmodified therefore they should
   // not be filled, also do not fill if you will later intersect
   // since fill and intersection are complementary strategies
-  if (!args->output_type == "labels" && !args->seed_path.empty() &&
+  if (!(args->output_type == "labels") && !args->seed_path.empty() &&
       !args->seed_intersection) {
     seeds = process_marker_dir(args->seed_path, args->voxel_size);
     fill_seeds(this->mask_grid, seeds);
@@ -3480,7 +3480,9 @@ template <class image_t> void Recut<image_t>::operator()() {
           << this->connected_grid->activeVoxelCount() << '\n';
   run_log.flush();
 
-  auto global_timer = high_resolution_timer();
+  if (args->save_vdbs) {
+      write_vdb_file({this->connected_grid}, component_dir_fn / "connected_float.vdb");
+  }
 
   // radius stage will consume fifo surface vertices
   if (CLASSIC_PRUNE) {
