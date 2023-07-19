@@ -3399,7 +3399,8 @@ template <class image_t> void Recut<image_t>::operator()() {
   if (args->close_steps) {
     auto ppair = soma_segmentation(mask_grid, seeds, args, this->image_lengths,
                                    log_fn, run_dir);
-    seeds = ppair.first;
+    if (seeds.size() == 0)
+      seeds = ppair.first;
     neurite_sdf = ppair.second;
 
     if (this->args->output_type == "labels") {
@@ -3432,7 +3433,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   if (seeds.size() == 0)
     throw std::runtime_error(
-        "No seeds are on with respect to foreground... exiting");
+        "No seeds found... exiting");
 
   // filter seeds with respect to topology
   // int empty_leaf_seed_count = 0;
