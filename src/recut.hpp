@@ -3363,7 +3363,7 @@ template <class image_t> void Recut<image_t>::operator()() {
       convert_topology();
       assertm(this->mask_grid, "Mask grid not properly set");
       if (args->save_vdbs)
-        write_vdb_file({this->mask_grid}, "mask.vdb");
+        write_vdb_file({this->mask_grid}, this->run_dir / "mask.vdb");
       // sets to this->mask_grid instead of reading from file
       //} else {
       // args->output_type = "point";
@@ -3424,8 +3424,9 @@ template <class image_t> void Recut<image_t>::operator()() {
       this->topology_grid = convert_sdf_to_points(neurite_sdf, image_lengths,
                                                   args->foreground_percent);
     } else {
+      auto temp = vto::extractEnclosedRegion(*neurite_sdf);
       // neurite sdf has been closed, so save back to the mask_grid
-      this->mask_grid = vto::clip_internal::convertToMaskGrid(*neurite_sdf);
+      this->mask_grid = vto::clip_internal::convertToMaskGrid(*temp);
     }
   }
 
@@ -3451,9 +3452,11 @@ template <class image_t> void Recut<image_t>::operator()() {
     throw std::runtime_error(
         "No seeds are on with respect to foreground... exiting");
 
+  auto timer = high_resolution_timer();
   std::cout << "Start init globals\n";
   initialize_globals(this->grid_tile_size, this->tile_block_size);
-  std::cout << "Finished init globals\n";
+  std::cout << "Finished init globals " << timer.elapsed_formatted() << '\n';
+  run_log << "Initialize globals, " << timer.elapsed_formatted() << '\n';
 
   // constrain topology to only those reachable from roots
   std::string stage;
@@ -3481,7 +3484,8 @@ template <class image_t> void Recut<image_t>::operator()() {
   run_log.flush();
 
   if (args->save_vdbs) {
-      write_vdb_file({this->connected_grid}, component_dir_fn / "connected_float.vdb");
+    write_vdb_file({this->connected_grid},
+                   this->run_dir / "connected_float.vdb");
   }
 
   // radius stage will consume fifo surface vertices

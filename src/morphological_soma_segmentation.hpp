@@ -491,8 +491,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, std::vector<Seed> seeds,
 // this function additionally adds a required morphological closing step such
 // that holes and valleys in the SDF are filled
 #ifdef LOG
-  std::cout << "starting seed (soma) detection:\n";
-  std::cout << "\tmask to sdf step\n";
+  std::cout << "\tStart morphological close = " << args->close_steps.value() << '\n';
 #endif
   // resulting SDF is slightly modified by a closing op of 1 step which has a
   // very minimal effect this API does not allow 0 closing
@@ -500,6 +499,9 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, std::vector<Seed> seeds,
   auto sdf_grid = vto::topologyToLevelSet(
       *mask_grid, /*halfwidth voxels*/ RECUT_LEVEL_SET_HALF_WIDTH,
       /*closing steps*/ args->close_steps.value());
+#ifdef LOG
+  std::cout << "\tFinished morphological close\n";
+#endif
 
   run_log << "Seed detection: mask to SDF conversion time, "
           << timer.elapsed_formatted() << '\n'
@@ -524,7 +526,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, std::vector<Seed> seeds,
   // open again to filter axons and dendrites
   if (args->open_steps) {
 #ifdef LOG
-    std::cout << "\topen step: open = " << args->open_steps.value() << "\n";
+    std::cout << "\tStart morphological open = " << args->open_steps.value() << "\n";
 #endif
     timer.restart();
     filter->offset(args->open_steps.value());
@@ -534,6 +536,9 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, std::vector<Seed> seeds,
     run_log << "Seed detection: opened SDF voxel count, "
             << sdf_grid->activeVoxelCount() << "\n";
     run_log.flush();
+#ifdef LOG
+    std::cout << "\tEnd morphological open\n";
+#endif
   }
 
   if (seeds.size()) {
