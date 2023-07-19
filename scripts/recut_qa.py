@@ -24,7 +24,7 @@ def parse_range(string):
 def call_recut(**kwargs):
     if kwargs['inferenced_path'] is None:
         # whitelist certain arguments to pass directly to recut
-        include = ['min_radius', 'max_radius', 'open_denoise', 'open_steps', 'close_steps', 'fg_percent']
+        include = ['min_radius', 'max_radius', 'open_steps', 'close_steps', 'fg_percent']
         args = "".join([f"--{k} {v} ".replace('_', '-') for k, v in kwargs.items() if k in include if v])
         cmd = f"recut {kwargs['image']} {args} --voxel-size {kwargs['voxel_size_x']} {kwargs['voxel_size_y']} " \
               f"{kwargs['voxel_size_z']}"
@@ -67,7 +67,6 @@ def main():
     # recut arguments
     parser.add_argument('--min-radius', type=float, help="a min allowed radii for inferences for filtering purpose")
     parser.add_argument('--max-radius', type=float, help="a max allowed radii for inferences for filtering purpose")
-    parser.add_argument('--open-denoise', type=float)
     parser.add_argument('--open-steps', type=float)
     parser.add_argument('--close-steps', type=float)
     parser.add_argument('--fg-percent', type=float)

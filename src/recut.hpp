@@ -2864,6 +2864,9 @@ template <class image_t> void Recut<image_t>::initialize() {
   this->connected_grid = openvdb::FloatGrid::create();
   this->connected_grid->setTransform(get_transform());
 
+  // when no known seeds are passed or when the intersection strategy
+  // is on and user does not input a close or open step, its safe
+  // to infer the steps based on the voxel size
   if (args->seed_path.empty() || args->seed_intersection) {
     if (!args->close_steps) {
       args->close_steps = CLOSE_FACTOR / args->voxel_size[0];
@@ -3186,7 +3189,8 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     }
   }; // for each component
 
-  auto enum_components = components | rv::enumerate | rv::reverse | rng::to_vector;
+  auto enum_components =
+      components | rv::enumerate | rv::reverse | rng::to_vector;
   auto thread_count = args->user_thread_count;
   if (args->window_grid_paths.size()) {
     thread_count = 1;
@@ -3272,8 +3276,6 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
     }
     run_log << "Seed detection: morphological operations order, "
             << args->morphological_operations_order << '\n'
-            << "Seed detection: morphological operations denoise steps, "
-            << args->open_denoise << '\n'
             << "Seed detection: morphological operations close steps, "
             << args->close_steps.value_or(0) << '\n'
             << "Seed detection: morphological operations open steps, "
@@ -3384,20 +3386,19 @@ template <class image_t> void Recut<image_t>::operator()() {
   run_log.open(log_fn, std::ios::app);
 
   std::vector<Seed> seeds;
-  if (!args->seed_path.empty() && !args->seed_intersection) {
+  // labels need somas as intact / unmodified therefore they should
+  // not be filled, also do not fill if you will later intersect
+  // since fill and intersection are complementary strategies
+  if (!args->output_type == "labels" && !args->seed_path.empty() &&
+      !args->seed_intersection) {
     seeds = process_marker_dir(args->seed_path, args->voxel_size);
-    auto mask_accessor = this->mask_grid->getAccessor();
-    rng::for_each(seeds, [&mask_accessor](Seed seed) {
-      for (const auto coord : sphere_iterator(seed.coord, seed.radius)) {
-        mask_accessor.setValueOn(coord);
-      }
-    });
+    fill_seeds(this->mask_grid, seeds);
   }
 
   openvdb::FloatGrid::Ptr neurite_sdf;
   if (args->close_steps) {
-    auto ppair = soma_segmentation(mask_grid, args, this->image_lengths, log_fn,
-                                   run_dir);
+    auto ppair = soma_segmentation(mask_grid, seeds, args, this->image_lengths,
+                                   log_fn, run_dir);
     seeds = ppair.first;
     neurite_sdf = ppair.second;
 
@@ -3432,24 +3433,6 @@ template <class image_t> void Recut<image_t>::operator()() {
     throw std::runtime_error(
         "No seeds are on with respect to foreground... exiting");
 
-  /*
-auto [soma_sdf, _] = create_seed_sphere_grid(seeds);
-//openvdb::BoolGrid::Ptr soma_mask = vto::extractEnclosedRegion(*soma_sdf);
-openvdb::BoolGrid::Ptr soma_mask = vto::sdfInteriorMask(*soma_sdf);
-// TODO you may need to convert this sdf to soma_mask first to get the
-// interior regions
-auto mask_accessor = this->mask_grid->getAccessor();
-for (auto iter = soma_mask->cbeginValueOn(); iter.test(); ++iter) {
-auto coord = iter.getCoord();
-mask_accessor.setValueOn(coord);
-}
-*/
-
-  // union args must be of same vdb type
-  // openvdb::BoolGrid::Ptr neurite_mask = csgUnion(*this->mask_grid,
-  // *soma_mask);
-  // TODO create_labels
-
   // filter seeds with respect to topology
   // int empty_leaf_seed_count = 0;
   seeds = seeds | rv::filter([this](Seed seed) {
@@ -3457,12 +3440,6 @@ mask_accessor.setValueOn(coord);
               return this->topology_grid->tree().isValueOn(seed.coord);
             return this->mask_grid->tree().isValueOn(seed.coord) &&
                    this->mask_grid->tree().probeLeaf(seed.coord);
-            // auto ison = this->mask_grid->tree().isValueOn(seed.coord);
-            // if (ison && !this->mask_grid->tree().probeLeaf(seed.coord)) {
-            ////std::cout << "coord is on but prla " << seed.coord << '\n';
-            //++empty_leaf_seed_count;
-            //}
-            // return ison;
           }) |
           rng::to_vector;
 

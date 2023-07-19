@@ -79,9 +79,6 @@ void RecutCommandLineArgs::PrintUsage() {
          "volume of their component, this allows specifying an expansion "
          "factor around seeds, if no µm value is passed it will use "
       << EXPAND_WINDOW_UM << " µm\n";
-  std::cout << "--open-denoise         1st morphological opening level "
-               "to denoise image before soma detection; "
-               "defaults to 0 (no-opening)\n";
   std::cout << "--close-steps          morphological closing level "
                "to fill hollow signals inside somata or to join path breaks "
                "defaults to " << CLOSE_FACTOR<< "/ x voxel size, value passed must be >= 1\n";
@@ -283,9 +280,6 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
           args.expand_window_um = atof(argv[i + 1]);
           ++i;
         }
-      } else if (strcmp(argv[i], "--open-denoise") == 0) {
-        args.open_denoise = atof(argv[i + 1]);
-        ++i;
       } else if (strcmp(argv[i], "--open-steps") == 0) {
         args.open_steps = atoi(argv[i + 1]);
         ++i;
