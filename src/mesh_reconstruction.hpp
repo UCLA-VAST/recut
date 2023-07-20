@@ -183,8 +183,9 @@ vdb_to_markers(openvdb::FloatGrid::Ptr fog, std::vector<Seed> component_seeds,
     write_vdb_file({component}, component_dir_fn / "sdf.vdb");
   }
 
+  HMesh::Manifold m;
   try {
-    auto m = vdb_to_mesh(component, args);
+    m = vdb_to_mesh(component, args);
   } catch (...) {
     return std::nullopt;
   }
