@@ -3395,14 +3395,29 @@ template <class image_t> void Recut<image_t>::operator()() {
     fill_seeds(this->mask_grid, seeds);
   }
 
-  openvdb::FloatGrid::Ptr neurite_sdf;
   if (args->close_steps) {
-    auto ppair = soma_segmentation(mask_grid, seeds, args, this->image_lengths,
+#ifdef LOG
+    std::cout << "\tStart morphological close = " << args->close_steps.value() << "\n";
+#endif
+    auto timer = high_resolution_timer();
+    // close
+    openvdb::tools::dilateActiveValues(mask_grid->tree(),
+                                       args->close_steps.value());
+    openvdb::tools::erodeActiveValues(mask_grid->tree(),
+                                      args->close_steps.value());
+    openvdb::tools::pruneInactive(mask_grid->tree());
+    run_log << "Seed detection: closing time, " << timer.elapsed_formatted()
+            << "\n";
+#ifdef LOG
+    std::cout << "\tEnd morphological close\n";
+#endif
+
+    auto inference_seeds = soma_segmentation(mask_grid, seeds, args, this->image_lengths,
                                    log_fn, run_dir);
     if (seeds.size() == 0)
-      seeds = ppair.first;
-    neurite_sdf = ppair.second;
+      seeds = inference_seeds;
 
+    // if output type is labels or seeds end the program
     if (this->args->output_type == "labels") {
       exit(0); // exit
     } else if (seeds.empty()) {
@@ -3411,29 +3426,17 @@ template <class image_t> void Recut<image_t>::operator()() {
              "--close-steps "
              "higher (if using membrane labeling), also consider raising the "
              "fg "
-             "percent. Note that passing --seeds forces all found somas to be "
+             "percent. Note that passing '--seeds folder intersect' forces all "
+             "found somas to be "
              "filtered against those you specified, exiting...\n";
       exit(1);
     } else if (this->args->output_type == "seeds") {
       exit(0); // exit
     }
-
-    if (CLASSIC_PRUNE) {
-#ifdef LOG
-      std::cout << "\tSDF to point step\n";
-#endif
-      this->topology_grid = convert_sdf_to_points(neurite_sdf, image_lengths,
-                                                  args->foreground_percent);
-    } else {
-      auto temp = vto::extractEnclosedRegion(*neurite_sdf);
-      // neurite sdf has been closed, so save back to the mask_grid
-      this->mask_grid = vto::clip_internal::convertToMaskGrid(*temp);
-    }
   }
 
   if (seeds.size() == 0)
-    throw std::runtime_error(
-        "No seeds found... exiting");
+    throw std::runtime_error("No seeds found... exiting");
 
   // filter seeds with respect to topology
   // int empty_leaf_seed_count = 0;

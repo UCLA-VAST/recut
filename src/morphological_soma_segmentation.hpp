@@ -82,6 +82,33 @@ create_seed_sphere_grid(std::vector<Seed> seeds) {
   return std::make_pair(merged, component_grids);
 }
 
+// this strategies permanently modify the  mask_grid for both soma
+// detection and neurite reconstruction, the image grid uint8 that is
+// output in windows is unaffected however
+// fills in spheres where the user passed seeds are
+// known to be located
+void fill_seeds(openvdb::MaskGrid::Ptr mask_grid, std::vector<Seed> seeds) {
+  auto mask_accessor = mask_grid->getAccessor();
+  rng::for_each(seeds, [&mask_accessor](Seed seed) {
+    for (const auto coord : sphere_iterator(seed.coord, seed.radius)) {
+      mask_accessor.setValueOn(coord);
+    }
+  });
+}
+
+std::optional<GridCoord> mean_location(openvdb::MaskGrid::Ptr mask_grid) {
+  GridCoord sum = zeros();
+  uint64_t counter = 0;
+  for (auto iter = mask_grid->cbeginValueOn(); iter.test(); ++iter) {
+    auto val_coord = iter.getCoord();
+    sum += val_coord;
+    ++counter;
+  }
+  if (counter)
+    return coord_div(sum, GridCoord(counter));
+  return std::nullopt;
+}
+
 // establish highest performance most basic filter for morphological
 // operations like dilation, erosion, opening, closing
 // Of all connected components, keep those whose central coordinate is an
@@ -90,73 +117,37 @@ create_seed_sphere_grid(std::vector<Seed> seeds) {
 // components to only those components which contain the passed seed
 // If you already filtered the grid with seed intersection there's no need
 // to refilter by known seeds
-auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
+auto create_seed_pairs = [](std::vector<openvdb::MaskGrid::Ptr> components,
                             std::array<float, 3> voxel_size,
                             float min_radius_um, float max_radius_um,
                             std::string output_type,
                             std::vector<Seed> known_seeds = {}) {
   std::vector<Seed> seeds;
-  std::vector<openvdb::FloatGrid::Ptr> filtered_components;
+  std::vector<openvdb::MaskGrid::Ptr> filtered_components;
   auto removed_by_known_seeds = 0;
-  auto removed_by_incorrect_sphere = 0;
+  auto empty_components = 0;
   auto removed_by_radii = 0;
   auto max_voxel_size = min_max(voxel_size).second;
   for (auto component : components) {
-    openvdb::Vec4s sphere;
-    std::vector<openvdb::Vec4s> spheres;
-    // make a temporary copy to possibly mutate
-    // auto dilated_sdf = component->deepCopy();
-    // establish the filter for opening
-    auto filter = create_morph_filter(component);
-    if (component->activeVoxelCount() < 1) {
-      ++removed_by_incorrect_sphere;
+    auto volume_voxels = component->activeVoxelCount();
+    if (volume_voxels < 1) {
+      ++empty_components;
       continue;
     }
 
-    // std::cout << "\tstarting sdf count " << dilated_sdf->activeVoxelCount()
-    //<< '\n';
-    // for (int i=0; (i < 5) && (spheres.size() < 1) &&
-    // (dilated_sdf->activeVoxelCount() >=1); ++i) {
-    //  it's possible to force this function to return spheres with a
-    //  certain range of radii, but we'd rather see what the raw radii
-    //  it returns for now and let the min and max radii filter them
-    vto::fillWithSpheres(*component, spheres,
-                         /* min, max total count of spheres allowed */ {1, 1},
-                         /* overlapping*/ false);
-
-    // dilate
-    // filter->offset(-1);
-    // std::cout << "\tdilated sdf count " << dilated_sdf->activeVoxelCount()
-    //<< '\n';
-    //}
-
-    if (spheres.size() < 1) {
-      ++removed_by_incorrect_sphere;
+    // estimate the radii from the volume of active voxels
+    float radius_voxels = std::cbrtf((volume_voxels * 3) / (4 * PI));
+    auto coord = mean_location(component);
+    GridCoord coord_center;
+    if (coord) {
+      coord_center = coord.value();
+    } else {
+      ++empty_components;
       continue;
-    } else if (spheres.size() == 1) {
-      sphere = spheres[0];
-    } else { // get the sphere with max radii
-      sphere = *std::max_element(spheres.begin(), spheres.end(),
-                                 [](openvdb::Vec4s &fst, openvdb::Vec4s &snd) {
-                                   return fst[3] < snd[3];
-                                 });
     }
 
-    auto coord_center = GridCoord(sphere[0], sphere[1], sphere[2]);
-    auto radius_voxels = sphere[3];
-
-    // auto seed = sdf_to_seed(component);
-    // if (!seed) {
-    //++removed_by_incorrect_sphere;
-    // continue;
-    //}
-    // auto [coord_center, radius_voxels] = *seed;
-    // std::cout << "radius voxels " << radius_voxels << '\n';
-
+    /*
     if (!known_seeds.empty()) {
-      // convert to fog so that isValueOn returns whether it is
-      // within the
-      vto::sdfToFogVolume(*component);
       // component if no known seed is an active voxel in this
       // component then remove this component
       if (rng::none_of(known_seeds, [&component](const auto &known_seed) {
@@ -166,6 +157,7 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
         continue;
       }
     }
+    */
 
     // the radius is calculated by the distance of the center point
     // to the nearest surface point voxel sizes can be anisotropic,
@@ -194,9 +186,9 @@ auto create_seed_pairs = [](std::vector<openvdb::FloatGrid::Ptr> components,
   if (removed_by_known_seeds)
     std::cerr << "\tWarning: seeds removed by known seeds "
               << removed_by_known_seeds << '\n';
-  if (removed_by_incorrect_sphere)
-    std::cerr << "\tWarning: seeds removed by incorrect sphere "
-              << removed_by_incorrect_sphere << '\n';
+  if (empty_components)
+    std::cerr << "\tWarning: seeds removed by empty component "
+              << empty_components << '\n';
 #endif
   return std::make_pair(seeds, components);
 };
@@ -454,13 +446,15 @@ void create_labels(std::vector<Seed> seeds, fs::path dir,
   }
 }
 
-std::pair<std::vector<Seed>, openvdb::FloatGrid::Ptr>
-soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, std::vector<Seed> seeds,
-                  RecutCommandLineArgs *args, GridCoord image_lengths,
-                  fs::path log_fn, fs::path run_dir) {
+std::vector<Seed> soma_segmentation(const openvdb::MaskGrid::Ptr mask_grid,
+                                    std::vector<Seed> seeds,
+                                    RecutCommandLineArgs *args,
+                                    GridCoord image_lengths, fs::path log_fn,
+                                    fs::path run_dir) {
 
   auto timer = high_resolution_timer();
   assertm(mask_grid, "Mask grid must be set before starting soma segmentation");
+  auto neurite_mask = mask_grid->deepCopy();
 
   // for labels output .. load the uint8 image
   ImgGrid::Ptr image;
@@ -483,33 +477,7 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, std::vector<Seed> seeds,
   std::ofstream run_log;
   run_log.open(log_fn, std::ios::app);
 
-// mask grids are a fog volume of sparse active values in space
-// change the fog volume into an SDF by holding values on the border between
-// active an inactive voxels
-// the new SDF wraps (dilates by 1) the original active voxels, and
-// additionally holds distance values across the interface of the surface
-// this function additionally adds a required morphological closing step such
-// that holes and valleys in the SDF are filled
-#ifdef LOG
-  std::cout << "\tStart morphological close = " << args->close_steps.value() << '\n';
-#endif
-  // resulting SDF is slightly modified by a closing op of 1 step which has a
-  // very minimal effect this API does not allow 0 closing
-  timer.restart();
-  auto sdf_grid = vto::topologyToLevelSet(
-      *mask_grid, /*halfwidth voxels*/ RECUT_LEVEL_SET_HALF_WIDTH,
-      /*closing steps*/ args->close_steps.value());
-#ifdef LOG
-  std::cout << "\tFinished morphological close\n";
-#endif
-
-  run_log << "Seed detection: mask to SDF conversion time, "
-          << timer.elapsed_formatted() << '\n'
-          << "Seed detection: SDF (topology) voxel count, "
-          << sdf_grid->activeVoxelCount() << '\n';
-  run_log.flush();
-
-  std::vector<openvdb::FloatGrid::Ptr> final_soma_sdfs;
+  /*
   openvdb::FloatGrid::Ptr final_soma_sdf_merged;
   if (seeds.size()) {
     // when --seeds are passed gather them and turn them into a joined SDF
@@ -518,23 +486,24 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, std::vector<Seed> seeds,
     final_soma_sdf_merged = finals.first;
     final_soma_sdfs = finals.second;
   }
-
-  auto filter = create_filter(sdf_grid, args->morphological_operations_order);
-
-  auto neurite_sdf = sdf_grid->deepCopy();
+  */
 
   // open again to filter axons and dendrites
   if (args->open_steps) {
 #ifdef LOG
-    std::cout << "\tStart morphological open = " << args->open_steps.value() << "\n";
+    std::cout << "\tStart morphological open = " << args->open_steps.value()
+              << "\n";
 #endif
     timer.restart();
-    filter->offset(args->open_steps.value());
-    filter->offset(-args->open_steps.value());
+    openvdb::tools::erodeActiveValues(neurite_mask->tree(),
+                                      args->open_steps.value());
+    openvdb::tools::pruneInactive(neurite_mask->tree());
+    openvdb::tools::dilateActiveValues(neurite_mask->tree(),
+                                       args->open_steps.value());
     run_log << "Seed detection: opening time, " << timer.elapsed_formatted()
             << "\n";
     run_log << "Seed detection: opened SDF voxel count, "
-            << sdf_grid->activeVoxelCount() << "\n";
+            << neurite_mask->activeVoxelCount() << "\n";
     run_log.flush();
 #ifdef LOG
     std::cout << "\tEnd morphological open\n";
@@ -543,33 +512,34 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, std::vector<Seed> seeds,
 
   if (seeds.size()) {
     if (args->output_type == "labels") {
-      create_labels(seeds, run_dir / "ml-train-and-test", image, sdf_grid,
+      create_labels(seeds, run_dir / "ml-train-and-test", image, nullptr,
                     nullptr, args->user_thread_count, args->save_vdbs);
 #ifdef LOG
       std::cout << "\tLabel creation completed and safe to open\n";
 #endif
-      return std::make_pair(std::vector<Seed>{}, nullptr);
+      return std::vector<Seed>{};
     }
+    /*
     if (args->seed_intersection) {
       timer.restart();
-      // replace sdf_grid with intersection of sdf_grid and
-      // final_soma_sdf_merged
-      vto::csgIntersection(*sdf_grid, *final_soma_sdf_merged, true, true);
-      vto::sdfToSdf(*sdf_grid);
       std::cout << "\tFinished csgIntersection in " << timer.elapsed() << '\n';
     }
+    */
   }
 
   // only overwrite final_soma_sdfs if user did not pass their own seeds
   // or seed intersection is on
-  if (args->seed_intersection || seeds.size() == 0) {
+  std::vector<openvdb::MaskGrid::Ptr> final_soma_sdfs;
+  // if (args->seed_intersection || seeds.size() == 0) {
+  if (seeds.size() == 0) {
 #ifdef LOG
     std::cout << "\tsegmentation step\n";
 #endif
     timer.restart();
     // turn the whole sdf image into a vector of sdf for each connected
     // component
-    vto::segmentSDF(*sdf_grid, final_soma_sdfs);
+    vto::segmentActiveVoxels(*neurite_mask, final_soma_sdfs);
+    // vto::extractActiveVoxelSegmentMasks(*neurite_mask, final_soma_sdfs);
     run_log << "Seed detection: segmentation time, "
             << timer.elapsed_formatted() << '\n'
             << "Seed detection: initial seed count, " << final_soma_sdfs.size()
@@ -604,19 +574,5 @@ soma_segmentation(openvdb::MaskGrid::Ptr mask_grid, std::vector<Seed> seeds,
   run_log.flush();
   write_seeds(run_dir, seeds, args->voxel_size);
 
-  return std::make_pair(seeds, neurite_sdf);
-}
-
-// this strategies permanently modify the  mask_grid for both soma
-// detection and neurite reconstruction, the image grid uint8 that is
-// output in windows is unaffected however
-// fills in spheres where the user passed seeds are
-// known to be located
-void fill_seeds(openvdb::MaskGrid::Ptr mask_grid, std::vector<Seed> seeds) {
-  auto mask_accessor = mask_grid->getAccessor();
-  rng::for_each(seeds, [&mask_accessor](Seed seed) {
-    for (const auto coord : sphere_iterator(seed.coord, seed.radius)) {
-      mask_accessor.setValueOn(coord);
-    }
-  });
+  return seeds;
 }
