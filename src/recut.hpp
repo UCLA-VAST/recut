@@ -3185,7 +3185,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
       std::cout << "Component " << index << " complete and safe to open\n";
     } else {
       std::cout << "Component " << index
-                << " SWC timeout, image, seed, (and vdb saved)\n";
+                << " SWC failed, image, seed, (and vdb saved)\n";
     }
   }; // for each component
 

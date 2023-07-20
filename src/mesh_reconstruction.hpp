@@ -183,13 +183,17 @@ vdb_to_markers(openvdb::FloatGrid::Ptr fog, std::vector<Seed> component_seeds,
     write_vdb_file({component}, component_dir_fn / "sdf.vdb");
   }
 
-  auto m = vdb_to_mesh(component, args);
+  try {
+    auto m = vdb_to_mesh(component, args);
+  } catch (...) {
+    return std::nullopt;
+  }
   if (!(HMesh::valid(m) && m.no_vertices()))
     return std::nullopt;
   HMesh::obj_save(component_dir_fn / ("mesh.obj"), m);
 
   auto g = graph_from_mesh(m);
-  graph_save(component_dir_fn / ("mesh.graph"), g);
+  // graph_save(component_dir_fn / ("mesh.graph"), g);
 
   // multi-scale is faster and scales linearly with input graph size at
   // the cost of difficulty in choosing a grow threshold
@@ -230,7 +234,7 @@ vdb_to_markers(openvdb::FloatGrid::Ptr fog, std::vector<Seed> component_seeds,
       marker->parent = 0;
       marker->type = 0;
     } else {
-      //std::cout << "->parent " << bfs.pred[last] << '\n';;
+      // std::cout << "->parent " << bfs.pred[last] << '\n';;
       marker->parent = component_tree[bfs.pred[last]];
     }
   }
