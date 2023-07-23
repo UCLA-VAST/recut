@@ -539,7 +539,6 @@ std::vector<Seed> soma_segmentation(const openvdb::MaskGrid::Ptr mask_grid,
     // turn the whole sdf image into a vector of sdf for each connected
     // component
     vto::segmentActiveVoxels(*neurite_mask, final_soma_sdfs);
-    // vto::extractActiveVoxelSegmentMasks(*neurite_mask, final_soma_sdfs);
     run_log << "Seed detection: segmentation time, "
             << timer.elapsed_formatted() << '\n'
             << "Seed detection: initial seed count, " << final_soma_sdfs.size()

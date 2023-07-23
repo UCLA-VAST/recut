@@ -99,8 +99,7 @@ public:
   openvdb::FloatGrid::Ptr input_grid;
   openvdb::BoolGrid::Ptr update_grid;
   openvdb::MaskGrid::Ptr mask_grid;
-  // openvdb::BoolGrid::Ptr foreground_grid;
-  openvdb::FloatGrid::Ptr connected_grid;
+  openvdb::MaskGrid::Ptr connected_grid;
   ImgGrid::Ptr img_grid;
 
   std::vector<OffsetCoord> const lower_stencil{new_offset_coord(0, 0, -1),
@@ -406,7 +405,7 @@ void Recut<image_t>::activate_vids_mask(const std::vector<Seed> &seeds) {
 
     auto edge_state = 1;                // selected
     edge_state = setbit(edge_state, 3); // root
-    this->connected_grid->tree().setValue(coord, 1.);
+    this->connected_grid->tree().setValueOn(coord);
     auto offsets =
         coord_mod(coord, new_grid_coord(LEAF_LENGTH, LEAF_LENGTH, LEAF_LENGTH));
     this->connected_map[foreground_leaf->origin()].emplace_back(
@@ -920,12 +919,7 @@ bool Recut<image_t>::accumulate_connected_mask(
     return false;
   }
 
-  // mark selected in topology
-  if (connected_leaf)
-    // connected_leaf->setValue(dst_coord, 1.);
-    this->connected_grid->tree().setValue(dst_coord, 1.);
-  else
-    this->connected_grid->tree().setValue(dst_coord, 1.);
+  this->connected_grid->tree().setValueOn(dst_coord);
   set_if_active(update_leaf, dst_coord);
   auto offset = coord_mod(dst_coord, this->block_lengths);
 
@@ -2590,7 +2584,7 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_tile_size,
        ++leaf_iter) {
     auto origin = leaf_iter->getNodeBoundingBox().min();
     auto connected_leaf =
-        new openvdb::tree::LeafNode<float, LEAF_LOG2DIM>(origin, false);
+        new openvdb::tree::LeafNode<openvdb::ValueMask, LEAF_LOG2DIM>(origin, false);
     this->connected_grid->tree().addLeaf(connected_leaf);
 
     // per leaf fifo/pq resources
@@ -2861,7 +2855,7 @@ template <class image_t> void Recut<image_t>::initialize() {
 #endif
   // this->foreground_grid = openvdb::BoolGrid::create();
   // this->foreground_grid->setTransform(get_transform());
-  this->connected_grid = openvdb::FloatGrid::create();
+  this->connected_grid = openvdb::MaskGrid::create();
   this->connected_grid->setTransform(get_transform());
 
   // when no known seeds are passed or when the intersection strategy
@@ -3000,7 +2994,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 
   // aggregate disjoint connected components
   global_timer.restart();
-  std::vector<openvdb::FloatGrid::Ptr> components;
+  std::vector<openvdb::MaskGrid::Ptr> components;
   vto::segmentActiveVoxels(*this->connected_grid, components);
 #ifdef LOG
   cout << "Segment count: " << components.size() << " in "
@@ -3008,8 +3002,6 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
 #endif
 
   global_timer.restart();
-  auto output_topology = false;
-
   // you need to load the passed image grids if you are outputting windows
   auto window_grids =
       args->window_grid_paths |
@@ -3068,7 +3060,7 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
     write_seeds(component_dir_fn, component_seeds, this->args->voxel_size);
 
     if (args->save_vdbs) { // save a grid corresponding to this component
-      write_vdb_file({component}, component_dir_fn / "float.vdb");
+      write_vdb_file({component}, component_dir_fn / "component-mask.vdb");
     }
 
     auto timer = high_resolution_timer();
@@ -3199,8 +3191,6 @@ void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
   arena.execute(
       [&] { tbb::parallel_for_each(enum_components, process_component); });
 
-  if (output_topology)
-    write_vdb_file({this->topology_grid}, "final-point-grid.vdb");
   std::ofstream run_log;
   run_log.open(log_fn, std::ios::app);
   // only log this if it isn't occluded by app2 and window write times
@@ -3397,7 +3387,8 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   if (args->close_steps) {
 #ifdef LOG
-    std::cout << "\tStart morphological close = " << args->close_steps.value() << "\n";
+    std::cout << "\tStart morphological close = " << args->close_steps.value()
+              << "\n";
 #endif
     auto timer = high_resolution_timer();
     // close
@@ -3412,8 +3403,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     std::cout << "\tEnd morphological close\n";
 #endif
 
-    auto inference_seeds = soma_segmentation(mask_grid, seeds, args, this->image_lengths,
-                                   log_fn, run_dir);
+    auto inference_seeds = soma_segmentation(
+        mask_grid, seeds, args, this->image_lengths, log_fn, run_dir);
     if (seeds.size() == 0)
       seeds = inference_seeds;
 

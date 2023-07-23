@@ -9,6 +9,7 @@
 #include <openvdb/tools/LevelSetUtil.h>
 #include <openvdb/tools/TopologyToLevelSet.h>
 #include <openvdb/tools/VolumeToMesh.h>
+#include <openvdb/tools/ValueTransformer.h>
 
 auto euc_dist = [](auto a, auto b) -> float {
   std::array<float, 3> diff = {
@@ -174,11 +175,30 @@ Geometry::AMGraph3D graph_from_mesh(HMesh::Manifold &m) {
   return g;
 }
 
+openvdb::FloatGrid::Ptr mask_to_sdf(openvdb::MaskGrid::Ptr mask) {
+  struct Local {
+    static inline void op(const openvdb::MaskGrid::ValueOnCIter &iter,
+                          openvdb::FloatGrid::ValueAccessor &accessor) {
+      if (iter.isVoxelValue()) {
+        accessor.setValue(iter.getCoord(), 1.);
+      } else {
+        openvdb::CoordBBox bbox;
+        iter.getBoundingBox(bbox);
+        accessor.getTree().fill(bbox, 1.);
+      }
+    }
+  };
+
+  auto float_grid = openvdb::FloatGrid::create();
+  vto::transformValues(mask->cbeginValueOn(), *float_grid, Local::op);
+  return vto::fogToSdf(*float_grid, 0);
+}
+
 std::optional<std::vector<MyMarker *>>
-vdb_to_markers(openvdb::FloatGrid::Ptr fog, std::vector<Seed> component_seeds,
+vdb_to_markers(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
                int index, RecutCommandLineArgs *args,
                fs::path component_dir_fn) {
-  auto component = vto::fogToSdf(*fog, 0);
+  auto component = mask_to_sdf(mask);
   if (args->save_vdbs) {
     write_vdb_file({component}, component_dir_fn / "sdf.vdb");
   }
