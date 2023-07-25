@@ -113,15 +113,11 @@ std::optional<GridCoord> mean_location(openvdb::MaskGrid::Ptr mask_grid) {
 // operations like dilation, erosion, opening, closing
 // Of all connected components, keep those whose central coordinate is an
 // active voxel in the point topology and estimate the radius given the
-// bbox of the component. If passing known seeds, then filter all
-// components to only those components which contain the passed seed
-// If you already filtered the grid with seed intersection there's no need
-// to refilter by known seeds
+// bbox of the component. 
 auto create_seed_pairs = [](std::vector<openvdb::MaskGrid::Ptr> components,
                             std::array<float, 3> voxel_size,
                             float min_radius_um, float max_radius_um,
-                            std::string output_type,
-                            std::vector<Seed> known_seeds = {}) {
+                            std::string output_type) {
   std::vector<Seed> seeds;
   std::vector<openvdb::MaskGrid::Ptr> filtered_components;
   auto removed_by_known_seeds = 0;
@@ -145,19 +141,6 @@ auto create_seed_pairs = [](std::vector<openvdb::MaskGrid::Ptr> components,
       ++empty_components;
       continue;
     }
-
-    /*
-    if (!known_seeds.empty()) {
-      // component if no known seed is an active voxel in this
-      // component then remove this component
-      if (rng::none_of(known_seeds, [&component](const auto &known_seed) {
-            return component->tree().isValueOn(known_seed.coord);
-          })) {
-        ++removed_by_known_seeds;
-        continue;
-      }
-    }
-    */
 
     // the radius is calculated by the distance of the center point
     // to the nearest surface point voxel sizes can be anisotropic,
@@ -519,18 +502,11 @@ std::vector<Seed> soma_segmentation(const openvdb::MaskGrid::Ptr mask_grid,
 #endif
       return std::vector<Seed>{};
     }
-    /*
-    if (args->seed_intersection) {
-      timer.restart();
-      std::cout << "\tFinished csgIntersection in " << timer.elapsed() << '\n';
-    }
-    */
   }
 
   // only overwrite final_soma_sdfs if user did not pass their own seeds
   // or seed intersection is on
   std::vector<openvdb::MaskGrid::Ptr> final_soma_sdfs;
-  // if (args->seed_intersection || seeds.size() == 0) {
   if (seeds.size() == 0) {
 #ifdef LOG
     std::cout << "\tsegmentation step\n";
@@ -557,8 +533,7 @@ std::vector<Seed> soma_segmentation(const openvdb::MaskGrid::Ptr mask_grid,
     // to refilter by known seeds
     auto pairs = create_seed_pairs(
         final_soma_sdfs, args->voxel_size, args->min_radius_um,
-        args->max_radius_um, args->output_type,
-        args->seed_intersection ? std::vector<Seed>{} : seeds);
+        args->max_radius_um, args->output_type);
     seeds = pairs.first;
     final_soma_sdfs = pairs.second;
     run_log << "Seed detection: seed pairs creation time, "

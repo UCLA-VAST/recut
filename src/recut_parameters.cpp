@@ -6,9 +6,9 @@ void RecutCommandLineArgs::PrintUsage() {
                "[-o <output_vdb_file_name>] "
                "[--bkg-thresh <int>] [--fg-percent <double>]\n\n";
   std::cout << "<image file or dir>  file or directory of input image(s)\n";
-  std::cout << "--seeds <dir> [action] option to pass a directory "
+  std::cout << "--seeds <dir>          option to pass a directory "
                "of SWC files with 1 soma node per file, "
-               "action is either 'intersect' or 'fill' (default), intersection filters inferenced somas by the passed somas whereas 'fill' treats only the seeds passed as ground truth for reconstruction\n";
+               "fills the seeds as spheres directly on to the mask image, treating them as ground truth for reconstruction\n";
   std::cout << "--output-name          [-o] give converted vdb a custom name "
                "defaults to "
                "naming with useful image attributes\n";
@@ -161,19 +161,6 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
           exit(1);
         }
         ++i;
-
-        // check for a specified seed action type
-        if (!((i + 1 == argc) || (argv[i + 1][0] == '-'))) {
-          if (strcmp(argv[i + 1], "intersect") == 0) {
-            args.seed_intersection = true;
-          } else if (strcmp(argv[i + 1], "fill") == 0) {
-            args.seed_intersection = false;
-          } else {
-            RecutCommandLineArgs::PrintUsage();
-            exit(1);
-          }
-          ++i;
-        }
       } else if (strcmp(argv[i], "--resolution-level") == 0 ||
                  strcmp(argv[i], "-rl") == 0) {
         args.resolution_level = atoi(argv[i + 1]);
@@ -293,8 +280,8 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         auto val = atoi(argv[i + 1]);
         args.close_steps = val < 1 ? 1 : val; // must be at least 1
         ++i;
-      //} else if (strcmp(argv[i], "--preserve-topology") == 0) {
-        //args.close_topology = false;
+      } else if (strcmp(argv[i], "--preserve-topology") == 0) {
+        args.close_topology = false;
       } else if (strcmp(argv[i], "--order") == 0) {
         args.morphological_operations_order = atoi(argv[i + 1]);
         ++i;

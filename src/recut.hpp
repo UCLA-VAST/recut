@@ -2861,7 +2861,8 @@ template <class image_t> void Recut<image_t>::initialize() {
   // when no known seeds are passed or when the intersection strategy
   // is on and user does not input a close or open step, its safe
   // to infer the steps based on the voxel size
-  if (args->seed_path.empty() || args->seed_intersection) {
+  if (args->seed_path.empty()) {
+    // infer close steps if it wasn't explicitly passed 
     if (!args->close_steps) {
       args->close_steps = CLOSE_FACTOR / args->voxel_size[0];
       args->close_steps = args->close_steps < 1 ? 1 : args->close_steps;
@@ -2869,10 +2870,8 @@ template <class image_t> void Recut<image_t>::initialize() {
                 << " based on voxel size\n";
     }
 
-    // infer open steps if it wasn't explicitly passed and seed intersection and
-    // no seeds were passed
-    if (!args->open_steps &&
-        (args->seed_intersection || args->seed_path.empty())) {
+    // infer open steps if it wasn't explicitly passed 
+    if (!args->open_steps) {
       args->open_steps = OPEN_FACTOR / args->voxel_size[0];
       std::cout << "Open steps inferred to " << args->open_steps.value()
                 << " based on voxel size\n";
@@ -3381,8 +3380,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   // labels need somas as intact / unmodified therefore they should
   // not be filled, also do not fill if you will later intersect
   // since fill and intersection are complementary strategies
-  if (!(args->output_type == "labels") && !args->seed_path.empty() &&
-      !args->seed_intersection) {
+  if (!(args->output_type == "labels") && !args->seed_path.empty()) {
     seeds = process_marker_dir(args->seed_path, args->voxel_size);
     if (!connected)
       fill_seeds(this->mask_grid, seeds);
