@@ -2853,24 +2853,24 @@ template <class image_t> void Recut<image_t>::initialize() {
             << " y=" << this->args->voxel_size[1] << " µm"
             << " z=" << this->args->voxel_size[2] << " µm\n";
 #endif
-  // this->foreground_grid = openvdb::BoolGrid::create();
-  // this->foreground_grid->setTransform(get_transform());
   this->connected_grid = openvdb::MaskGrid::create();
   this->connected_grid->setTransform(get_transform());
 
   // when no known seeds are passed or when the intersection strategy
   // is on and user does not input a close or open step, its safe
   // to infer the steps based on the voxel size
-  if (args->seed_path.empty()) {
-    // infer close steps if it wasn't explicitly passed 
+  if (args->seed_path.empty() || args->close_topology) {
+    // infer close steps if it wasn't explicitly passed
     if (!args->close_steps) {
       args->close_steps = CLOSE_FACTOR / args->voxel_size[0];
       args->close_steps = args->close_steps < 1 ? 1 : args->close_steps;
       std::cout << "Close steps inferred to " << args->close_steps.value()
                 << " based on voxel size\n";
     }
+  }
 
-    // infer open steps if it wasn't explicitly passed 
+  if (args->seed_path.empty()) {
+    // infer open steps if it wasn't explicitly passed
     if (!args->open_steps) {
       args->open_steps = OPEN_FACTOR / args->voxel_size[0];
       std::cout << "Open steps inferred to " << args->open_steps.value()
@@ -3375,30 +3375,63 @@ template <class image_t> void Recut<image_t>::operator()() {
   std::ofstream run_log;
   run_log.open(log_fn, std::ios::app);
 
+  // load seeds if user passed them
   std::vector<Seed> seeds;
-  auto connected = is_connected(this->mask_grid);
-  // labels need somas as intact / unmodified therefore they should
-  // not be filled, also do not fill if you will later intersect
-  // since fill and intersection are complementary strategies
-  if (!(args->output_type == "labels") && !args->seed_path.empty()) {
+  if (args->seed_path.empty()) {
+    if ((args->output_type == "labels") || is_connected(this->mask_grid)) {
+      throw std::runtime_error(
+          "Must pass --seeds folder with labels runs or runs from "
+          "intermediary files (e.g. connected-mask.vdb");
+    }
+  } else {
     seeds = process_marker_dir(args->seed_path, args->voxel_size);
-    if (!connected)
-      fill_seeds(this->mask_grid, seeds);
   }
 
-  if (connected) {
-    if (seeds.size() == 0)
-      throw std::runtime_error("Must pass --seeds folder with runs from "
-                               "intermediary files (e.g. connected-mask.vdb)");
+  // labels need somas as intact / unmodified therefore they should
+  // not be filled
+  if (args->output_type == "labels") {
+
+    // for labels output .. load the uint8 image
+    ImgGrid::Ptr image;
+    if (args->window_grid_paths.empty()) {
+      std::cerr << "--output-type labels must also pass --output-windows "
+                   "uint8.vdb, exiting...\n";
+      exit(1);
+    }
+
+    // you need to load the passed image grids if you are outputting windows
+    auto window_grids =
+        args->window_grid_paths |
+        rv::transform([](const auto &gpath) { return read_vdb_file(gpath); }) |
+        rng::to_vector; // force reading once now
+
+    image = openvdb::gridPtrCast<ImgGrid>(window_grids.front());
+    create_labels(seeds, run_dir / "ml-train-and-test", image, nullptr, nullptr,
+                  args->user_thread_count, args->save_vdbs);
+#ifdef LOG
+    std::cout << "\tLabel creation completed and safe to open\n";
+#endif
+    exit(0);
+  }
+
+  // re-skeletonize from an intermediate file from a previous run
+  // connected grids have already been soma filled in a previous run
+  if (is_connected(this->mask_grid)) {
     partition_components(this->mask_grid, seeds, this->args, this->run_dir,
                          this->log_fn);
     exit(0);
   }
 
+  fill_seeds(this->mask_grid, seeds);
+
+  openvdb::MaskGrid::Ptr preserved_topology;
+  if (!args->close_topology && args->close_steps)
+    preserved_topology = this->mask_grid->deepCopy();
+
   if (args->close_steps) {
 #ifdef LOG
     std::cout << "\tStart morphological close = " << args->close_steps.value()
-              << "\n";
+              << '\n';
 #endif
     auto timer = high_resolution_timer();
     // close
@@ -3412,32 +3445,27 @@ template <class image_t> void Recut<image_t>::operator()() {
 #ifdef LOG
     std::cout << "\tEnd morphological close\n";
 #endif
-
-    auto inference_seeds = soma_segmentation(
-        mask_grid, seeds, args, this->image_lengths, log_fn, run_dir);
-    if (seeds.size() == 0)
-      seeds = inference_seeds;
-
-    // if output type is labels or seeds end the program
-    if (this->args->output_type == "labels") {
-      exit(0); // exit
-    } else if (seeds.empty()) {
-      std::cerr
-          << "No somas found, possibly make --open-steps lower or "
-             "--close-steps "
-             "higher (if using membrane labeling), also consider raising the "
-             "fg "
-             "percent. Note that passing '--seeds folder intersect' forces all "
-             "found somas to be "
-             "filtered against those you specified, exiting...\n";
-      exit(1);
-    } else if (this->args->output_type == "seeds") {
-      exit(0); // exit
-    }
   }
 
-  if (seeds.size() == 0)
-    throw std::runtime_error("No seeds found... exiting");
+  if (seeds.empty())
+    seeds = soma_segmentation(mask_grid, args, this->image_lengths, log_fn,
+                              run_dir);
+
+  // if output type is seeds end the program
+  if (seeds.empty()) {
+    std::cerr
+        << "No somas found, possibly make --open-steps lower or "
+           "--close-steps "
+           "higher (if using membrane labeling), also consider raising the "
+           "fg "
+           "percent, exiting...\n";
+    exit(1);
+  } else if (this->args->output_type == "seeds") {
+    exit(0); // exit
+  }
+
+  if (!args->close_topology && args->close_steps)
+    this->mask_grid = preserved_topology;
 
   // filter seeds with respect to topology
   // int empty_leaf_seed_count = 0;
@@ -3453,7 +3481,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   run_log << "Filtered seed count, " << seeds.size() << '\n';
   run_log.flush();
 
-  if (seeds.size() == 0)
+  if (seeds.empty())
     throw std::runtime_error(
         "No seeds are on with respect to foreground... exiting");
 

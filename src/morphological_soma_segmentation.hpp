@@ -16,9 +16,9 @@ std::vector<Seed> process_marker_dir(
     std::array<float, 3> voxel_size = std::array<float, 3>{1, 1, 1},
     int marker_base = 0) {
 
-  // input handler
-  if (seed_path.empty())
-    return {};
+  // this is a usage requirement for developers
+  assertm(seed_path.empty(),
+          "can not pass empty seed path to process_marker_dir()");
 
   auto min_voxel_size = min_max(voxel_size).first;
 
@@ -65,6 +65,10 @@ std::vector<Seed> process_marker_dir(
 #ifdef LOG
   std::cout << '\t' << seeds.size() << " seeds found in directory\n";
 #endif
+  // required of clients and users
+  if (seeds.size() == 0)
+    throw std::runtime_error(
+        "Error --seeds folder passed contained no valid seed files");
 
   return seeds;
 }
@@ -113,7 +117,7 @@ std::optional<GridCoord> mean_location(openvdb::MaskGrid::Ptr mask_grid) {
 // operations like dilation, erosion, opening, closing
 // Of all connected components, keep those whose central coordinate is an
 // active voxel in the point topology and estimate the radius given the
-// bbox of the component. 
+// bbox of the component.
 auto create_seed_pairs = [](std::vector<openvdb::MaskGrid::Ptr> components,
                             std::array<float, 3> voxel_size,
                             float min_radius_um, float max_radius_um,
@@ -430,52 +434,23 @@ void create_labels(std::vector<Seed> seeds, fs::path dir,
 }
 
 std::vector<Seed> soma_segmentation(const openvdb::MaskGrid::Ptr mask_grid,
-                                    std::vector<Seed> seeds,
                                     RecutCommandLineArgs *args,
                                     GridCoord image_lengths, fs::path log_fn,
                                     fs::path run_dir) {
 
   auto timer = high_resolution_timer();
   assertm(mask_grid, "Mask grid must be set before starting soma segmentation");
+  // don't modify the passed grid
   auto neurite_mask = mask_grid->deepCopy();
-
-  // for labels output .. load the uint8 image
-  ImgGrid::Ptr image;
-  if (args->output_type == "labels") {
-    if (args->window_grid_paths.empty()) {
-      std::cerr << "--output-type labels must also pass --output-windows "
-                   "uint8.vdb, exiting...\n";
-      exit(1);
-    }
-
-    // you need to load the passed image grids if you are outputting windows
-    auto window_grids =
-        args->window_grid_paths |
-        rv::transform([](const auto &gpath) { return read_vdb_file(gpath); }) |
-        rng::to_vector; // force reading once now
-
-    image = openvdb::gridPtrCast<ImgGrid>(window_grids.front());
-  }
 
   std::ofstream run_log;
   run_log.open(log_fn, std::ios::app);
-
-  /*
-  openvdb::FloatGrid::Ptr final_soma_sdf_merged;
-  if (seeds.size()) {
-    // when --seeds are passed gather them and turn them into a joined SDF
-    // grid
-    auto finals = create_seed_sphere_grid(seeds);
-    final_soma_sdf_merged = finals.first;
-    final_soma_sdfs = finals.second;
-  }
-  */
 
   // open again to filter axons and dendrites
   if (args->open_steps) {
 #ifdef LOG
     std::cout << "\tStart morphological open = " << args->open_steps.value()
-              << "\n";
+              << '\n';
 #endif
     timer.restart();
     openvdb::tools::erodeActiveValues(neurite_mask->tree(),
@@ -493,53 +468,35 @@ std::vector<Seed> soma_segmentation(const openvdb::MaskGrid::Ptr mask_grid,
 #endif
   }
 
-  if (seeds.size()) {
-    if (args->output_type == "labels") {
-      create_labels(seeds, run_dir / "ml-train-and-test", image, nullptr,
-                    nullptr, args->user_thread_count, args->save_vdbs);
 #ifdef LOG
-      std::cout << "\tLabel creation completed and safe to open\n";
+  std::cout << "\tsegmentation step\n";
 #endif
-      return std::vector<Seed>{};
-    }
-  }
-
-  // only overwrite final_soma_sdfs if user did not pass their own seeds
-  // or seed intersection is on
   std::vector<openvdb::MaskGrid::Ptr> final_soma_sdfs;
-  if (seeds.size() == 0) {
-#ifdef LOG
-    std::cout << "\tsegmentation step\n";
-#endif
-    timer.restart();
-    // turn the whole sdf image into a vector of sdf for each connected
-    // component
-    vto::segmentActiveVoxels(*neurite_mask, final_soma_sdfs);
-    run_log << "Seed detection: segmentation time, "
-            << timer.elapsed_formatted() << '\n'
-            << "Seed detection: initial seed count, " << final_soma_sdfs.size()
-            << '\n';
-    run_log.flush();
+  timer.restart();
+  // turn the whole sdf image into a vector of sdf for each connected
+  // component
+  vto::segmentActiveVoxels(*neurite_mask, final_soma_sdfs);
+  run_log << "Seed detection: segmentation time, " << timer.elapsed_formatted()
+          << '\n'
+          << "Seed detection: initial seed count, " << final_soma_sdfs.size()
+          << '\n';
+  run_log.flush();
 
 #ifdef LOG
-    std::cout << "\tcreate seed pairs step\n";
-    std::cout << "\tmin allowed radius is " << args->min_radius_um << " µm\n";
-    std::cout << "\tmax allowed radius is " << args->max_radius_um << " µm\n";
+  std::cout << "\tcreate seed pairs step\n";
+  std::cout << "\tmin allowed radius is " << args->min_radius_um << " µm\n";
+  std::cout << "\tmax allowed radius is " << args->max_radius_um << " µm\n";
 #endif
-    timer.restart();
-    // adds all valid markers to roots vector
-    // filters by user input seeds if available
-    // If you already filtered the grid with seed intersection there's no need
-    // to refilter by known seeds
-    auto pairs = create_seed_pairs(
-        final_soma_sdfs, args->voxel_size, args->min_radius_um,
-        args->max_radius_um, args->output_type);
-    seeds = pairs.first;
-    final_soma_sdfs = pairs.second;
-    run_log << "Seed detection: seed pairs creation time, "
-            << timer.elapsed_formatted() << '\n';
-    run_log.flush();
-  }
+  timer.restart();
+  // adds all valid markers to roots vector
+  auto pairs =
+      create_seed_pairs(final_soma_sdfs, args->voxel_size, args->min_radius_um,
+                        args->max_radius_um, args->output_type);
+  auto seeds = pairs.first;
+  final_soma_sdfs = pairs.second;
+  run_log << "Seed detection: seed pairs creation time, "
+          << timer.elapsed_formatted() << '\n';
+  run_log.flush();
 
 #ifdef LOG
   std::cout << "\tsaving " << seeds.size() << " seed coordinates to file ...\n";
