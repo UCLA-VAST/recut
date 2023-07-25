@@ -8,8 +8,8 @@
 #include <openvdb/tools/FastSweeping.h> // fogToSdf
 #include <openvdb/tools/LevelSetUtil.h>
 #include <openvdb/tools/TopologyToLevelSet.h>
-#include <openvdb/tools/VolumeToMesh.h>
 #include <openvdb/tools/ValueTransformer.h>
+#include <openvdb/tools/VolumeToMesh.h>
 
 auto euc_dist = [](auto a, auto b) -> float {
   std::array<float, 3> diff = {
@@ -176,6 +176,8 @@ Geometry::AMGraph3D graph_from_mesh(HMesh::Manifold &m) {
 }
 
 openvdb::FloatGrid::Ptr mask_to_sdf(openvdb::MaskGrid::Ptr mask) {
+  /*
+   this has a weird bug
   struct Local {
     static inline void op(const openvdb::MaskGrid::ValueOnCIter &iter,
                           openvdb::FloatGrid::ValueAccessor &accessor) {
@@ -189,8 +191,14 @@ openvdb::FloatGrid::Ptr mask_to_sdf(openvdb::MaskGrid::Ptr mask) {
     }
   };
 
-  auto float_grid = openvdb::FloatGrid::create();
   vto::transformValues(mask->cbeginValueOn(), *float_grid, Local::op);
+*/
+
+  auto float_grid = openvdb::FloatGrid::create();
+  auto accessor = float_grid->getAccessor();
+  for (auto iter = mask->cbeginValueOn(); iter; ++iter) {
+    accessor.setValue(iter.getCoord(), 1.);
+  }
   return vto::fogToSdf(*float_grid, 0);
 }
 
@@ -273,50 +281,4 @@ vdb_to_markers(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
   */
 
   return component_tree;
-}
-
-void topology_to_tree(openvdb::FloatGrid::Ptr topology, fs::path run_dir,
-                      std::vector<Seed> seeds, RecutCommandLineArgs *args) {
-  write_vdb_file({topology}, run_dir / "whole-topology.vdb");
-  std::vector<openvdb::FloatGrid::Ptr> all_components;
-  vto::segmentActiveVoxels(*topology, all_components);
-
-  auto components = all_components | rv::remove_if([&seeds](auto component) {
-                      // convert to fog so that isValueOn returns whether it is
-                      // within the
-                      // auto fog = vto::sdfToFogVolume(*component); // or find
-                      // extractEnclosedRegion or sdfInteriorMask auto fog =
-                      // vto::extractEnclosedRegion(*component);
-                      // component if no known seed is an active voxel in this
-                      // component then remove this component
-                      return rng::none_of(seeds, [component](const auto &seed) {
-                        return component->tree().isValueOn(seed.coord);
-                      });
-                    }) |
-                    rng::to_vector;
-  std::cout << "Total components: " << components.size() << '\n';
-
-  rng::for_each(components | rv::enumerate | rng::to_vector, [&](auto cpair) {
-    auto [index, fog] = cpair;
-    auto component_dir_fn = run_dir / ("component-" + std::to_string(index));
-    fs::create_directories(component_dir_fn);
-
-    auto component_tree_opt =
-        vdb_to_markers(fog, seeds, index, args, component_dir_fn);
-    auto component_tree = component_tree_opt.value();
-
-    auto trees = partition_cluster(component_tree);
-
-    auto bbox = fog->evalActiveVoxelBoundingBox();
-    rng::for_each(trees, [&](auto tree) {
-      write_swc(tree, args->voxel_size, component_dir_fn, bbox,
-                /*bbox_adjust*/ !args->window_grid_paths.empty(),
-                args->output_type == "eswc");
-      if (!parent_listed_above(tree)) {
-        throw std::runtime_error("Tree is not properly sorted");
-      }
-    });
-  });
-
-  exit(0);
 }
