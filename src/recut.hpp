@@ -2584,7 +2584,8 @@ void Recut<image_t>::initialize_globals(const VID_t &grid_tile_size,
        ++leaf_iter) {
     auto origin = leaf_iter->getNodeBoundingBox().min();
     auto connected_leaf =
-        new openvdb::tree::LeafNode<openvdb::ValueMask, LEAF_LOG2DIM>(origin, false);
+        new openvdb::tree::LeafNode<openvdb::ValueMask, LEAF_LOG2DIM>(origin,
+                                                                      false);
     this->connected_grid->tree().addLeaf(connected_leaf);
 
     // per leaf fifo/pq resources
@@ -3478,10 +3479,7 @@ template <class image_t> void Recut<image_t>::operator()() {
           << this->connected_grid->activeVoxelCount() << '\n';
   run_log.flush();
 
-  if (args->save_vdbs) {
-    write_vdb_file({this->connected_grid},
-                   this->run_dir / "connected_float.vdb");
-  }
+  write_vdb_file({this->connected_grid}, this->run_dir / "connected-mask.vdb");
 
   // radius stage will consume fifo surface vertices
   if (CLASSIC_PRUNE) {
