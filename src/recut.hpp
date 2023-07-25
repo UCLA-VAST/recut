@@ -5,6 +5,7 @@
 #include "morphological_soma_segmentation.hpp"
 #include "recut_parameters.hpp"
 #include "tile_thresholds.hpp"
+#include "tree_ops.hpp"
 #include "utils.hpp"
 #include <algorithm>
 #include <bits/stdc++.h>
@@ -135,8 +136,6 @@ public:
   void prune_radii();
   void prune_branch();
   void convert_topology();
-
-  void partition_components(std::vector<Seed> seeds, bool prune);
 
   void initialize_globals(const VID_t &grid_tile_size,
                           const VID_t &tile_block_size);
@@ -2972,236 +2971,6 @@ template <class image_t> void Recut<image_t>::prune_radii() {
   visit(this->topology_grid, filter_radii, prunes_visited);
 }
 
-template <class image_t>
-void Recut<image_t>::partition_components(std::vector<Seed> seeds, bool prune) {
-
-  auto global_timer = high_resolution_timer();
-  // this copies only vertices that have already had flags marked as selected.
-  // selected means they are reachable from a known vertex during traversal
-  // in either a connected or value stage.
-  // auto float_grid = copy_selected(this->topology_grid);
-  // cout << "Topo to float time " << global_timer.elapsed_formatted() << '\n';
-
-  auto total_timer = high_resolution_timer();
-  {
-    VID_t selected_count = this->connected_grid->activeVoxelCount();
-    std::ofstream run_log;
-    run_log.open(log_fn, std::ios::app);
-    run_log << "Skeletonization: connected grid selected voxel count, "
-            << selected_count << '\n';
-    run_log.flush();
-    assertm(selected_count, "active voxels in float grid must be > 0");
-  }
-
-  // aggregate disjoint connected components
-  global_timer.restart();
-  std::vector<openvdb::MaskGrid::Ptr> components;
-  vto::segmentActiveVoxels(*this->connected_grid, components);
-#ifdef LOG
-  cout << "Segment count: " << components.size() << " in "
-       << global_timer.elapsed_formatted() << '\n';
-#endif
-
-  global_timer.restart();
-  // you need to load the passed image grids if you are outputting windows
-  auto window_grids =
-      args->window_grid_paths |
-      rv::transform([](const auto &gpath) { return read_vdb_file(gpath); }) |
-      rng::to_vector; // force reading once now
-
-  auto process_component = [this, &seeds,
-                            &window_grids](const auto component_pair) {
-    auto [index, component] = component_pair;
-    // all grid transforms across are consistent across recut, so enforce
-    // the same interpretation for any new grid
-    component->setTransform(get_transform());
-    auto bbox = component->evalActiveVoxelBoundingBox();
-
-    // filter all roots within this component
-    auto component_seeds = seeds |
-                           rv::remove_if([&component](const auto &seed) {
-                             return !component->tree().isValueOn(seed.coord);
-                           }) |
-                           rng::to_vector;
-
-    std::string prefix = "";
-    if (component_seeds.size() > 1) {
-      prefix = "a-multi-";
-    }
-
-    auto voxel_count = component->activeVoxelCount();
-    if (voxel_count < SWC_MIN_LINE) {
-      prefix = "discard-";
-      // return; // skip
-    }
-
-    if (bbox.dim()[2] < MIN_Z_DEPTH) {
-      prefix = "discard-";
-      // return; // skip
-    }
-
-    // is a fresh run_dir
-    auto component_dir_fn =
-        this->run_dir / (prefix + "component-" + std::to_string(index));
-    fs::create_directories(component_dir_fn);
-
-#ifdef LOG
-    auto component_log_fn =
-        component_dir_fn / ("component-" + std::to_string(index) + "-log.csv");
-    std::ofstream component_log;
-    component_log.open(component_log_fn.string());
-    component_log << std::fixed << std::setprecision(6);
-    component_log << "Thread count, " << args->user_thread_count << '\n';
-    component_log << "Soma count, " << component_seeds.size() << '\n';
-    component_log << "Component active voxel count, " << voxel_count << '\n';
-#endif
-
-    // seeds are always in voxel units and output with respect to the whole
-    // volume
-    write_seeds(component_dir_fn, component_seeds, this->args->voxel_size);
-
-    if (args->save_vdbs) { // save a grid corresponding to this component
-      write_vdb_file({component}, component_dir_fn / "component-mask.vdb");
-    }
-
-    auto timer = high_resolution_timer();
-    std::vector<std::vector<MyMarker *>> trees;
-    std::optional<std::vector<MyMarker *>> cluster_opt;
-    if (CLASSIC_PRUNE) {
-      // cluster_opt =
-      // classic_prune(topology_grid, component, index, args, component_log);
-    } else {
-      cluster_opt = vdb_to_markers(component, component_seeds, index, args,
-                                   component_dir_fn);
-    }
-
-    if (cluster_opt) {
-      auto cluster = cluster_opt.value();
-      auto pruned_cluster = prune_short_branches(cluster, args->voxel_size[0],
-                                                 this->args->min_branch_length);
-#ifdef LOG
-      component_log << "TP, " << timer.elapsed() << '\n';
-      component_log << "TP count, " << pruned_cluster.size() << '\n';
-#endif
-
-      if (!is_cluster_self_contained(pruned_cluster))
-        throw std::runtime_error("Pruned cluster not self contained");
-
-      trees = partition_cluster(pruned_cluster);
-    }
-
-    if (!window_grids.empty()) {
-      // the first grid passed from CL sets the bbox for the
-      // rest of the output grids
-      ImgGrid::Ptr image_grid =
-          openvdb::gridPtrCast<ImgGrid>(window_grids.front());
-      auto [valued_window_grid, window_bbox] = create_window_grid(
-          image_grid, component, component_log, args->voxel_size,
-          component_seeds, args->min_window_um, args->output_type == "labels",
-          args->expand_window_um);
-
-      // write the first passed window
-      auto window_fn = write_output_windows<ImgGrid::Ptr>(
-          image_grid, component_dir_fn, component_log, index,
-          /*output_vdb*/ false, /*paged*/ args->output_type != "labels",
-          window_bbox, /*channel*/ 0);
-
-      // if outputting crops/windows, offset SWCs coords to match window
-      bbox = window_bbox;
-
-      // for all other windows passed, skipping channel 0 since already
-      // processed above
-      rng::for_each(window_grids | rv::enumerate | rv::tail,
-                    [&](const auto window_gridp) {
-                      auto [channel, window_grid] = window_gridp;
-                      auto mask_grid =
-                          openvdb::gridPtrCast<openvdb::MaskGrid>(window_grid);
-                      // write to disk
-                      write_output_windows(
-                          mask_grid, component_dir_fn, component_log, index,
-                          /*output_vdb*/ false,
-                          /*paged*/ args->output_type != "labels", window_bbox,
-                          channel);
-                    });
-
-      // skip components that are 0s in the original image
-      auto mm = vto::minMax(valued_window_grid->tree());
-      if (args->run_app2 && (mm.max() > 0)) {
-        auto read_timer = high_resolution_timer();
-        // protect against possibly empty windows ending up in stats
-        if (!window_fn.empty()) {
-          // make app2 read the window to get accurate comparison of IO
-          read_tiff_paged(window_fn);
-#ifdef LOG
-          component_log << "Read window time, "
-                        << read_timer.elapsed_formatted() << '\n';
-#endif
-        }
-
-        // for comparison/benchmark/testing purposes
-        run_app2(valued_window_grid, component_seeds, component_dir_fn, index,
-                 this->args->min_branch_length, component_log,
-                 args->window_grid_paths.empty());
-      }
-    } // end window created if any
-
-#ifdef LOG
-    component_log << "Volume, " << bbox.volume() << '\n';
-    component_log << "Bounding box, " << bbox << '\n';
-#endif
-
-    if (cluster_opt) {
-#ifdef LOG
-      VID_t total_leaves = rng::accumulate(
-          trees | rv::transform([](auto tree) { return count_leaves(tree); }),
-          0LL);
-      VID_t total_furcations =
-          rng::accumulate(trees | rv::transform([](auto tree) {
-                            return count_furcations(tree);
-                          }),
-                          0LL);
-
-      component_log << "Final leaf count, " << total_leaves << '\n';
-      component_log << "Final branching node count, " << total_furcations
-                    << '\n';
-#endif
-
-      rng::for_each(trees, [&, this](auto tree) {
-        write_swc(tree, this->args->voxel_size, component_dir_fn, bbox,
-                  /*bbox_adjust*/ !args->window_grid_paths.empty(),
-                  this->args->output_type == "eswc");
-        if (!parent_listed_above(tree)) {
-          throw std::runtime_error("Tree is not properly sorted");
-        }
-      });
-
-      std::cout << "Component " << index << " complete and safe to open\n";
-    } else {
-      std::cout << "Component " << index
-                << " SWC failed, image, seed, (and vdb saved)\n";
-    }
-  }; // for each component
-
-  auto enum_components =
-      components | rv::enumerate | rv::reverse | rng::to_vector;
-  auto thread_count = args->user_thread_count;
-  if (args->window_grid_paths.size()) {
-    thread_count = 1;
-  }
-  tbb::task_arena arena(thread_count);
-  arena.execute(
-      [&] { tbb::parallel_for_each(enum_components, process_component); });
-
-  std::ofstream run_log;
-  run_log.open(log_fn, std::ios::app);
-  // only log this if it isn't occluded by app2 and window write times
-  if (!(args->run_app2 || !args->window_grid_paths.empty())) {
-    run_log << "TC+TP, " << global_timer.elapsed() << '\n';
-  }
-  run_log << "Aggregated prune, " << total_timer.elapsed_formatted() << '\n';
-  run_log << "Neuron count, " << seeds.size() << '\n';
-}
-
 template <class image_t> void Recut<image_t>::convert_topology() {
   activate_all_tiles();
 
@@ -3287,6 +3056,237 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << "Benchmarking: run app2, " << args->run_app2 << '\n';
     run_log.flush();
   }
+}
+
+void partition_components(openvdb::MaskGrid::Ptr connected_grid,
+                          std::vector<Seed> seeds, RecutCommandLineArgs *args,
+                          fs::path run_dir, fs::path log_fn) {
+
+  auto global_timer = high_resolution_timer();
+  // this copies only vertices that have already had flags marked as selected.
+  // selected means they are reachable from a known vertex during traversal
+  // in either a connected or value stage.
+  // auto float_grid = copy_selected(this->topology_grid);
+  // cout << "Topo to float time " << global_timer.elapsed_formatted() << '\n';
+
+  auto total_timer = high_resolution_timer();
+  {
+    VID_t selected_count = connected_grid->activeVoxelCount();
+    std::ofstream run_log;
+    run_log.open(log_fn, std::ios::app);
+    run_log << "Skeletonization: connected grid selected voxel count, "
+            << selected_count << '\n';
+    run_log.flush();
+    assertm(selected_count, "active voxels in float grid must be > 0");
+  }
+
+  // aggregate disjoint connected components
+  global_timer.restart();
+  std::vector<openvdb::MaskGrid::Ptr> components;
+  vto::segmentActiveVoxels(*connected_grid, components);
+#ifdef LOG
+  cout << "Segment count: " << components.size() << " in "
+       << global_timer.elapsed_formatted() << '\n';
+#endif
+
+  global_timer.restart();
+  // you need to load the passed image grids if you are outputting windows
+  auto window_grids =
+      args->window_grid_paths |
+      rv::transform([](const auto &gpath) { return read_vdb_file(gpath); }) |
+      rng::to_vector; // force reading once now
+
+  auto process_component = [&args, &seeds, &window_grids,
+                            &run_dir](const auto component_pair) {
+    auto [index, component] = component_pair;
+    // all grid transforms across are consistent across recut, so enforce
+    // the same interpretation for any new grid
+    component->setTransform(get_transform());
+    auto bbox = component->evalActiveVoxelBoundingBox();
+
+    // filter all roots within this component
+    auto component_seeds = seeds |
+                           rv::remove_if([&component](const auto &seed) {
+                             return !component->tree().isValueOn(seed.coord);
+                           }) |
+                           rng::to_vector;
+
+    std::string prefix = "";
+    if (component_seeds.size() > 1) {
+      prefix = "a-multi-";
+    }
+
+    auto voxel_count = component->activeVoxelCount();
+    if (voxel_count < SWC_MIN_LINE) {
+      prefix = "discard-";
+      // return; // skip
+    }
+
+    if (bbox.dim()[2] < MIN_Z_DEPTH) {
+      prefix = "discard-";
+      // return; // skip
+    }
+
+    // is a fresh run_dir
+    auto component_dir_fn =
+        run_dir / (prefix + "component-" + std::to_string(index));
+    fs::create_directories(component_dir_fn);
+
+#ifdef LOG
+    auto component_log_fn =
+        component_dir_fn / ("component-" + std::to_string(index) + "-log.csv");
+    std::ofstream component_log;
+    component_log.open(component_log_fn.string());
+    component_log << std::fixed << std::setprecision(6);
+    component_log << "Thread count, " << args->user_thread_count << '\n';
+    component_log << "Soma count, " << component_seeds.size() << '\n';
+    component_log << "Component active voxel count, " << voxel_count << '\n';
+#endif
+
+    // seeds are always in voxel units and output with respect to the whole
+    // volume
+    write_seeds(component_dir_fn, component_seeds, args->voxel_size);
+
+    if (args->save_vdbs) { // save a grid corresponding to this component
+      write_vdb_file({component}, component_dir_fn / "component-mask.vdb");
+    }
+
+    auto timer = high_resolution_timer();
+    std::vector<std::vector<MyMarker *>> trees;
+    std::optional<std::vector<MyMarker *>> cluster_opt;
+    if (CLASSIC_PRUNE) {
+      // cluster_opt =
+      // classic_prune(topology_grid, component, index, args, component_log);
+    } else {
+      cluster_opt = vdb_to_markers(component, component_seeds, index, args,
+                                   component_dir_fn);
+    }
+
+    if (cluster_opt) {
+      auto cluster = cluster_opt.value();
+      auto pruned_cluster = prune_short_branches(cluster, args->voxel_size[0],
+                                                 args->min_branch_length);
+#ifdef LOG
+      component_log << "TP, " << timer.elapsed() << '\n';
+      component_log << "TP count, " << pruned_cluster.size() << '\n';
+#endif
+
+      if (!is_cluster_self_contained(pruned_cluster))
+        throw std::runtime_error("Pruned cluster not self contained");
+
+      trees = partition_cluster(pruned_cluster);
+    }
+
+    if (!window_grids.empty()) {
+      // the first grid passed from CL sets the bbox for the
+      // rest of the output grids
+      ImgGrid::Ptr image_grid =
+          openvdb::gridPtrCast<ImgGrid>(window_grids.front());
+      auto [valued_window_grid, window_bbox] = create_window_grid(
+          image_grid, component, component_log, args->voxel_size,
+          component_seeds, args->min_window_um, args->output_type == "labels",
+          args->expand_window_um);
+
+      // write the first passed window
+      auto window_fn = write_output_windows<ImgGrid::Ptr>(
+          image_grid, component_dir_fn, component_log, index,
+          /*output_vdb*/ false, /*paged*/ args->output_type != "labels",
+          window_bbox, /*channel*/ 0);
+
+      // if outputting crops/windows, offset SWCs coords to match window
+      bbox = window_bbox;
+
+      // for all other windows passed, skipping channel 0 since already
+      // processed above
+      rng::for_each(window_grids | rv::enumerate | rv::tail,
+                    [&](const auto window_gridp) {
+                      auto [channel, window_grid] = window_gridp;
+                      auto mask_grid =
+                          openvdb::gridPtrCast<openvdb::MaskGrid>(window_grid);
+                      // write to disk
+                      write_output_windows(
+                          mask_grid, component_dir_fn, component_log, index,
+                          /*output_vdb*/ false,
+                          /*paged*/ args->output_type != "labels", window_bbox,
+                          channel);
+                    });
+
+      // skip components that are 0s in the original image
+      auto mm = vto::minMax(valued_window_grid->tree());
+      if (args->run_app2 && (mm.max() > 0)) {
+        auto read_timer = high_resolution_timer();
+        // protect against possibly empty windows ending up in stats
+        if (!window_fn.empty()) {
+          // make app2 read the window to get accurate comparison of IO
+          read_tiff_paged(window_fn);
+#ifdef LOG
+          component_log << "Read window time, "
+                        << read_timer.elapsed_formatted() << '\n';
+#endif
+        }
+
+        // for comparison/benchmark/testing purposes
+        run_app2(valued_window_grid, component_seeds, component_dir_fn, index,
+                 args->min_branch_length, component_log,
+                 args->window_grid_paths.empty());
+      }
+    } // end window created if any
+
+#ifdef LOG
+    component_log << "Volume, " << bbox.volume() << '\n';
+    component_log << "Bounding box, " << bbox << '\n';
+#endif
+
+    if (cluster_opt) {
+#ifdef LOG
+      VID_t total_leaves = rng::accumulate(
+          trees | rv::transform([](auto tree) { return count_leaves(tree); }),
+          0LL);
+      VID_t total_furcations =
+          rng::accumulate(trees | rv::transform([](auto tree) {
+                            return count_furcations(tree);
+                          }),
+                          0LL);
+
+      component_log << "Final leaf count, " << total_leaves << '\n';
+      component_log << "Final branching node count, " << total_furcations
+                    << '\n';
+#endif
+
+      rng::for_each(trees, [&](auto tree) {
+        write_swc(tree, args->voxel_size, component_dir_fn, bbox,
+                  /*bbox_adjust*/ !args->window_grid_paths.empty(),
+                  args->output_type == "eswc");
+        if (!parent_listed_above(tree)) {
+          throw std::runtime_error("Tree is not properly sorted");
+        }
+      });
+
+      std::cout << "Component " << index << " complete and safe to open\n";
+    } else {
+      std::cout << "Component " << index
+                << " SWC failed, image, seed, (and vdb saved)\n";
+    }
+  }; // for each component
+
+  auto enum_components =
+      components | rv::enumerate | rv::reverse | rng::to_vector;
+  auto thread_count = args->user_thread_count;
+  if (args->window_grid_paths.size()) {
+    thread_count = 1;
+  }
+  tbb::task_arena arena(thread_count);
+  arena.execute(
+      [&] { tbb::parallel_for_each(enum_components, process_component); });
+
+  std::ofstream run_log;
+  run_log.open(log_fn, std::ios::app);
+  // only log this if it isn't occluded by app2 and window write times
+  if (!(args->run_app2 || !args->window_grid_paths.empty())) {
+    run_log << "TC+TP, " << global_timer.elapsed() << '\n';
+  }
+  run_log << "Aggregated prune, " << total_timer.elapsed_formatted() << '\n';
+  run_log << "Neuron count, " << seeds.size() << '\n';
 }
 
 template <class image_t> void Recut<image_t>::operator()() {
@@ -3377,13 +3377,24 @@ template <class image_t> void Recut<image_t>::operator()() {
   run_log.open(log_fn, std::ios::app);
 
   std::vector<Seed> seeds;
+  auto connected = is_connected(this->mask_grid);
   // labels need somas as intact / unmodified therefore they should
   // not be filled, also do not fill if you will later intersect
   // since fill and intersection are complementary strategies
   if (!(args->output_type == "labels") && !args->seed_path.empty() &&
       !args->seed_intersection) {
     seeds = process_marker_dir(args->seed_path, args->voxel_size);
-    fill_seeds(this->mask_grid, seeds);
+    if (!connected)
+      fill_seeds(this->mask_grid, seeds);
+  }
+
+  if (connected) {
+    if (seeds.size() == 0)
+      throw std::runtime_error("Must pass --seeds folder with runs from "
+                               "intermediary files (e.g. connected-mask.vdb)");
+    partition_components(this->mask_grid, seeds, this->args, this->run_dir,
+                         this->log_fn);
+    exit(0);
   }
 
   if (args->close_steps) {
@@ -3479,6 +3490,7 @@ template <class image_t> void Recut<image_t>::operator()() {
           << this->connected_grid->activeVoxelCount() << '\n';
   run_log.flush();
 
+  this->connected_grid->insertMeta("connected", openvdb::Int32Metadata(1));
   write_vdb_file({this->connected_grid}, this->run_dir / "connected-mask.vdb");
 
   // radius stage will consume fifo surface vertices
@@ -3490,6 +3502,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     adjust_soma_radii(seeds, this->topology_grid);
   }
 
-  partition_components(seeds, false);
+  partition_components(this->connected_grid, seeds, this->args, this->run_dir,
+                       this->log_fn);
   exit(0);
 }

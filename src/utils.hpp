@@ -955,7 +955,7 @@ template <typename T> void print_grid_metadata(T vdb_grid) {
 
 auto set_grid_meta = [](auto grid, auto lengths, float requested_fg_pct = -1,
                         int channel = 0, int resolution_level = 0,
-                        std::string name = "topology", int upsample_z=1) {
+                        std::string name = "topology", int upsample_z = 1) {
   grid->setName(name);
   grid->setCreator("recut");
   grid->setIsInWorldSpace(true);
@@ -971,8 +971,7 @@ auto set_grid_meta = [](auto grid, auto lengths, float requested_fg_pct = -1,
                    openvdb::FloatMetadata(static_cast<float>(lengths[2])));
   grid->insertMeta("requested_fg_pct",
                    openvdb::FloatMetadata(requested_fg_pct));
-  grid->insertMeta("upsample_z_factor",
-                   openvdb::Int32Metadata(upsample_z));
+  grid->insertMeta("upsample_z_factor", openvdb::Int32Metadata(upsample_z));
 };
 
 auto copy_to_point_grid = [](openvdb::FloatGrid::Ptr other, auto lengths,
@@ -1052,6 +1051,18 @@ auto create_vdb_grid = [](auto lengths, float requested_fg_pct = -1) {
   set_grid_meta(topology_grid, lengths, requested_fg_pct);
 
   return topology_grid;
+};
+
+// was this grid previously run through the connected components stage?
+// std::any_of has confusing bugs so keep classic implementation below:
+auto is_connected = [](auto vdb_grid) {
+  for (openvdb::MetaMap::MetaIterator iter = vdb_grid->beginMeta();
+       iter != vdb_grid->endMeta(); ++iter) {
+    if (iter->first == "connected") {
+      return true;
+    }
+  }
+  return false;
 };
 
 auto get_metadata = [](auto vdb_grid) -> std::pair<GridCoord, float> {
@@ -3594,7 +3605,7 @@ auto convert_sdf_to_points = [](auto sdf, auto image_lengths,
                                 auto foreground_percent) {
   // write_vdb_file({sdf}, "fog.vdb");
   std::vector<PositionT> positions;
-  sdf->tree().isValueOn(GridCoord(0,0,0));
+  sdf->tree().isValueOn(GridCoord(0, 0, 0));
   for (auto iter = sdf->cbeginValueOn(); iter.test(); ++iter) {
     auto coord = iter.getCoord();
     positions.push_back(PositionT(coord.x(), coord.y(), coord.z()));
