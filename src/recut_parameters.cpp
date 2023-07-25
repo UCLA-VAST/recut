@@ -82,10 +82,10 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "--close-steps          morphological closing level "
                "to fill hollow signals inside somata or to join path breaks "
                "defaults to " << CLOSE_FACTOR<< "/ x voxel size, value passed must be >= 1\n";
-  //std::cout
-      //<< "--preserve-topology    do not apply morphological closing to the "
-         //"neurites of the image; defaults to closing both somas and topology "
-         //"(neurites)\n";
+  std::cout
+      << "--preserve-topology    do not apply morphological closing to the "
+         "neurites of the image; defaults to closing both somas and topology "
+         "(neurites)\n";
   std::cout << "--open-steps           iterations of morphological opening, "
                "this will roughly erase neurites and blobs with voxel radius smaller than the integer value passed, thus yielding only the comparatively large somata; "
                "defaults to " << OPEN_FACTOR << "/ x voxel size for soma inference and soma intersection runs, for --seeds X fill, opening is not applied\n";
