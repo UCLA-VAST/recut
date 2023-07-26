@@ -222,7 +222,6 @@ vdb_to_markers(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
   HMesh::obj_save(component_dir_fn / ("mesh.obj"), m);
 
   auto g = graph_from_mesh(m);
-  // graph_save(component_dir_fn / ("mesh.graph"), g);
 
   // multi-scale is faster and scales linearly with input graph size at
   // the cost of difficulty in choosing a grow threshold
@@ -250,6 +249,36 @@ vdb_to_markers(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
     component_tree.push_back(marker);
   }
 
+  std::vector<bool> visited(component_tree.size());
+
+  rng::for_each(soma_ids, [&](auto soma_id) {
+    std::queue<size_t> q;
+    q.push(soma_id);
+    // mark soma
+    auto marker = component_tree[soma_id];
+    marker->parent = 0;
+    marker->type = 0;
+    visited[soma_id] = true;
+
+    // traverse rest of tree
+    size_t last = soma_id;
+    while (q.size()) {
+      size_t id = q.front();
+      q.pop();
+      for (auto nb_id : component_graph.neighbors(id)) {
+        // skip other somas or visited
+        if (!visited[nb_id] && soma_ids.find(nb_id) == soma_ids.end()) {
+          auto marker = component_tree[nb_id];
+          // add current id as parent to all discovered
+          marker->parent = component_tree[id];
+          visited[nb_id] = true;
+          q.push(nb_id);
+        }
+      }
+    }
+  });
+
+  /*
   // assign all parents via BFS
   // traverse graph outwards from any soma, does not matter which
   Geometry::BreadthFirstSearch bfs(component_graph);
@@ -266,17 +295,11 @@ vdb_to_markers(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
       // std::cout << "->parent " << bfs.pred[last] << '\n';;
       marker->parent = component_tree[bfs.pred[last]];
     }
-  }
-
-  /*
-  for (auto i : soma_ids) {
-    std::cout << "soma " << i << '\n';
-  }
-
-  for (auto i : component_graph.node_ids()) {
-    auto current = component_tree[i];
-    if ((current->type != 0) && !current->parent)
-      std::cout << i << ' ' << *current << '\n';
+    // skip other components
+    auto next_last = bfs.pq.top();
+    if (soma_ids.find(next_last) != soma_ids.end()) {
+      bfs.pq.pop() bfs.front.erase(last);
+    }
   }
   */
 
