@@ -19,6 +19,16 @@ auto euc_dist = [](auto a, auto b) -> float {
   return std::sqrt(diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]);
 };
 
+/*
+Geometry::AMGraph3D force_soma_nodes(Geometry::AMGraph3D &graph,
+                                     std::vector<Seed> &seeds) {
+  rng::for_each(seeds, [&](Seed seed) {
+    auto soma_id = graph.add_node({seed.coord[0], seed.coord[1], seed.coord[2]})
+  });
+  return graph;
+}
+*/
+
 std::set<size_t> find_soma_nodes(Geometry::AMGraph3D &graph,
                                  std::vector<Seed> seeds) {
 
@@ -37,7 +47,8 @@ std::set<size_t> find_soma_nodes(Geometry::AMGraph3D &graph,
     CGLA::Vec3d p0(coord[0], coord[1], coord[2]);
     std::vector<CGLA::Vec3d> keys;
     std::vector<int> vals;
-    int within_count = tree.in_sphere(p0, SOMA_PRUNE_RADIUS * seed.radius, keys, vals);
+    int within_count =
+        tree.in_sphere(p0, SOMA_PRUNE_RADIUS * seed.radius, keys, vals);
 
     // pick skeletal node within radii with highest number of edges (valence)
     int max_valence = 0;

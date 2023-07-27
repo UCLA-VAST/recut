@@ -17,7 +17,7 @@ std::vector<Seed> process_marker_dir(
     int marker_base = 0) {
 
   // this is a usage requirement for developers
-  assertm(seed_path.empty(),
+  assertm(!seed_path.empty(),
           "can not pass empty seed path to process_marker_dir()");
 
   auto min_voxel_size = min_max(voxel_size).first;
