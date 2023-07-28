@@ -42,12 +42,13 @@ std::vector<int> within_sphere(Seed &seed,
   return vals;
 }
 
-// add seeds passed as new nodes in the graph, 
-// nearby skeletal nodes are merged into the seeds, 
-// seeds inherit edges and delete nodes within 3D radius soma_dilation * seed.radius
-// the original location and radius of the seeds are preserved
+// add seeds passed as new nodes in the graph,
+// nearby skeletal nodes are merged into the seeds,
+// seeds inherit edges and delete nodes within 3D radius soma_dilation *
+// seed.radius the original location and radius of the seeds are preserved
 std::vector<long unsigned int> force_soma_nodes(Geometry::AMGraph3D &graph,
-                                     std::vector<Seed> &seeds, float soma_dilation) {
+                                                std::vector<Seed> &seeds,
+                                                float soma_dilation) {
 
   // add the known seeds to the skeletonized graph
   // aggregate their seed ids so they are not mistakenly merged
@@ -288,14 +289,21 @@ vdb_to_markers(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
 
   // multi-scale is faster and scales linearly with input graph size at
   // the cost of difficulty in choosing a grow threshold
-  auto separators =
-      multiscale_local_separators(g, Geometry::SamplingType::Advanced,
-                                  args->skeleton_grow, args->skeleton_grain);
-  auto [component_graph, mapping] = skeleton_from_node_set_vec(g, separators);
+  Geometry::AMGraph3D component_graph;
+  try {
+    auto separators =
+        multiscale_local_separators(g, Geometry::SamplingType::Advanced,
+                                    args->skeleton_grow, args->skeleton_grain);
+    auto ppair = skeleton_from_node_set_vec(g, separators);
+    component_graph = ppair.first;
+  } catch (...) {
+    return std::nullopt;
+  }
   graph_save(component_dir_fn / ("skeleton.graph"), component_graph);
 
   // sweep through various soma ids
-  auto soma_ids = force_soma_nodes(component_graph, component_seeds, args->soma_dilation);
+  auto soma_ids =
+      force_soma_nodes(component_graph, component_seeds, args->soma_dilation);
   if (soma_ids.size() == 0) {
     std::cout << "Warning no soma_ids found for component " << index << '\n';
     // assign a soma randomly if none are found
@@ -330,7 +338,8 @@ vdb_to_markers(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
       q.pop();
       for (auto nb_id : component_graph.neighbors(id)) {
         // skip other somas or visited
-        if (!visited[nb_id] && std::find(soma_ids.begin(), soma_ids.end(), nb_id) == std::end(soma_ids)) {
+        if (!visited[nb_id] && std::find(soma_ids.begin(), soma_ids.end(),
+                                         nb_id) == std::end(soma_ids)) {
           auto marker = component_tree[nb_id];
           // add current id as parent to all discovered
           marker->parent = component_tree[id];
