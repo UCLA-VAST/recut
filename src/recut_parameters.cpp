@@ -23,14 +23,13 @@ void RecutCommandLineArgs::PrintUsage() {
       << "--image-offsets        [-io] offsets of subvolume, in x y z order "
          "default 0 0 0\n";
   std::cout << "--voxel-size           µm lengths of voxel in x y z order "
-               "default 1.0 1.0 1.0 determines prune radius\n";
+               "default 1.0 1.0 1.0\n";
   std::cout << "--skeleton-grain       granularity of final skeletons, lower value result in higher detailed skeletons (SWC trees) with more skeletal nodes; default is " << SKELETON_GRAIN << '\n';
   std::cout << "--skeleton-grow        affects granularity of final skeletons, higher value results in higher detailed skeletons (SWC trees) with more points; default is " << GROW_THRESHOLD << '\n';
   //std::cout << "--mesh-grain          granularity of component mesh, lower value result in higher polygon count to represent the surface; default is " << MESH_GRAIN << '\n';
-  //std::cout
-      //<< "--prune-radius       larger values decrease node sampling density "
-         //"along paths, default is set by the anisotropic factor of "
-         //"--voxel-size\n";
+  std::cout
+      << "--soma-dilation      factor to multiply computed soma size by to collapse somal nodes, "
+         "defaults to " << SOMA_DILATION << '\n';
   std::cout
       << "--image-lengths        [-ie] lengths of subvolume as x y z "
          "defaults"
@@ -225,9 +224,9 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
                  strcmp(argv[i], "-c") == 0) {
         args.channel = atoi(argv[i + 1]);
         ++i;
-      //} else if (strcmp(argv[i], "--prune-radius") == 0) {
-        //args.prune_radius = atof(argv[i + 1]);
-        //++i;
+      } else if (strcmp(argv[i], "--soma-dilation") == 0) {
+        args.soma_dilation = atof(argv[i + 1]);
+        ++i;
       } else if (strcmp(argv[i], "--skeleton-grain") == 0) {
         args.skeleton_grain = atof(argv[i + 1]);
         ++i;

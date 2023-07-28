@@ -32,7 +32,7 @@ public:
         ignore_multifurcations(false), close_topology(true),
         mean_shift_max_iters(4), timeout(MEAN_SHIFT_TIMEOUT),
         skeleton_grain(SKELETON_GRAIN), skeleton_grow(GROW_THRESHOLD),
-        mesh_grain(MESH_GRAIN), mean_shift_factor(0) {}
+        mesh_grain(MESH_GRAIN), mean_shift_factor(0), soma_dilation(SOMA_DILATION) {}
 
   static void PrintUsage();
   std::string MetaString();
@@ -64,14 +64,14 @@ public:
       skeleton_grow;
   double foreground_percent, slt_pct;
   float min_window_um, expand_window_um, min_radius_um, max_radius_um,
-      mean_shift_factor, skeleton_grain, mesh_grain;
+      mean_shift_factor, skeleton_grain, mesh_grain, soma_dilation;
   VID_t selected, root_vid;
   bool run_app2, convert_only, combine, histogram, save_vdbs,
       ignore_multifurcations, close_topology;
   std::array<int, 3> tile_lengths;
   std::array<float, 3> voxel_size;
-  std::optional<float> prune_radius;
   std::optional<int> close_steps;
+  std::optional<float> prune_radius;
   std::optional<int> open_steps;
 };
 

@@ -3044,12 +3044,8 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << "Seed detection: max allowed soma radius in µm, "
             << args->max_radius_um
             << '\n'
-            //<< "Skeletonization: neurites mean shift radius, "
-            //<< args->mean_shift_factor << '\n'
-            //<< "Skeletonization: neurites prune radius, "
-            //<< args->prune_radius.value_or(0) << '\n'
-            //<< "Skeletonization: soma prune radius factor, "
-            //<< SOMA_PRUNE_RADIUS << '\n'
+            << "Skeletonization: soma prune radius factor, "
+            << args->soma_dilation << '\n'
             << "Skeletonization: min branch length µm, "
             << args->min_branch_length << '\n'
             << "Benchmarking: run app2, " << args->run_app2 << '\n';

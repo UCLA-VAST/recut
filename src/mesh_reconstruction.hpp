@@ -19,45 +19,104 @@ auto euc_dist = [](auto a, auto b) -> float {
   return std::sqrt(diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]);
 };
 
-/*
-Geometry::AMGraph3D force_soma_nodes(Geometry::AMGraph3D &graph,
-                                     std::vector<Seed> &seeds) {
-  rng::for_each(seeds, [&](Seed seed) {
-    auto soma_id = graph.add_node({seed.coord[0], seed.coord[1], seed.coord[2]})
-  });
-  return graph;
-}
-*/
-
-std::set<size_t> find_soma_nodes(Geometry::AMGraph3D &graph,
-                                 std::vector<Seed> seeds) {
-
-  // build kdtree, highly efficient for nearest point computations
+// build kdtree, highly efficient for nearest point computations
+Geometry::KDTree<CGLA::Vec3d, int> build_kdtree(Geometry::AMGraph3D &graph) {
   Geometry::KDTree<CGLA::Vec3d, int> tree;
   for (auto i : graph.node_ids()) {
     CGLA::Vec3d p0 = graph.pos[i];
     tree.insert(p0, i);
   }
   tree.build();
+  return tree;
+}
+
+// find existing skeletal node within the radius of the soma
+std::vector<int> within_sphere(Seed &seed,
+                               Geometry::KDTree<CGLA::Vec3d, int> &tree,
+                               float soma_dilation) {
+  auto coord = seed.coord;
+  CGLA::Vec3d p0(coord[0], coord[1], coord[2]);
+  std::vector<CGLA::Vec3d> keys;
+  std::vector<int> vals;
+  tree.in_sphere(p0, soma_dilation * seed.radius, keys, vals);
+  return vals;
+}
+
+Geometry::AMGraph3D force_soma_nodes(Geometry::AMGraph3D &graph,
+                                     std::vector<Seed> &seeds, float soma_dilation) {
+
+  // add the known seeds to the skeletonized graph
+  // aggregate their seed ids so they are not mistakenly merged
+  // below
+  auto seed_ids =
+      seeds | rv::transform([&](Seed seed) {
+        auto p = CGLA::Vec3d(seed.coord[0], seed.coord[1], seed.coord[2]);
+        auto soma_id = graph.add_node(p);
+        // set radius by previously computed radius
+        graph.node_color[soma_id] =
+            CGLA::Vec3f(0, soma_dilation * seed.radius, 0);
+        return soma_id;
+      }) |
+      rng::to_vector;
+  auto seed_pairs = rv::zip(seeds, seed_ids);
+
+  // the graph is complete so build a data structure that
+  // is fast at finding nodes within a 3D radial distance
+  auto tree = build_kdtree(graph);
+
+  std::set<int> deleted_nodes;
+  rng::for_each(seed_pairs, [&](auto seedp) {
+    auto [seed, seed_id] = seedp;
+
+    auto within_sphere_ids = within_sphere(seed, tree, soma_dilation);
+    // iterate all nodes within a 3D radial distance from this known seed
+    for (auto id : within_sphere_ids) {
+      /*
+        for (auto nb_id : graph.neighbors[id]) {
+          if (within_sphere_ids.find(nb_id) == within_sphere_ids.end())
+            g.connect_nodes(seed_id, nb_id);
+        }
+        nodes_to_delete.push_back(id);
+        */
+
+      // if this node within the sphere isn't a known seed then merge it into
+      // the seed at the center of the radial sphere
+      if (std::find(seed_ids.begin(), seed_ids.end(), id) ==
+          std::end(seed_ids)) {
+        // the tree is unaware of nodes that have previously been deleted
+        // so you must specifically filter out those so they do not error
+        if (std::find(deleted_nodes.begin(), deleted_nodes.end(), id) ==
+            std::end(deleted_nodes)) {
+          graph.merge_nodes(id, seed_id, /*average location*/ false);
+          deleted_nodes.insert(id);
+        }
+      }
+    }
+
+    // Set radius
+  });
+
+  // rng::for_each(nodes_to_delete, [&](int id) { g.erase });
+
+  return graph;
+}
+
+std::set<size_t> find_soma_nodes(Geometry::AMGraph3D &graph,
+                                 std::vector<Seed> seeds, float soma_dilation) {
+
+  auto tree = build_kdtree(graph);
 
   std::set<size_t> soma_ids;
   rng::for_each(seeds, [&](Seed seed) {
-    // find existing skeletal node within the radius of the soma
-    auto coord = seed.coord;
-    CGLA::Vec3d p0(coord[0], coord[1], coord[2]);
-    std::vector<CGLA::Vec3d> keys;
-    std::vector<int> vals;
-    int within_count =
-        tree.in_sphere(p0, SOMA_PRUNE_RADIUS * seed.radius, keys, vals);
+    auto within_sphere_ids = within_sphere(seed, tree, soma_dilation);
 
     // pick skeletal node within radii with highest number of edges (valence)
     int max_valence = 0;
     std::optional<size_t> max_index;
-    for (int i = 0; i < within_count; ++i) {
-      int idx = vals[i];
-      auto valence = graph.valence(idx);
+    for (auto id : within_sphere_ids) {
+      auto valence = graph.valence(id);
       if (valence > max_valence) {
-        max_index = idx;
+        max_index = id;
         max_valence = valence;
       }
     }
@@ -243,7 +302,7 @@ vdb_to_markers(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
   graph_save(component_dir_fn / ("skeleton.graph"), component_graph);
 
   // sweep through various soma ids
-  auto soma_ids = find_soma_nodes(component_graph, component_seeds);
+  auto soma_ids = find_soma_nodes(component_graph, component_seeds, args->soma_dilation);
   if (soma_ids.size() == 0) {
     std::cout << "Warning no soma_ids found for component " << index << '\n';
     // assign a soma randomly if none are found
