@@ -28,7 +28,7 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "--skeleton-grow        affects granularity of final skeletons, higher value results in higher detailed skeletons (SWC trees) with more points; default is " << GROW_THRESHOLD << '\n';
   //std::cout << "--mesh-grain          granularity of component mesh, lower value result in higher polygon count to represent the surface; default is " << MESH_GRAIN << '\n';
   std::cout
-      << "--soma-dilation      factor to multiply computed soma size by to collapse somal nodes, "
+      << "--soma-dilation        factor to multiply computed soma size by to collapse somal nodes, "
          "defaults to " << SOMA_DILATION << '\n';
   std::cout
       << "--image-lengths        [-ie] lengths of subvolume as x y z "

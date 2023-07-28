@@ -42,7 +42,11 @@ std::vector<int> within_sphere(Seed &seed,
   return vals;
 }
 
-Geometry::AMGraph3D force_soma_nodes(Geometry::AMGraph3D &graph,
+// add seeds passed as new nodes in the graph, 
+// nearby skeletal nodes are merged into the seeds, 
+// seeds inherit edges and delete nodes within 3D radius soma_dilation * seed.radius
+// the original location and radius of the seeds are preserved
+std::vector<long unsigned int> force_soma_nodes(Geometry::AMGraph3D &graph,
                                      std::vector<Seed> &seeds, float soma_dilation) {
 
   // add the known seeds to the skeletonized graph
@@ -71,14 +75,6 @@ Geometry::AMGraph3D force_soma_nodes(Geometry::AMGraph3D &graph,
     auto within_sphere_ids = within_sphere(seed, tree, soma_dilation);
     // iterate all nodes within a 3D radial distance from this known seed
     for (auto id : within_sphere_ids) {
-      /*
-        for (auto nb_id : graph.neighbors[id]) {
-          if (within_sphere_ids.find(nb_id) == within_sphere_ids.end())
-            g.connect_nodes(seed_id, nb_id);
-        }
-        nodes_to_delete.push_back(id);
-        */
-
       // if this node within the sphere isn't a known seed then merge it into
       // the seed at the center of the radial sphere
       if (std::find(seed_ids.begin(), seed_ids.end(), id) ==
@@ -87,18 +83,15 @@ Geometry::AMGraph3D force_soma_nodes(Geometry::AMGraph3D &graph,
         // so you must specifically filter out those so they do not error
         if (std::find(deleted_nodes.begin(), deleted_nodes.end(), id) ==
             std::end(deleted_nodes)) {
+          // keep the original location
           graph.merge_nodes(id, seed_id, /*average location*/ false);
           deleted_nodes.insert(id);
         }
       }
     }
-
-    // Set radius
   });
 
-  // rng::for_each(nodes_to_delete, [&](int id) { g.erase });
-
-  return graph;
+  return seed_ids;
 }
 
 std::set<size_t> find_soma_nodes(Geometry::AMGraph3D &graph,
@@ -302,11 +295,11 @@ vdb_to_markers(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
   graph_save(component_dir_fn / ("skeleton.graph"), component_graph);
 
   // sweep through various soma ids
-  auto soma_ids = find_soma_nodes(component_graph, component_seeds, args->soma_dilation);
+  auto soma_ids = force_soma_nodes(component_graph, component_seeds, args->soma_dilation);
   if (soma_ids.size() == 0) {
     std::cout << "Warning no soma_ids found for component " << index << '\n';
     // assign a soma randomly if none are found
-    soma_ids.insert(0);
+    soma_ids.push_back(0);
   }
 
   std::vector<MyMarker *> component_tree;
@@ -337,7 +330,7 @@ vdb_to_markers(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
       q.pop();
       for (auto nb_id : component_graph.neighbors(id)) {
         // skip other somas or visited
-        if (!visited[nb_id] && soma_ids.find(nb_id) == soma_ids.end()) {
+        if (!visited[nb_id] && std::find(soma_ids.begin(), soma_ids.end(), nb_id) == std::end(soma_ids)) {
           auto marker = component_tree[nb_id];
           // add current id as parent to all discovered
           marker->parent = component_tree[id];
