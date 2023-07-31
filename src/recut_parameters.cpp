@@ -1,67 +1,95 @@
 #include "recut_parameters.hpp"
 
 void RecutCommandLineArgs::PrintUsage() {
-  std::cout << "Basic usage : recut <image or r> [--seeds <marker_dir>] "
-               "[--output-type point/uint8/mask/float/ims/tiff] "
-               "[-o <output_vdb_file_name>] "
-               "[--bkg-thresh <int>] [--fg-percent <double>]\n\n";
-  std::cout << "<image file or dir>  file or directory of input image(s)\n";
-  std::cout << "--seeds <dir>          option to pass a directory "
+  std::cout << "Basic usage : recut <image or VDB> "
+               "--voxel-size X Y Z (in µm) "
+               "[--seeds <marker_dir>] "
+               "[--output-type swc/eswc/seeds/uint8/mask/float/ims/tiff] "
+               "[--fg-percent <double>]\n\n";
+  std::cout << "<image or VDB>         file or directory of input image(s)\n";
+  std::cout << "--voxel-size           µm lengths of voxel in x y z order "
+               "default 1.0 1.0 1.0\n";
+  std::cout << "--fg-percent           [-fp] auto calculate a bg-thresh value "
+               "closest "
+               "to the passed "
+               "foreground % recommended between (0.1-1], only applies to "
+               "image to VDB stage, "
+               "defaults to value of "
+            << FG_PCT << '\n';
+  std::cout << "--seeds <dir>          optionally pass a directory "
                "of SWC files with 1 soma node per file, "
-               "fills the seeds as spheres directly on to the mask image, treating them as ground truth for reconstruction\n";
-  std::cout << "--output-name          [-o] give converted vdb a custom name "
+               "fills the seeds as spheres directly on to the mask image, "
+               "treating them as ground truth for reconstruction\n";
+  std::cout
+      << "--parallel             [-pl] thread count defaults to max hardware "
+         "threads\n";
+  std::cout
+      << "--output-windows       list 1 or more uint8 vdb files in channel "
+         "order to create "
+         "image windows for each neuron cluster/component\n";
+  std::cout << "--input-type           inferred by default, valid inputs "
+               "include image types ('ims' or 'tiff') or VDB types ('uint8' or "
+               "'mask')\n";
+  std::cout
+      << "--output-type          valid output types include image types "
+         "('ims' or 'tiff'), VDB types "
+         "('uint8' or 'mask'), tree types ('swc' or 'eswc'), and misc. types "
+         "('labels' or 'seeds'), default output is 'swc'\n";
+  std::cout << "--close-steps          morphological closing level "
+               "to fill hollow signals inside somata or to join path breaks "
+               "defaults to roughly"
+            << SOMA_CLOSE_FACTOR << " / [voxel size]\n";
+  std::cout
+      << "--preserve-topology    do not apply morphological closing to the "
+         "neurites of the image; defaults to closing both somas and topology "
+         "(neurites)\n";
+  std::cout << "--open-steps           iterations of morphological opening, "
+               "this will roughly erase neurites and blobs with voxel radius "
+               "smaller than the integer value passed, thus yielding only the "
+               "comparatively large somata; "
                "defaults to "
-               "naming with useful image attributes\n";
-  std::cout << "--input-type           input type img: 'ims', 'tiff' | "
-               "VDB: 'point', "
-               "'uint8', 'mask' or 'float'\n";
-  std::cout << "--output-type          output type img: 'ims', 'tiff' | "
-               "VDB: 'point', "
-               "'uint8', 'mask' or 'float' | 'swc', 'eswc', 'labels' | "
-               "'seeds', default output is 'swc'\n";
+            << OPEN_FACTOR
+            << " / [voxel size] for soma inference and soma intersection runs, "
+               "for --seeds X fill, opening is not applied\n";
   std::cout
       << "--image-offsets        [-io] offsets of subvolume, in x y z order "
          "default 0 0 0\n";
-  std::cout << "--voxel-size           µm lengths of voxel in x y z order "
-               "default 1.0 1.0 1.0\n";
-  std::cout << "--skeleton-grain       granularity of final skeletons, lower value result in higher detailed skeletons (SWC trees) with more skeletal nodes; default is " << SKELETON_GRAIN << '\n';
-  std::cout << "--skeleton-grow        affects granularity of final skeletons, higher value results in higher detailed skeletons (SWC trees) with more points; default is " << GROW_THRESHOLD << '\n';
-  //std::cout << "--mesh-grain          granularity of component mesh, lower value result in higher polygon count to represent the surface; default is " << MESH_GRAIN << '\n';
-  std::cout
-      << "--soma-dilation        factor to multiply computed soma size by to collapse somal nodes, "
-         "defaults to " << SOMA_DILATION << '\n';
+  std::cout << "--skeleton-grain       granularity of final skeletons, lower "
+               "value result in higher detailed skeletons (SWC trees) with "
+               "more skeletal nodes; default is "
+            << SKELETON_GRAIN << '\n';
+  std::cout << "--skeleton-grow        affects granularity of final skeletons, "
+               "higher value results in higher detailed skeletons (SWC trees) "
+               "with more points; default is "
+            << GROW_THRESHOLD << '\n';
+  // std::cout << "--mesh-grain          granularity of component mesh, lower
+  // value result in higher polygon count to represent the surface; default is "
+  // << MESH_GRAIN << '\n';
+  std::cout << "--soma-dilation        factor to multiply computed soma size "
+               "by to collapse somal nodes, "
+               "defaults to "
+            << SOMA_DILATION << '\n';
   std::cout
       << "--image-lengths        [-ie] lengths of subvolume as x y z "
          "defaults"
          " to max range from start to max length in each axis which could be "
          "specified by -1 -1 -1\n";
-  std::cout << "--bg-thresh            [-bt] all pixels greater than this passed "
-               "intensity value are treated as foreground\n";
-  std::cout
-      << "--min-branch-length    prune leaf branches lower than path length, defaults to " << MIN_BRANCH_LENGTH << " µm\n";
-  std::cout
-      << "--fg-percent           [-fp] auto calculate a bg-thresh value closest "
-         "to the passed "
-         "foreground % between (0-100], overriding any --bg-thresh args, "
-         "value of .08 yields ~8 in 10,000 voxels "
-         "as foreground per z-plane\n";
-  std::cout
-      << "--parallel             [-pl] thread count defaults to max hardware "
-         "threads\n";
-  //std::cout << "--mean-shift         radius to mean shift nodes towards local "
-               //"mean which aids pruning; default 0\n";
-  //std::cout
-      //<< "--mean-shift-iters   max iterations allowed for mean shift "
-         //"convergence; most smoothing converges by the default 4 iterations\n";
-  std::cout << "--output-windows       list 1 or more uint8 vdb files in channel "
-               "order to create "
-               "image windows for each neuron cluster/component\n";
-  //std::cout
-      //<< "--tile-lengths         dimensions for fg percentages and conversion, "
-         //"defaults to image sizes\n";
-  //std::cout
-      //<< "--downsample-factor    for images scaled down in x and z dimension "
-         //"scale the marker files by specified factor\n";
+  // std::cout << "--bg-thresh            [-bt] all pixels greater than this
+  // passed " "intensity value are treated as foreground\n";
+  std::cout << "--min-branch-length    prune leaf branches lower than path "
+               "length, defaults to "
+            << MIN_BRANCH_LENGTH << " µm\n";
+  // std::cout << "--mean-shift         radius to mean shift nodes towards local
+  // " "mean which aids pruning; default 0\n";
+  // std::cout
+  //<< "--mean-shift-iters   max iterations allowed for mean shift "
+  //"convergence; most smoothing converges by the default 4 iterations\n";
+  // std::cout
+  //<< "--tile-lengths         dimensions for fg percentages and conversion, "
+  //"defaults to image sizes\n";
+  // std::cout
+  //<< "--downsample-factor    for images scaled down in x and z dimension "
+  //"scale the marker files by specified factor\n";
   std::cout
       << "--upsample-z           during conversion only z-dimension will be "
          "upsampled (copied) by specified factor, default is 1 i.e. no "
@@ -78,20 +106,10 @@ void RecutCommandLineArgs::PrintUsage() {
          "volume of their component, this allows specifying an expansion "
          "factor around seeds, if no µm value is passed it will use "
       << EXPAND_WINDOW_UM << " µm\n";
-  std::cout << "--close-steps          morphological closing level "
-               "to fill hollow signals inside somata or to join path breaks "
-               "defaults to ~" << SOMA_CLOSE_FACTOR << "/ x voxel size, value passed must be >= 1\n";
-  std::cout
-      << "--preserve-topology    do not apply morphological closing to the "
-         "neurites of the image; defaults to closing both somas and topology "
-         "(neurites)\n";
-  std::cout << "--open-steps           iterations of morphological opening, "
-               "this will roughly erase neurites and blobs with voxel radius smaller than the integer value passed, thus yielding only the comparatively large somata; "
-               "defaults to " << OPEN_FACTOR << "/ x voxel size for soma inference and soma intersection runs, for --seeds X fill, opening is not applied\n";
-  //std::cout << "--order               morphological operations (open/close) "
-               //"order An integer between 1 to 5 that defines the mathematical "
-               //"complexity (order) of operations "
-               //"defaults to 1\n";
+  // std::cout << "--order               morphological operations (open/close) "
+  //"order An integer between 1 to 5 that defines the mathematical "
+  //"complexity (order) of operations "
+  //"defaults to 1\n";
   std::cout << "--min-radius           min allowed radius of the soma in µm "
                "used in the soma detection phase, defaults to "
             << MIN_SOMA_RADIUS_UM << " µm\n";
@@ -100,10 +118,14 @@ void RecutCommandLineArgs::PrintUsage() {
             << MAX_SOMA_RADIUS_UM << " µm\n";
   std::cout << "--save-vdbs            save intermediate VDB grids during "
                "reconstruction transformations\n";
-  std::cout
-      << "--run-app2             for benchmarks and comparisons runs app2 on "
-         "the vdb passed to --output-windows\n";
-  //std::cout << "--timeout             time in minutes to automatically cancel pruning of a single component\n";
+  // std::cout
+  //<< "--run-app2             for benchmarks and comparisons runs app2 on "
+  //"the vdb passed to --output-windows\n";
+  // std::cout << "--timeout             time in minutes to automatically cancel
+  // pruning of a single component\n";
+  std::cout << "--output-name          [-o] give converted vdb a custom name "
+               "defaults to "
+               "naming with useful image attributes\n";
   std::cout << "--help                 [-h] print this example usage summary\n";
 }
 
@@ -269,11 +291,11 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--open-steps") == 0) {
         args.open_steps = atoi(argv[i + 1]);
         ++i;
-      //} else if (strcmp(argv[i], "--mean-shift") == 0) {
-        //args.mean_shift_factor = atof(argv[i + 1]);
+        //} else if (strcmp(argv[i], "--mean-shift") == 0) {
+        // args.mean_shift_factor = atof(argv[i + 1]);
         //++i;
-      //} else if (strcmp(argv[i], "--mean-shift-iters") == 0) {
-        //args.mean_shift_max_iters = atoi(argv[i + 1]);
+        //} else if (strcmp(argv[i], "--mean-shift-iters") == 0) {
+        // args.mean_shift_max_iters = atoi(argv[i + 1]);
         //++i;
       } else if (strcmp(argv[i], "--close-steps") == 0) {
         auto val = atoi(argv[i + 1]);
@@ -328,7 +350,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         args.run_app2 = true;
         ++i;
       } else if (strcmp(argv[i], "--timeout") == 0) {
-        args.timeout = 60* atoi(argv[i + 1]);
+        args.timeout = 60 * atoi(argv[i + 1]);
         ++i;
       } else {
         std::cerr << "unknown option \"" << argv[i] << "\"  ...exiting\n\n";

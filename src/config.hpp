@@ -107,3 +107,4 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 #define TOPOLOGY_CLOSE_FACTOR 3
 #define SOMA_CLOSE_FACTOR 7
 #define OPEN_FACTOR 5
+#define FG_PCT .4
