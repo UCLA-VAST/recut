@@ -267,7 +267,7 @@ openvdb::FloatGrid::Ptr mask_to_sdf(openvdb::MaskGrid::Ptr mask) {
 }
 
 std::optional<std::vector<MyMarker *>>
-vdb_to_markers(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
+vdb_to_skeleton(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
                int index, RecutCommandLineArgs *args,
                fs::path component_dir_fn) {
   auto component = mask_to_sdf(mask);
