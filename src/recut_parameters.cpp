@@ -80,7 +80,7 @@ void RecutCommandLineArgs::PrintUsage() {
       << EXPAND_WINDOW_UM << " µm\n";
   std::cout << "--close-steps          morphological closing level "
                "to fill hollow signals inside somata or to join path breaks "
-               "defaults to " << CLOSE_FACTOR<< "/ x voxel size, value passed must be >= 1\n";
+               "defaults to ~" << SOMA_CLOSE_FACTOR << "/ x voxel size, value passed must be >= 1\n";
   std::cout
       << "--preserve-topology    do not apply morphological closing to the "
          "neurites of the image; defaults to closing both somas and topology "

@@ -2862,7 +2862,10 @@ template <class image_t> void Recut<image_t>::initialize() {
   if (args->seed_path.empty() || args->close_topology) {
     // infer close steps if it wasn't explicitly passed
     if (!args->close_steps) {
-      args->close_steps = CLOSE_FACTOR / args->voxel_size[0];
+      if (args->seed_path.empty())
+        args->close_steps = SOMA_CLOSE_FACTOR / args->voxel_size[0];
+      else
+        args->close_steps = TOPOLOGY_CLOSE_FACTOR / args->voxel_size[0];
       args->close_steps = args->close_steps < 1 ? 1 : args->close_steps;
       std::cout << "Close steps inferred to " << args->close_steps.value()
                 << " based on voxel size\n";
@@ -3092,8 +3095,9 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
       rv::transform([](const auto &gpath) { return read_vdb_file(gpath); }) |
       rng::to_vector; // force reading once now
 
+  int failed_components = 0;
   auto process_component = [&args, &seeds, &window_grids,
-                            &run_dir](const auto component_pair) {
+                            &run_dir, &failed_components](const auto component_pair) {
     auto [index, component] = component_pair;
     // all grid transforms across are consistent across recut, so enforce
     // the same interpretation for any new grid
@@ -3260,6 +3264,7 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
 
       std::cout << "Component " << index << " complete and safe to open\n";
     } else {
+      ++failed_components;
       std::cout << "Component " << index
                 << " SWC failed, image, seed, (and vdb saved)\n";
     }
@@ -3287,6 +3292,7 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
   }
   run_log << "Aggregated prune, " << total_timer.elapsed_formatted() << '\n';
   run_log << "Neuron count, " << seeds.size() << '\n';
+  run_log << "Failed component count, " << failed_components << '\n';
 }
 
 template <class image_t> void Recut<image_t>::operator()() {
