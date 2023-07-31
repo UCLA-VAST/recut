@@ -3057,7 +3057,6 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
                           std::vector<Seed> seeds, RecutCommandLineArgs *args,
                           fs::path run_dir, fs::path log_fn) {
 
-  auto global_timer = high_resolution_timer();
   // this copies only vertices that have already had flags marked as selected.
   // selected means they are reachable from a known vertex during traversal
   // in either a connected or value stage.
@@ -3076,15 +3075,17 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
   }
 
   // aggregate disjoint connected components
-  global_timer.restart();
+#ifdef LOG
+  std::cout << "Start component segmentation\n";
+#endif
+  auto segment_timer = high_resolution_timer();
   std::vector<openvdb::MaskGrid::Ptr> components;
   vto::segmentActiveVoxels(*connected_grid, components);
 #ifdef LOG
-  cout << "Segment count: " << components.size() << " in "
-       << global_timer.elapsed_formatted() << '\n';
+  std::cout << "Segment count: " << components.size() << " in "
+       << segment_timer.elapsed_formatted() << '\n';
 #endif
 
-  global_timer.restart();
   // you need to load the passed image grids if you are outputting windows
   auto window_grids =
       args->window_grid_paths |
@@ -3153,7 +3154,7 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
       // cluster_opt =
       // classic_prune(topology_grid, component, index, args, component_log);
     } else {
-      cluster_opt = vdb_to_markers(component, component_seeds, index, args,
+      cluster_opt = vdb_to_skeleton(component, component_seeds, index, args,
                                    component_dir_fn);
     }
 
@@ -3266,19 +3267,23 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
 
   auto enum_components =
       components | rv::enumerate | rv::reverse | rng::to_vector;
-  auto thread_count = args->user_thread_count;
-  if (args->window_grid_paths.size()) {
-    thread_count = 1;
-  }
-  tbb::task_arena arena(thread_count);
-  arena.execute(
-      [&] { tbb::parallel_for_each(enum_components, process_component); });
+
+  auto tctp_timer = high_resolution_timer();
+  //auto thread_count = args->user_thread_count;
+  //if (args->window_grid_paths.size()) {
+    //thread_count = 1;
+  //}
+  //tbb::task_arena arena(thread_count);
+  //arena.execute(
+      //[&] { tbb::parallel_for_each(enum_components, process_component); });
+
+  rng::for_each(enum_components, process_component);
 
   std::ofstream run_log;
   run_log.open(log_fn, std::ios::app);
   // only log this if it isn't occluded by app2 and window write times
   if (!(args->run_app2 || !args->window_grid_paths.empty())) {
-    run_log << "TC+TP, " << global_timer.elapsed() << '\n';
+    run_log << "TC+TP, " << tctp_timer.elapsed() << '\n';
   }
   run_log << "Aggregated prune, " << total_timer.elapsed_formatted() << '\n';
   run_log << "Neuron count, " << seeds.size() << '\n';
