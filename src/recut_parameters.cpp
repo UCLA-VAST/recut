@@ -62,6 +62,10 @@ void RecutCommandLineArgs::PrintUsage() {
                "higher value results in higher detailed skeletons (SWC trees) "
                "with more points; default is "
             << GROW_THRESHOLD << '\n';
+  std::cout << "--smooth-iters         higher values smooths the node "
+               "positions and radius of final skeletons, "
+               "improving uniformity along paths; defaults to "
+            << SMOOTH_ITERS << '\n';
   // std::cout << "--mesh-grain          granularity of component mesh, lower
   // value result in higher polygon count to represent the surface; default is "
   // << MESH_GRAIN << '\n';
@@ -254,6 +258,10 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         ++i;
       } else if (strcmp(argv[i], "--skeleton-grow") == 0) {
         args.skeleton_grow = atoi(argv[i + 1]);
+        ++i;
+      } else if (strcmp(argv[i], "--smooth-iters") == 0) {
+        auto val = atoi(argv[i + 1]);
+        args.smooth_iters = val;
         ++i;
       } else if (strcmp(argv[i], "--mesh-grain") == 0) {
         args.mesh_grain = atof(argv[i + 1]);

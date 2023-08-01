@@ -4,7 +4,9 @@
 #include <GEL/Geometry/Graph.h>
 #include <GEL/Geometry/graph_io.h>
 #include <GEL/Geometry/graph_skeletonize.h>
+//#include <GEL/Geometry/graph_util.h>
 #include <GEL/Geometry/KDTree.h>
+#include <GEL/Util/AttribVec.h>
 #include <openvdb/tools/FastSweeping.h> // fogToSdf
 #include <openvdb/tools/LevelSetUtil.h>
 #include <openvdb/tools/TopologyToLevelSet.h>
@@ -266,10 +268,58 @@ openvdb::FloatGrid::Ptr mask_to_sdf(openvdb::MaskGrid::Ptr mask) {
   return vto::fogToSdf(*float_grid, 0);
 }
 
+float get_radius(Util::AttribVec<Geometry::AMGraph::NodeID, CGLA::Vec3f> &node_color, size_t i) {
+  auto color = node_color[i].get();
+  // radius is in the green channel
+  return color[1]; // RGB
+}
+
+// laplacian smoothing, controllable by number of repeated iterations
+// and the smoothing strength (alpha) at each iteration
+// a high number of iterations allows the smoothing effect to diffuse
+// globally throughout the graph, whereas a low iteration count and a high
+// alpha make the effect much more local
+// 1 iteration and 1 alpha are the defaults in the GEL library and in the
+// corresponding paper (Baerentzen) all skeletons qualitatively looked smooth
+// after only 1 iteration at 1 alpha
+void smooth_graph(Geometry::AMGraph3D &g, const int iter, const float alpha) {
+  auto lsmooth = [](Geometry::AMGraph3D &g, float _alpha) {
+    auto convert_radius = [](float radius) {
+      return CGLA::Vec3f(0, radius, 0);
+    };
+
+    Util::AttribVec<Geometry::AMGraph::NodeID, CGLA::Vec3d> new_pos(
+        g.no_nodes(), CGLA::Vec3d(0));
+    Util::AttribVec<Geometry::AMGraph::NodeID, CGLA::Vec3f> new_radius(
+        g.no_nodes(), CGLA::Vec3f(0));
+    for (auto n : g.node_ids()) {
+      double wsum = 0;
+      auto N = g.neighbors(n);
+      for (auto nn : N) {
+        double w = 1.0;
+        new_pos[n] += w * g.pos[nn];
+        new_radius[n] += convert_radius(w * get_radius(g.node_color, nn));
+        wsum += w;
+      }
+      double alpha = N.size() == 1 ? 0 : _alpha;
+      new_pos[n] = (alpha)*new_pos[n] / wsum + (1.0 - alpha) * g.pos[n];
+      new_radius[n] = convert_radius((alpha)*get_radius(new_radius, n) / wsum +
+                                     (1.0 - alpha) * get_radius(g.node_color, n));
+    }
+    return std::make_pair(new_pos, new_radius);
+  };
+
+  for (int i = 0; i < iter; ++i) {
+    auto [npos, nradius] = lsmooth(g, alpha);
+    g.pos = npos;
+    g.node_color = nradius;
+  }
+}
+
 std::optional<std::vector<MyMarker *>>
 vdb_to_skeleton(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
-               int index, RecutCommandLineArgs *args,
-               fs::path component_dir_fn) {
+                int index, RecutCommandLineArgs *args,
+                fs::path component_dir_fn) {
   auto component = mask_to_sdf(mask);
   if (args->save_vdbs) {
     write_vdb_file({component}, component_dir_fn / "sdf.vdb");
@@ -299,7 +349,8 @@ vdb_to_skeleton(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
   } catch (...) {
     return std::nullopt;
   }
-  graph_save(component_dir_fn / ("skeleton.graph"), component_graph);
+
+  smooth_graph(component_graph, args->smooth_iters, /*alpha*/ 1);
 
   // sweep through various soma ids
   auto soma_ids =
@@ -309,12 +360,11 @@ vdb_to_skeleton(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
     // assign a soma randomly if none are found
     soma_ids.push_back(0);
   }
+  graph_save(component_dir_fn / ("skeleton.graph"), component_graph);
 
   std::vector<MyMarker *> component_tree;
   for (auto i : component_graph.node_ids()) {
-    auto color = component_graph.node_color[i].get();
-    // radius is in the green channel
-    auto radius = color[1]; // RGB
+    auto radius = get_radius(component_graph.node_color, i);
     auto pos = component_graph.pos[i].get();
     auto marker = new MyMarker(pos[0], pos[1], pos[2], radius);
     component_tree.push_back(marker);
@@ -322,6 +372,7 @@ vdb_to_skeleton(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
 
   std::vector<bool> visited(component_tree.size());
 
+  // do BFS from each known soma in the component
   rng::for_each(soma_ids, [&](auto soma_id) {
     std::queue<size_t> q;
     q.push(soma_id);
@@ -349,31 +400,6 @@ vdb_to_skeleton(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
       }
     }
   });
-
-  /*
-  // assign all parents via BFS
-  // traverse graph outwards from any soma, does not matter which
-  Geometry::BreadthFirstSearch bfs(component_graph);
-  size_t root = *soma_ids.begin();
-  bfs.add_init_node(root);
-  while (bfs.Prim_step()) {
-    auto last = bfs.get_last();
-    auto marker = component_tree[last];
-    if (soma_ids.find(last) != soma_ids.end()) {
-      // soma
-      marker->parent = 0;
-      marker->type = 0;
-    } else {
-      // std::cout << "->parent " << bfs.pred[last] << '\n';;
-      marker->parent = component_tree[bfs.pred[last]];
-    }
-    // skip other components
-    auto next_last = bfs.pq.top();
-    if (soma_ids.find(next_last) != soma_ids.end()) {
-      bfs.pq.pop() bfs.front.erase(last);
-    }
-  }
-  */
 
   return component_tree;
 }

@@ -32,6 +32,7 @@ public:
         ignore_multifurcations(false), close_topology(true),
         mean_shift_max_iters(4), timeout(MEAN_SHIFT_TIMEOUT),
         skeleton_grain(SKELETON_GRAIN), skeleton_grow(GROW_THRESHOLD),
+        smooth_iters(SMOOTH_ITERS),
         mesh_grain(MESH_GRAIN), mean_shift_factor(0), soma_dilation(SOMA_DILATION) {}
 
   static void PrintUsage();
@@ -59,7 +60,7 @@ public:
   std::vector<std::string> window_grid_paths;
   uint16_t user_thread_count, min_branch_length, resolution_level, channel,
       upsample_z, downsample_factor, morphological_operations_order,
-      mean_shift_max_iters;
+      mean_shift_max_iters, smooth_iters;
   int background_thresh, max_intensity, min_intensity, tcase, timeout,
       skeleton_grow;
   double foreground_percent, slt_pct;
