@@ -3432,21 +3432,21 @@ template <class image_t> void Recut<image_t>::operator()() {
   fill_seeds(this->mask_grid, seeds);
 
   openvdb::MaskGrid::Ptr preserved_topology;
-  if (!args->close_topology && args->close_steps)
-    preserved_topology = this->mask_grid->deepCopy();
-
   if (args->close_steps) {
+    if (!args->close_topology) {
+      preserved_topology = this->mask_grid->deepCopy();
+    }
 #ifdef LOG
     std::cout << "\tStart morphological close = " << args->close_steps.value()
               << '\n';
 #endif
     auto timer = high_resolution_timer();
     // close
-    openvdb::tools::dilateActiveValues(mask_grid->tree(),
+    openvdb::tools::dilateActiveValues(this->mask_grid->tree(),
                                        args->close_steps.value());
-    openvdb::tools::erodeActiveValues(mask_grid->tree(),
+    openvdb::tools::erodeActiveValues(this->mask_grid->tree(),
                                       args->close_steps.value());
-    openvdb::tools::pruneInactive(mask_grid->tree());
+    openvdb::tools::pruneInactive(this->mask_grid->tree());
     run_log << "Seed detection: closing time, " << timer.elapsed_formatted()
             << "\n";
 #ifdef LOG
@@ -3455,7 +3455,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   }
 
   if (seeds.empty())
-    seeds = soma_segmentation(mask_grid, args, this->image_lengths, log_fn,
+    seeds = soma_segmentation(this->mask_grid, args, this->image_lengths, log_fn,
                               run_dir);
 
   // if output type is seeds end the program
@@ -3471,20 +3471,21 @@ template <class image_t> void Recut<image_t>::operator()() {
     exit(0); // exit
   }
 
-  if (!args->close_topology && args->close_steps)
-    this->mask_grid = preserved_topology;
+  // revert the topology to what it was before 
+  if (args->close_steps) {
+    if (!args->close_topology) {
+      this->mask_grid = preserved_topology;
+    }
+  }
 
   // filter seeds with respect to topology
-  // int empty_leaf_seed_count = 0;
+  run_log << "Pre-topological filtered seed count, " << seeds.size() << '\n';
   seeds = seeds | rv::filter([this](Seed seed) {
-            if (CLASSIC_PRUNE)
-              return this->topology_grid->tree().isValueOn(seed.coord);
             return this->mask_grid->tree().isValueOn(seed.coord) &&
                    this->mask_grid->tree().probeLeaf(seed.coord);
           }) |
           rng::to_vector;
 
-  // run_log << "Empy leaf seed count, " << empty_leaf_seed_count << '\n';
   run_log << "Filtered seed count, " << seeds.size() << '\n';
   run_log.flush();
 
