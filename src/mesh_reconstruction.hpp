@@ -352,6 +352,10 @@ vdb_to_skeleton(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
     std::cerr << "Skeletonization failed for " << (component_dir_fn) << '\n';
     return std::nullopt;
   }
+  
+  // prune all leaf vertices (valency 1) whose only neighbor has valency > 2
+  // as these tend to be spurious branches 
+  Geometry::prune(component_graph);
 
   smooth_graph(component_graph, args->smooth_iters, /*alpha*/ 1);
 
