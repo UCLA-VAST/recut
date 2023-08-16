@@ -3089,6 +3089,16 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
        << segment_timer.elapsed_formatted() << '\n';
 #endif
 
+  // assign parallelization
+  auto inter_thread_count = args->user_thread_count;
+  if (components.size() > 1) {
+   if (args->window_grid_paths.size()) {
+     inter_thread_count = 1;
+   }
+  } else {
+    inter_thread_count = 1;
+  }
+
   // you need to load the passed image grids if you are outputting windows
   auto window_grids =
       args->window_grid_paths |
@@ -3097,7 +3107,8 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
 
   int failed_components = 0;
   auto process_component = [&args, &seeds, &window_grids,
-                            &run_dir, &failed_components](const auto component_pair) {
+                            &run_dir, &failed_components, 
+                            &inter_thread_count](const auto component_pair) {
     auto [index, component] = component_pair;
     // all grid transforms across are consistent across recut, so enforce
     // the same interpretation for any new grid
@@ -3159,13 +3170,17 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
       // classic_prune(topology_grid, component, index, args, component_log);
     } else {
       cluster_opt = vdb_to_skeleton(component, component_seeds, index, args,
-                                   component_dir_fn);
+                                   component_dir_fn, 
+                                   inter_thread_count == 1 ? args->user_thread_count : 1);
     }
 
     if (cluster_opt) {
       auto cluster = cluster_opt.value();
+      //auto pruned_cluster = cluster;
+      
       auto pruned_cluster = prune_short_branches(cluster, args->voxel_size[0],
                                                  args->min_branch_length);
+                                                 
 #ifdef LOG
       component_log << "TP, " << timer.elapsed() << '\n';
       component_log << "TP count, " << pruned_cluster.size() << '\n';
@@ -3274,11 +3289,8 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
       components | rv::enumerate | rv::reverse | rng::to_vector;
 
   auto tctp_timer = high_resolution_timer();
-  auto thread_count = args->user_thread_count;
-  if (args->window_grid_paths.size()) {
-    thread_count = 1;
-  }
-  tbb::task_arena arena(thread_count);
+
+  tbb::task_arena arena(inter_thread_count);
   arena.execute(
       [&] { tbb::parallel_for_each(enum_components, process_component); });
 

@@ -319,7 +319,7 @@ void smooth_graph(Geometry::AMGraph3D &g, const int iter, const float alpha) {
 std::optional<std::vector<MyMarker *>>
 vdb_to_skeleton(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
                 int index, RecutCommandLineArgs *args,
-                fs::path component_dir_fn) {
+                fs::path component_dir_fn, int threads) {
   auto component = mask_to_sdf(mask);
   if (args->save_vdbs) {
     write_vdb_file({component}, component_dir_fn / "sdf.vdb");
@@ -344,7 +344,7 @@ vdb_to_skeleton(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
     auto separators =
         multiscale_local_separators(g, Geometry::SamplingType::Advanced,
                                     args->skeleton_grow, args->skeleton_grain, 
-                                    /*opt steps*/ 0, /*threads*/ 1, 
+                                    /*opt steps*/ 0, threads, 
                                     /*quiet*/true);
     auto ppair = skeleton_from_node_set_vec(g, separators);
     component_graph = ppair.first;
