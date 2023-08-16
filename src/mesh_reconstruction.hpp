@@ -343,10 +343,13 @@ vdb_to_skeleton(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
   try {
     auto separators =
         multiscale_local_separators(g, Geometry::SamplingType::Advanced,
-                                    args->skeleton_grow, args->skeleton_grain);
+                                    args->skeleton_grow, args->skeleton_grain, 
+                                    /*opt steps*/ 0, /*threads*/ 1, 
+                                    /*quiet*/true);
     auto ppair = skeleton_from_node_set_vec(g, separators);
     component_graph = ppair.first;
   } catch (...) {
+    std::cerr << "Skeletonization failed for " << (component_dir_fn) << '\n';
     return std::nullopt;
   }
 

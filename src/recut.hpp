@@ -3274,15 +3274,15 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
       components | rv::enumerate | rv::reverse | rng::to_vector;
 
   auto tctp_timer = high_resolution_timer();
-  //auto thread_count = args->user_thread_count;
-  //if (args->window_grid_paths.size()) {
-    //thread_count = 1;
-  //}
-  //tbb::task_arena arena(thread_count);
-  //arena.execute(
-      //[&] { tbb::parallel_for_each(enum_components, process_component); });
+  auto thread_count = args->user_thread_count;
+  if (args->window_grid_paths.size()) {
+    thread_count = 1;
+  }
+  tbb::task_arena arena(thread_count);
+  arena.execute(
+      [&] { tbb::parallel_for_each(enum_components, process_component); });
 
-  rng::for_each(enum_components, process_component);
+  //rng::for_each(enum_components, process_component);
 
   std::ofstream run_log;
   run_log.open(log_fn, std::ios::app);
@@ -3430,6 +3430,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   }
 
   fill_seeds(this->mask_grid, seeds);
+  write_vdb_file({this->mask_grid}, this->run_dir / "filled_seed.vdb");
 
   openvdb::MaskGrid::Ptr preserved_topology;
   if (args->close_steps) {

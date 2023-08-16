@@ -31,20 +31,22 @@ std::vector<Seed> process_marker_dir(
           auto markers =
               readMarker_file(fs::absolute(marker_file), marker_base);
           assertm(markers.size() == 1, "only 1 marker file per soma");
-          auto marker = markers[0];
+          auto marker = markers[0]; 
+          uint64_t volume;
+            if (marker.radius == 0) {
+             std::string fn = marker_file.path().filename().string();
+              auto numbers =
+                  fn | rv::split('_') | rng::to<std::vector<std::string>>();
+              if (numbers.size() != 5)
+                throw std::runtime_error(
+                    "Marker file names must be in format marker_x_y_z_volume");
+             //  volume is the last number of the file name
+             uint64_t volume = std::stoull(numbers.back());
 
-          std::string fn = marker_file.path().filename().string();
-          auto numbers =
-              fn | rv::split('_') | rng::to<std::vector<std::string>>();
-          if (numbers.size() != 5)
-            throw std::runtime_error(
-                "Marker file names must be in format marker_x_y_z_volume");
-          //  volume is the last number of the file name
-          uint64_t volume = std::stoull(numbers.back());
-
-          if (marker.radius == 0) {
             marker.radius =
                 static_cast<uint8_t>(std::cbrt(volume) / (4 / 3 * PI) + 0.5);
+          } else {
+            volume = (4 / 3) * PI * std::pow(marker.radius, 3);
           }
 
           // ones() + GridCoord(marker.x / args->downsample_factor,

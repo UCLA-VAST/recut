@@ -7,11 +7,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1688323853,
-        "narHash": "sha256-ttcXPiNXfhCjTSQ0pNA5CQL1joYyjC8uVU22Z0Iij78=",
+        "lastModified": 1692200932,
+        "narHash": "sha256-sE5McuDYycLUxalj2P5CARaEuSqn0gEsrnRjDKee1Q4=",
         "owner": "UCLA-VAST",
         "repo": "GEL",
-        "rev": "07a2cbaaef5c4cf64bdd42a3cd90023e44ed9992",
+        "rev": "6ca1de6e48e6b7f247b6be2dd9ee3c04bdd7318d",
         "type": "github"
       },
       "original": {
@@ -43,11 +43,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1690150789,
-        "narHash": "sha256-vAwY1GSh3cdLN6lJNrbxruIajIoUWiwE7jQO7bv55GI=",
+        "lastModified": 1691107576,
+        "narHash": "sha256-p+O9pfrWkv3pkHWEVx9uzCFZaKc/bZOYDVWVYegk+EE=",
         "owner": "UCLA-VAST",
         "repo": "openvdb",
-        "rev": "0955511402c362f023c1f7de26c402db805dce18",
+        "rev": "c9e5310a50e05854694097f3e60e55181129ba05",
         "type": "github"
       },
       "original": {
