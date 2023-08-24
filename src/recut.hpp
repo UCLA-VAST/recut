@@ -5,7 +5,7 @@
 #include "morphological_soma_segmentation.hpp"
 #include "recut_parameters.hpp"
 #include "tile_thresholds.hpp"
-#include "tree_ops.hpp"
+//#include "tree_ops.hpp"
 #include "utils.hpp"
 #include <algorithm>
 #include <bits/stdc++.h>
@@ -3060,12 +3060,6 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
                           std::vector<Seed> seeds, RecutCommandLineArgs *args,
                           fs::path run_dir, fs::path log_fn) {
 
-  // this copies only vertices that have already had flags marked as selected.
-  // selected means they are reachable from a known vertex during traversal
-  // in either a connected or value stage.
-  // auto float_grid = copy_selected(this->topology_grid);
-  // cout << "Topo to float time " << global_timer.elapsed_formatted() << '\n';
-
   auto total_timer = high_resolution_timer();
   {
     VID_t selected_count = connected_grid->activeVoxelCount();
@@ -3164,32 +3158,20 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
 
     auto timer = high_resolution_timer();
     std::vector<std::vector<MyMarker *>> trees;
-    std::optional<std::vector<MyMarker *>> cluster_opt;
-    if (CLASSIC_PRUNE) {
-      // cluster_opt =
-      // classic_prune(topology_grid, component, index, args, component_log);
-    } else {
-      cluster_opt = vdb_to_skeleton(component, component_seeds, index, args,
+    std::optional<std::pair<Geometry::AMGraph3D, std::vector<long unsigned int>>> cluster_opt;
+    cluster_opt = vdb_to_skeleton(component, component_seeds, index, args,
                                    component_dir_fn, 
                                    inter_thread_count == 1 ? args->user_thread_count : 1);
-    }
 
     if (cluster_opt) {
-      auto cluster = cluster_opt.value();
-      //auto pruned_cluster = cluster;
-      
-      auto pruned_cluster = prune_short_branches(cluster, args->voxel_size[0],
-                                                 args->min_branch_length);
-                                                 
+      auto [component_graph, soma_ids] = cluster_opt.value();
 #ifdef LOG
       component_log << "TP, " << timer.elapsed() << '\n';
-      component_log << "TP count, " << pruned_cluster.size() << '\n';
+      component_log << "TP count, " << component_graph.no_nodes() << '\n';
 #endif
-
-      if (!is_cluster_self_contained(pruned_cluster))
-        throw std::runtime_error("Pruned cluster not self contained");
-
-      trees = partition_cluster(pruned_cluster);
+      write_swcs(component_graph, soma_ids, args->voxel_size, component_dir_fn, bbox,
+                   !args->window_grid_paths.empty(),
+                  args->output_type == "eswc", args->voxel_units);
     }
 
     if (!window_grids.empty()) {
@@ -3253,30 +3235,6 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
 #endif
 
     if (cluster_opt) {
-#ifdef LOG
-      VID_t total_leaves = rng::accumulate(
-          trees | rv::transform([](auto tree) { return count_leaves(tree); }),
-          0LL);
-      VID_t total_furcations =
-          rng::accumulate(trees | rv::transform([](auto tree) {
-                            return count_furcations(tree);
-                          }),
-                          0LL);
-
-      component_log << "Final leaf count, " << total_leaves << '\n';
-      component_log << "Final branching node count, " << total_furcations
-                    << '\n';
-#endif
-
-      rng::for_each(trees, [&](auto tree) {
-        write_swc(tree, args->voxel_size, component_dir_fn, bbox,
-                  /*bbox_adjust*/ !args->window_grid_paths.empty(),
-                  args->output_type == "eswc");
-        if (!parent_listed_above(tree)) {
-          throw std::runtime_error("Tree is not properly sorted");
-        }
-      });
-
       std::cout << "Component " << index << " complete and safe to open\n";
     } else {
       ++failed_components;
@@ -3514,18 +3472,10 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   // constrain topology to only those reachable from roots
   std::string stage;
-  if (CLASSIC_PRUNE) {
-    stage = "connected";
-    // starting from the roots connected stage saves all surface vertices into
-    // fifo
-    this->activate_vids(this->topology_grid, seeds, stage, this->map_fifo,
-                        this->connected_map);
-  } else {
     stage = "connected-mask";
     std::cout << "Start activate seeds\n";
     this->activate_vids_mask(seeds);
     std::cout << "End activate seeds\n";
-  }
 
   run_log << "Foreground active voxel count, "
           << this->mask_grid->activeVoxelCount() << '\n'
@@ -3539,15 +3489,6 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   this->connected_grid->insertMeta("connected", openvdb::Int32Metadata(1));
   write_vdb_file({this->connected_grid}, this->run_dir / "connected-mask.vdb");
-
-  // radius stage will consume fifo surface vertices
-  if (CLASSIC_PRUNE) {
-    stage = "radius";
-    this->setup_radius(map_fifo);
-    this->update(stage, map_fifo);
-    // redefine soma radii based off info read in original files
-    adjust_soma_radii(seeds, this->topology_grid);
-  }
 
   partition_components(this->connected_grid, seeds, this->args, this->run_dir,
                        this->log_fn);

@@ -19,7 +19,7 @@ cwd=<root>
 
 [project-build:nix]
 ;command=nix build -L
-command=nix-env -f . -i
+command=nix profile install -L
 cwd=<root>
 
 [project-test]

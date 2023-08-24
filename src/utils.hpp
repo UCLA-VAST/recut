@@ -15,6 +15,7 @@
 #include <iomanip> //std::setw()
 #include <math.h>
 #include <openvdb/tools/Clip.h>
+#include <GEL/Geometry/Graph.h>
 #include <openvdb/tools/Composite.h>
 #include <openvdb/tools/Dense.h>          // copyToDense
 #include <openvdb/tools/LevelSetFilter.h> // LevelSetFilter
@@ -2304,7 +2305,8 @@ auto print_swc_line = [](std::array<double, 3> swc_coord, bool is_root,
                          uint8_t radius, std::array<double, 3> parent_coord,
                          CoordBBox bbox, std::ofstream &out,
                          auto &coord_to_swc_id, std::array<float, 3> voxel_size,
-                         bool bbox_adjust = true, bool is_eswc = false) {
+                         bool bbox_adjust = true, bool is_eswc = false, 
+                         bool voxel_units = false) {
   std::ostringstream line;
 
   auto scale_coord = [&](std::array<double, 3> &coord) {
@@ -2332,13 +2334,6 @@ auto print_swc_line = [](std::array<double, 3> swc_coord, bool is_root,
     // adjust the coordinates to the components bbox
     subtract(swc_coord, window_start);
     subtract(parent_coord, window_start);
-
-    // swc_coord = {swc_coord[0] - static_cast<double>(bbox.min().x()),
-    // swc_coord[1] - static_cast<double>(bbox.min().y()),
-    // swc_coord[2] - static_cast<double>(bbox.min().z())};
-    // parent_coord = {parent_coord[0] - static_cast<double>(bbox.min().x()),
-    // parent_coord[1] - static_cast<double>(bbox.min().y()),
-    // parent_coord[2] - static_cast<double>(bbox.min().z())};
   }
 
   // n
