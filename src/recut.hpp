@@ -3169,6 +3169,10 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
       component_log << "TP, " << timer.elapsed() << '\n';
       component_log << "TP count, " << component_graph.no_nodes() << '\n';
 #endif
+
+      // multifurcations are only important for rules of SWC standard
+      component_graph = fix_multifurcations(component_graph, soma_ids);
+
       write_swcs(component_graph, soma_ids, args->voxel_size, component_dir_fn, bbox,
                    !args->window_grid_paths.empty(),
                   args->output_type == "eswc", args->voxel_units);

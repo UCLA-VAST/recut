@@ -184,6 +184,40 @@ Geometry::AMGraph3D vdb_to_graph(openvdb::FloatGrid::Ptr component,
   return g;
 }
 
+// naive multifurcation fix, force non-soma vertices to have at max 3 neighbors
+Geometry::AMGraph3D fix_multifurcations(Geometry::AMGraph3D &graph, 
+    std::vector<unsigned long> soma_ids) {
+
+  // loop over all vertices until no remaining multifurcations are found
+  for (auto multifurc_id : graph.node_ids()) {
+    // if not a soma
+    if (std::find(soma_ids.begin(), soma_ids.end(), multifurc_id) == std::end(soma_ids)) {
+      // is a multifurcation
+      while (graph.valence(multifurc_id) > 3) {
+        auto neighbors = graph.neighbors(multifurc_id);
+        auto to_reattach = neighbors[0]; // picked at random
+        auto to_extend = neighbors[1]; // picked at random
+
+        // build a new averaged node                              
+        CGLA::Vec3d pos1 = graph.pos[multifurc_id];
+        CGLA::Vec3d pos2 = graph.pos[to_extend];
+        auto pos3 = CGLA::Vec3d((pos1[0] + pos2[0]) / 2, (pos1[1] + pos2[1]) / 2, (pos1[2] + pos2[2]) / 2);
+        auto new_path_node = graph.add_node(pos3);
+
+        graph.connect_nodes(new_path_node, to_extend);
+        graph.connect_nodes(new_path_node, multifurc_id);
+        graph.connect_nodes(new_path_node, to_reattach);
+        graph.disconnect_nodes(multifurc_id, to_reattach);
+        graph.disconnect_nodes(multifurc_id, to_extend);
+        // remove invalidated edges such that edge counts
+        // are correct in future iterations
+        graph = Geometry::clean_graph(graph);
+      }
+    }
+  }
+  return graph;
+}
+
 HMesh::Manifold vdb_to_mesh(openvdb::FloatGrid::Ptr component,
     RecutCommandLineArgs *args) {
   std::vector<openvdb::Vec3s> points;
@@ -371,8 +405,6 @@ vdb_to_skeleton(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
   // as these tend to be spurious branches
   Geometry::prune(component_graph);
 
-  // TODO fix trifurcations
-
   smooth_graph_pos_rad(component_graph, args->smooth_iters, /*alpha*/ 1);
 
   // sweep through various soma ids
@@ -383,6 +415,7 @@ vdb_to_skeleton(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
     soma_ids = find_soma_nodes(component_graph, component_seeds, args->soma_dilation);
   else
     throw std::runtime_error("unrecognized seed action");
+
   if (soma_ids.size() == 0) {
     std::cout << "Warning no soma_ids found for component " << index << '\n';
     // assign a soma randomly if none are found
@@ -391,49 +424,6 @@ vdb_to_skeleton(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
   graph_save(component_dir_fn / ("skeleton.graph"), component_graph);
 
   return std::make_pair(component_graph, soma_ids);
-
-  /*
-     std::vector<MyMarker *> component_tree;
-     for (auto i : component_graph.node_ids()) {
-     auto radius = get_radius(component_graph.node_color, i);
-     auto pos = component_graph.pos[i].get();
-     auto marker = new MyMarker(pos[0], pos[1], pos[2], radius);
-     component_tree.push_back(marker);
-     }
-
-     std::vector<bool> visited(component_tree.size());
-
-  // do BFS from each known soma in the component
-  rng::for_each(soma_ids, [&](auto soma_id) {
-  std::queue<size_t> q;
-  q.push(soma_id);
-  // mark soma
-  auto marker = component_tree[soma_id];
-  marker->parent = 0;
-  marker->type = 0;
-  visited[soma_id] = true;
-
-  // traverse rest of tree
-  size_t last = soma_id;
-  while (q.size()) {
-  size_t id = q.front();
-  q.pop();
-  for (auto nb_id : component_graph.neighbors(id)) {
-  // skip other somas or visited
-  if (!visited[nb_id] && std::find(soma_ids.begin(), soma_ids.end(),
-  nb_id) == std::end(soma_ids)) {
-  auto marker = component_tree[nb_id];
-  // add current id as parent to all discovered
-  marker->parent = component_tree[id];
-  visited[nb_id] = true;
-  q.push(nb_id);
-  }
-  }
-  }
-  });
-
-  return component_tree;
-  */
 }
 
 void write_swcs(Geometry::AMGraph3D component_graph, std::vector<long unsigned int> soma_ids,
@@ -501,6 +491,11 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<long unsigned i
       }
       }
   });
+
+  for (auto parent : parent_table) {
+    if (parent < 0)
+      std::cerr << "Error: graph to tree lost vertex, report this issue\n";
+  }
 }
 
 /*
