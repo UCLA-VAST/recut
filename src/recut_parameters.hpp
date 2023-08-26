@@ -34,7 +34,7 @@ public:
         skeleton_grain(SKELETON_GRAIN), skeleton_grow(GROW_THRESHOLD),
         smooth_iters(SMOOTH_ITERS),
         mesh_grain(MESH_GRAIN), mean_shift_factor(0), soma_dilation(SOMA_DILATION), 
-        voxel_units(false) {}
+        voxel_units(false), seed_action("find") {}
 
   static void PrintUsage();
   std::string MetaString();
@@ -57,7 +57,7 @@ public:
   GridCoord image_offsets, image_lengths;
 
   std::filesystem::path input_path, seed_path;
-  std::string input_type, output_type, output_name, second_grid;
+  std::string input_type, output_type, output_name, second_grid, seed_action;
   std::vector<std::string> window_grid_paths;
   uint16_t user_thread_count, min_branch_length, resolution_level, channel,
       upsample_z, downsample_factor, morphological_operations_order,

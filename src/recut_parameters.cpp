@@ -16,10 +16,12 @@ void RecutCommandLineArgs::PrintUsage() {
                "image to VDB stage, "
                "defaults to value of "
             << FG_PCT << '\n';
-  std::cout << "--seeds <dir>          optionally pass a directory "
+  std::cout << "--seeds <dir> <action> optionally pass a directory "
                "of SWC files with 1 soma node per file, "
                "fills the seeds as spheres directly on to the mask image, "
-               "treating them as ground truth for reconstruction\n";
+               "treating them as ground truth for reconstruction, <action> "
+               "can either be 'force' which forces the locations passed by users to be used for final reconstruction"
+               " whereas 'find' finds the closest point in the skeleton to the passed seed\n";
   std::cout
       << "--parallel             [-pl] thread count defaults to max hardware "
          "threads\n";
@@ -50,7 +52,7 @@ void RecutCommandLineArgs::PrintUsage() {
                "defaults to "
             << OPEN_FACTOR
             << " / [voxel size] for soma inference and soma intersection runs, "
-               "for --seeds X fill, opening is not applied\n";
+               "for --seeds X force, opening is not applied\n";
   std::cout
       << "--image-offsets        [-io] offsets of subvolume, in x y z order "
          "default 0 0 0\n";
@@ -186,6 +188,10 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
           exit(1);
         }
         ++i;
+        if ((i + 1 != argc) && (argv[i + 1][0] != '-')) {
+          args.seed_action = argv[i + 1];
+          ++i;
+        }
       } else if (strcmp(argv[i], "--resolution-level") == 0 ||
                  strcmp(argv[i], "-rl") == 0) {
         args.resolution_level = atoi(argv[i + 1]);

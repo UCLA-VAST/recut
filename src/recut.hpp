@@ -3158,7 +3158,7 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
 
     auto timer = high_resolution_timer();
     std::vector<std::vector<MyMarker *>> trees;
-    std::optional<std::pair<Geometry::AMGraph3D, std::vector<long unsigned int>>> cluster_opt;
+    std::optional<std::pair<Geometry::AMGraph3D, std::vector<unsigned long>>> cluster_opt;
     cluster_opt = vdb_to_skeleton(component, component_seeds, index, args,
                                    component_dir_fn, 
                                    inter_thread_count == 1 ? args->user_thread_count : 1);

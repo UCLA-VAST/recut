@@ -2302,7 +2302,7 @@ auto find_or_assign = [](std::array<double, 3> swc_coord,
 // http://www.neuronland.org/NLMorphologyConverter/MorphologyFormats/SWC/Spec.html
 // https://github.com/HumanBrainProject/swcPlus/blob/master/SWCplus_specification.html
 auto print_swc_line = [](std::array<double, 3> swc_coord, bool is_root,
-                         uint8_t radius, std::array<double, 3> parent_coord,
+                         float radius, std::array<double, 3> parent_coord,
                          CoordBBox bbox, std::ofstream &out,
                          auto &coord_to_swc_id, std::array<float, 3> voxel_size,
                          bool bbox_adjust = true, bool is_eswc = false, 
@@ -2352,7 +2352,7 @@ auto print_swc_line = [](std::array<double, 3> swc_coord, bool is_root,
   line << swc_coord[0] << ' ' << swc_coord[1] << ' ' << swc_coord[2] << ' ';
 
   // radius, already been adjsuted to voxel size
-  line << static_cast<float>(radius) << ' ';
+  line << radius << ' ';
 
   // parent
   if (is_root) {
