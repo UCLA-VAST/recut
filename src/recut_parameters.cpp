@@ -82,9 +82,9 @@ void RecutCommandLineArgs::PrintUsage() {
          "specified by -1 -1 -1\n";
   // std::cout << "--bg-thresh            [-bt] all pixels greater than this
   // passed " "intensity value are treated as foreground\n";
-  std::cout << "--min-branch-length    prune leaf branches lower than path "
-               "length, defaults to "
-            << MIN_BRANCH_LENGTH << " µm\n";
+  //std::cout << "--min-branch-length    prune leaf branches lower than path "
+               //"length, defaults to "
+            //<< MIN_BRANCH_LENGTH << " µm\n";
   // std::cout << "--mean-shift         radius to mean shift nodes towards local
   // " "mean which aids pruning; default 0\n";
   // std::cout
@@ -280,9 +280,9 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
                  strcmp(argv[i], "-fp") == 0) {
         args.foreground_percent = atof(argv[i + 1]);
         ++i;
-      } else if (strcmp(argv[i], "--min-branch-length") == 0) {
-        args.min_branch_length = atoi(argv[i + 1]);
-        ++i;
+      //} else if (strcmp(argv[i], "--min-branch-length") == 0) {
+        //args.min_branch_length = atoi(argv[i + 1]);
+        //++i;
       } else if (strcmp(argv[i], "--tile-lengths") == 0) {
         for (int j = 0; j < 3; ++j) {
           args.tile_lengths[j] = atoi(argv[i + 1]);
