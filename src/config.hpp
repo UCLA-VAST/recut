@@ -104,7 +104,7 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 #define SKELETON_GRAIN .09
 #define MESH_GRAIN .999
 #define CLASSIC_PRUNE 0
-#define TOPOLOGY_CLOSE_FACTOR 3
+#define TOPOLOGY_CLOSE_FACTOR 1.5
 #define SOMA_CLOSE_FACTOR 7
 #define OPEN_FACTOR 5
 #define FG_PCT .4

@@ -2865,7 +2865,7 @@ template <class image_t> void Recut<image_t>::initialize() {
       if (args->seed_path.empty())
         args->close_steps = SOMA_CLOSE_FACTOR / args->voxel_size[0];
       else
-        args->close_steps = TOPOLOGY_CLOSE_FACTOR / args->voxel_size[0];
+        args->close_steps = std::round(TOPOLOGY_CLOSE_FACTOR / args->voxel_size[0]);
       args->close_steps = args->close_steps < 1 ? 1 : args->close_steps;
       std::cout << "Close steps inferred to " << args->close_steps.value()
                 << " based on voxel size\n";
