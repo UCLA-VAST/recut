@@ -426,6 +426,40 @@ vdb_to_skeleton(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
   return std::make_pair(component_graph, soma_ids);
 }
 
+void write_ano_file(fs::path component_dir_fn, std::string file_name_base) {
+  std::ofstream ano_file;
+  ano_file.open(component_dir_fn / (file_name_base + ".ano"));
+  ano_file << "APOFILE=" << file_name_base << ".ano.apo\n"
+    << "SWCFILE=" << file_name_base << ".ano.eswc\n";
+  ano_file.close();
+}
+
+void write_apo_file(fs::path component_dir_fn, std::string file_name_base, std::array<double, 3> pos,
+    float radius, std::array<float, 3> voxel_size) {
+  std::ofstream apo_file;
+  apo_file.open(component_dir_fn / (file_name_base + ".ano.apo"));
+  apo_file << std::fixed << std::setprecision(SWC_PRECISION);
+  // 56630,,,,2452.761,4745.697,3057.039,
+  // 0.000,0.000,0.000,314.159,0.000,,,,0,0,255
+  apo_file
+  << "##n,orderinfo,name,comment,z,x,y, "
+  "pixmax,intensity,sdev,volsize,mass,,,, color_r,color_g,color_b\n";
+  // ...skip assigning a node id (n)
+  apo_file << ',';
+  // orderinfo,name,comment
+  apo_file << ",,,";
+  // z,x,y
+  apo_file << voxel_size[2] * pos[2] << ',' << voxel_size[0] * pos[0]
+  << ',' << voxel_size[1] * pos[1] << ',';
+  // pixmax,intensity,sdev,
+  apo_file << "0.,0.,0.,";
+  // volsize
+  apo_file << radius * radius * radius;
+  // mass,,,, color_r,color_g,color_b
+  apo_file << "0.,,,,0,0,255\n";
+  apo_file.close();
+}
+
 void write_swcs(Geometry::AMGraph3D component_graph, std::vector<long unsigned int> soma_ids,
     std::array<float, 3> voxel_size,
     std::filesystem::path component_dir_fn = ".",
@@ -445,109 +479,71 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<long unsigned i
       // start swc and add header metadata
       auto pos = component_graph.pos[soma_id].get();
       auto file_name_base = "tree-with-soma-xyz-" +
-      std::to_string(pos[0]) + "-" +
-      std::to_string(pos[1]) + "-" +
-      std::to_string(pos[2]);
+      std::to_string((int)pos[0]) + "-" +
+      std::to_string((int)pos[1]) + "-" +
+      std::to_string((int)pos[2]);
       auto coord_to_swc_id = get_id_map();
-      std::ofstream swc_file;
-      swc_file.open(component_dir_fn / (file_name_base + ".swc"));
-      swc_file << "# Crop windows bounding volume: " << bbox << '\n'
-      << "# id type_id x y z radius parent_id in units: " << (voxel_units ? "voxel" : "um") << '\n';
 
       // traverse rest of tree
       parent_table[soma_id] = soma_id; // a soma technically has no parent
-      while (q.size()) {
-      size_t id = q.front();
-      q.pop();
+                                       //
+      // start file per soma, write header info
+      std::ofstream swc_file;
+      if (is_eswc) {
+        
+        auto soma_pos = component_graph.pos[soma_id].get();
+        auto soma_coord = std::array<double, 3>{pos[0], pos[1], pos[2]};
+        auto soma_radius = get_radius(component_graph.node_color, soma_id);
 
-      auto pos = component_graph.pos[id].get();
-      auto radius = get_radius(component_graph.node_color, id);
-      // can only be this trees root, not possible for somas from other trees to enter in to q
-      auto is_root = id == soma_id;
-      auto parent_id = parent_table[id];
+        write_apo_file(component_dir_fn, file_name_base, soma_coord, soma_radius, voxel_size);
+        write_ano_file(component_dir_fn, file_name_base);
 
-      auto coord = std::array<double, 3>{pos[0], pos[1], pos[2]};
-      std::array<double, 3> parent_coord;
-      if (is_root) {
-        parent_coord = coord;
+        swc_file.open(component_dir_fn / (file_name_base + ".ano.eswc"));
+        swc_file << "# id type_id x y z radius parent_id"
+          << " seg_id level mode timestamp TFresindex\n";
       } else {
-        auto lpos = component_graph.pos[parent_id].get();
-        parent_coord = std::array<double, 3>{lpos[0], lpos[1], lpos[2]};
+        swc_file.open(component_dir_fn / (file_name_base + ".swc"));
+        swc_file << "# Crop windows bounding volume: " << bbox << '\n'
+        << "# id type_id x y z radius parent_id in units: " << (voxel_units ? "voxel" : "um") << '\n';
       }
 
-      // expects an offset to a parent
-      print_swc_line(coord, is_root, radius, parent_coord, bbox, swc_file,
-          coord_to_swc_id, voxel_size, bbox_adjust, false, voxel_units);
+      while (q.size()) {
+        size_t id = q.front();
+        q.pop();
 
-      // add all neighbors of current to q
-      for (auto nb_id : component_graph.neighbors(id)) {
-        // do not add other somas or previously visited to the q
-        if (parent_table[nb_id] < 0 && std::find(soma_ids.begin(), soma_ids.end(),
-              nb_id) == std::end(soma_ids)) {
-          // add current id as parent to all neighbors
-          parent_table[nb_id] = id; // permanent assignment of parent
-          q.push(nb_id);
+        auto pos = component_graph.pos[id].get();
+        auto radius = get_radius(component_graph.node_color, id);
+        // can only be this trees root, not possible for somas from other trees to enter in to q
+        auto is_root = id == soma_id;
+        auto parent_id = parent_table[id];
+
+        auto coord = std::array<double, 3>{pos[0], pos[1], pos[2]};
+        std::array<double, 3> parent_coord;
+        if (is_root) {
+          parent_coord = coord;
+        } else {
+          auto lpos = component_graph.pos[parent_id].get();
+          parent_coord = std::array<double, 3>{lpos[0], lpos[1], lpos[2]};
         }
-      }
+
+        print_swc_line(coord, is_root, radius, parent_coord, bbox, swc_file,
+            coord_to_swc_id, voxel_size, bbox_adjust, is_eswc, voxel_units);
+
+        // add all neighbors of current to q
+        for (auto nb_id : component_graph.neighbors(id)) {
+          // do not add other somas or previously visited to the q
+          if (parent_table[nb_id] < 0 && std::find(soma_ids.begin(), soma_ids.end(),
+                nb_id) == std::end(soma_ids)) {
+            // add current id as parent to all neighbors
+            parent_table[nb_id] = id; // permanent assignment of parent
+            q.push(nb_id);
+          }
+        }
       }
   });
 
-  for (auto parent : parent_table) {
-    if (parent < 0)
-      std::cerr << "Error: graph to tree lost vertex, report this issue\n";
-  }
+  //for (auto parent : parent_table) {
+    //if (parent < 0)
+      //std::cerr << "Error: graph to tree lost vertex, report this issue\n";
+  //}
 }
-
-/*
-   if (is_eswc) {
-   std::ofstream ano_file;
-   ano_file.open(component_dir_fn / (file_name_base + ".ano"));
-   ano_file << "APOFILE=" << file_name_base << ".ano.apo\n"
-   << "SWCFILE=" << file_name_base << ".ano.eswc\n";
-   ano_file.close();
-
-   auto marker = tree[0];
-   std::ofstream apo_file;
-   apo_file.open(component_dir_fn / (file_name_base + ".ano.apo"));
-   apo_file << std::fixed << std::setprecision(SWC_PRECISION);
-// 56630,,,,2452.761,4745.697,3057.039,
-// 0.000,0.000,0.000,314.159,0.000,,,,0,0,255
-apo_file
-<< "##n,orderinfo,name,comment,z,x,y, "
-"pixmax,intensity,sdev,volsize,mass,,,, color_r,color_g,color_b\n";
-// ...skip assigning a node id (n)
-apo_file << ',';
-// orderinfo,name,comment
-apo_file << ",,,";
-// z,x,y
-apo_file << voxel_size[2] * marker->z << ',' << voxel_size[0] * marker->x
-<< ',' << voxel_size[1] * marker->y << ',';
-// pixmax,intensity,sdev,
-apo_file << "0.,0.,0.,";
-// volsize
-apo_file << marker->radius * marker->radius * marker->radius;
-// mass,,,, color_r,color_g,color_b
-apo_file << "0.,,,,0,0,255\n";
-apo_file.close();
-// iter those marker*
-
-std::ofstream eswc_file;
-eswc_file.open(component_dir_fn / (file_name_base + ".ano.eswc"));
-eswc_file << "# id type_id x y z radius parent_id"
-<< " seg_id level mode timestamp TFresindex\n";
-
-coord_to_swc_id = get_id_map();
-rng::for_each(tree, [&](const auto marker) {
-auto coord = std::array<double, 3>{marker->x, marker->y, marker->z};
-auto is_root = marker->type == 0;
-auto parent_coord =
-is_root ? coord
-: std::array<double, 3>{marker->parent->x, marker->parent->y,
-marker->parent->z};
-// expects an offset to a parent
-print_swc_line(coord, is_root, marker->radius, parent_coord, bbox,
-eswc_file, coord_to_swc_id, voxel_size, bbox_adjust, true);
-});
-}
-*/
-
