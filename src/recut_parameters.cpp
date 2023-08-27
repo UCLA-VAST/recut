@@ -60,10 +60,10 @@ void RecutCommandLineArgs::PrintUsage() {
                "value result in higher detailed skeletons (SWC trees) with "
                "more skeletal nodes; default is "
             << SKELETON_GRAIN << '\n';
-  std::cout << "--skeleton-grow        affects granularity of final skeletons, "
-               "higher value results in higher detailed skeletons (SWC trees) "
-               "with more points; default is "
-            << GROW_THRESHOLD << '\n';
+  //std::cout << "--skeleton-grow        affects granularity of final skeletons, "
+               //"higher value results in higher detailed skeletons (SWC trees) "
+               //"with more points; default is "
+            //<< GROW_THRESHOLD << '\n';
   std::cout << "--smooth-iters         higher values smooths the node "
                "positions and radius of final skeletons, "
                "improving uniformity along paths; defaults to "
