@@ -43,11 +43,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1691107576,
-        "narHash": "sha256-p+O9pfrWkv3pkHWEVx9uzCFZaKc/bZOYDVWVYegk+EE=",
+        "lastModified": 1693324094,
+        "narHash": "sha256-0X8tmIBOSmSuA1P06Wc/tmMc43URMSPffTS65ecJr8M=",
         "owner": "UCLA-VAST",
         "repo": "openvdb",
-        "rev": "c9e5310a50e05854694097f3e60e55181129ba05",
+        "rev": "9cafff887726cdee2ab04b525f12646693032985",
         "type": "github"
       },
       "original": {
