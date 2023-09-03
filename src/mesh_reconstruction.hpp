@@ -168,9 +168,11 @@ Geometry::AMGraph3D vdb_to_graph(openvdb::FloatGrid::Ptr component,
   std::vector<openvdb::Vec3I> tris;
   vto::volumeToMesh(*component, points, quads);
   // vto::volumeToMesh(*component, points, tris, quads, 0, args->mesh_grain);
-  std::cout << "Component active voxel count: " << component->activeVoxelCount()
-    << '\n';
-  std::cout << "points size: " << points.size() << '\n';
+
+  //std::cout << "Component active voxel count: " << component->activeVoxelCount()
+    //<< '\n';
+  //std::cout << "Points size: " << points.size() << '\n';
+  //std::cout << "Quads count: " << quads.size() << '\n';
 
   Geometry::AMGraph3D g;
   rng::for_each(points, [&](auto point) {
@@ -181,11 +183,14 @@ Geometry::AMGraph3D vdb_to_graph(openvdb::FloatGrid::Ptr component,
   // unroll_polygons(tris, g, 3);
   unroll_polygons(quads, g, 4);
 
+  //std::cout << "Graph node count: " << g.no_nodes() << '\n';
+  //std::cout << "Graph edge_count count: " << g.no_nodes() << '\n';
+
   return g;
 }
 
 // naive multifurcation fix, force non-soma vertices to have at max 3 neighbors
-Geometry::AMGraph3D fix_multifurcations(Geometry::AMGraph3D &graph, 
+Geometry::AMGraph3D fix_multifurcations(Geometry::AMGraph3D &graph,
     std::vector<unsigned long> soma_ids) {
 
   // loop over all vertices until no remaining multifurcations are found
@@ -198,7 +203,7 @@ Geometry::AMGraph3D fix_multifurcations(Geometry::AMGraph3D &graph,
         auto to_reattach = neighbors[0]; // picked at random
         auto to_extend = neighbors[1]; // picked at random
 
-        // build a new averaged node                              
+        // build a new averaged node
         CGLA::Vec3d pos1 = graph.pos[multifurc_id];
         CGLA::Vec3d pos2 = graph.pos[to_extend];
         auto pos3 = CGLA::Vec3d((pos1[0] + pos2[0]) / 2, (pos1[1] + pos2[1]) / 2, (pos1[2] + pos2[2]) / 2);
@@ -227,10 +232,6 @@ HMesh::Manifold vdb_to_mesh(openvdb::FloatGrid::Ptr component,
   std::vector<openvdb::Vec3I> tris;
   vto::volumeToMesh(*component, points, quads);
   // vto::volumeToMesh(*component, points, tris, quads, 0, args->mesh_grain);
-  // std::cout << "Component active voxel count: " <<
-  // component->activeVoxelCount()
-  //<< '\n';
-  // std::cout << "points size: " << points.size() << '\n';
 
   // convert points to GEL vertices
   auto vertices = points | rv::transform([](auto point) {
@@ -369,33 +370,19 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     int index, RecutCommandLineArgs *args,
     fs::path component_dir_fn, int threads) {
 
-  HMesh::Manifold m;
-  try {
-    m = vdb_to_mesh(component, args);
-  } catch (...) {
-    return std::nullopt;
-  }
-  if (!(HMesh::valid(m) && m.no_vertices()))
-    return std::nullopt;
-  HMesh::obj_save(component_dir_fn / ("mesh.obj"), m);
-
-  auto g = graph_from_mesh(m);
+  auto g = vdb_to_graph(component, args);
+  graph_save(component_dir_fn / ("mesh.graph"), g);
 
   // multi-scale is faster and scales linearly with input graph size at
   // the cost of difficulty in choosing a grow threshold
   Geometry::AMGraph3D component_graph;
-  try {
-    auto separators =
-      multiscale_local_separators(g, Geometry::SamplingType::Advanced,
-          args->skeleton_grow, args->skeleton_grain,
-          /*opt steps*/ 0, threads,
-          false);
-    auto ppair = skeleton_from_node_set_vec(g, separators);
-    component_graph = ppair.first;
-  } catch (...) {
-    std::cerr << "Skeletonization failed for " << (component_dir_fn) << '\n';
-    return std::nullopt;
-  }
+  auto separators =
+    multiscale_local_separators(g, Geometry::SamplingType::Advanced,
+        args->skeleton_grow, args->skeleton_grain,
+        /*opt steps*/ 0, threads,
+        false);
+  auto ppair = skeleton_from_node_set_vec(g, separators);
+  component_graph = ppair.first;
 
   // prune all leaf vertices (valency 1) whose only neighbor has valency > 2
   // as these tend to be spurious branches
@@ -419,6 +406,7 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
   }
   graph_save(component_dir_fn / ("skeleton.graph"), component_graph);
 
+
   return std::make_pair(component_graph, soma_ids);
 }
 
@@ -438,15 +426,15 @@ void write_apo_file(fs::path component_dir_fn, std::string file_name_base, std::
   // 56630,,,,2452.761,4745.697,3057.039,
   // 0.000,0.000,0.000,314.159,0.000,,,,0,0,255
   apo_file
-  << "##n,orderinfo,name,comment,z,x,y, "
-  "pixmax,intensity,sdev,volsize,mass,,,, color_r,color_g,color_b\n";
+    << "##n,orderinfo,name,comment,z,x,y, "
+    "pixmax,intensity,sdev,volsize,mass,,,, color_r,color_g,color_b\n";
   // ...skip assigning a node id (n)
   apo_file << ',';
   // orderinfo,name,comment
   apo_file << ",,,";
   // z,x,y
   apo_file << voxel_size[2] * pos[2] << ',' << voxel_size[0] * pos[0]
-  << ',' << voxel_size[1] * pos[1] << ',';
+    << ',' << voxel_size[1] * pos[1] << ',';
   // pixmax,intensity,sdev,
   apo_file << "0.,0.,0.,";
   // volsize
@@ -483,24 +471,24 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<long unsigned i
       // traverse rest of tree
       parent_table[soma_id] = soma_id; // a soma technically has no parent
                                        //
-      // start file per soma, write header info
+                                       // start file per soma, write header info
       std::ofstream swc_file;
       if (is_eswc) {
-        
-        auto soma_pos = component_graph.pos[soma_id].get();
-        auto soma_coord = std::array<double, 3>{pos[0], pos[1], pos[2]};
-        auto soma_radius = get_radius(component_graph.node_color, soma_id);
 
-        write_apo_file(component_dir_fn, file_name_base, soma_coord, soma_radius, voxel_size);
-        write_ano_file(component_dir_fn, file_name_base);
+      auto soma_pos = component_graph.pos[soma_id].get();
+      auto soma_coord = std::array<double, 3>{pos[0], pos[1], pos[2]};
+      auto soma_radius = get_radius(component_graph.node_color, soma_id);
 
-        swc_file.open(component_dir_fn / (file_name_base + ".ano.eswc"));
-        swc_file << "# id type_id x y z radius parent_id"
-          << " seg_id level mode timestamp TFresindex\n";
+      write_apo_file(component_dir_fn, file_name_base, soma_coord, soma_radius, voxel_size);
+      write_ano_file(component_dir_fn, file_name_base);
+
+      swc_file.open(component_dir_fn / (file_name_base + ".ano.eswc"));
+      swc_file << "# id type_id x y z radius parent_id"
+        << " seg_id level mode timestamp TFresindex\n";
       } else {
         swc_file.open(component_dir_fn / (file_name_base + ".swc"));
         swc_file << "# Crop windows bounding volume: " << bbox << '\n'
-        << "# id type_id x y z radius parent_id in units: " << (voxel_units ? "voxel" : "um") << '\n';
+          << "# id type_id x y z radius parent_id in units: " << (voxel_units ? "voxel" : "um") << '\n';
       }
 
       while (q.size()) {
@@ -539,7 +527,7 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<long unsigned i
   });
 
   //for (auto parent : parent_table) {
-    //if (parent < 0)
-      //std::cerr << "Error: graph to tree lost vertex, report this issue\n";
+  //if (parent < 0)
+  //std::cerr << "Error: graph to tree lost vertex, report this issue\n";
   //}
 }

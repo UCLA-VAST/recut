@@ -18,9 +18,7 @@ command=cd build && make -j 8 && make -j 8 install && make installcheck
 cwd=<root>
 
 [project-build:nix]
-;command=nix build -L
-;command=nix profile remove git+file:///home/kdmarrett/recut#defaultPackage.x86_64-linux && nix profile install -L
-command=nix profile install -L
+command=nix build -L
 cwd=<root>
 
 [project-test]

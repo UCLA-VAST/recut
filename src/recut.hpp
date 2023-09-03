@@ -3165,6 +3165,13 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
                                    component_dir_fn, 
                                    inter_thread_count == 1 ? args->user_thread_count : 1);
 
+    bool save_mesh = false;
+    if (save_mesh) {
+      HMesh::Manifold m = vdb_to_mesh(component, args);
+      HMesh::obj_save(component_dir_fn / ("mesh.obj"), m);
+    }
+
+
     if (cluster_opt) {
       auto [component_graph, soma_ids] = cluster_opt.value();
 #ifdef LOG
