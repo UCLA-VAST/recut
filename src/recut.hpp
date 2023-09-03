@@ -20,6 +20,7 @@
 #include <iostream>
 #include <map>
 #include <openvdb/tools/LevelSetRebuild.h>
+#include <openvdb/tools/FastSweeping.h>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -3056,32 +3057,33 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
   }
 }
 
-void partition_components(openvdb::MaskGrid::Ptr connected_grid,
+void partition_components(openvdb::FloatGrid::Ptr connected_grid,
                           std::vector<Seed> seeds, RecutCommandLineArgs *args,
                           fs::path run_dir, fs::path log_fn) {
 
-  auto total_timer = high_resolution_timer();
   {
     VID_t selected_count = connected_grid->activeVoxelCount();
-    std::ofstream run_log;
-    run_log.open(log_fn, std::ios::app);
-    run_log << "Skeletonization: connected grid selected voxel count, "
-            << selected_count << '\n';
-    run_log.flush();
     assertm(selected_count, "active voxels in float grid must be > 0");
   }
+
+  std::ofstream run_log;
+  run_log.open(log_fn, std::ios::app);
+
+  auto total_timer = high_resolution_timer();
 
   // aggregate disjoint connected components
 #ifdef LOG
   std::cout << "Start component segmentation\n";
 #endif
   auto segment_timer = high_resolution_timer();
-  std::vector<openvdb::MaskGrid::Ptr> components;
-  vto::segmentActiveVoxels(*connected_grid, components);
-#ifdef LOG
-  std::cout << "Segment count: " << components.size() << " in "
-       << segment_timer.elapsed_formatted() << '\n';
-#endif
+
+  // TODO may need to change this to SDF
+  std::vector<openvdb::FloatGrid::Ptr> components;
+  // segment SDF can handle asymmetric inside and outside values
+  vto::segmentSDF(*connected_grid, components);
+  run_log << "SG, " << segment_timer.elapsed_formatted() << '\n';
+  run_log << "Component count: " << components.size() << '\n';
+  run_log.flush();
 
   // assign parallelization
   auto inter_thread_count = args->user_thread_count;
@@ -3112,7 +3114,7 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
     // filter all roots within this component
     auto component_seeds = seeds |
                            rv::remove_if([&component](const auto &seed) {
-                             return !component->tree().isValueOn(seed.coord);
+                             return component->tree().getValue(seed.coord) > 0;
                            }) |
                            rng::to_vector;
 
@@ -3153,7 +3155,7 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
     write_seeds(component_dir_fn, component_seeds, args->voxel_size);
 
     if (args->save_vdbs) { // save a grid corresponding to this component
-      write_vdb_file({component}, component_dir_fn / "component-mask.vdb");
+      write_vdb_file({component}, component_dir_fn / "component-sdf.vdb");
     }
 
     auto timer = high_resolution_timer();
@@ -3258,8 +3260,6 @@ void partition_components(openvdb::MaskGrid::Ptr connected_grid,
 
   //rng::for_each(enum_components, process_component);
 
-  std::ofstream run_log;
-  run_log.open(log_fn, std::ios::app);
   // only log this if it isn't occluded by app2 and window write times
   if (!(args->run_app2 || !args->window_grid_paths.empty())) {
     run_log << "TC+TP, " << tctp_timer.elapsed() << '\n';
@@ -3395,14 +3395,6 @@ template <class image_t> void Recut<image_t>::operator()() {
     exit(0);
   }
 
-  // re-skeletonize from an intermediate file from a previous run
-  // connected grids have already been soma filled in a previous run
-  if (is_connected(this->mask_grid)) {
-    partition_components(this->mask_grid, seeds, this->args, this->run_dir,
-                         this->log_fn);
-    exit(0);
-  }
-
   fill_seeds(this->mask_grid, seeds);
   write_vdb_file({this->mask_grid}, this->run_dir / "filled_seed.vdb");
 
@@ -3423,7 +3415,7 @@ template <class image_t> void Recut<image_t>::operator()() {
                                       args->close_steps.value());
     openvdb::tools::pruneInactive(this->mask_grid->tree());
     run_log << "Seed detection: closing time, " << timer.elapsed_formatted()
-            << "\n";
+            << '\n';
 #ifdef LOG
     std::cout << "\tEnd morphological close\n";
 #endif
@@ -3453,48 +3445,33 @@ template <class image_t> void Recut<image_t>::operator()() {
     }
   }
 
-  // filter seeds with respect to topology
-  run_log << "Pre-topological filtered seed count, " << seeds.size() << '\n';
-  seeds = seeds | rv::filter([this](Seed seed) {
-            return this->mask_grid->tree().isValueOn(seed.coord) &&
-                   this->mask_grid->tree().probeLeaf(seed.coord);
-          }) |
-          rng::to_vector;
-
-  run_log << "Filtered seed count, " << seeds.size() << '\n';
+  run_log << "Foreground active voxel count, "
+          << this->mask_grid->activeVoxelCount() << '\n';
+  run_log << "Seed count, " << seeds.size() << '\n';
   run_log.flush();
 
   if (seeds.empty())
     throw std::runtime_error(
         "No seeds are on with respect to foreground... exiting");
 
+  // turn seeds into idealized sphere surfaces
+  auto [sdf_grid, _] = create_seed_sphere_grid(seeds);
+  auto sweep_iters = 1;
   auto timer = high_resolution_timer();
-  std::cout << "Start init globals\n";
-  initialize_globals(this->grid_tile_size, this->tile_block_size);
-  std::cout << "Finished init globals " << timer.elapsed_formatted() << '\n';
-  run_log << "Initialize globals, " << timer.elapsed_formatted() << '\n';
+  // expand the seeds spheres into all reachable voxels mask (foreground)
+  auto connected_sdf = vto::maskSdf(*sdf_grid, *(this->mask_grid), false,
+      sweep_iters, /*resurfaceReachable*/true);
 
-  // constrain topology to only those reachable from roots
-  std::string stage;
-    stage = "connected-mask";
-    std::cout << "Start activate seeds\n";
-    this->activate_vids_mask(seeds);
-    std::cout << "End activate seeds\n";
-
-  run_log << "Foreground active voxel count, "
-          << this->mask_grid->activeVoxelCount() << '\n'
-          << "Connected grid after activate seeds voxel count, "
-          << this->connected_grid->activeVoxelCount() << '\n';
-  run_log.flush();
-  this->update(stage, map_fifo);
-  run_log << "Connected grid after update, "
-          << this->connected_grid->activeVoxelCount() << '\n';
+  run_log << "CC, " << timer.elapsed_formatted() << '\n';
+  run_log << "Connected active voxel count, "
+          << connected_sdf->activeVoxelCount() << '\n';
   run_log.flush();
 
-  this->connected_grid->insertMeta("connected", openvdb::Int32Metadata(1));
-  write_vdb_file({this->connected_grid}, this->run_dir / "connected-mask.vdb");
+  connected_sdf->insertMeta("connected", openvdb::Int32Metadata(1));
+  if (args->save_vdbs)
+    write_vdb_file({connected_sdf}, this->run_dir / "connected-sdf.vdb");
 
-  partition_components(this->connected_grid, seeds, this->args, this->run_dir,
+  partition_components(connected_sdf, seeds, this->args, this->run_dir,
                        this->log_fn);
   exit(0);
 }

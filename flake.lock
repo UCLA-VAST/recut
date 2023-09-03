@@ -43,15 +43,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1691107576,
-        "narHash": "sha256-p+O9pfrWkv3pkHWEVx9uzCFZaKc/bZOYDVWVYegk+EE=",
+        "lastModified": 1693695292,
+        "narHash": "sha256-8CRMByTwU5NmxZUaWKV8dI2tltsx93izZJMp0nwH8oU=",
         "owner": "UCLA-VAST",
         "repo": "openvdb",
-        "rev": "c9e5310a50e05854694097f3e60e55181129ba05",
+        "rev": "3d71cb46ab66d8f30522c55053ba836bba3abc59",
         "type": "github"
       },
       "original": {
         "owner": "UCLA-VAST",
+        "ref": "feat/reachable-resurfacing-nix",
         "repo": "openvdb",
         "type": "github"
       }

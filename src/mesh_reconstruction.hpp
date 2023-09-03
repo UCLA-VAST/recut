@@ -365,13 +365,9 @@ void smooth_graph_pos_rad(Geometry::AMGraph3D &g, const int iter, const float al
 }
 
 std::optional<std::pair<Geometry::AMGraph3D, std::vector<unsigned long>>>
-vdb_to_skeleton(openvdb::MaskGrid::Ptr mask, std::vector<Seed> component_seeds,
+vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_seeds,
     int index, RecutCommandLineArgs *args,
     fs::path component_dir_fn, int threads) {
-  auto component = mask_to_sdf(mask);
-  if (args->save_vdbs) {
-    write_vdb_file({component}, component_dir_fn / "sdf.vdb");
-  }
 
   HMesh::Manifold m;
   try {
