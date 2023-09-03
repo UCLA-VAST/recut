@@ -3,7 +3,7 @@
   inputs = {
     # pick latest commit from stable branch and test it so no suprises
     nixpkgs.url = "github:NixOS/nixpkgs/d53978239b265066804a45b7607b010b9cb4c50c";
-    openvdb.url = "github:UCLA-VAST/openvdb";
+    openvdb.url = "github:UCLA-VAST/openvdb?ref=feat/reachable-resurfacing-nix";
     gel.url = "github:UCLA-VAST/GEL";
 
     # pin nix package manager versions to exact match to recut

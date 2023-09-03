@@ -422,6 +422,34 @@ auto create_vdb_mask(EnlargedPointDataGrid::Ptr grid,
 
 // only values strictly greater than bkg_thresh are valid
 template <typename T>
+void print_sdf(T vdb_accessor, const GridCoord &lengths,
+                    const GridCoord &offsets = {0, 0, 0}) {
+  std::cout << std::fixed << std::setprecision(0);
+  for (int z = offsets.z(); z < offsets.z() + lengths[2]; z++) {
+    cout << "y | Z=" << z << '\n';
+    for (int x = 0; x < 2 * lengths[0] + 4; x++) {
+      cout << "-";
+    }
+    cout << '\n';
+    for (int y = offsets.y(); y < offsets.y() + lengths[1]; y++) {
+      cout << y << " | ";
+      for (int x = offsets.x(); x < offsets.x() + lengths[0]; x++) {
+        openvdb::Coord xyz(x, y, z);
+        auto val = vdb_accessor.getValue(xyz);
+        if (val == std::numeric_limits<float>::max()) {
+          cout << "- ";
+        } else {
+          cout << val << " ";
+        }
+      }
+      cout << '\n';
+    }
+    cout << '\n';
+  }
+}
+
+// only values strictly greater than bkg_thresh are valid
+template <typename T>
 void print_vdb_mask(T vdb_accessor, const GridCoord &lengths,
                     const GridCoord &offsets = {0, 0, 0}) {
   for (int z = offsets.z(); z < offsets.z() + lengths[2]; z++) {
