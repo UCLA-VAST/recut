@@ -95,7 +95,16 @@ std::vector<unsigned long> force_soma_nodes(Geometry::AMGraph3D &graph,
       }
       });
 
+  graph = Geometry::clean_graph(graph);
   return seed_ids;
+}
+
+void check_soma_ids(unsigned long nodes, std::vector<unsigned long> soma_ids) {
+  rng::for_each(soma_ids, [&](unsigned long soma_id) {
+      if (soma_id >= nodes) {
+      throw std::runtime_error("Impossible soma id found");
+      }
+      });
 }
 
 std::vector<unsigned long> find_soma_nodes(Geometry::AMGraph3D &graph,
@@ -130,10 +139,11 @@ std::vector<unsigned long> find_soma_nodes(Geometry::AMGraph3D &graph,
         max_index = val;
       }
 
-      if (max_index)
+      if (max_index) {
         soma_ids.push_back(max_index.value());
-      else
+      } else {
         std::cout << "Warning lost 1 seed during skeletonization\n";
+      }
   });
   return soma_ids;
 }
@@ -170,7 +180,7 @@ Geometry::AMGraph3D vdb_to_graph(openvdb::FloatGrid::Ptr component,
   // vto::volumeToMesh(*component, points, tris, quads, 0, args->mesh_grain);
 
   //std::cout << "Component active voxel count: " << component->activeVoxelCount()
-    //<< '\n';
+  //<< '\n';
   //std::cout << "Points size: " << points.size() << '\n';
   //std::cout << "Quads count: " << quads.size() << '\n';
 
@@ -396,16 +406,24 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     soma_ids = force_soma_nodes(component_graph, component_seeds, args->soma_dilation);
   else if (args->seed_action == "find")
     soma_ids = find_soma_nodes(component_graph, component_seeds, args->soma_dilation);
-  else
-    throw std::runtime_error("unrecognized seed action");
+  else if (args->seed_action == "find-valent")
+    soma_ids = find_soma_nodes(component_graph, component_seeds, args->soma_dilation, true);
 
   if (soma_ids.size() == 0) {
     std::cout << "Warning no soma_ids found for component " << index << '\n';
     // assign a soma randomly if none are found
     soma_ids.push_back(0);
   }
+
+  // multifurcations are only important for rules of SWC standard
+  // you can not modify the node set while relying on 
+  // a modified set of nodes and still retain valid soma_ids
+  if (args->seed_action != "force")
+    component_graph = fix_multifurcations(component_graph, soma_ids);
+
   graph_save(component_dir_fn / ("skeleton.graph"), component_graph);
 
+  check_soma_ids(component_graph.no_nodes(), soma_ids);
 
   return std::make_pair(component_graph, soma_ids);
 }
@@ -470,7 +488,6 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<long unsigned i
 
       // traverse rest of tree
       parent_table[soma_id] = soma_id; // a soma technically has no parent
-                                       //
                                        // start file per soma, write header info
       std::ofstream swc_file;
       if (is_eswc) {

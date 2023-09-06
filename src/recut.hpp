@@ -3020,7 +3020,8 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << "Input: x-axis voxel size in µm, " << args->voxel_size[0] << '\n'
             << "Input: y-axis voxel size in µm, " << args->voxel_size[1] << '\n'
             << "Input: z-axis voxel size in µm, " << args->voxel_size[2] << '\n'
-            << "Input: voxel count, " << coord_prod_accum(this->image_lengths)
+            << "Input: voxel count, " << coord_prod_accum(this->image_lengths) << '\n'
+            << "Seed action, " << args->seed_action
             << '\n';
     if (args->foreground_percent >= 0) {
       std::ostringstream out;
@@ -3072,9 +3073,6 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
   auto total_timer = high_resolution_timer();
 
   // aggregate disjoint connected components
-#ifdef LOG
-  std::cout << "Start component segmentation\n";
-#endif
   auto segment_timer = high_resolution_timer();
 
   // TODO may need to change this to SDF
@@ -3178,9 +3176,6 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
       component_log << "TP, " << timer.elapsed() << '\n';
       component_log << "TP count, " << component_graph.no_nodes() << '\n';
 #endif
-
-      // multifurcations are only important for rules of SWC standard
-      component_graph = fix_multifurcations(component_graph, soma_ids);
 
       write_swcs(component_graph, soma_ids, args->voxel_size, component_dir_fn, bbox,
                    !args->window_grid_paths.empty(),

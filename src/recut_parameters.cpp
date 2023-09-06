@@ -16,12 +16,12 @@ void RecutCommandLineArgs::PrintUsage() {
                "image to VDB stage, "
                "defaults to value of "
             << FG_PCT << '\n';
-  std::cout << "--seeds <dir> <action> optionally pass a directory "
+  std::cout << "--seeds <dir>          optionally pass a directory "
                "of SWC files with 1 soma node per file, "
                "fills the seeds as spheres directly on to the mask image, "
-               "treating them as ground truth for reconstruction, <action> "
-               "can either be 'force' which forces the locations passed by users to be used for final reconstruction"
-               " whereas 'find' finds the closest point in the skeleton to the passed seed\n";
+               "treating them as ground truth for reconstruction\n";
+  std::cout << "--seed-action <action> can either be 'force' which forces the locations passed by users to be used for final reconstruction"
+               " whereas 'find' finds the closest point in the skeleton to the passed seed, find-valent finds the point within the soma radius * dilation with the maximum connections\n";
   std::cout
       << "--parallel             [-pl] thread count defaults to max hardware "
          "threads\n";
@@ -188,10 +188,16 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
           exit(1);
         }
         ++i;
-        if ((i + 1 != argc) && (argv[i + 1][0] != '-')) {
-          args.seed_action = argv[i + 1];
-          ++i;
-        }
+      } else if (strcmp(argv[i], "--seed-action") == 0 ||
+                 strcmp(argv[i], "-s") == 0) {
+        args.seed_action = argv[i + 1];
+
+        if (args.seed_action == "force")
+          throw std::runtime_error("'force' seed action is temporarily broken use find-valent");
+        if (!((args.seed_action == "force") || (args.seed_action == "find") 
+              || (args.seed_action == "find-valent")))
+          throw std::runtime_error("unrecognized seed action");
+        ++i;
       } else if (strcmp(argv[i], "--resolution-level") == 0 ||
                  strcmp(argv[i], "-rl") == 0) {
         args.resolution_level = atoi(argv[i + 1]);
