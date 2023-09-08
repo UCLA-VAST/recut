@@ -2857,19 +2857,21 @@ template <class image_t> void Recut<image_t>::initialize() {
   this->connected_grid = openvdb::MaskGrid::create();
   this->connected_grid->setTransform(get_transform());
 
-  // when no known seeds are passed or when the intersection strategy
-  // is on and user does not input a close or open step, its safe
-  // to infer the steps based on the voxel size
-  if (args->seed_path.empty() || args->close_topology) {
-    // infer close steps if it wasn't explicitly passed
-    if (!args->close_steps) {
-      if (args->seed_path.empty())
-        args->close_steps = SOMA_CLOSE_FACTOR / args->voxel_size[0];
-      else
-        args->close_steps = std::round(TOPOLOGY_CLOSE_FACTOR / args->voxel_size[0]);
-      args->close_steps = args->close_steps < 1 ? 1 : args->close_steps;
-      std::cout << "Close steps inferred to " << args->close_steps.value()
-                << " based on voxel size\n";
+  if (!args->convert_only) {
+    // when no known seeds are passed or when the intersection strategy
+    // is on and user does not input a close or open step, its safe
+    // to infer the steps based on the voxel size
+    if (args->seed_path.empty() || args->close_topology) {
+      // infer close steps if it wasn't explicitly passed
+      if (!args->close_steps) {
+        if (args->seed_path.empty())
+          args->close_steps = SOMA_CLOSE_FACTOR / args->voxel_size[0];
+        else
+          args->close_steps = std::round(TOPOLOGY_CLOSE_FACTOR / args->voxel_size[0]);
+        args->close_steps = args->close_steps < 1 ? 1 : args->close_steps;
+        std::cout << "Close steps inferred to " << args->close_steps.value()
+                  << " based on voxel size\n";
+      }
     }
   }
 
@@ -3158,7 +3160,7 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
 
     auto timer = high_resolution_timer();
     std::vector<std::vector<MyMarker *>> trees;
-    std::optional<std::pair<Geometry::AMGraph3D, std::vector<unsigned long>>> cluster_opt;
+    std::optional<std::pair<Geometry::AMGraph3D, std::vector<GridCoord>>> cluster_opt;
     cluster_opt = vdb_to_skeleton(component, component_seeds, index, args,
                                    component_dir_fn, 
                                    inter_thread_count == 1 ? args->user_thread_count : 1);
@@ -3171,13 +3173,13 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
 
 
     if (cluster_opt) {
-      auto [component_graph, soma_ids] = cluster_opt.value();
+      auto [component_graph, soma_coords] = cluster_opt.value();
 #ifdef LOG
       component_log << "TP, " << timer.elapsed() << '\n';
       component_log << "TP count, " << component_graph.no_nodes() << '\n';
 #endif
 
-      write_swcs(component_graph, soma_ids, args->voxel_size, component_dir_fn, bbox,
+      write_swcs(component_graph, soma_coords, args->voxel_size, component_dir_fn, bbox,
                    !args->window_grid_paths.empty(),
                   args->output_type == "eswc", args->voxel_units);
     }

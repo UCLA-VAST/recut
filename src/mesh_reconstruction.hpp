@@ -23,8 +23,8 @@ auto euc_dist = [](auto a, auto b) -> float {
 };
 
 // build kdtree, highly efficient for nearest point computations
-Geometry::KDTree<CGLA::Vec3d, int> build_kdtree(Geometry::AMGraph3D &graph) {
-  Geometry::KDTree<CGLA::Vec3d, int> tree;
+Geometry::KDTree<CGLA::Vec3d, unsigned long> build_kdtree(Geometry::AMGraph3D &graph) {
+  Geometry::KDTree<CGLA::Vec3d, unsigned long> tree;
   for (auto i : graph.node_ids()) {
     CGLA::Vec3d p0 = graph.pos[i];
     tree.insert(p0, i);
@@ -34,13 +34,13 @@ Geometry::KDTree<CGLA::Vec3d, int> build_kdtree(Geometry::AMGraph3D &graph) {
 }
 
 // find existing skeletal node within the radius of the soma
-std::vector<int> within_sphere(Seed &seed,
-    Geometry::KDTree<CGLA::Vec3d, int> &tree,
+std::vector<unsigned long> within_sphere(Seed &seed,
+    Geometry::KDTree<CGLA::Vec3d, unsigned long> &tree,
     float soma_dilation) {
   auto coord = seed.coord;
   CGLA::Vec3d p0(coord[0], coord[1], coord[2]);
   std::vector<CGLA::Vec3d> keys;
-  std::vector<int> vals;
+  std::vector<unsigned long> vals;
   tree.in_sphere(p0, soma_dilation * seed.radius, keys, vals);
   return vals;
 }
@@ -49,14 +49,19 @@ std::vector<int> within_sphere(Seed &seed,
 // nearby skeletal nodes are merged into the seeds,
 // seeds inherit edges and delete nodes within 3D radius soma_dilation *
 // seed.radius the original location and radius of the seeds are preserved
-std::vector<unsigned long> force_soma_nodes(Geometry::AMGraph3D &graph,
+// returns coords since id's are volatile with mutations to graph
+std::vector<GridCoord> force_soma_nodes(Geometry::AMGraph3D &graph,
     std::vector<Seed> &seeds,
     float soma_dilation) {
 
   // add the known seeds to the skeletonized graph
   // aggregate their seed ids so they are not mistakenly merged
   // below
-  auto seed_ids =
+  auto soma_coords =
+    seeds | rv::transform([](Seed seed) { return seed.coord; }) 
+    | rng::to_vector;
+
+  auto new_soma_ids =
     seeds | rv::transform([&](Seed seed) {
         auto p = CGLA::Vec3d(seed.coord[0], seed.coord[1], seed.coord[2]);
         auto soma_id = graph.add_node(p);
@@ -64,39 +69,39 @@ std::vector<unsigned long> force_soma_nodes(Geometry::AMGraph3D &graph,
         graph.node_color[soma_id] =
         CGLA::Vec3f(0, soma_dilation * seed.radius, 0);
         return soma_id;
-        }) |
-  rng::to_vector;
-  auto seed_pairs = rv::zip(seeds, seed_ids);
+        }) | rng::to_vector;
+
+  auto seed_pairs = rv::zip(seeds, new_soma_ids);
 
   // the graph is complete so build a data structure that
   // is fast at finding nodes within a 3D radial distance
   auto tree = build_kdtree(graph);
 
-  std::set<int> deleted_nodes;
+  std::set<unsigned long> deleted_nodes;
   rng::for_each(seed_pairs, [&](auto seedp) {
       auto [seed, seed_id] = seedp;
 
-      auto within_sphere_ids = within_sphere(seed, tree, soma_dilation);
+      std::vector<unsigned long> within_sphere_ids = within_sphere(seed, tree, soma_dilation);
       // iterate all nodes within a 3D radial distance from this known seed
-      for (auto id : within_sphere_ids) {
-      // if this node within the sphere isn't a known seed then merge it into
-      // the seed at the center of the radial sphere
-      if (std::find(seed_ids.begin(), seed_ids.end(), id) ==
-          std::end(seed_ids)) {
-      // the tree is unaware of nodes that have previously been deleted
-      // so you must specifically filter out those so they do not error
-      if (std::find(deleted_nodes.begin(), deleted_nodes.end(), id) ==
-          std::end(deleted_nodes)) {
-      // keep the original location
-      graph.merge_nodes(id, seed_id, /*average location*/ false);
-      deleted_nodes.insert(id);
+      for (unsigned long id : within_sphere_ids) {
+        auto pos = graph.pos[id];
+        auto current_coord = GridCoord(pos[0], pos[1], pos[2]);
+        // if this node within the sphere isn't a known seed then merge it into
+        // the seed at the center of the radial sphere
+        if (rng::find(soma_coords, current_coord) == rng::end(soma_coords)) {
+          // the tree is unaware of nodes that have previously been deleted
+          // so you must specifically filter out those so they do not error
+          if (rng::find(deleted_nodes, id) == rng::end(deleted_nodes)) {
+            // keep the original location
+            graph.merge_nodes(id, seed_id, /*average location*/ false);
+            deleted_nodes.insert(id);
+          }
+        }
       }
-      }
-      }
-      });
+  });
 
   graph = Geometry::clean_graph(graph);
-  return seed_ids;
+  return soma_coords;
 }
 
 void check_soma_ids(unsigned long nodes, std::vector<unsigned long> soma_ids) {
@@ -107,12 +112,12 @@ void check_soma_ids(unsigned long nodes, std::vector<unsigned long> soma_ids) {
       });
 }
 
-std::vector<unsigned long> find_soma_nodes(Geometry::AMGraph3D &graph,
+std::vector<GridCoord> find_soma_nodes(Geometry::AMGraph3D &graph,
     std::vector<Seed> seeds, float soma_dilation, bool highest_valence=false) {
 
   auto tree = build_kdtree(graph);
 
-  std::vector<unsigned long> soma_ids;
+  std::vector<GridCoord> soma_coords;
   rng::for_each(seeds, [&](Seed seed) {
       std::optional<size_t> max_index;
 
@@ -132,7 +137,7 @@ std::vector<unsigned long> find_soma_nodes(Geometry::AMGraph3D &graph,
       auto coord = seed.coord;
       CGLA::Vec3d p0(coord[0], coord[1], coord[2]);
       CGLA::Vec3d key;
-      int val;
+      unsigned long val;
       double dist = 1000;
       bool found = tree.closest_point(p0, dist, key, val);
       if (found)
@@ -140,12 +145,13 @@ std::vector<unsigned long> find_soma_nodes(Geometry::AMGraph3D &graph,
       }
 
       if (max_index) {
-        soma_ids.push_back(max_index.value());
+        auto pos = graph.pos[max_index.value()];
+        soma_coords.emplace_back(pos[0], pos[1], pos[2]);
       } else {
         std::cout << "Warning lost 1 seed during skeletonization\n";
       }
   });
-  return soma_ids;
+  return soma_coords;
 }
 
 template <typename Poly>
@@ -201,14 +207,15 @@ Geometry::AMGraph3D vdb_to_graph(openvdb::FloatGrid::Ptr component,
 
 // naive multifurcation fix, force non-soma vertices to have at max 3 neighbors
 Geometry::AMGraph3D fix_multifurcations(Geometry::AMGraph3D &graph,
-    std::vector<unsigned long> soma_ids) {
+    std::vector<GridCoord> soma_coords) {
 
   // loop over all vertices until no remaining multifurcations are found
   for (auto multifurc_id : graph.node_ids()) {
+    auto pos = graph.pos[multifurc_id];
+    auto current_coord = GridCoord(pos[0], pos[1], pos[2]);
     // if not a soma
-    if (std::find(soma_ids.begin(), soma_ids.end(), multifurc_id) == std::end(soma_ids)) {
-      // is a multifurcation
-      while (graph.valence(multifurc_id) > 3) {
+    if (rng::find(soma_coords, current_coord) == rng::end(soma_coords)) {
+      while (graph.valence(multifurc_id) > 3) { // is a multifurcation
         auto neighbors = graph.neighbors(multifurc_id);
         auto to_reattach = neighbors[0]; // picked at random
         auto to_extend = neighbors[1]; // picked at random
@@ -375,7 +382,7 @@ void smooth_graph_pos_rad(Geometry::AMGraph3D &g, const int iter, const float al
   }
 }
 
-std::optional<std::pair<Geometry::AMGraph3D, std::vector<unsigned long>>>
+std::optional<std::pair<Geometry::AMGraph3D, std::vector<GridCoord>>>
 vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_seeds,
     int index, RecutCommandLineArgs *args,
     fs::path component_dir_fn, int threads) {
@@ -401,31 +408,25 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
   smooth_graph_pos_rad(component_graph, args->smooth_iters, /*alpha*/ 1);
 
   // sweep through various soma ids
-  std::vector<unsigned long> soma_ids;
+  std::vector<GridCoord> soma_coords;
   if (args->seed_action == "force")
-    soma_ids = force_soma_nodes(component_graph, component_seeds, args->soma_dilation);
+    soma_coords = force_soma_nodes(component_graph, component_seeds, args->soma_dilation);
   else if (args->seed_action == "find")
-    soma_ids = find_soma_nodes(component_graph, component_seeds, args->soma_dilation);
+    soma_coords = find_soma_nodes(component_graph, component_seeds, args->soma_dilation);
   else if (args->seed_action == "find-valent")
-    soma_ids = find_soma_nodes(component_graph, component_seeds, args->soma_dilation, true);
+    soma_coords = find_soma_nodes(component_graph, component_seeds, args->soma_dilation, true);
 
-  if (soma_ids.size() == 0) {
-    std::cout << "Warning no soma_ids found for component " << index << '\n';
-    // assign a soma randomly if none are found
-    soma_ids.push_back(0);
+  if (soma_coords.size() == 0) {
+    std::cerr << "Warning no soma_coords found for component " << index << '\n';
+    return std::nullopt;
   }
 
   // multifurcations are only important for rules of SWC standard
-  // you can not modify the node set while relying on 
-  // a modified set of nodes and still retain valid soma_ids
-  if (args->seed_action != "force")
-    component_graph = fix_multifurcations(component_graph, soma_ids);
+  component_graph = fix_multifurcations(component_graph, soma_coords);
 
   graph_save(component_dir_fn / ("skeleton.graph"), component_graph);
 
-  check_soma_ids(component_graph.no_nodes(), soma_ids);
-
-  return std::make_pair(component_graph, soma_ids);
+  return std::make_pair(component_graph, soma_coords);
 }
 
 void write_ano_file(fs::path component_dir_fn, std::string file_name_base) {
@@ -462,7 +463,7 @@ void write_apo_file(fs::path component_dir_fn, std::string file_name_base, std::
   apo_file.close();
 }
 
-void write_swcs(Geometry::AMGraph3D component_graph, std::vector<long unsigned int> soma_ids,
+void write_swcs(Geometry::AMGraph3D component_graph, std::vector<GridCoord> soma_coords,
     std::array<float, 3> voxel_size,
     std::filesystem::path component_dir_fn = ".",
     CoordBBox bbox = {}, bool bbox_adjust = false,
@@ -472,8 +473,18 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<long unsigned i
   // determined via BFS traversal
   std::vector<int> parent_table(component_graph.no_nodes(), -1);
 
+  // scan the graph to find the final set of soma_ids
+  std::vector<unsigned long> soma_ids;
+  for (int i=0; i < component_graph.no_nodes(); ++i) {
+    auto pos = component_graph.pos[i];
+    auto current_coord = GridCoord(pos[0], pos[1], pos[2]);
+    if (std::find(soma_coords.begin(),
+          soma_coords.end(), current_coord) != std::end(soma_coords))
+      soma_ids.push_back(i);
+  }
+
   // do BFS from each known soma in the component
-  rng::for_each(soma_ids, [&](auto soma_id) {
+  for (auto soma_id : soma_ids) {
       // init q with soma
       std::queue<size_t> q;
       q.push(soma_id);
@@ -541,7 +552,7 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<long unsigned i
           }
         }
       }
-  });
+  }
 
   //for (auto parent : parent_table) {
   //if (parent < 0)

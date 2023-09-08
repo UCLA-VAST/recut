@@ -192,8 +192,6 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
                  strcmp(argv[i], "-s") == 0) {
         args.seed_action = argv[i + 1];
 
-        if (args.seed_action == "force")
-          throw std::runtime_error("'force' seed action is temporarily broken use find-valent");
         if (!((args.seed_action == "force") || (args.seed_action == "find") 
               || (args.seed_action == "find-valent")))
           throw std::runtime_error("unrecognized seed action");
