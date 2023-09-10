@@ -387,19 +387,41 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     int index, RecutCommandLineArgs *args,
     fs::path component_dir_fn, int threads) {
 
+  auto timer = high_resolution_timer();
   auto g = vdb_to_graph(component, args);
+  std::cout << "vdb to graph: " << timer.elapsed() << '\n';
+
+  {
+    auto msg = Geometry::multiscale_graph(g, args->skeleton_grow, true);
+    std::cout << "layers: " << msg.layers.size() << '\n';
+    int i=0;
+    for (auto layer : msg.layers) {
+      std::cout << "layer " << i << '\n';
+      std::cout << "  vertex count: " << layer.no_nodes() << '\n';
+      timer.restart();
+      auto separators =
+        multiscale_local_separators(layer, Geometry::SamplingType::Advanced,
+            args->skeleton_grow, args->skeleton_grain,
+            /*opt steps*/ 0, threads,
+            false);
+      auto [component_graph, _] = skeleton_from_node_set_vec(layer, separators);
+      std::cout << "  skeleton node count: " << component_graph.no_nodes() << '\n';
+      std::cout << "  ls time: " << timer.elapsed() << '\n';
+      //graph_save(component_dir_fn / ("skeleton" + i + ".graph"), component_graph);
+      ++i;
+    }
+  }
+
   graph_save(component_dir_fn / ("mesh.graph"), g);
 
   // multi-scale is faster and scales linearly with input graph size at
   // the cost of difficulty in choosing a grow threshold
-  Geometry::AMGraph3D component_graph;
   auto separators =
     multiscale_local_separators(g, Geometry::SamplingType::Advanced,
         args->skeleton_grow, args->skeleton_grain,
         /*opt steps*/ 0, threads,
         false);
-  auto ppair = skeleton_from_node_set_vec(g, separators);
-  component_graph = ppair.first;
+  auto [component_graph, _] = skeleton_from_node_set_vec(g, separators);
 
   // prune all leaf vertices (valency 1) whose only neighbor has valency > 2
   // as these tend to be spurious branches
