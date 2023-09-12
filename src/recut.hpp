@@ -3017,8 +3017,6 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
     run_log << "Thread count, " << args->user_thread_count << '\n'
             << "Input: path, " << args->input_path << '\n'
             << "Input: type, " << args->input_type << '\n'
-            << "Input: number of channels, " << args->window_grid_paths.size()
-            << '\n'
             << "Input: x-axis voxel size in µm, " << args->voxel_size[0] << '\n'
             << "Input: y-axis voxel size in µm, " << args->voxel_size[1] << '\n'
             << "Input: z-axis voxel size in µm, " << args->voxel_size[2] << '\n'
@@ -3040,9 +3038,7 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
     if (args->seed_path != "") {
       run_log << "Seed detection: Seeds path, " << args->seed_path << '\n';
     }
-    run_log << "Seed detection: morphological operations order, "
-            << args->morphological_operations_order << '\n'
-            << "Seed detection: morphological operations close steps, "
+    run_log << "Seed detection: morphological operations close steps, "
             << args->close_steps.value_or(0) << '\n'
             << "Seed detection: morphological operations open steps, "
             << args->open_steps.value_or(0) << '\n'
@@ -3053,9 +3049,9 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << '\n'
             << "Skeletonization: soma prune radius factor, "
             << args->soma_dilation << '\n'
-            << "Skeletonization: min branch length µm, "
-            << args->min_branch_length << '\n'
             << "Benchmarking: run app2, " << args->run_app2 << '\n';
+            //<< "Skeletonization: min branch length µm, "
+            //<< args->min_branch_length << '\n'
     run_log.flush();
   }
 }
@@ -3139,7 +3135,6 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
         run_dir / (prefix + "component-" + std::to_string(index));
     fs::create_directories(component_dir_fn);
 
-#ifdef LOG
     auto component_log_fn =
         component_dir_fn / ("component-" + std::to_string(index) + "-log.csv");
     std::ofstream component_log;
@@ -3148,7 +3143,6 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
     component_log << "Thread count, " << args->user_thread_count << '\n';
     component_log << "Soma count, " << component_seeds.size() << '\n';
     component_log << "Component active voxel count, " << voxel_count << '\n';
-#endif
 
     // seeds are always in voxel units and output with respect to the whole
     // volume
@@ -3162,8 +3156,9 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
     std::vector<std::vector<MyMarker *>> trees;
     std::optional<std::pair<Geometry::AMGraph3D, std::vector<GridCoord>>> cluster_opt;
     cluster_opt = vdb_to_skeleton(component, component_seeds, index, args,
-                                   component_dir_fn, 
+                                   component_dir_fn, component_log,
                                    inter_thread_count == 1 ? args->user_thread_count : 1);
+    component_log << "TP, " << timer.elapsed() << '\n';
 
     bool save_mesh = false;
     if (save_mesh) {
@@ -3171,13 +3166,9 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
       HMesh::obj_save(component_dir_fn / ("mesh.obj"), m);
     }
 
-
     if (cluster_opt) {
       auto [component_graph, soma_coords] = cluster_opt.value();
-#ifdef LOG
-      component_log << "TP, " << timer.elapsed() << '\n';
       component_log << "TP count, " << component_graph.no_nodes() << '\n';
-#endif
 
       write_swcs(component_graph, soma_coords, args->voxel_size, component_dir_fn, bbox,
                    !args->window_grid_paths.empty(),

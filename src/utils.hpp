@@ -3594,7 +3594,9 @@ auto convert_fn_vdb = [](const fs::path &file_path, auto split_char,
 
   std::string stripped = file_name | rv::split(split_char) | rv::drop_last(1) |
                          rv::join(split_char) | rng::to<std::string>();
-  stripped += "-" + args->output_type;
+  if (!stripped.empty())
+    stripped += "-";
+  stripped += args->output_type;
 
   if (args->foreground_percent >= 0) {
     std::ostringstream out;

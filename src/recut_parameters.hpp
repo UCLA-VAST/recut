@@ -34,7 +34,7 @@ public:
         skeleton_grain(SKELETON_GRAIN), skeleton_grow(GROW_THRESHOLD),
         smooth_iters(SMOOTH_ITERS),
         mesh_grain(MESH_GRAIN), mean_shift_factor(0), soma_dilation(SOMA_DILATION), 
-        voxel_units(false), seed_action("find") {}
+        voxel_units(false), seed_action("find"), optimize_steps(5) {}
 
   static void PrintUsage();
   std::string MetaString();
@@ -63,7 +63,7 @@ public:
       upsample_z, downsample_factor, morphological_operations_order,
       mean_shift_max_iters, smooth_iters;
   int background_thresh, max_intensity, min_intensity, tcase, timeout,
-      skeleton_grow;
+      skeleton_grow, optimize_steps;
   double foreground_percent, slt_pct;
   float min_window_um, expand_window_um, min_radius_um, max_radius_um,
       mean_shift_factor, skeleton_grain, mesh_grain, soma_dilation;
@@ -75,6 +75,8 @@ public:
   std::optional<int> close_steps;
   std::optional<float> prune_radius;
   std::optional<int> open_steps;
+  std::optional<int> saturate_edges;
+  std::optional<int> coarsen_steps;
 };
 
 RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]);

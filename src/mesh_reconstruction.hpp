@@ -382,16 +382,8 @@ void smooth_graph_pos_rad(Geometry::AMGraph3D &g, const int iter, const float al
   }
 }
 
-std::optional<std::pair<Geometry::AMGraph3D, std::vector<GridCoord>>>
-vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_seeds,
-    int index, RecutCommandLineArgs *args,
-    fs::path component_dir_fn, int threads) {
-
-  auto timer = high_resolution_timer();
-  auto g = vdb_to_graph(component, args);
-  std::cout << "vdb to graph: " << timer.elapsed() << '\n';
-
-  {
+  /*
+  test_multi_graph () {
     auto msg = Geometry::multiscale_graph(g, args->skeleton_grow, true);
     std::cout << "layers: " << msg.layers.size() << '\n';
     int i=0;
@@ -402,7 +394,7 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
       auto separators =
         multiscale_local_separators(layer, Geometry::SamplingType::Advanced,
             args->skeleton_grow, args->skeleton_grain,
-            /*opt steps*/ 0, threads,
+            0, threads,
             false);
       auto [component_graph, _] = skeleton_from_node_set_vec(layer, separators);
       std::cout << "  skeleton node count: " << component_graph.no_nodes() << '\n';
@@ -411,17 +403,44 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
       ++i;
     }
   }
+  */
+
+std::optional<std::pair<Geometry::AMGraph3D, std::vector<GridCoord>>>
+vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_seeds,
+    int index, RecutCommandLineArgs *args,
+    fs::path component_dir_fn, std::ofstream& component_log, int threads) {
+
+  auto timer = high_resolution_timer();
+  auto g = vdb_to_graph(component, args);
+  component_log << "vdb to graph, " << timer.elapsed() << '\n';
+
+  if (args->coarsen_steps) {
+    timer.restart();
+    auto msg = Geometry::multiscale_graph(g, args->skeleton_grow, true);
+    auto last_layer_index = msg.layers.size() - 1;
+    auto layer_index = args->coarsen_steps.value() > last_layer_index ? last_layer_index : args->coarsen_steps.value();
+    g = msg.layers[layer_index];
+    component_log << "coarsen time, " << timer.elapsed() << '\n';
+  }
+
+  if (args->saturate_edges) {
+    timer.restart();
+    Geometry::saturate_graph(g, args->saturate_edges.value());
+    component_log << "saturate edges, " << timer.elapsed() << '\n';
+  }
 
   graph_save(component_dir_fn / ("mesh.graph"), g);
 
+  timer.restart();
   // multi-scale is faster and scales linearly with input graph size at
   // the cost of difficulty in choosing a grow threshold
   auto separators =
     multiscale_local_separators(g, Geometry::SamplingType::Advanced,
         args->skeleton_grow, args->skeleton_grain,
-        /*opt steps*/ 0, threads,
+        /*opt steps*/ args->optimize_steps, threads,
         false);
   auto [component_graph, _] = skeleton_from_node_set_vec(g, separators);
+  component_log << "msls, " << timer.elapsed() << '\n';
 
   // prune all leaf vertices (valency 1) whose only neighbor has valency > 2
   // as these tend to be spurious branches

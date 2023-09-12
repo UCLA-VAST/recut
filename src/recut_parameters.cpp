@@ -4,7 +4,7 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "Basic usage : recut <image or VDB> "
                "--voxel-size X Y Z (in µm) "
                "[--seeds <marker_dir>] "
-               "[--output-type swc/eswc/seeds/uint8/mask/float/ims/tiff] "
+               "[--output-type swc/eswc/seeds/uint8/mask/float/tiff] "
                "[--fg-percent <double>]\n\n";
   std::cout << "<image or VDB>         file or directory of input image(s)\n";
   std::cout << "--voxel-size           µm lengths of voxel in x y z order "
@@ -39,7 +39,7 @@ void RecutCommandLineArgs::PrintUsage() {
          "('labels' or 'seeds'), default output is 'swc'\n";
   std::cout << "--close-steps          morphological closing level "
                "to fill hollow signals inside somata or to join path breaks "
-               "defaults to roughly"
+               "defaults to roughly "
             << SOMA_CLOSE_FACTOR << " / [voxel size]\n";
   std::cout
       << "--preserve-topology    do not apply morphological closing to the "
@@ -56,10 +56,14 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout
       << "--image-offsets        [-io] offsets of subvolume, in x y z order "
          "default 0 0 0\n";
-  std::cout << "--skeleton-grain       granularity of final skeletons, lower "
-               "value result in higher detailed skeletons (SWC trees) with "
+  std::cout << "--coarsen-steps        determines granularity of final skeletons, lower "
+               "values result in higher detailed skeletons (SWC trees) with "
                "more skeletal nodes; default is "
-            << SKELETON_GRAIN << '\n';
+            << 0 << '\n';
+  //std::cout << "--skeleton-grain       granularity of final skeletons, lower "
+               //"value result in higher detailed skeletons (SWC trees) with "
+               //"more skeletal nodes; default is "
+            //<< SKELETON_GRAIN << '\n';
   //std::cout << "--skeleton-grow        affects granularity of final skeletons, "
                //"higher value results in higher detailed skeletons (SWC trees) "
                //"with more points; default is "
@@ -72,7 +76,7 @@ void RecutCommandLineArgs::PrintUsage() {
   // value result in higher polygon count to represent the surface; default is "
   // << MESH_GRAIN << '\n';
   std::cout << "--soma-dilation        factor to multiply computed soma size "
-               "by to collapse somal nodes, "
+               "by to collapse somal nodes, works in combination with 'find-valent' and 'force' actions "
                "defaults to "
             << SOMA_DILATION << '\n';
   std::cout
@@ -272,6 +276,18 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--smooth-iters") == 0) {
         auto val = atoi(argv[i + 1]);
         args.smooth_iters = val;
+        ++i;
+      } else if (strcmp(argv[i], "--coarsen-steps") == 0) {
+        auto val = atoi(argv[i + 1]);
+        if (val) args.coarsen_steps = val;
+        ++i;
+      } else if (strcmp(argv[i], "--saturate-edges") == 0) {
+        auto val = atoi(argv[i + 1]);
+        if (val) args.saturate_edges = val;
+        ++i;
+      } else if (strcmp(argv[i], "--optimize-steps") == 0) {
+        auto val = atoi(argv[i + 1]);
+        args.optimize_steps = val;
         ++i;
       } else if (strcmp(argv[i], "--mesh-grain") == 0) {
         args.mesh_grain = atof(argv[i + 1]);
