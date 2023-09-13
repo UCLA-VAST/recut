@@ -4,6 +4,7 @@
 #include "mesh_reconstruction.hpp"
 #include "morphological_soma_segmentation.hpp"
 #include "recut_parameters.hpp"
+#include "v3d_image_formats.hpp"
 #include "tile_thresholds.hpp"
 //#include "tree_ops.hpp"
 #include "utils.hpp"
@@ -2875,6 +2876,14 @@ template <class image_t> void Recut<image_t>::initialize() {
     }
   }
 
+  if (!args->soma_dilation) {
+    args->soma_dilation = SOMA_DILATION * args->voxel_size[0];
+    if (args->seed_action != "find") {
+      std::cout << "Soma dilation for " << args->seed_action << " 'force' or 'find-valent' inferred to " << args->soma_dilation.value()
+                    << " based on voxel size\n";
+    }
+  }
+
   if (args->seed_path.empty()) {
     // infer open steps if it wasn't explicitly passed
     if (!args->open_steps) {
@@ -3048,7 +3057,7 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << args->max_radius_um
             << '\n'
             << "Skeletonization: soma prune radius factor, "
-            << args->soma_dilation << '\n'
+            << args->soma_dilation.value() << '\n'
             << "Benchmarking: run app2, " << args->run_app2 << '\n';
             //<< "Skeletonization: min branch length µm, "
             //<< args->min_branch_length << '\n'

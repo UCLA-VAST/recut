@@ -161,6 +161,7 @@ set(HEADER
         ${PROJECT_SOURCE_DIR}/src/tile_thresholds.hpp
         ${PROJECT_SOURCE_DIR}/src/seed.hpp
         ${PROJECT_SOURCE_DIR}/src/markers.h # TODO remove this
+        ${PROJECT_SOURCE_DIR}/src/v3d_image_formats.hpp
         )
 
 # Uncomment if changing recut to export as a library

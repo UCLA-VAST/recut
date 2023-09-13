@@ -451,11 +451,11 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
   // sweep through various soma ids
   std::vector<GridCoord> soma_coords;
   if (args->seed_action == "force")
-    soma_coords = force_soma_nodes(component_graph, component_seeds, args->soma_dilation);
+    soma_coords = force_soma_nodes(component_graph, component_seeds, args->soma_dilation.value());
   else if (args->seed_action == "find")
-    soma_coords = find_soma_nodes(component_graph, component_seeds, args->soma_dilation);
+    soma_coords = find_soma_nodes(component_graph, component_seeds, args->soma_dilation.value());
   else if (args->seed_action == "find-valent")
-    soma_coords = find_soma_nodes(component_graph, component_seeds, args->soma_dilation, true);
+    soma_coords = find_soma_nodes(component_graph, component_seeds, args->soma_dilation.value(), true);
 
   if (soma_coords.size() == 0) {
     std::cerr << "Warning no soma_coords found for component " << index << '\n';

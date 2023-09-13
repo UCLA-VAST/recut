@@ -33,7 +33,7 @@ public:
         mean_shift_max_iters(4), timeout(MEAN_SHIFT_TIMEOUT),
         skeleton_grain(SKELETON_GRAIN), skeleton_grow(GROW_THRESHOLD),
         smooth_iters(SMOOTH_ITERS),
-        mesh_grain(MESH_GRAIN), mean_shift_factor(0), soma_dilation(SOMA_DILATION), 
+        mesh_grain(MESH_GRAIN), mean_shift_factor(0), 
         voxel_units(false), seed_action("find"), optimize_steps(5) {}
 
   static void PrintUsage();
@@ -66,7 +66,7 @@ public:
       skeleton_grow, optimize_steps;
   double foreground_percent, slt_pct;
   float min_window_um, expand_window_um, min_radius_um, max_radius_um,
-      mean_shift_factor, skeleton_grain, mesh_grain, soma_dilation;
+      mean_shift_factor, skeleton_grain, mesh_grain;
   VID_t selected, root_vid;
   bool run_app2, convert_only, combine, histogram, save_vdbs,
       ignore_multifurcations, close_topology, voxel_units;
@@ -77,6 +77,7 @@ public:
   std::optional<int> open_steps;
   std::optional<int> saturate_edges;
   std::optional<int> coarsen_steps;
+  std::optional<float> soma_dilation;
 };
 
 RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]);
