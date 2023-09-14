@@ -3087,30 +3087,35 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
                    std::vector<Seed> component_seeds, int min_window_um,
                    bool labels, float expand_window_um = 0) {
 
-  assertm(valued_grid, "Must have input grid set to run output_windows_");
+  if (!valued_grid) 
+    throw std::runtime_error("The first grid passed to '--output-windows' must be of type uint8 VDB");
   // if an expanded crop is requested, the actual image values outside of the
   // component bounding volume are needed therefore clip the original image
   // to a bounding volume
   auto bbox = component_grid->evalActiveVoxelBoundingBox();
+  //std::cout << "  bbox " << bbox << '\n';
 
   rng::for_each(component_seeds, [&](const auto &seed) {
+    //std::cout << "  coord " << seed.coord << '\n';
+    auto extent_um = min_window_um + seed.radius_um + expand_window_um;
     rng::for_each(rv::iota(0, 3), [&](auto i) {
-      auto extent_um = min_window_um + seed.radius_um + expand_window_um;
+      auto extent_voxels = extent_um / voxel_size[i];
 
       // find a possible min/max in coordinate space
       auto old_min = bbox.min()[i];
       auto new_min =
-          static_cast<int>(seed.coord[i] - extent_um / voxel_size[i]);
+          static_cast<int>(seed.coord[i] - extent_voxels);
 
       auto old_max = bbox.max()[i];
       auto new_max =
-          static_cast<int>(seed.coord[i] - extent_um / voxel_size[i]);
+          static_cast<int>(seed.coord[i] + extent_voxels);
 
       // if the new_min or max would expand the bbox then keep it
       bbox.min()[i] = std::min(old_min, new_min);
       bbox.max()[i] = std::max(old_max, new_max);
     });
   });
+  //std::cout << "  bbox " << bbox << '\n';
 
   if (labels) {
     // choose the first seed if there are multiple
@@ -3127,6 +3132,7 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
     bbox = output_grid->evalActiveVoxelBoundingBox();
   }
 
+  //std::cout << "  bbox " << bbox << '\n';
   // alternatively... for simply carrying values across:
   // copy_values(valued_grid, component_grid);
   // or you can use the component_grid to mask the valued_grid

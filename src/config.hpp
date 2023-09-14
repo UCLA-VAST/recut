@@ -75,8 +75,8 @@ using ImgGrid = openvdb::Grid<UInt8Tree>;
 using EnlargedPointIndexGrid = vto::PointIndexGrid;
 
 #define SWC_MIN_LINE 110
-#define COARSEN_FACTOR .5
-#define FORCE_SOMA_DILATION 3.5
+#define COARSEN_FACTOR .9
+#define FORCE_SOMA_DILATION 3
 #define FIND_SOMA_DILATION 5
 // no filtering by default below
 #define MIN_SOMA_RADIUS_UM 0 

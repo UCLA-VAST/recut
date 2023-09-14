@@ -2882,7 +2882,7 @@ template <class image_t> void Recut<image_t>::initialize() {
     if (args->seed_action == "force") 
       args->soma_dilation = FORCE_SOMA_DILATION * args->voxel_size[0];
     if (args->seed_action != "find") {
-      std::cout << "Soma dilation for " << args->seed_action << " 'force' or 'find-valent' inferred to " << args->soma_dilation.value()
+      std::cout << "Soma dilation for action '" << args->seed_action << "' inferred to " << args->soma_dilation.value()
                     << " based on voxel size\n";
     }
   }
@@ -3100,7 +3100,13 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
   run_log.flush();
 
   // assign parallelization either within the component or between components
-  auto inter_thread_count = components.size() <= 1 ? 1 : args->user_thread_count;
+  auto inter_thread_count = args->user_thread_count;
+  if (components.size() > 1) {
+    if (!args->window_grid_paths.empty())
+      inter_thread_count = 1;
+  } else {
+    inter_thread_count = 1;
+  }
 
   // you need to load the passed image grids if you are outputting windows
   auto window_grids =
