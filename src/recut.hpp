@@ -2877,11 +2877,20 @@ template <class image_t> void Recut<image_t>::initialize() {
   }
 
   if (!args->soma_dilation) {
-    args->soma_dilation = SOMA_DILATION * args->voxel_size[0];
+    if (args->seed_action == "find-valent") 
+      args->soma_dilation = FIND_SOMA_DILATION * args->voxel_size[0];
+    if (args->seed_action == "force") 
+      args->soma_dilation = FORCE_SOMA_DILATION * args->voxel_size[0];
     if (args->seed_action != "find") {
       std::cout << "Soma dilation for " << args->seed_action << " 'force' or 'find-valent' inferred to " << args->soma_dilation.value()
                     << " based on voxel size\n";
     }
+  }
+
+  if (!args->coarsen_steps) {
+    args->coarsen_steps = std::floor(COARSEN_FACTOR / args->voxel_size[0]);
+    std::cout << "Coarsen steps inferred to " << args->coarsen_steps.value()
+                    << " based on voxel size\n";
   }
 
   if (args->seed_path.empty()) {
@@ -3090,15 +3099,8 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
   run_log << "Component count: " << components.size() << '\n';
   run_log.flush();
 
-  // assign parallelization
-  auto inter_thread_count = args->user_thread_count;
-  if (components.size() > 1) {
-   if (args->window_grid_paths.size()) {
-     inter_thread_count = 1;
-   }
-  } else {
-    inter_thread_count = 1;
-  }
+  // assign parallelization either within the component or between components
+  auto inter_thread_count = components.size() <= 1 ? 1 : args->user_thread_count;
 
   // you need to load the passed image grids if you are outputting windows
   auto window_grids =

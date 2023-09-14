@@ -59,7 +59,7 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "--coarsen-steps        determines granularity of final skeletons, lower "
                "values result in higher detailed skeletons (SWC trees) with "
                "more skeletal nodes; default is "
-            << 0 << '\n';
+            << COARSEN_FACTOR << " / [voxel size]\n";
   //std::cout << "--skeleton-grain       granularity of final skeletons, lower "
                //"value result in higher detailed skeletons (SWC trees) with "
                //"more skeletal nodes; default is "
@@ -78,7 +78,7 @@ void RecutCommandLineArgs::PrintUsage() {
   std::cout << "--soma-dilation        factor to multiply computed soma size "
                "by to collapse somal nodes, works in combination with 'find-valent' and 'force' actions "
                "defaults to "
-            << SOMA_DILATION << '\n';
+            << FIND_SOMA_DILATION << " or " << FORCE_SOMA_DILATION << " respectively\n";
   std::cout
       << "--image-lengths        [-ie] lengths of subvolume as x y z "
          "defaults"

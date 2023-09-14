@@ -2846,7 +2846,7 @@ convert_float_to_markers(openvdb::FloatGrid::Ptr component,
       // branches which can heavily impact morphological metrics round to
       // nearest int
       marker->radius = static_cast<uint16_t>(
-          (static_cast<double>(marker->radius) * SOMA_DILATION) + .5);
+          (static_cast<double>(marker->radius) * FORCE_SOMA_DILATION) + .5);
     } else {
       // upsample by factor to account for anisotropic images
       // neurites may appear thinner due to anisotropic imaging
