@@ -2888,7 +2888,8 @@ template <class image_t> void Recut<image_t>::initialize() {
   }
 
   if (!args->coarsen_steps) {
-    args->coarsen_steps = std::floor(COARSEN_FACTOR / args->voxel_size[0]);
+    // at low resolution voxel sizes 1 (6x) and above do not coarsen
+    args->coarsen_steps = args->voxel_size[0] >= 1 ? 0 : std::round(COARSEN_FACTOR / args->voxel_size[0]);
     std::cout << "Coarsen steps inferred to " << args->coarsen_steps.value()
                     << " based on voxel size\n";
   }
@@ -3415,10 +3416,6 @@ template <class image_t> void Recut<image_t>::operator()() {
     if (!args->close_topology) {
       preserved_topology = this->mask_grid->deepCopy();
     }
-#ifdef LOG
-    std::cout << "\tStart morphological close = " << args->close_steps.value()
-              << '\n';
-#endif
     auto timer = high_resolution_timer();
     // close
     openvdb::tools::dilateActiveValues(this->mask_grid->tree(),
@@ -3428,9 +3425,6 @@ template <class image_t> void Recut<image_t>::operator()() {
     openvdb::tools::pruneInactive(this->mask_grid->tree());
     run_log << "Seed detection: closing time, " << timer.elapsed_formatted()
             << '\n';
-#ifdef LOG
-    std::cout << "\tEnd morphological close\n";
-#endif
   }
 
   if (seeds.empty())
