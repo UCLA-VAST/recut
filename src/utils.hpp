@@ -3128,9 +3128,10 @@ create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
   vb::BBoxd clipBox(bbox.min().asVec3d(), bbox.max().asVec3d());
   const auto output_grid = vto::clip(*valued_grid, clipBox);
 
-  if (output_grid->activeVoxelCount()) {
-    bbox = output_grid->evalActiveVoxelBoundingBox();
-  }
+  // smart bounding box clips out unnecessary black region
+  //if (output_grid->activeVoxelCount()) {
+    //bbox = output_grid->evalActiveVoxelBoundingBox();
+  //}
 
   //std::cout << "  bbox " << bbox << '\n';
   // alternatively... for simply carrying values across:
