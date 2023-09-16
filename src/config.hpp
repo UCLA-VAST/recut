@@ -110,4 +110,4 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 #define SOMA_CLOSE_FACTOR 7
 #define OPEN_FACTOR 5
 #define FG_PCT .4
-#define SMOOTH_ITERS 8
+#define SMOOTH_STEPS 8

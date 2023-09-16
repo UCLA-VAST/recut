@@ -32,9 +32,10 @@ public:
         ignore_multifurcations(false), close_topology(true),
         mean_shift_max_iters(4), timeout(MEAN_SHIFT_TIMEOUT),
         skeleton_grain(SKELETON_GRAIN), skeleton_grow(GROW_THRESHOLD),
-        smooth_iters(SMOOTH_ITERS),
+        smooth_steps(SMOOTH_STEPS),
         mesh_grain(MESH_GRAIN), mean_shift_factor(0), 
-        voxel_units(false), seed_action("find"), optimize_steps(5) {}
+        seed_action("find"), optimize_steps(5),
+        disable_swc_scaling(false) {}
 
   static void PrintUsage();
   std::string MetaString();
@@ -61,7 +62,7 @@ public:
   std::vector<std::string> window_grid_paths;
   uint16_t user_thread_count, min_branch_length, resolution_level, channel,
       upsample_z, downsample_factor, morphological_operations_order,
-      mean_shift_max_iters, smooth_iters;
+      mean_shift_max_iters, smooth_steps;
   int background_thresh, max_intensity, min_intensity, tcase, timeout,
       skeleton_grow, optimize_steps;
   double foreground_percent, slt_pct;
@@ -69,15 +70,11 @@ public:
       mean_shift_factor, skeleton_grain, mesh_grain;
   VID_t selected, root_vid;
   bool run_app2, convert_only, combine, histogram, save_vdbs,
-      ignore_multifurcations, close_topology, voxel_units;
+      ignore_multifurcations, close_topology, disable_swc_scaling;
   std::array<int, 3> tile_lengths;
   std::array<float, 3> voxel_size;
-  std::optional<int> close_steps;
-  std::optional<float> prune_radius;
-  std::optional<int> open_steps;
-  std::optional<int> saturate_edges;
-  std::optional<int> coarsen_steps;
-  std::optional<float> soma_dilation;
+  std::optional<float> prune_radius, soma_dilation;
+  std::optional<int> close_steps, open_steps, saturate_edges, coarsen_steps;
 };
 
 RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]);

@@ -68,10 +68,10 @@ void RecutCommandLineArgs::PrintUsage() {
                //"higher value results in higher detailed skeletons (SWC trees) "
                //"with more points; default is "
             //<< GROW_THRESHOLD << '\n';
-  std::cout << "--smooth-iters         higher values smooths the node "
+  std::cout << "--smooth-steps         higher values smooths the node "
                "positions and radius of final skeletons, "
                "improving uniformity along paths; defaults to "
-            << SMOOTH_ITERS << '\n';
+            << SMOOTH_STEPS << '\n';
   // std::cout << "--mesh-grain          granularity of component mesh, lower
   // value result in higher polygon count to represent the surface; default is "
   // << MESH_GRAIN << '\n';
@@ -133,9 +133,7 @@ void RecutCommandLineArgs::PrintUsage() {
   //"the vdb passed to --output-windows\n";
   // std::cout << "--timeout             time in minutes to automatically cancel
   // pruning of a single component\n";
-  std::cout << "--output-name          [-o] give converted vdb a custom name "
-               "defaults to "
-               "naming with useful image attributes\n";
+  std::cout << "--disable-swc-scaling  this flag outputs all SWCs in image voxel units\n";
   std::cout << "--help                 [-h] print this example usage summary\n";
 }
 
@@ -273,17 +271,17 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--skeleton-grow") == 0) {
         args.skeleton_grow = atoi(argv[i + 1]);
         ++i;
-      } else if (strcmp(argv[i], "--smooth-iters") == 0) {
+      } else if (strcmp(argv[i], "--smooth-steps") == 0) {
         auto val = atoi(argv[i + 1]);
-        args.smooth_iters = val;
+        args.smooth_steps = val;
         ++i;
       } else if (strcmp(argv[i], "--coarsen-steps") == 0) {
         auto val = atoi(argv[i + 1]);
-        if (val) args.coarsen_steps = val;
+        args.coarsen_steps = val;
         ++i;
       } else if (strcmp(argv[i], "--saturate-edges") == 0) {
         auto val = atoi(argv[i + 1]);
-        if (val) args.saturate_edges = val;
+        args.saturate_edges = val;
         ++i;
       } else if (strcmp(argv[i], "--optimize-steps") == 0) {
         auto val = atoi(argv[i + 1]);
@@ -325,12 +323,6 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--open-steps") == 0) {
         args.open_steps = atoi(argv[i + 1]);
         ++i;
-        //} else if (strcmp(argv[i], "--mean-shift") == 0) {
-        // args.mean_shift_factor = atof(argv[i + 1]);
-        //++i;
-        //} else if (strcmp(argv[i], "--mean-shift-iters") == 0) {
-        // args.mean_shift_max_iters = atoi(argv[i + 1]);
-        //++i;
       } else if (strcmp(argv[i], "--close-steps") == 0) {
         auto val = atoi(argv[i + 1]);
         args.close_steps = val < 1 ? 1 : val; // must be at least 1
@@ -377,12 +369,13 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
           args.window_grid_paths.push_back(argv[i + 1]);
           ++i;
         }
+      } else if (strcmp(argv[i], "--disable-swc-scaling") == 0) {
+        args.disable_swc_scaling = true;
       } else if (strcmp(argv[i], "--upsample-z") == 0) {
         args.upsample_z = atoi(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--run-app2") == 0) {
         args.run_app2 = true;
-        ++i;
       } else if (strcmp(argv[i], "--timeout") == 0) {
         args.timeout = 60 * atoi(argv[i + 1]);
         ++i;

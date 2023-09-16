@@ -446,7 +446,7 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
   // as these tend to be spurious branches
   Geometry::prune(component_graph);
 
-  smooth_graph_pos_rad(component_graph, args->smooth_iters, /*alpha*/ 1);
+  smooth_graph_pos_rad(component_graph, args->smooth_steps, /*alpha*/ 1);
 
   // sweep through various soma ids
   std::vector<GridCoord> soma_coords;
@@ -508,7 +508,7 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<GridCoord> soma
     std::array<float, 3> voxel_size,
     std::filesystem::path component_dir_fn = ".",
     CoordBBox bbox = {}, bool bbox_adjust = false,
-    bool is_eswc = false, bool voxel_units = false) {
+    bool is_eswc = false, bool disable_swc_scaling = false) {
 
   // each vertex in the graph has a single parent (id) which is
   // determined via BFS traversal
@@ -557,7 +557,7 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<GridCoord> soma
       } else {
         swc_file.open(component_dir_fn / (file_name_base + ".swc"));
         swc_file << "# Crop windows bounding volume: " << bbox << '\n'
-          << "# id type_id x y z radius parent_id in units: " << (voxel_units ? "voxel" : "um") << '\n';
+          << "# id type_id x y z radius parent_id in units: " << (disable_swc_scaling ? "voxel" : "um") << '\n';
       }
 
       while (q.size()) {
@@ -580,7 +580,7 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<GridCoord> soma
         }
 
         print_swc_line(coord, is_root, radius, parent_coord, bbox, swc_file,
-            coord_to_swc_id, voxel_size, bbox_adjust, is_eswc, voxel_units);
+            coord_to_swc_id, voxel_size, bbox_adjust, is_eswc, disable_swc_scaling);
 
         // add all neighbors of current to q
         for (auto nb_id : component_graph.neighbors(id)) {

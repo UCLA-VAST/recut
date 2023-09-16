@@ -51,7 +51,8 @@ This will create a folder in your current directory `run-1` which has a folder f
 #### MORF membrane labeled dendritome data
 `recut [tif_folder] --fg-percent .4 --output-type mask --voxel-size [x y z]`
 `recut [mask VDB file] --seeds [seed folder] --seed-action force --voxel-size [x y z]`
-Note that morphological close steps of topology is inferred from the voxel size for 15x (.4 .4 .4) it computes 4, for 1 1 1 it computes 1 which is almost negligible.
+If you use a viewer like Neutube that operates only in voxel units with --output-windows, you need to add the flag `--disable-swc-scaling`
+Note that many parameters are inferred by the voxel size. For example, morphological close steps of topology is inferred from the voxel size for 15x (.4 .4 .4) it computes 4, for 1 1 1 it computes 1 which is almost negligible.
 
 ### Morphological Operations and Seed (Cell Body/Soma) Segmentation
 Even in inferenced neural tissue of internal data, only about 20% of foreground voxels are reachable from known seed locations. In order for Recut to build trees it must traverse from a seed (cell body) point. These seed points can either be morphologically segmented (default), picked from the image by hand, or inferenced from the U-net model in the `recut/pipeline` folder. Inferencing using the U-net implementation requires rigorous training for new datasets therefore we recommend using the morphological soma segmentation included in Recut. Automated soma detection tends to have high recall but low precision (lots of false positives) therefore we recommend proofreading the automated soma locations. If you elect not to proofread the soma locations on large volumes we strongly recommend filtering the final SWCs by their persistent homology via `scripts/TMD_filtering.py` which automates the removal of false positive somas.

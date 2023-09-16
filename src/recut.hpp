@@ -2864,7 +2864,7 @@ template <class image_t> void Recut<image_t>::initialize() {
     // to infer the steps based on the voxel size
     if (args->seed_path.empty() || args->close_topology) {
       // infer close steps if it wasn't explicitly passed
-      if (!args->close_steps) {
+      if (!args->close_steps.has_value()) {
         if (args->seed_path.empty())
           args->close_steps = SOMA_CLOSE_FACTOR / args->voxel_size[0];
         else
@@ -2876,18 +2876,21 @@ template <class image_t> void Recut<image_t>::initialize() {
     }
   }
 
-  if (!args->soma_dilation) {
+  if (!args->soma_dilation.has_value()) {
     if (args->seed_action == "find-valent") 
       args->soma_dilation = FIND_SOMA_DILATION * args->voxel_size[0];
-    if (args->seed_action == "force") 
+    else if (args->seed_action == "force") 
       args->soma_dilation = FORCE_SOMA_DILATION * args->voxel_size[0];
+    else
+      args->soma_dilation = 1;
+
     if (args->seed_action != "find") {
       std::cout << "Soma dilation for action '" << args->seed_action << "' inferred to " << args->soma_dilation.value()
                     << " based on voxel size\n";
     }
   }
 
-  if (!args->coarsen_steps) {
+  if (!args->coarsen_steps.has_value()) {
     // at low resolution voxel sizes 1 (6x) and above do not coarsen
     args->coarsen_steps = args->voxel_size[0] >= 1 ? 0 : std::round(COARSEN_FACTOR / args->voxel_size[0]);
     std::cout << "Coarsen steps inferred to " << args->coarsen_steps.value()
@@ -2896,7 +2899,7 @@ template <class image_t> void Recut<image_t>::initialize() {
 
   if (args->seed_path.empty()) {
     // infer open steps if it wasn't explicitly passed
-    if (!args->open_steps) {
+    if (!args->open_steps.has_value()) {
       args->open_steps = OPEN_FACTOR / args->voxel_size[0];
       std::cout << "Open steps inferred to " << args->open_steps.value()
                 << " based on voxel size\n";
@@ -3066,8 +3069,15 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << "Seed detection: max allowed soma radius in µm, "
             << args->max_radius_um
             << '\n'
-            << "Skeletonization: soma prune radius factor, "
-            << args->soma_dilation.value() << '\n'
+            << "Seed action, "
+            << args->seed_action
+            << '\n'
+            << "Skeletonization: soma dilation, "
+            << args->soma_dilation.value_or(1) << '\n'
+            << "Skeletonization: coarsen steps, "
+            << args->coarsen_steps.value_or(0) << '\n'
+            << "Skeletonization: smooth steps, "
+            << args->smooth_steps << '\n'
             << "Benchmarking: run app2, " << args->run_app2 << '\n';
             //<< "Skeletonization: min branch length µm, "
             //<< args->min_branch_length << '\n'
@@ -3184,15 +3194,6 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
       HMesh::obj_save(component_dir_fn / ("mesh.obj"), m);
     }
 
-    if (cluster_opt) {
-      auto [component_graph, soma_coords] = cluster_opt.value();
-      component_log << "TP count, " << component_graph.no_nodes() << '\n';
-
-      write_swcs(component_graph, soma_coords, args->voxel_size, component_dir_fn, bbox,
-                   !args->window_grid_paths.empty(),
-                  args->output_type == "eswc", args->voxel_units);
-    }
-
     if (!window_grids.empty()) {
       // the first grid passed from CL sets the bbox for the
       // rest of the output grids
@@ -3254,6 +3255,12 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
 #endif
 
     if (cluster_opt) {
+      auto [component_graph, soma_coords] = cluster_opt.value();
+      component_log << "TP count, " << component_graph.no_nodes() << '\n';
+
+      write_swcs(component_graph, soma_coords, args->voxel_size, component_dir_fn, bbox,
+                   !args->window_grid_paths.empty(),
+                  args->output_type == "eswc", args->disable_swc_scaling);
       std::cout << "Component " << index << " complete and safe to open\n";
     } else {
       ++failed_components;

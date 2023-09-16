@@ -2334,24 +2334,26 @@ auto print_swc_line = [](std::array<double, 3> swc_coord, bool is_root,
                          CoordBBox bbox, std::ofstream &out,
                          auto &coord_to_swc_id, std::array<float, 3> voxel_size,
                          bool bbox_adjust = true, bool is_eswc = false, 
-                         bool voxel_units = false) {
+                         bool disable_swc_scaling = false) {
   std::ostringstream line;
 
   auto scale_coord = [&](std::array<double, 3> &coord) {
-    if (!bbox_adjust || is_eswc) {
-      for (int i = 0; i < 3; ++i)
-        coord[i] *= voxel_size[i];
-    }
+    for (int i = 0; i < 3; ++i)
+      coord[i] *= voxel_size[i];
   };
 
-  scale_coord(swc_coord);
-  scale_coord(parent_coord);
+  //if (!bbox_adjust || is_eswc) {
+  if (!disable_swc_scaling) {
+    scale_coord(swc_coord);
+    scale_coord(parent_coord);
+  }
 
   if (bbox_adjust) { // implies output window crops is set
     std::array<double, 3> window_start = {static_cast<double>(bbox.min().x()),
                                           static_cast<double>(bbox.min().y()),
                                           static_cast<double>(bbox.min().z())};
-    scale_coord(window_start);
+    if (!disable_swc_scaling) 
+      scale_coord(window_start);
 
     auto subtract = [](std::array<double, 3> &l,
                        const std::array<double, 3> r) {
