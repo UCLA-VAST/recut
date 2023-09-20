@@ -4,7 +4,6 @@
 #include "mesh_reconstruction.hpp"
 #include "morphological_soma_segmentation.hpp"
 #include "recut_parameters.hpp"
-#include "v3d_image_formats.hpp"
 #include "tile_thresholds.hpp"
 //#include "tree_ops.hpp"
 #include "utils.hpp"
@@ -266,6 +265,7 @@ public:
   template <class Container>
   void update(std::string stage, Container &fifo = nullptr);
   GridCoord get_input_image_lengths(RecutCommandLineArgs *args);
+  void deduce_input_type();
   void initialize();
   void update_hierarchical_dims(const GridCoord &tile_lengths);
   inline VID_t sub_block_to_block_id(VID_t iblock, VID_t jblock, VID_t kblock);
@@ -2742,29 +2742,32 @@ void Recut<image_t>::update_hierarchical_dims(const GridCoord &tile_lengths) {
   this->active_tiles = std::vector(this->grid_tile_size, false);
 }
 
-template <class image_t> void Recut<image_t>::initialize() {
-
-  // input type
-  {
-    if (fs::is_directory(args->input_path)) {
-      this->input_is_vdb = false;
-      this->args->input_type = "tiff";
+template <class image_t> void Recut<image_t>::deduce_input_type() {
+  if (fs::is_directory(args->input_path)) {
+    this->input_is_vdb = false;
+    this->args->input_type = "tiff";
+  } else {
+    auto path_extension = args->input_path.extension();
+    if (path_extension == ".vdb") {
+      this->input_is_vdb = true;
     } else {
-      auto path_extension = args->input_path.extension();
-      if (path_extension == ".vdb") {
-        this->input_is_vdb = true;
+      this->input_is_vdb = false;
+      if (path_extension == ".ims") {
+        this->args->input_type = "ims";
+      } else if (path_extension == ".v3draw") {
+        this->args->input_type = "v3draw";
+      //} else if (path_extension == ".") {
       } else {
-        this->input_is_vdb = false;
-        if (path_extension == ".ims") {
-          this->args->input_type = "ims";
-        } else {
-          throw std::runtime_error(
-              "Recut does not support single files of type: " +
-              path_extension.string());
-        }
+        throw std::runtime_error(
+            "Recut does not support single files of type: " +
+            path_extension.string());
       }
     }
   }
+}
+
+template <class image_t> void Recut<image_t>::initialize() {
+  deduce_input_type();
 
   if (args->convert_only && args->input_type == "ims") {
     args->user_thread_count = 1;
@@ -3345,25 +3348,22 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     } else { // fully reconstruct the image
 
-      auto final_output_type = args->output_type;
-
-      //// temporarily set output type to create necessary grids
-      // if (args->seed_path.empty()) {
-      //  if generating seeds then convert to mask first
-      args->output_type = "mask";
-      convert_topology();
-      assertm(this->mask_grid, "Mask grid not properly set");
-      if (args->save_vdbs)
-        write_vdb_file({this->mask_grid}, this->run_dir / "mask.vdb");
-      // sets to this->mask_grid instead of reading from file
-      //} else {
-      // args->output_type = "point";
-      // convert_topology();
-      // append_attributes(this->topology_grid);
-      //}
-
-      // reset it
-      args->output_type = final_output_type;
+      if ((args->input_type == "ims") || (args->input_type == "tiff")) {
+        // temporarily set output type to create necessary grids
+        auto final_output_type = args->output_type;
+        args->output_type = "mask";
+        convert_topology();
+        assertm(this->mask_grid, "Mask grid not properly set");
+        if (args->save_vdbs)
+          write_vdb_file({this->mask_grid}, this->run_dir / "mask.vdb");
+        // reset it
+        args->output_type = final_output_type;
+      } else {
+        // explicitly convert to mask grid
+        if (args->input_type == "v3draw") {
+          this->mask_grid = convert_raw_to_mask(args);
+        }
+      }
     }
 
     // set the z tile lengths to equallying whole image for reconstruction
