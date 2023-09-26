@@ -2757,7 +2757,10 @@ template <class image_t> void Recut<image_t>::deduce_input_type() {
       } else if (path_extension == ".v3draw") {
         this->args->input_type = "v3draw";
       //} else if (path_extension == ".") {
+      } else if (path_extension == ".v3dpbd") {
+        this->args->input_type = "v3dpbd";
       } else {
+        std::cout << "extension: " << path_extension << '\n';
         throw std::runtime_error(
             "Recut does not support single files of type: " +
             path_extension.string());
@@ -2776,81 +2779,84 @@ template <class image_t> void Recut<image_t>::initialize() {
 #ifdef LOG
   cout << "User specified image " << args->input_path << '\n';
 #endif
+  
+  if (args->input_type == "ims" || args->input_type == "tif" || this->input_is_vdb) {
 
-  // actual possible lengths
-  auto input_image_lengths = get_input_image_lengths(args);
+    // actual possible lengths
+    auto input_image_lengths = get_input_image_lengths(args);
 
-  // account and check requested args->image_offsets and args->image_lengths
-  // lengths are always the side length of the domain on each dim, in x y z
-  // order
-  assertm(coord_all_lt(args->image_offsets, input_image_lengths),
-          "input offset can not exceed dimension of image");
+    // account and check requested args->image_offsets and args->image_lengths
+    // lengths are always the side length of the domain on each dim, in x y z
+    // order
+    assertm(coord_all_lt(args->image_offsets, input_image_lengths),
+            "input offset can not exceed dimension of image");
 
-  // default image_offsets is {0, 0, 0}
-  // which means start at the beginning of the image
-  // this enforces the minimum extent to be 1 in each dim
-  // set and no longer refer to args->image_offsets
-  this->image_offsets = args->image_offsets;
+    // default image_offsets is {0, 0, 0}
+    // which means start at the beginning of the image
+    // this enforces the minimum extent to be 1 in each dim
+    // set and no longer refer to args->image_offsets
+    this->image_offsets = args->image_offsets;
 
-  // protect faulty out of bounds input if lengths goes beyond
-  // domain of full image
-  auto max_len_after_off = coord_sub(input_image_lengths, this->image_offsets);
+    // protect faulty out of bounds input if lengths goes beyond
+    // domain of full image
+    auto max_len_after_off = coord_sub(input_image_lengths, this->image_offsets);
 
-  // sanitize in each dimension
-  // and protected from faulty offset values
-  rng::for_each(rv::indices(3), [this, &max_len_after_off](int i) {
-    if (this->args->image_lengths[i] > 0) {
-      // use the input length if possible, or maximum otherwise
-      this->image_lengths[i] =
-          std::min(args->image_lengths[i], max_len_after_off[i]);
-    } else {
-      // -1,-1,-1 means use to the end of input image
-      // -1,-1,-5 means length should go up to 5 from the last z
-      this->image_lengths[i] =
-          max_len_after_off[i] + args->image_lengths[i] + 1;
+    // sanitize in each dimension
+    // and protected from faulty offset values
+    rng::for_each(rv::indices(3), [this, &max_len_after_off](int i) {
+      if (this->args->image_lengths[i] > 0) {
+        // use the input length if possible, or maximum otherwise
+        this->image_lengths[i] =
+            std::min(args->image_lengths[i], max_len_after_off[i]);
+      } else {
+        // -1,-1,-1 means use to the end of input image
+        // -1,-1,-5 means length should go up to 5 from the last z
+        this->image_lengths[i] =
+            max_len_after_off[i] + args->image_lengths[i] + 1;
+      }
+    });
+    this->image_bbox = openvdb::math::CoordBBox(
+        this->image_offsets, this->image_offsets + this->image_lengths);
+
+    // TODO move this clipping up to the read step for faster performance on sub
+    // grids
+    if (this->input_is_vdb) {
+      if (args->input_type == "mask")
+        this->mask_grid->clip(this->image_bbox);
+      else
+        this->topology_grid->clip(this->image_bbox);
     }
-  });
-  this->image_bbox = openvdb::math::CoordBBox(
-      this->image_offsets, this->image_offsets + this->image_lengths);
 
-  // TODO move this clipping up to the read step for faster performance on sub
-  // grids
-  if (this->input_is_vdb) {
-    if (args->input_type == "mask")
-      this->mask_grid->clip(this->image_bbox);
-    else
-      this->topology_grid->clip(this->image_bbox);
-  }
+    // save to globals the actual size of the full image
+    // accounting for the input offsets and lengths
+    // these will be used throughout the rest of the program
+    // for convenience
+    this->image_size = coord_prod_accum(this->image_lengths);
 
-  // save to globals the actual size of the full image
-  // accounting for the input offsets and lengths
-  // these will be used throughout the rest of the program
-  // for convenience
-  this->image_size = coord_prod_accum(this->image_lengths);
+    // Determine the size of each tile in each dim
+    // the image size and offsets override the user inputted tile size
+    // since an tile must be at least the size of the image
+    rng::for_each(rv::indices(3), [this](int i) {
+      this->tile_lengths[i] =
+          (this->input_is_vdb || (this->args->tile_lengths[i] < 1))
+              ? this->image_lengths[i]
+              : std::min(this->args->tile_lengths[i], this->image_lengths[i]);
+    });
 
-  // Determine the size of each tile in each dim
-  // the image size and offsets override the user inputted tile size
-  // since an tile must be at least the size of the image
-  rng::for_each(rv::indices(3), [this](int i) {
-    this->tile_lengths[i] =
-        (this->input_is_vdb || (this->args->tile_lengths[i] < 1))
-            ? this->image_lengths[i]
-            : std::min(this->args->tile_lengths[i], this->image_lengths[i]);
-  });
-
-  // set good defaults for conversion depending on tiff/ims
-  if (!this->input_is_vdb) {
-    // images are saved in separate z-planes for tiff, so conversion should
-    // respect that for best performance
-    // if it wasn't set by user on command line, then set default
-    this->tile_lengths[2] =
-        this->args->tile_lengths[2] < 1 ? 8 : this->args->tile_lengths[2];
-  }
+    // set good defaults for conversion depending on tiff/ims
+    if (!this->input_is_vdb) {
+      // images are saved in separate z-planes for tiff, so conversion should
+      // respect that for best performance
+      // if it wasn't set by user on command line, then set default
+      this->tile_lengths[2] =
+          this->args->tile_lengths[2] < 1 ? 8 : this->args->tile_lengths[2];
+    }
 
 #ifdef LOG
-  print_coord(this->image_lengths, "image voxel dimensions");
+    print_coord(this->image_lengths, "image voxel dimensions");
 #endif
-  update_hierarchical_dims(this->tile_lengths);
+    update_hierarchical_dims(this->tile_lengths);
+  }
 
 #ifdef LOG
   std::cout << "voxel sizes:"
@@ -3360,9 +3366,33 @@ template <class image_t> void Recut<image_t>::operator()() {
         args->output_type = final_output_type;
       } else {
         // explicitly convert to mask grid
-        if (args->input_type == "v3draw") {
-          this->mask_grid = convert_raw_to_mask(args);
-        }
+        auto mask = openvdb::MaskGrid::create();
+        Image4DSimple img = Image4DSimple();
+        std::cout << args->input_path.string().c_str() << '\n';
+        img.loadImage(args->input_path.string().c_str());
+
+        if (!img.valid())
+          throw std::runtime_error("Image read unsuccessful");
+
+        auto element_count = img.getTotalUnitNumber();
+
+        // fg percent
+        auto tile_dims = GridCoord(img.getXDim(), img.getYDim(), img.getZDim());
+        std::cout << "tile dims: " << tile_dims << '\n';
+        std::cout << "c " << img.getCDim() << '\n';
+        auto tile_vertex_size = coord_prod_accum(tile_dims);
+        auto buffer = img.getRawData();
+        auto tile_thresholds = get_tile_thresholds(buffer, element_count);
+        auto mask_accessor = mask->getAccessor();
+
+        auto buffer_offsets = GridCoord(0);
+        auto image_offsets = GridCoord(0);
+        convert_buffer_to_vdb_acc(
+            buffer, tile_dims,
+            buffer_offsets,
+            image_offsets,
+            mask_accessor, this->args->output_type,
+            tile_thresholds->bkg_thresh, this->args->upsample_z);
       }
     }
 

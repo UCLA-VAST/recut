@@ -600,3 +600,46 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<GridCoord> soma
   //std::cerr << "Error: graph to tree lost vertex, report this issue\n";
   //}
 }
+
+std::optional<Geometry::AMGraph3D> swc_to_amgraph(filesystem::path marker_file) {
+  ifstream ifs(marker_file);
+  if (ifs.fail()) {
+    cout << " unable to open marker file " << marker_file << endl;
+    return std::nullopt;
+  }
+  Geometry::AMGraph3D g;
+  int count = 0;
+  while (ifs.good()) {
+    if (ifs.peek() == '#' || ifs.eof()) {
+      ifs.ignore(1000, '\n');
+      continue;
+    }
+    int id, type, parent_id;
+    double x,y,z,radius;
+    ifs >> id;
+    ifs.ignore(10, ' ');
+    ifs >> type;
+    ifs.ignore(10, ' ');
+    ifs >> x;
+    ifs.ignore(10, ' ');
+    ifs >> y;
+    ifs.ignore(10, ' ');
+    ifs >> z;
+    ifs.ignore(10, ' ');
+    ifs >> radius;
+    ifs.ignore(10, ' ');
+    ifs >> parent_id;
+    ifs.ignore(1000, '\n');
+    parent_id -= 1; // need to adjust to 0-indexed
+
+    auto p = CGLA::Vec3d(x, y, z);
+    auto node_id = g.add_node(p);
+    g.node_color[node_id] = CGLA::Vec3f(0, radius, 0);
+    std::cout << x << ' ' << y << ' ' << z << ' ' << radius << ' ' << parent_id << '\n';
+
+    if (parent_id >= 0)
+      g.connect_nodes(node_id, parent_id);
+  }
+
+  return g;
+}

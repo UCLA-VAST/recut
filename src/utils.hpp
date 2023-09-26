@@ -3874,7 +3874,3 @@ auto print_all_points = [](const EnlargedPointDataGrid::Ptr grid,
           }
         }
       };
-
-openvdb::MaskGrid::Ptr convert_raw_to_mask(RecutCommandLineArgs* args) {
-  return openvdb::MaskGrid::create();
-}
