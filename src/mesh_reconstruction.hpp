@@ -5,7 +5,6 @@
 #include <GEL/Geometry/graph_io.h>
 #include <GEL/Geometry/graph_util.h>
 #include <GEL/Geometry/graph_skeletonize.h>
-//#include <GEL/Geometry/graph_util.h>
 #include <GEL/Geometry/KDTree.h>
 #include <GEL/Util/AttribVec.h>
 #include <openvdb/tools/FastSweeping.h> // fogToSdf
@@ -13,6 +12,29 @@
 #include <openvdb/tools/TopologyToLevelSet.h>
 #include <openvdb/tools/ValueTransformer.h>
 #include <openvdb/tools/VolumeToMesh.h>
+
+class Node { 
+  public:
+    CGLA::Vec3d pos;
+    float radius;
+};
+
+using NodeID = Geometry::AMGraph3D::NodeID;
+
+float get_radius(Util::AttribVec<NodeID, CGLA::Vec3f> &node_color, NodeID i) {
+  auto color = node_color[i].get();
+  // radius is in the green channel
+  return color[1]; // RGB
+}
+
+CGLA::Vec3f convert_radius(float radius) {
+  return {0, radius, 0};
+}
+
+Node get_node(Geometry::AMGraph3D g, NodeID i) {
+  Node n{g.pos[i], get_radius(g.node_color, i)};
+  return n;
+}
 
 auto euc_dist = [](auto a, auto b) -> float {
   std::array<float, 3> diff = {
@@ -23,8 +45,8 @@ auto euc_dist = [](auto a, auto b) -> float {
 };
 
 // build kdtree, highly efficient for nearest point computations
-Geometry::KDTree<CGLA::Vec3d, unsigned long> build_kdtree(Geometry::AMGraph3D &graph) {
-  Geometry::KDTree<CGLA::Vec3d, unsigned long> tree;
+Geometry::KDTree<CGLA::Vec3d, NodeID> build_kdtree(Geometry::AMGraph3D &graph) {
+  Geometry::KDTree<CGLA::Vec3d, NodeID> tree;
   for (auto i : graph.node_ids()) {
     CGLA::Vec3d p0 = graph.pos[i];
     tree.insert(p0, i);
@@ -34,78 +56,68 @@ Geometry::KDTree<CGLA::Vec3d, unsigned long> build_kdtree(Geometry::AMGraph3D &g
 }
 
 // find existing skeletal node within the radius of the soma
-std::vector<unsigned long> within_sphere(Seed &seed,
-    Geometry::KDTree<CGLA::Vec3d, unsigned long> &tree,
-    float soma_dilation) {
-  auto coord = seed.coord;
-  CGLA::Vec3d p0(coord[0], coord[1], coord[2]);
-  std::vector<CGLA::Vec3d> keys;
-  std::vector<unsigned long> vals;
-  tree.in_sphere(p0, soma_dilation * seed.radius, keys, vals);
+std::vector<NodeID> within_sphere(Node &node,
+    Geometry::KDTree<CGLA::Vec3d, NodeID> &tree,
+    float soma_dilation=1) {
+
+  std::vector<CGLA::Vec3d> _;
+  std::vector<NodeID> vals;
+  tree.in_sphere(node.pos, soma_dilation * node.radius, _, vals);
   return vals;
+}
+
+// nodes with high valence and large radius have a bug with FEQ remesh
+// so you may need to artificially set the radius to something small then
+// merge an ideal sphere after meshing
+// in use cases where the graph is not transformed into a mesh this is
+// not necessary
+void merge_local_radius(Geometry::AMGraph3D &graph, std::vector<Seed> &seeds,
+    float soma_dilation=1., bool keep_radius_small=false) {
+  // the graph is complete so build a data structure that
+  // is fast at finding nodes within a 3D radial distance
+  auto tree = build_kdtree(graph);
+
+  std::set<NodeID> deleted_nodes;
+  rng::for_each(seeds, [&](Seed seed) {
+      //std::cout << "Seed " << seed.coord_um[0] << ' ' << seed.coord_um[1] << ' ' << seed.coord_um[2] << " radius " << seed.radius_um << '\n';
+      auto original_pos = CGLA::Vec3d(seed.coord[0], seed.coord[1], seed.coord[2]);
+      Node n{original_pos, static_cast<float>(seed.radius)};
+
+      std::vector<NodeID> within_sphere_ids = within_sphere(n, tree, soma_dilation);
+      //std::cout << "removing " << (within_sphere_ids.size() - 1) << '\n';
+
+      auto new_seed_id = graph.merge_nodes(within_sphere_ids);
+
+      // set the position and radius explicitly rather than averaging the merged nodes
+      graph.pos[new_seed_id] = original_pos;
+
+      graph.node_color[new_seed_id] = CGLA::Vec3f(0, keep_radius_small ? 1 : seed.radius, 0);
+  });
+
+  graph = Geometry::clean_graph(graph);
 }
 
 // add seeds passed as new nodes in the graph,
 // nearby skeletal nodes are merged into the seeds,
 // seeds inherit edges and delete nodes within 3D radius soma_dilation *
 // seed.radius the original location and radius of the seeds are preserved
-// returns coords since id's are volatile with mutations to graph
+// returns coords since id's are invalidated by future mutations to graph
 std::vector<GridCoord> force_soma_nodes(Geometry::AMGraph3D &graph,
     std::vector<Seed> &seeds,
     float soma_dilation) {
 
-  // add the known seeds to the skeletonized graph
-  // aggregate their seed ids so they are not mistakenly merged
-  // below
   auto soma_coords =
     seeds | rv::transform([](Seed seed) { return seed.coord; }) 
     | rng::to_vector;
 
-  auto new_soma_ids =
-    seeds | rv::transform([&](Seed seed) {
-        auto p = CGLA::Vec3d(seed.coord[0], seed.coord[1], seed.coord[2]);
-        auto soma_id = graph.add_node(p);
-        // set radius by previously computed radius
-        graph.node_color[soma_id] =
-        CGLA::Vec3f(0, soma_dilation * seed.radius, 0);
-        return soma_id;
-        }) | rng::to_vector;
+  // add the known seeds to the skeletonized graph
+  merge_local_radius(graph, seeds, soma_dilation);
 
-  auto seed_pairs = rv::zip(seeds, new_soma_ids);
-
-  // the graph is complete so build a data structure that
-  // is fast at finding nodes within a 3D radial distance
-  auto tree = build_kdtree(graph);
-
-  std::set<unsigned long> deleted_nodes;
-  rng::for_each(seed_pairs, [&](auto seedp) {
-      auto [seed, seed_id] = seedp;
-
-      std::vector<unsigned long> within_sphere_ids = within_sphere(seed, tree, soma_dilation);
-      // iterate all nodes within a 3D radial distance from this known seed
-      for (unsigned long id : within_sphere_ids) {
-        auto pos = graph.pos[id];
-        auto current_coord = GridCoord(pos[0], pos[1], pos[2]);
-        // if this node within the sphere isn't a known seed then merge it into
-        // the seed at the center of the radial sphere
-        if (rng::find(soma_coords, current_coord) == rng::end(soma_coords)) {
-          // the tree is unaware of nodes that have previously been deleted
-          // so you must specifically filter out those so they do not error
-          if (rng::find(deleted_nodes, id) == rng::end(deleted_nodes)) {
-            // keep the original location
-            graph.merge_nodes(id, seed_id, /*average location*/ false);
-            deleted_nodes.insert(id);
-          }
-        }
-      }
-  });
-
-  graph = Geometry::clean_graph(graph);
   return soma_coords;
 }
 
-void check_soma_ids(unsigned long nodes, std::vector<unsigned long> soma_ids) {
-  rng::for_each(soma_ids, [&](unsigned long soma_id) {
+void check_soma_ids(NodeID nodes, std::vector<NodeID> soma_ids) {
+  rng::for_each(soma_ids, [&](NodeID soma_id) {
       if (soma_id >= nodes) {
       throw std::runtime_error("Impossible soma id found");
       }
@@ -119,10 +131,12 @@ std::vector<GridCoord> find_soma_nodes(Geometry::AMGraph3D &graph,
 
   std::vector<GridCoord> soma_coords;
   rng::for_each(seeds, [&](Seed seed) {
-      std::optional<size_t> max_index;
+      std::optional<NodeID> max_index;
 
       if (highest_valence) {
-      auto within_sphere_ids = within_sphere(seed, tree, soma_dilation);
+      auto original_pos = CGLA::Vec3d(seed.coord[0], seed.coord[1], seed.coord[2]);
+      Node n{original_pos, static_cast<float>(seed.radius)};
+      auto within_sphere_ids = within_sphere(n, tree, soma_dilation);
 
       // pick skeletal node within radii with highest number of edges (valence)
       int max_valence = 0;
@@ -137,7 +151,7 @@ std::vector<GridCoord> find_soma_nodes(Geometry::AMGraph3D &graph,
       auto coord = seed.coord;
       CGLA::Vec3d p0(coord[0], coord[1], coord[2]);
       CGLA::Vec3d key;
-      unsigned long val;
+      NodeID val;
       double dist = 1000;
       bool found = tree.closest_point(p0, dist, key, val);
       if (found)
@@ -185,11 +199,6 @@ Geometry::AMGraph3D vdb_to_graph(openvdb::FloatGrid::Ptr component,
   vto::volumeToMesh(*component, points, quads);
   // vto::volumeToMesh(*component, points, tris, quads, 0, args->mesh_grain);
 
-  //std::cout << "Component active voxel count: " << component->activeVoxelCount()
-  //<< '\n';
-  //std::cout << "Points size: " << points.size() << '\n';
-  //std::cout << "Quads count: " << quads.size() << '\n';
-
   Geometry::AMGraph3D g;
   rng::for_each(points, [&](auto point) {
       auto p = CGLA::Vec3d(point[0], point[1], point[2]);
@@ -198,9 +207,6 @@ Geometry::AMGraph3D vdb_to_graph(openvdb::FloatGrid::Ptr component,
 
   // unroll_polygons(tris, g, 3);
   unroll_polygons(quads, g, 4);
-
-  //std::cout << "Graph node count: " << g.no_nodes() << '\n';
-  //std::cout << "Graph edge_count count: " << g.no_nodes() << '\n';
 
   return g;
 }
@@ -223,8 +229,11 @@ Geometry::AMGraph3D fix_multifurcations(Geometry::AMGraph3D &graph,
         // build a new averaged node
         CGLA::Vec3d pos1 = graph.pos[multifurc_id];
         CGLA::Vec3d pos2 = graph.pos[to_extend];
+        auto rad = (get_radius(graph.node_color, multifurc_id) + 
+          get_radius(graph.node_color, to_extend)) / 2;
         auto pos3 = CGLA::Vec3d((pos1[0] + pos2[0]) / 2, (pos1[1] + pos2[1]) / 2, (pos1[2] + pos2[2]) / 2);
         auto new_path_node = graph.add_node(pos3);
+        graph.node_color[new_path_node] = convert_radius(rad);
 
         graph.connect_nodes(new_path_node, to_extend);
         graph.connect_nodes(new_path_node, multifurc_id);
@@ -291,7 +300,7 @@ HMesh::Manifold vdb_to_mesh(openvdb::FloatGrid::Ptr component,
 }
 
 // Taken directly from PyGEL library
-Geometry::AMGraph3D graph_from_mesh(HMesh::Manifold &m) {
+Geometry::AMGraph3D mesh_to_graph(HMesh::Manifold &m) {
   HMesh::VertexAttributeVector<Geometry::AMGraph::NodeID> v2n;
   Geometry::AMGraph3D g;
 
@@ -304,6 +313,37 @@ Geometry::AMGraph3D graph_from_mesh(HMesh::Manifold &m) {
   }
 
   return g;
+}
+
+// Taken directly from PyGEL library
+std::pair<std::vector<openvdb::Vec3s>, std::vector<openvdb::Vec4I>> mesh_to_polygons(HMesh::Manifold &m) {
+  HMesh::VertexAttributeVector<Geometry::AMGraph::NodeID> v2n;
+  Geometry::AMGraph3D g;
+
+  std::vector<openvdb::Vec3s> points;
+  std::vector<openvdb::Vec4I> quads;
+
+  for (auto v : m.vertices()) {
+    auto pos = m.pos(v);
+    points.emplace_back(pos[0], pos[1], pos[2]);
+  }
+
+  // iterate all polygons of manifold
+  for (auto poly : m.faces()) {
+    // iterate all vertices of this polygon
+    openvdb::Vec4I quad;
+    int j = 0;
+    for (auto v : m.incident_vertices(poly)) {
+      //std::cout << v << ' '; 
+      quad[j] = static_cast<unsigned int>(v.get_index());
+      ++j;
+    }
+    quads.emplace_back(quad[0], quad[1], quad[2], quad[3]);
+    assertm(j == 4, "not 4 edges");
+    //std::cout << '\n';
+  }
+
+  return std::make_pair(points, quads);
 }
 
 openvdb::FloatGrid::Ptr mask_to_sdf(openvdb::MaskGrid::Ptr mask) {
@@ -334,12 +374,6 @@ openvdb::FloatGrid::Ptr mask_to_sdf(openvdb::MaskGrid::Ptr mask) {
   return vto::fogToSdf(*float_grid, 0);
 }
 
-float get_radius(Util::AttribVec<Geometry::AMGraph::NodeID, CGLA::Vec3f> &node_color, size_t i) {
-  auto color = node_color[i].get();
-  // radius is in the green channel
-  return color[1]; // RGB
-}
-
 // laplacian smoothing, controllable by number of repeated iterations
 // and the smoothing strength (alpha) at each iteration
 // a high number of iterations allows the smoothing effect to diffuse
@@ -350,10 +384,6 @@ float get_radius(Util::AttribVec<Geometry::AMGraph::NodeID, CGLA::Vec3f> &node_c
 // after only 1 iteration at 1 alpha
 void smooth_graph_pos_rad(Geometry::AMGraph3D &g, const int iter, const float alpha) {
   auto lsmooth = [](Geometry::AMGraph3D &g, float _alpha) {
-    auto convert_radius = [](float radius) {
-      return CGLA::Vec3f(0, radius, 0);
-    };
-
     Util::AttribVec<Geometry::AMGraph::NodeID, CGLA::Vec3d> new_pos(
         g.no_nodes(), CGLA::Vec3d(0));
     Util::AttribVec<Geometry::AMGraph::NodeID, CGLA::Vec3f> new_radius(
@@ -401,14 +431,33 @@ void smooth_graph_pos_rad(Geometry::AMGraph3D &g, const int iter, const float al
       std::cout << "  ls time: " << timer.elapsed() << '\n';
       //graph_save(component_dir_fn / ("skeleton" + i + ".graph"), component_graph);
       ++i;
+    } }
+  */
+
+void test_all_valid_radii(Geometry::AMGraph3D &g) {
+  for (NodeID i=0; i < g.no_nodes(); ++i) {
+    auto rad = get_radius(g.node_color, i);
+    if (rad < .001) {
+      throw std::runtime_error("Found node with radii " + std::to_string(rad));
     }
   }
-  */
+}
+
+void test_no_node_within_another(Geometry::AMGraph3D &g) {
+  auto tree = build_kdtree(g);
+  for (NodeID i=0; i < g.no_nodes(); ++i) {
+    auto n = get_node(g, i);
+    std::vector<NodeID> within_sphere_ids = within_sphere(n, tree);
+    if (within_sphere_ids.size() > 1) {
+      throw std::runtime_error("Found node within another");
+    }
+  }
+}
 
 std::optional<std::pair<Geometry::AMGraph3D, std::vector<GridCoord>>>
 vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_seeds,
     int index, RecutCommandLineArgs *args,
-    fs::path component_dir_fn, std::ofstream& component_log, int threads) {
+    fs::path component_dir_fn, std::ofstream& component_log, int threads, bool save_graphs = false) {
 
   auto timer = high_resolution_timer();
   auto g = vdb_to_graph(component, args);
@@ -429,7 +478,8 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     component_log << "saturate edges, " << timer.elapsed() << '\n';
   }
 
-  graph_save(component_dir_fn / ("mesh.graph"), g);
+  if (save_graphs)
+    graph_save(component_dir_fn / ("mesh.graph"), g);
 
   timer.restart();
   // multi-scale is faster and scales linearly with input graph size at
@@ -448,6 +498,7 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
 
   smooth_graph_pos_rad(component_graph, args->smooth_steps, /*alpha*/ 1);
 
+  //component_log << "soma nodes\n";
   // sweep through various soma ids
   std::vector<GridCoord> soma_coords;
   if (args->seed_action == "force")
@@ -457,15 +508,20 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
   else if (args->seed_action == "find-valent")
     soma_coords = find_soma_nodes(component_graph, component_seeds, args->soma_dilation.value(), true);
 
+  //test_no_node_within_another(component_graph);
+
   if (soma_coords.size() == 0) {
     std::cerr << "Warning no soma_coords found for component " << index << '\n';
     return std::nullopt;
   }
 
+  //component_log << "multifurcations\n";
   // multifurcations are only important for rules of SWC standard
   component_graph = fix_multifurcations(component_graph, soma_coords);
+  test_all_valid_radii(component_graph);
 
-  graph_save(component_dir_fn / ("skeleton.graph"), component_graph);
+  if (save_graphs)
+    graph_save(component_dir_fn / ("skeleton.graph"), component_graph);
 
   return std::make_pair(component_graph, soma_coords);
 }
@@ -479,7 +535,7 @@ void write_ano_file(fs::path component_dir_fn, std::string file_name_base) {
 }
 
 void write_apo_file(fs::path component_dir_fn, std::string file_name_base, std::array<double, 3> pos,
-    float radius, std::array<float, 3> voxel_size) {
+    float radius, std::array<double, 3> voxel_size) {
   std::ofstream apo_file;
   apo_file.open(component_dir_fn / (file_name_base + ".ano.apo"));
   apo_file << std::fixed << std::setprecision(SWC_PRECISION);
@@ -505,18 +561,18 @@ void write_apo_file(fs::path component_dir_fn, std::string file_name_base, std::
 }
 
 void write_swcs(Geometry::AMGraph3D component_graph, std::vector<GridCoord> soma_coords,
-    std::array<float, 3> voxel_size,
+    std::array<double, 3> voxel_size,
     std::filesystem::path component_dir_fn = ".",
     CoordBBox bbox = {}, bool bbox_adjust = false,
     bool is_eswc = false, bool disable_swc_scaling = false) {
 
   // each vertex in the graph has a single parent (id) which is
   // determined via BFS traversal
-  std::vector<int> parent_table(component_graph.no_nodes(), -1);
+  std::vector<NodeID> parent_table(component_graph.no_nodes(), -1);
 
   // scan the graph to find the final set of soma_ids
-  std::vector<unsigned long> soma_ids;
-  for (int i=0; i < component_graph.no_nodes(); ++i) {
+  std::vector<NodeID> soma_ids;
+  for (NodeID i=0; i < component_graph.no_nodes(); ++i) {
     auto pos = component_graph.pos[i];
     auto current_coord = GridCoord(pos[0], pos[1], pos[2]);
     if (std::find(soma_coords.begin(),
@@ -527,15 +583,15 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<GridCoord> soma
   // do BFS from each known soma in the component
   for (auto soma_id : soma_ids) {
       // init q with soma
-      std::queue<size_t> q;
+      std::queue<NodeID> q;
       q.push(soma_id);
 
       // start swc and add header metadata
       auto pos = component_graph.pos[soma_id].get();
       auto file_name_base = "tree-with-soma-xyz-" +
-      std::to_string((int)pos[0]) + "-" +
-      std::to_string((int)pos[1]) + "-" +
-      std::to_string((int)pos[2]);
+      std::to_string((NodeID)pos[0]) + "-" +
+      std::to_string((NodeID)pos[1]) + "-" +
+      std::to_string((NodeID)pos[2]);
       auto coord_to_swc_id = get_id_map();
 
       // traverse rest of tree
@@ -561,7 +617,7 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<GridCoord> soma
       }
 
       while (q.size()) {
-        size_t id = q.front();
+        NodeID id = q.front();
         q.pop();
 
         auto pos = component_graph.pos[id].get();
@@ -601,45 +657,187 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<GridCoord> soma
   //}
 }
 
-std::optional<Geometry::AMGraph3D> swc_to_amgraph(filesystem::path marker_file) {
+std::pair<Geometry::AMGraph3D, std::vector<Seed>> 
+swc_to_graph(filesystem::path marker_file, std::array<double, 3> voxel_size,
+    bool save_file = false) {
   ifstream ifs(marker_file);
   if (ifs.fail()) {
-    cout << " unable to open marker file " << marker_file << endl;
-    return std::nullopt;
+    throw std::runtime_error("Unable to open marker file " + marker_file.string());
   }
+
+  auto min_voxel_size = min_max(voxel_size).first;
+  std::vector<Seed> seeds;
   Geometry::AMGraph3D g;
-  int count = 0;
+  NodeID count = 0;
   while (ifs.good()) {
     if (ifs.peek() == '#' || ifs.eof()) {
       ifs.ignore(1000, '\n');
       continue;
     }
-    int id, type, parent_id;
-    double x,y,z,radius;
+    NodeID id, type, parent_id;
+    double x_um,y_um,z_um,radius_um;
     ifs >> id;
     ifs.ignore(10, ' ');
     ifs >> type;
     ifs.ignore(10, ' ');
-    ifs >> x;
+    ifs >> x_um;
     ifs.ignore(10, ' ');
-    ifs >> y;
+    ifs >> y_um;
     ifs.ignore(10, ' ');
-    ifs >> z;
+    ifs >> z_um;
     ifs.ignore(10, ' ');
-    ifs >> radius;
+    ifs >> radius_um;
     ifs.ignore(10, ' ');
     ifs >> parent_id;
     ifs.ignore(1000, '\n');
     parent_id -= 1; // need to adjust to 0-indexed
 
+    // translate from um units into integer voxel units
+    double x,y,z,radius;
+    radius = radius_um / min_voxel_size;
+    x = x_um / voxel_size[0];
+    y = y_um / voxel_size[1];
+    z = z_um / voxel_size[2];
     auto p = CGLA::Vec3d(x, y, z);
+    auto coord = GridCoord(x, y, z);
+
+    // add it to the graph
     auto node_id = g.add_node(p);
     g.node_color[node_id] = CGLA::Vec3f(0, radius, 0);
-    std::cout << x << ' ' << y << ' ' << z << ' ' << radius << ' ' << parent_id << '\n';
+    //std::cout << x << ' ' << y << ' ' << z << ' ' << radius << ' ' << parent_id << '\n';
 
-    if (parent_id >= 0)
+    // somas are nodes that have a parent of -1 (adjusted to -2) or have an index
+    // of themselves
+    if (parent_id == -2 || parent_id == node_id) {
+      auto volume = static_cast<uint64_t>((4 / 3) * PI * std::pow(radius, 3));
+      std::array<double, 3> coord_um{p[0], p[1], p[2]};
+      seeds.emplace_back(coord, coord_um, radius, radius_um, volume);
+    } else {
       g.connect_nodes(node_id, parent_id);
+    }
   }
 
-  return g;
+  if (seeds.size() > 1) {
+    throw std::runtime_error("Warning: SWC files are trees which by definition must have only 1 root (soma), provided file has " + seeds.size());
+  }
+  
+  if (save_file)
+    graph_save(marker_file.stem().string() + ".graph", g);
+
+  return std::make_pair(g, seeds);
+}
+
+openvdb::FloatGrid::Ptr skeleton_to_surface(Geometry::AMGraph3D skeleton) {
+
+  // feq requires an explicit radii vector
+  std::vector<double> radii;
+  radii.reserve(skeleton.no_nodes());
+  for (NodeID i = 0; i < skeleton.no_nodes(); ++i) {
+    //std::cout << get_radius(skeleton.node_color, i) << '\n';
+    radii.push_back(get_radius(skeleton.node_color, i));
+  }
+
+  // generate a mesh manifold then create a list of points and
+  // polygons (quads or tris)
+  std::cout << "Start graph to manifold" << '\n';
+  auto manifold = graph_to_FEQ(skeleton, radii);
+
+  HMesh::obj_save("mesh.obj", manifold);
+
+  // translate manifold into something vdb will understand
+  // points ands quads
+  std::cout << "Start manifold to polygons" << '\n';
+  auto [points, quads] = mesh_to_polygons(manifold);
+
+  // convert the mesh into a surface (level set) vdb
+  std::cout << "Start polygons to level set" << '\n';
+  vto::QuadAndTriangleDataAdapter<openvdb::Vec3s, openvdb::Vec4I> mesh(points, quads);
+  return vto::meshToVolume<openvdb::FloatGrid>(mesh, *get_transform());
+}
+
+// returns a polygonal mesh
+openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path marker_file,
+    std::array<double, 3> voxel_size, bool save_vdbs = false, 
+    std::string name = "") {
+  auto [skeleton, seeds] = swc_to_graph(marker_file, voxel_size);
+
+  merge_local_radius(skeleton, seeds, 1, true);
+
+  if (save_vdbs)
+    graph_save(marker_file.stem().string() + ".graph", skeleton);
+
+  if (false) {
+    auto soma_coords = rv::transform(seeds, [](Seed seed) {
+        return seed.coord;
+        }) | rng::to_vector;
+    write_swcs(skeleton, soma_coords, voxel_size, "test");
+  }
+
+  auto level_set = skeleton_to_surface(skeleton);
+
+  // merge soma on top
+  {
+    // only 1 soma allowed per swc
+    auto seed = seeds[0];
+    auto soma_sdf = vto::createLevelSetSphere<openvdb::FloatGrid>(
+       seed.radius, seed.coord.asVec3s(), 1.,
+       RECUT_LEVEL_SET_HALF_WIDTH);
+    vto::csgUnion(*level_set, *soma_sdf); // empties merged_somas grid into ls
+  }
+
+  if (save_vdbs)
+    write_vdb_file({level_set}, "surface-" + (name.empty() ? marker_file.stem().string() : name) + ".vdb");
+
+  return level_set;
+}
+
+// Get the total count of interior voxels of a level set (surface)
+uint64_t voxel_count(openvdb::FloatGrid::Ptr level_set) {
+  // convert the surface into a segmented (filled) foreground grid
+  openvdb::BoolGrid::Ptr enclosed = vto::extractEnclosedRegion(*level_set);
+  return enclosed->activeVoxelCount();
+}
+
+void calculate_recall_precision(openvdb::FloatGrid::Ptr truth, 
+    openvdb::FloatGrid::Ptr test, bool save_vdbs = true) {
+  double recall, precision_d, f1, iou;
+
+  std::cout << "truth active voxel count, " << voxel_count(truth) << '\n';
+  std::cout << "test active voxel count, " << voxel_count(test) << '\n';
+
+  // calculate true positive pixels
+  // this is total count of matching truth and test pixels
+  auto true_positive = vto::csgIntersectionCopy(*truth, *test);
+  if (save_vdbs)
+    write_vdb_file({true_positive}, "surface-true-positive.vdb");
+  auto true_positive_count = voxel_count(true_positive);
+
+  // calculate the count of false positive pixels
+  auto false_positive = vto::csgDifferenceCopy(*test, *true_positive);
+  if (save_vdbs)
+    write_vdb_file({false_positive}, "surface-false-positive.vdb");
+  auto false_positive_count = voxel_count(false_positive);
+
+  // calculate the count of false positive pixels
+  auto false_negative = vto::csgDifferenceCopy(*truth, *true_positive);
+  if (save_vdbs)
+    write_vdb_file({false_negative}, "surface-false-negative.vdb");
+  auto false_negative_count = voxel_count(false_negative);
+
+  // calculation union
+  auto union_ls = vto::csgUnionCopy(*truth, *test);
+  auto union_count = voxel_count(union_ls);
+
+  recall = true_positive_count / (true_positive_count + false_negative_count);
+  precision_d = true_positive_count / (true_positive_count + false_positive_count);
+  f1 = 2 * precision_d * recall / (precision_d + recall);
+  iou = true_positive_count / union_count;
+
+  std::cout << "true positive count, " << true_positive_count << '\n';
+  std::cout << "false positive count, " << false_positive_count << '\n';
+  std::cout << "false negative count, " << false_negative_count << '\n';
+  std::cout << "recall, " << recall << '\n';
+  std::cout << "precision, " << precision_d << '\n';
+  std::cout << "F1, " << f1 << '\n';
+  std::cout << "IoU, " << iou << '\n';
 }

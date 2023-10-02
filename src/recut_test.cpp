@@ -301,6 +301,17 @@ ASSERT_FALSE(leaf_iter->getValue(boundary_coord));
 }
 */
 
+TEST(SWC, PrintSWCLine) {
+  std::array<double, 3> swc_coord{{1., 1., 1.}};
+  std::array<double, 3> parent_coord{{1., 1., 1.}};
+  auto coord_to_swc_id = get_id_map();
+
+  // prints to terminal since swc_file is null / not open
+  std::ofstream swc_file;
+  print_swc_line(swc_coord, false, .00001, parent_coord, {}, 
+      swc_file, coord_to_swc_id, swc_coord, false);
+}
+
 TEST(VDB, UpdateSemantics) {
 
   auto grid = openvdb::BoolGrid::create();

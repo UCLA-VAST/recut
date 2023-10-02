@@ -13,7 +13,7 @@
 // offset by 1 recut operates with 0 offset of input markers and SWC nodes
 std::vector<Seed> process_marker_dir(
     std::string seed_path,
-    std::array<float, 3> voxel_size = std::array<float, 3>{1, 1, 1},
+    std::array<double, 3> voxel_size = std::array<double, 3>{1, 1, 1},
     int marker_base = 0) {
 
   // this is a usage requirement for developers
@@ -48,17 +48,14 @@ std::vector<Seed> process_marker_dir(
           } else {
             volume = (4 / 3) * PI * std::pow(marker.radius, 3);
           }
-
-          // ones() + GridCoord(marker.x / args->downsample_factor,
-          // marker.y / args->downsample_factor,
-          // upsample_idx(args->upsample_z, marker.z)),
-
+          std::array<double, 3> coord_um{{marker.x, marker.y, marker.z}};
           // convert from world space (um) to image space (pixels)
           // these are the offsets around the coordinate to keep
           seeds.emplace_back(
               GridCoord(std::round(marker.x / voxel_size[0]),
                         std::round(marker.y / voxel_size[1]),
                         std::round(marker.z / voxel_size[2])),
+              coord_um,
               static_cast<uint8_t>(marker.radius / min_voxel_size + 0.5),
               marker.radius, volume);
         }
@@ -121,7 +118,7 @@ std::optional<GridCoord> mean_location(openvdb::MaskGrid::Ptr mask_grid) {
 // active voxel in the point topology and estimate the radius given the
 // bbox of the component.
 auto create_seed_pairs = [](std::vector<openvdb::MaskGrid::Ptr> components,
-                            std::array<float, 3> voxel_size,
+                            std::array<double, 3> voxel_size,
                             float min_radius_um, float max_radius_um,
                             std::string output_type) {
   std::vector<Seed> seeds;
@@ -161,7 +158,9 @@ auto create_seed_pairs = [](std::vector<openvdb::MaskGrid::Ptr> components,
       // round to the nearest 8-bit unsigned integer between 0 and 255
       auto radius = static_cast<uint8_t>(radius_voxels + 0.5);
       radius = radius < 1 ? 1 : radius; // clamp to at least 1
-      seeds.emplace_back(coord_center, radius, radius_um,
+      std::array<double, 3> coord_center_um{{coord_center[0] * voxel_size[0], 
+        coord_center[1] * voxel_size[1], coord_center[2] * voxel_size[2]}};
+      seeds.emplace_back(coord_center, coord_center_um, radius, radius_um,
                          adjust_volume_by_voxel_size(
                              component->activeVoxelCount(), voxel_size));
       filtered_components.push_back(component);

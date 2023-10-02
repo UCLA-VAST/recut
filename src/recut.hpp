@@ -2752,11 +2752,12 @@ template <class image_t> void Recut<image_t>::deduce_input_type() {
       this->input_is_vdb = true;
     } else {
       this->input_is_vdb = false;
-      if (path_extension == ".ims") {
+      if (path_extension == ".swc") {
+        this->args->input_type = "swc";
+      } else if (path_extension == ".ims") {
         this->args->input_type = "ims";
       } else if (path_extension == ".v3draw") {
         this->args->input_type = "v3draw";
-      //} else if (path_extension == ".") {
       } else if (path_extension == ".v3dpbd") {
         this->args->input_type = "v3dpbd";
       } else {
@@ -2778,9 +2779,10 @@ template <class image_t> void Recut<image_t>::initialize() {
 
 #ifdef LOG
   cout << "User specified image " << args->input_path << '\n';
+  cout << "Input type " << args->input_type << '\n';
 #endif
   
-  if (args->input_type == "ims" || args->input_type == "tif" || this->input_is_vdb) {
+  if (args->input_type == "ims" || args->input_type == "tiff" || this->input_is_vdb) {
 
     // actual possible lengths
     auto input_image_lengths = get_input_image_lengths(args);
@@ -2856,6 +2858,8 @@ template <class image_t> void Recut<image_t>::initialize() {
     print_coord(this->image_lengths, "image voxel dimensions");
 #endif
     update_hierarchical_dims(this->tile_lengths);
+    this->connected_grid = openvdb::MaskGrid::create();
+    this->connected_grid->setTransform(get_transform());
   }
 
 #ifdef LOG
@@ -2864,10 +2868,9 @@ template <class image_t> void Recut<image_t>::initialize() {
             << " y=" << this->args->voxel_size[1] << " µm"
             << " z=" << this->args->voxel_size[2] << " µm\n";
 #endif
-  this->connected_grid = openvdb::MaskGrid::create();
-  this->connected_grid->setTransform(get_transform());
 
-  if (!args->convert_only) {
+  // infer parameters for reconstructions runs
+  if (args->input_type != "swc" && !args->convert_only) {
     // when no known seeds are passed or when the intersection strategy
     // is on and user does not input a close or open step, its safe
     // to infer the steps based on the voxel size
@@ -2883,35 +2886,35 @@ template <class image_t> void Recut<image_t>::initialize() {
                   << " based on voxel size\n";
       }
     }
-  }
 
-  if (!args->soma_dilation.has_value()) {
-    if (args->seed_action == "find-valent") 
-      args->soma_dilation = FIND_SOMA_DILATION * args->voxel_size[0];
-    else if (args->seed_action == "force") 
-      args->soma_dilation = FORCE_SOMA_DILATION * args->voxel_size[0];
-    else
-      args->soma_dilation = 1;
+    if (!args->soma_dilation.has_value()) {
+      if (args->seed_action == "find-valent") 
+        args->soma_dilation = FIND_SOMA_DILATION * args->voxel_size[0];
+      else if (args->seed_action == "force") 
+        args->soma_dilation = FORCE_SOMA_DILATION * args->voxel_size[0];
+      else
+        args->soma_dilation = 1;
 
-    if (args->seed_action != "find") {
-      std::cout << "Soma dilation for action '" << args->seed_action << "' inferred to " << args->soma_dilation.value()
-                    << " based on voxel size\n";
+      if (args->seed_action != "find") {
+        std::cout << "Soma dilation for action '" << args->seed_action << "' inferred to " << args->soma_dilation.value()
+                      << " based on voxel size\n";
+      }
     }
-  }
 
-  if (!args->coarsen_steps.has_value()) {
-    // at low resolution voxel sizes 1 (6x) and above do not coarsen
-    args->coarsen_steps = args->voxel_size[0] >= 1 ? 0 : std::round(COARSEN_FACTOR / args->voxel_size[0]);
-    std::cout << "Coarsen steps inferred to " << args->coarsen_steps.value()
-                    << " based on voxel size\n";
-  }
+    if (!args->coarsen_steps.has_value()) {
+      // at low resolution voxel sizes 1 (6x) and above do not coarsen
+      args->coarsen_steps = args->voxel_size[0] >= 1 ? 0 : std::round(COARSEN_FACTOR / args->voxel_size[0]);
+      std::cout << "Coarsen steps inferred to " << args->coarsen_steps.value()
+                      << " based on voxel size\n";
+    }
 
-  if (args->seed_path.empty()) {
-    // infer open steps if it wasn't explicitly passed
-    if (!args->open_steps.has_value()) {
-      args->open_steps = OPEN_FACTOR / args->voxel_size[0];
-      std::cout << "Open steps inferred to " << args->open_steps.value()
-                << " based on voxel size\n";
+    if (args->seed_path.empty()) {
+      // infer open steps if it wasn't explicitly passed
+      if (!args->open_steps.has_value()) {
+        args->open_steps = OPEN_FACTOR / args->voxel_size[0];
+        std::cout << "Open steps inferred to " << args->open_steps.value()
+                  << " based on voxel size\n";
+      }
     }
   }
 }
@@ -3317,7 +3320,16 @@ template <class image_t> void Recut<image_t>::operator()() {
   }
 
   // process the input args and parameters
+  // deduce input type
   this->initialize();
+
+  // do an accuracy comparison
+  if (args->input_type == "swc" && args->test) {
+    auto input = swc_to_segmented(args->input_path, args->voxel_size, args->save_vdbs, "input");
+    auto test = swc_to_segmented(args->test.value(), args->voxel_size, args->save_vdbs, "test");
+    calculate_recall_precision(input, test, args->save_vdbs);
+    exit(0);
+  }
 
   start_run_dir_and_logs();
 
@@ -3446,7 +3458,8 @@ template <class image_t> void Recut<image_t>::operator()() {
   }
 
   fill_seeds(this->mask_grid, seeds);
-  write_vdb_file({this->mask_grid}, this->run_dir / "filled_seed.vdb");
+  if (args->save_vdbs) 
+    write_vdb_file({this->mask_grid}, this->run_dir / "filled_seed.vdb");
 
   openvdb::MaskGrid::Ptr preserved_topology;
   if (args->close_steps) {
