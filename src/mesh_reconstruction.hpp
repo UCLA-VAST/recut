@@ -443,15 +443,70 @@ void test_all_valid_radii(Geometry::AMGraph3D &g) {
   }
 }
 
-void test_no_node_within_another(Geometry::AMGraph3D &g) {
-  auto tree = build_kdtree(g);
-  for (NodeID i=0; i < g.no_nodes(); ++i) {
+std::vector<NodeID> get_completely_within(NodeID i, Geometry::AMGraph3D &g) {
+    // rebuilding the kdtree, per index is extremely inefficient,
+    // however at each node, certain vertices are potentially being deleted
+    // so this protects already deleted nodes from populating later searches
+    auto tree = build_kdtree(g);
+
     auto n = get_node(g, i);
+    auto radius = get_radius(g.node_color, i);
     std::vector<NodeID> within_sphere_ids = within_sphere(n, tree);
-    if (within_sphere_ids.size() > 1) {
-      throw std::runtime_error("Found node within another");
+    // some nodes are partially within, others are completely within
+    // the curren node
+    return within_sphere_ids | rv::remove_if([&](NodeID j){ 
+        return radius >= get_radius(g.node_color, j) + euc_dist(g.pos[i], g.pos[j]);
+        }) | rng::to_vector;
+}
+
+void fix_node_within_another(Geometry::AMGraph3D &g) {
+  for (NodeID i=0; i < g.no_nodes(); ++i) {
+    auto completely_within = get_completely_within(i, g);
+
+    // it's only legal to merge another node if it is also a neighbor
+    // merging a neighbor can make a second, third, etc. degree neighbor
+    // mergeable afterwards
+    for (bool merged = false; merged; merged = false) {
+      auto neighbors = g.neighbors(i);
+
+      // protect from checking if a node is a neighbor of itself
+      // keep nodes that are within and a directly linked neighbor only
+      auto mergeables = completely_within | rv::remove_if([&](NodeID j) {
+          return i == j || rng::find(neighbors, j) == rng::end(neighbors);
+          }) | rng::to_vector; 
+
+      // also merge this node if necessary
+      mergeables.push_back(i);
+      // FIXME seg fault here at merge nodes
+      // probably due to j node already being invalidated
+      // switch to merge_nodes(list) interface instead
+      if (mergeables.size() > 1) {
+        auto pos = g.pos[i];
+        NodeID new_i = g.merge_nodes(mergeables);
+        // restore original position of i
+        // so that you don't create more within nodes
+        g.pos[new_i] = pos;
+        g = Geometry::clean_graph(g);
+        merged = true;
+      }
     }
   }
+}
+
+// throws if 1 node is a neighbor of another and one of them is
+// completely within the other 
+int count_nodes_within_another(Geometry::AMGraph3D &g) {
+  int count=0;
+  for (NodeID i=0; i < g.no_nodes(); ++i) {
+    auto completely_within = get_completely_within(i, g);
+
+    auto neighbors = g.neighbors(i);
+    for (auto j : completely_within) {
+      if (i != j && rng::find(neighbors, j) != rng::end(neighbors))
+        ++count;
+    }
+  }
+  return count;
 }
 
 std::optional<std::pair<Geometry::AMGraph3D, std::vector<GridCoord>>>
@@ -498,7 +553,6 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
 
   smooth_graph_pos_rad(component_graph, args->smooth_steps, /*alpha*/ 1);
 
-  //component_log << "soma nodes\n";
   // sweep through various soma ids
   std::vector<GridCoord> soma_coords;
   if (args->seed_action == "force")
@@ -508,16 +562,20 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
   else if (args->seed_action == "find-valent")
     soma_coords = find_soma_nodes(component_graph, component_seeds, args->soma_dilation.value(), true);
 
-  //test_no_node_within_another(component_graph);
-
   if (soma_coords.size() == 0) {
     std::cerr << "Warning no soma_coords found for component " << index << '\n';
     return std::nullopt;
   }
 
-  //component_log << "multifurcations\n";
+  //int illegal_nodes = count_nodes_within_another(component_graph);
+  //component_log << "Original within nodes, " << illegal_nodes << '\n';
+  //if (illegal_nodes)
+    //fix_node_within_another(component_graph);
+  //component_log << "Post-fix within nodes, " << count_nodes_within_another(component_graph) << '\n';
+
   // multifurcations are only important for rules of SWC standard
   component_graph = fix_multifurcations(component_graph, soma_coords);
+  //component_log << "Final within nodes, " << count_nodes_within_another(component_graph) << '\n';
   test_all_valid_radii(component_graph);
 
   if (save_graphs)
