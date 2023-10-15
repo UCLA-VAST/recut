@@ -85,7 +85,7 @@ auto ones = []() { return new_grid_coord(1, 1, 1); };
 
 auto zeros_off = []() { return new_offset_coord(0, 0, 0); };
 
-auto min_max = [](std::array<float, 3> arr) -> std::pair<float, float> {
+auto min_max = [](std::array<double, 3> arr) -> std::pair<double, float> {
   float maxx = arr[0];
   float minx = arr[0];
   for (int i = 1; i < 3; ++i) {
@@ -615,10 +615,10 @@ auto get_transform = []() {
   // and be identical
   auto grid_transform =
     openvdb::math::Transform::createLinearTransform(VOXEL_SIZE);
-  // The offset to cell-center points
-  const openvdb::math::Vec3d offset(VOXEL_SIZE / 2., VOXEL_SIZE / 2.,
-      VOXEL_SIZE / 2.);
-  grid_transform->postTranslate(offset);
+  // The offset to cell-center point data grids
+  //const openvdb::math::Vec3d offset(VOXEL_SIZE / 2., VOXEL_SIZE / 2.,
+      //VOXEL_SIZE / 2.);
+  //grid_transform->postTranslate(offset);
   return grid_transform;
 };
 
@@ -2333,7 +2333,7 @@ auto print_all_points = [](const EnlargedPointDataGrid::Ptr grid,
   auto print_swc_line = [](std::array<double, 3> swc_coord, bool is_root,
       float radius, std::array<double, 3> parent_coord,
       CoordBBox bbox, std::ofstream &out,
-      auto &coord_to_swc_id, std::array<float, 3> voxel_size,
+      auto &coord_to_swc_id, std::array<double, 3> voxel_size,
       bool bbox_adjust = true, bool is_eswc = false,
       bool disable_swc_scaling = false) {
     std::ostringstream line;
@@ -3086,7 +3086,7 @@ auto print_all_points = [](const EnlargedPointDataGrid::Ptr grid,
     std::pair<ImgGrid::Ptr, CoordBBox>
     create_window_grid(ImgGrid::Ptr valued_grid, GridT component_grid,
         std::ofstream &component_log,
-        std::array<float, 3> voxel_size,
+        std::array<double, 3> voxel_size,
         std::vector<Seed> component_seeds, int min_window_um,
         bool labels, float expand_window_um = 0) {
 
@@ -3651,7 +3651,7 @@ auto print_all_points = [](const EnlargedPointDataGrid::Ptr grid,
     return topology_grid;
   };
 
-  auto anisotropic_factor = [](std::array<float, 3> voxel_size) {
+  auto anisotropic_factor = [](std::array<double, 3> voxel_size) {
     auto min_max_pair = min_max(voxel_size);
     // round to the nearest int
     return static_cast<uint16_t>((min_max_pair.second / min_max_pair.first) + .5);
@@ -3660,7 +3660,7 @@ auto print_all_points = [](const EnlargedPointDataGrid::Ptr grid,
   // write seed/somas to disk
   // Converts the seeds from voxel space to um space
   auto write_seeds = [](fs::path run_dir, std::vector<Seed> seeds,
-      std::array<float, 3> voxel_size) {
+      std::array<double, 3> voxel_size) {
     // start seeds directory
     fs::path seed_dir = run_dir / "seeds";
     fs::create_directories(seed_dir);
@@ -3717,8 +3717,8 @@ auto print_all_points = [](const EnlargedPointDataGrid::Ptr grid,
   // the adjustment would be exact for cubes
   // for spheres its probably close enough
   auto adjust_volume_by_voxel_size =
-    [](uint64_t volume, std::array<float, 3> voxel_size) -> uint64_t {
-      return static_cast<float>(volume) * voxel_size[0] * voxel_size[1] *
+    [](uint64_t volume, std::array<double, 3> voxel_size) -> uint64_t {
+      return static_cast<double>(volume) * voxel_size[0] * voxel_size[1] *
         voxel_size[2];
     };
 

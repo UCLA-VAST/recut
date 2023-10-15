@@ -245,7 +245,7 @@ auto partition_cluster = [](const std::vector<MyMarker *> &cluster) {
 
 // assumes tree passed is sorted root at front of tree
 auto write_swc = [](std::vector<MyMarker *> &tree,
-                    std::array<float, 3> voxel_size,
+                    std::array<double, 3> voxel_size,
                     std::filesystem::path component_dir_fn = ".",
                     CoordBBox bbox = {}, bool bbox_adjust = false,
                     bool is_eswc = false) {

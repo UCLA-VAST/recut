@@ -374,6 +374,9 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--upsample-z") == 0) {
         args.upsample_z = atoi(argv[i + 1]);
         ++i;
+      } else if (strcmp(argv[i], "--test") == 0) {
+        args.test = std::filesystem::canonical(argv[i + 1]);
+        ++i;
       } else if (strcmp(argv[i], "--run-app2") == 0) {
         args.run_app2 = true;
       } else if (strcmp(argv[i], "--timeout") == 0) {

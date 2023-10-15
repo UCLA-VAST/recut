@@ -1,16 +1,14 @@
-import subprocess
 import argparse
 import re
 # import pandas as pd
 from test_precision_recall import precision_recall
 from plots import get_hash
 from TMD_classify import filter_dir_by_model
-
+from recut_interface import call_recut
 
 def parse_range(string):
     if string.contains('-'):
         m = re.match(r'(\d+)(?:-(\d+))?$', string)
-        # ^ (or use .split('-'). anyway you like.)
         if not m:
             raise argparse.ArgumentTypeError(
                 "'" + string + "' is not a range of number. Expected forms like '0-5' or '2'.")
@@ -21,24 +19,8 @@ def parse_range(string):
         return list(int(string))
 
 
-def call_recut(**kwargs):
-    if kwargs['inferenced_path'] is None:
-        # whitelist certain arguments to pass directly to recut
-        include = ['min_radius', 'max_radius', 'open_steps', 'close_steps', 'fg_percent']
-        args = "".join([f"--{k} {v} ".replace('_', '-') for k, v in kwargs.items() if k in include if v])
-        cmd = f"recut {kwargs['image']} {args} --voxel-size {kwargs['voxel_size_x']} {kwargs['voxel_size_y']} " \
-              f"{kwargs['voxel_size_z']}"
-        print(cmd)
-
-        output = subprocess.check_output(cmd.split()).strip().decode().split('\n')
-        run_dir = [v.split()[-1] for v in output if "written to:" in v][0]
-        kwargs['inferenced_path'] = f"{run_dir}/seeds"
-    else:
-        run_dir = kwargs['inferenced_path']
-
+def persistence_precision_recall(run_dir):
     #precision_recall(**kwargs)
-
-    git_hash = get_hash()
 
     true_neuron_count, junk_neuron_count = filter_dir_by_model(run_dir, kwargs['model'])
     neuron_count = true_neuron_count + junk_neuron_count
@@ -79,7 +61,8 @@ def main():
                         help=f"path to the TMD classifier model; defaults to the MSN model: {default_model}")
     args = parser.parse_args()
 
-    call_recut(**vars(args))
+    run_dir = call_recut(**vars(args))
+    persistence_precision_recall(run_dir)
 
 if __name__ == "__main__":
     main()
