@@ -16,8 +16,8 @@ void RecutCommandLineArgs::PrintUsage() {
                "image to VDB stage, "
                "defaults to value of "
             << FG_PCT << '\n';
-  std::cout << "--seeds <dir>          optionally pass a directory "
-               "of SWC files with 1 soma node per file, "
+  std::cout << "--seeds <path>         optionally pass either a directory "
+               "of SWC files with 1 soma node per file, or a single *.swc file containing a single soma, "
                "fills the seeds as spheres directly on to the mask image, "
                "treating them as ground truth for reconstruction\n";
   std::cout << "--seed-action <action> can either be 'force' which forces the locations passed by users to be used for final reconstruction"
@@ -174,7 +174,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         }
       } else if (strcmp(argv[i], "--seeds") == 0 ||
                  strcmp(argv[i], "-s") == 0) {
-        // need to pass in at least 1 seed path
+        // need to pass in at least 1 seed path or file
         if ((i + 1 == argc) || (argv[i + 1][0] == '-')) {
           RecutCommandLineArgs::PrintUsage();
           exit(1);
@@ -185,8 +185,8 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
           cerr << "--seeds path does not exist\n";
           exit(1);
         }
-        if (!std::filesystem::is_directory(args.seed_path)) {
-          cerr << "--seeds must be a directory\n";
+        if (!fs::is_directory(args.seed_path) && (fs::is_regular_file(args.seed_path) && (args.seed_path.extension() != ".swc"))) {
+          cerr << "--seeds must be a directory or a single *.swc file\n";
           exit(1);
         }
         ++i;

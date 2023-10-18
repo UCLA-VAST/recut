@@ -12,6 +12,8 @@
 #include <sstream>
 #include <vector>
 
+namespace fs = std::filesystem;
+
 class RecutCommandLineArgs {
 public:
   RecutCommandLineArgs()

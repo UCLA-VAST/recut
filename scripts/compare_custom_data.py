@@ -15,22 +15,28 @@ def swcs_to_dict(swcs):
     return d
 
 def compare_2_swcs(proof_swc, auto_swc, kwargs):
-    timeout_seconds = 20 * 60
+    timeout_seconds = 4 * 60
 
-    cmd = "/home/kdmarrett/recut/result/bin/recut {} --test {} --voxel-size {} {} {}".format(proof_swc,auto_swc, kwargs['voxel_size_x'], kwargs['voxel_size_y'], kwargs['voxel_size_z'])
-    print(cmd)
-    result = subprocess.run(cmd.split(), capture_output=True, check=False, text=True,
-                    timeout=timeout_seconds)
+    cmd = "/home/kdmarrett/recut/result/bin/recut {} --test {} --voxel-size {} {} {}".format(proof_swc,proof_swc, kwargs['voxel_size_x'], kwargs['voxel_size_y'], kwargs['voxel_size_z'])
+    print("Run: " + cmd)
+    try:
+        result = subprocess.run(cmd.split(), capture_output=True, check=False, text=True,
+                        timeout=timeout_seconds)
+    except:
+        return None
     return result
 
 def extract_accuracy(result):
-    print('output: ', result.stdout)
-    print('error: ', result.stderr)
-    if result.stderr != "" or result.returncode != 0:
-      return False
-    return True
-    if returncode:
-        print("Success")
+    if result:
+        if result.stdout:
+            print('output: ', result.stdout)
+        if result.stderr:
+            print('error: ', result.stderr)
+        if result.stderr != "" or result.returncode != 0:
+          return False
+        return True
+    else:
+        return False
 
 def gather_automated_swcs(path):
     pattern = path + "**/*.swc"
@@ -72,12 +78,21 @@ def main():
     proofreads = gather_proofread_swcs(args.proofread)
 
     matched = match_swcs(proofreads, automateds)
-    print("Proofread count: " + str(len(proofreads)))
-    print("Match count: " + str(len(matched)))
+    # print("Proofread count: " + str(len(proofreads)))
+    print("Match count: " + str(len(matched)) + '/' + str(len(proofreads)))
+    print()
 
+    success_count = 0
     for proofread, automated in matched:
         returncode = compare_2_swcs(proofread, automated, kwargs)
-        extract_accuracy(returncode)
+        is_success = extract_accuracy(returncode)
+        if is_success:
+            print("Success")
+            print()
+            print()
+            success_count +=1
+
+    print("Success count: " + str(len(success_count)) + '/' + str(len(proofreads)))
 
 if __name__ == "__main__":
     main()

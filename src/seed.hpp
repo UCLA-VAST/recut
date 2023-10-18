@@ -16,5 +16,15 @@ struct Seed {
 
   Seed(GridCoord coord, std::array<double, 3> coord_um, uint8_t radius,
       double radius_um, uint64_t volume)
-      : coord(coord), radius(radius), radius_um(radius_um), volume(volume) {}
+      : coord(coord), coord_um(coord_um), radius(radius), radius_um(radius_um), volume(volume) {}
+
+  friend std::ostream &operator<<(std::ostream &os, const Seed &s) {
+    os << s.coord << ", in um: [" << std::to_string(s.coord_um[0]) << ", " +
+              std::to_string(s.coord_um[1]) + ", " +
+              std::to_string(s.coord_um[2]) +
+              "], radius: " + std::to_string(s.radius) + 
+              " radius um: " + std::to_string(s.radius_um) + '\n';
+    return os;
+  }
+
 };

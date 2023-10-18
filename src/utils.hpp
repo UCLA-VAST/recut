@@ -31,7 +31,6 @@
 #include <tiffio.h>
 #include <variant>
 
-namespace fs = std::filesystem;
 namespace rng = ranges;
 namespace rv = ranges::views;
 

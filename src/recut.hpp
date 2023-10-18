@@ -3427,7 +3427,13 @@ template <class image_t> void Recut<image_t>::operator()() {
           "intermediary files (e.g. connected-mask.vdb");
     }
   } else {
-    seeds = process_marker_dir(args->seed_path, args->voxel_size);
+    if (fs::is_directory(args->seed_path)) {
+      seeds = process_marker_dir(args->seed_path, args->voxel_size);
+    } else if (fs::is_regular_file(args->seed_path) && args->seed_path.extension() == ".swc") {
+      auto [_, seeds] = swc_to_graph(args->seed_path, args->voxel_size);
+    } else {
+      throw std::runtime_error("Does not recognize seed type");
+    }
   }
 
   // labels need somas as intact / unmodified therefore they should

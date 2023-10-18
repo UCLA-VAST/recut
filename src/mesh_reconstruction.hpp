@@ -329,18 +329,25 @@ std::pair<std::vector<openvdb::Vec3s>, std::vector<openvdb::Vec4I>> mesh_to_poly
   }
 
   // iterate all polygons of manifold
-  for (auto poly : m.faces()) {
+  for (HMesh::FaceID poly : m.faces()) {
     // iterate all vertices of this polygon
-    openvdb::Vec4I quad;
-    int j = 0;
+    std::vector<unsigned int> poly_indices;
     for (auto v : m.incident_vertices(poly)) {
-      //std::cout << v << ' '; 
-      quad[j] = static_cast<unsigned int>(v.get_index());
-      ++j;
+      poly_indices.push_back(static_cast<unsigned int>(v.get_index()));
     }
-    quads.emplace_back(quad[0], quad[1], quad[2], quad[3]);
-    assertm(j == 4, "not 4 edges");
-    //std::cout << '\n';
+
+    if (poly_indices.size() == 4) {
+      quads.emplace_back(poly_indices[0], poly_indices[1], poly_indices[2], poly_indices[3]);
+    } else if (poly_indices.size() == 6) {
+      quads.emplace_back(poly_indices[0], poly_indices[1], poly_indices[2], poly_indices[3]);
+      quads.emplace_back(poly_indices[0], poly_indices[3], poly_indices[4], poly_indices[5]);
+    } else if (poly_indices.size() == 8) {
+      quads.emplace_back(poly_indices[0], poly_indices[1], poly_indices[2], poly_indices[3]);
+      quads.emplace_back(poly_indices[3], poly_indices[4], poly_indices[7], poly_indices[0]);
+      quads.emplace_back(poly_indices[4], poly_indices[5], poly_indices[6], poly_indices[7]);
+    } else {
+      throw std::runtime_error("Unimplemented how to quadrize a " + std::to_string(poly_indices.size()) + "-ary polygon");
+    }
   }
 
   return std::make_pair(points, quads);
@@ -752,23 +759,22 @@ swc_to_graph(filesystem::path marker_file, std::array<double, 3> voxel_size,
 
     // translate from um units into integer voxel units
     double x,y,z,radius;
-    radius = radius_um / min_voxel_size;
-    x = x_um / voxel_size[0];
-    y = y_um / voxel_size[1];
-    z = z_um / voxel_size[2];
+    radius = std::round(radius_um / min_voxel_size);
+    x = std::round(x_um / voxel_size[0]);
+    y = std::round(y_um / voxel_size[1]);
+    z = std::round(z_um / voxel_size[2]);
     auto p = CGLA::Vec3d(x, y, z);
     auto coord = GridCoord(x, y, z);
 
     // add it to the graph
     auto node_id = g.add_node(p);
     g.node_color[node_id] = CGLA::Vec3f(0, radius, 0);
-    //std::cout << x << ' ' << y << ' ' << z << ' ' << radius << ' ' << parent_id << '\n';
 
     // somas are nodes that have a parent of -1 (adjusted to -2) or have an index
     // of themselves
     if (parent_id == -2 || parent_id == node_id) {
       auto volume = static_cast<uint64_t>((4 / 3) * PI * std::pow(radius, 3));
-      std::array<double, 3> coord_um{p[0], p[1], p[2]};
+      std::array<double, 3> coord_um{x_um, y_um, z_um};
       seeds.emplace_back(coord, coord_um, radius, radius_um, volume);
     } else {
       g.connect_nodes(node_id, parent_id);
@@ -818,6 +824,8 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path marker_file,
     std::array<double, 3> voxel_size, bool save_vdbs = false, 
     std::string name = "") {
   auto [skeleton, seeds] = swc_to_graph(marker_file, voxel_size);
+
+  test_all_valid_radii(skeleton);
 
   merge_local_radius(skeleton, seeds, 1, true);
 
