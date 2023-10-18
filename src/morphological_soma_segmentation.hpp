@@ -43,8 +43,7 @@ std::vector<Seed> process_marker_dir(
              //  volume is the last number of the file name
              uint64_t volume = std::stoull(numbers.back());
 
-            marker.radius =
-                static_cast<uint8_t>(std::cbrt(volume) / (4 / 3 * PI) + 0.5);
+            marker.radius = std::cbrt(volume) / (4 / 3 * PI);
           } else {
             volume = (4 / 3) * PI * std::pow(marker.radius, 3);
           }
@@ -56,7 +55,7 @@ std::vector<Seed> process_marker_dir(
                         std::round(marker.y / voxel_size[1]),
                         std::round(marker.z / voxel_size[2])),
               coord_um,
-              static_cast<uint8_t>(marker.radius / min_voxel_size + 0.5),
+              marker.radius / min_voxel_size,
               marker.radius, volume);
         }
       });
@@ -135,7 +134,7 @@ auto create_seed_pairs = [](std::vector<openvdb::MaskGrid::Ptr> components,
     }
 
     // estimate the radii from the volume of active voxels
-    float radius_voxels = std::cbrtf((volume_voxels * 3) / (4 * PI));
+    float radius = std::cbrtf((volume_voxels * 3) / (4 * PI));
     auto coord = mean_location(component);
     GridCoord coord_center;
     if (coord) {
@@ -153,10 +152,8 @@ auto create_seed_pairs = [](std::vector<openvdb::MaskGrid::Ptr> components,
     // radius returned was 3, it would be the actual radii_um is 3 um
     // along the z-dimension therefore scale with the voxel dimension
     // with the largest length
-    auto radius_um = radius_voxels * std::pow(max_voxel_size, 3);
+    auto radius_um = radius * std::pow(max_voxel_size, 3);
     if (min_radius_um <= radius_um && radius_um <= max_radius_um) {
-      // round to the nearest 8-bit unsigned integer between 0 and 255
-      auto radius = static_cast<uint8_t>(radius_voxels + 0.5);
       radius = radius < 1 ? 1 : radius; // clamp to at least 1
       std::array<double, 3> coord_center_um{{coord_center[0] * voxel_size[0], 
         coord_center[1] * voxel_size[1], coord_center[2] * voxel_size[2]}};
