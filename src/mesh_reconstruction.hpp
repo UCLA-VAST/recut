@@ -79,12 +79,10 @@ void merge_local_radius(Geometry::AMGraph3D &graph, std::vector<Seed> &seeds,
 
   std::set<NodeID> deleted_nodes;
   rng::for_each(seeds, [&](Seed seed) {
-      //std::cout << "Seed " << seed.coord_um[0] << ' ' << seed.coord_um[1] << ' ' << seed.coord_um[2] << " radius " << seed.radius_um << '\n';
       auto original_pos = CGLA::Vec3d(seed.coord[0], seed.coord[1], seed.coord[2]);
       Node n{original_pos, static_cast<float>(seed.radius)};
 
       std::vector<NodeID> within_sphere_ids = within_sphere(n, tree, soma_dilation);
-      //std::cout << "removing " << (within_sphere_ids.size() - 1) << '\n';
 
       auto new_seed_id = graph.merge_nodes(within_sphere_ids);
 
@@ -441,13 +439,27 @@ void smooth_graph_pos_rad(Geometry::AMGraph3D &g, const int iter, const float al
     } }
   */
 
-void test_all_valid_radii(Geometry::AMGraph3D &g) {
-  for (NodeID i=0; i < g.no_nodes(); ++i) {
-    auto rad = get_radius(g.node_color, i);
-    if (rad < .001) {
-      throw std::runtime_error("Found node with radii " + std::to_string(rad));
-    }
-  }
+std::vector<NodeID> get_invalid_radii(Geometry::AMGraph3D &g) {
+  g = Geometry::clean_graph(g);
+  return rv::iota(0, static_cast<int>(g.no_nodes())) | 
+    rv::transform([](auto i) { return static_cast<NodeID>(i); }) |
+    rv::remove_if([&g](NodeID i) {
+      auto rad = get_radius(g.node_color, i);
+      return rad >= .001;
+    }) 
+    | rng::to_vector;
+}
+
+// set an invalid radii to be the average radii of its neighbors
+void fix_invalid_radii(Geometry::AMGraph3D &g, std::vector<NodeID> invalids) {
+  rng::for_each(invalids, [&](NodeID i) {
+      auto nbs = g.neighbors(i);
+      float radius = 0;
+      rng::for_each(nbs, [&](NodeID nb) {
+          radius += get_radius(g.node_color, nb);
+      });
+      g.node_color[i] = CGLA::Vec3f(0, radius / static_cast<float>(nbs.size()), 0);
+  });
 }
 
 std::vector<NodeID> get_completely_within(NodeID i, Geometry::AMGraph3D &g) {
@@ -531,7 +543,7 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     auto last_layer_index = msg.layers.size() - 1;
     auto layer_index = args->coarsen_steps.value() > last_layer_index ? last_layer_index : args->coarsen_steps.value();
     g = msg.layers[layer_index];
-    component_log << "coarsen time, " << timer.elapsed() << '\n';
+    component_log << "coarsen, " << timer.elapsed() << '\n';
   }
 
   if (args->saturate_edges) {
@@ -583,7 +595,13 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
   // multifurcations are only important for rules of SWC standard
   component_graph = fix_multifurcations(component_graph, soma_coords);
   //component_log << "Final within nodes, " << count_nodes_within_another(component_graph) << '\n';
-  test_all_valid_radii(component_graph);
+  auto invalids = get_invalid_radii(component_graph);
+  if (invalids.size() > 0) {
+    component_log << "Invalid radii, " << invalids.size() << '\n';
+    fix_invalid_radii(component_graph, invalids);
+    invalids = get_invalid_radii(component_graph);
+    component_log << "Final invalid radii, " << invalids.size() << '\n';
+  }
 
   if (save_graphs)
     graph_save(component_dir_fn / ("skeleton.graph"), component_graph);
@@ -797,7 +815,6 @@ openvdb::FloatGrid::Ptr skeleton_to_surface(Geometry::AMGraph3D skeleton) {
   std::vector<double> radii;
   radii.reserve(skeleton.no_nodes());
   for (NodeID i = 0; i < skeleton.no_nodes(); ++i) {
-    //std::cout << get_radius(skeleton.node_color, i) << '\n';
     radii.push_back(get_radius(skeleton.node_color, i));
   }
 
@@ -825,7 +842,9 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path marker_file,
     std::string name = "") {
   auto [skeleton, seeds] = swc_to_graph(marker_file, voxel_size);
 
-  test_all_valid_radii(skeleton);
+  auto invalids = get_invalid_radii(skeleton);
+  if (invalids.size()) 
+    fix_invalid_radii(skeleton, invalids);
 
   merge_local_radius(skeleton, seeds, 1, true);
 
