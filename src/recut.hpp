@@ -3197,7 +3197,8 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
     std::optional<std::pair<Geometry::AMGraph3D, std::vector<GridCoord>>> cluster_opt;
     cluster_opt = vdb_to_skeleton(component, component_seeds, index, args,
                                    component_dir_fn, component_log,
-                                   inter_thread_count == 1 ? args->user_thread_count : 1);
+                                   inter_thread_count == 1 ? args->user_thread_count : 1, 
+                                   true);
     component_log << "TP, " << timer.elapsed() << '\n';
 
     bool save_mesh = false;
