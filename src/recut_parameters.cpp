@@ -186,7 +186,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
           exit(1);
         }
         if (!fs::is_directory(args.seed_path) && (fs::is_regular_file(args.seed_path) && (args.seed_path.extension() != ".swc"))) {
-          cerr << "--seeds must be a directory or a single *.swc file\n";
+          cerr << "--seeds must be a directory of markers, swcs or a single *.swc file\n";
           exit(1);
         }
         ++i;

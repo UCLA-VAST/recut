@@ -3,6 +3,7 @@ import os
 import subprocess
 from glob import glob
 from pathlib import Path
+from collections import namedtuple
 
 def swc_to_coord(swc):
     return tuple(map(int, Path(swc).stem.split('_')[0].split('-')[-3:]))
@@ -17,7 +18,7 @@ def swcs_to_dict(swcs):
 def compare_2_swcs(proof_swc, auto_swc, kwargs):
     timeout_seconds = 4 * 60
 
-    cmd = "/home/kdmarrett/recut/result/bin/recut {} --test {} --voxel-size {} {} {}".format(proof_swc,proof_swc, kwargs['voxel_size_x'], kwargs['voxel_size_y'], kwargs['voxel_size_z'])
+    cmd = "/home/kdmarrett/recut/result/bin/recut {} --test {} --voxel-size {} {} {}".format(proof_swc,auto_swc, kwargs['voxel_size_x'], kwargs['voxel_size_y'], kwargs['voxel_size_z'])
     print("Run: " + cmd)
     try:
         result = subprocess.run(cmd.split(), capture_output=True, check=False, text=True,

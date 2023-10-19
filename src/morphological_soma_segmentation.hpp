@@ -6,69 +6,93 @@
 #include <openvdb/tools/TopologyToLevelSet.h>
 #include <tbb/parallel_for_each.h>
 
+auto is_marker = [](auto entry) { 
+  return fs::is_regular_file(entry) &&
+    (fs::path(entry).generic_string().find("marker") != string::npos);
+}; 
+
+auto is_swc = [](auto entry) { 
+  return fs::is_regular_file(entry) &&
+    fs::path(entry).extension() == ".swc";
+}; 
+
+void name_to_radius_volume(fs::path name) {
+   std::string fn = name.filename().string();
+  auto numbers =
+      fn | rv::split('_') | rng::to<std::vector<std::string>>();
+  if (numbers.size() != 5)
+    throw std::runtime_error("Marker file names must be in format marker_x_y_z_volume");
+   //  volume is the last number of the file name
+   uint64_t volume = std::stoull(numbers.back());
+
+  auto radius = std::cbrt(volume) / (4 / 3 * PI);
+}
+
 // adds all markers to seeds
 // recut operates in voxel units (image space) therefore whenever marker/node
 // information is input into recut it converts it from um units into voxel
 // units marker_base: some programs like APP2 consider input markers should be
 // offset by 1 recut operates with 0 offset of input markers and SWC nodes
 std::vector<Seed> process_marker_dir(
-    std::string seed_path,
+    fs::path seed_path,
     std::array<double, 3> voxel_size = std::array<double, 3>{1, 1, 1},
     int marker_base = 0) {
 
-  // this is a usage requirement for developers
-  assertm(!seed_path.empty(),
-          "can not pass empty seed path to process_marker_dir()");
+  assertm(fs::is_directory(seed_path), "Must pass a directory");
+  const auto entries{fs::directory_iterator(seed_path)};
 
   auto min_voxel_size = min_max(voxel_size).first;
 
-  // gather all markers within directory
-  auto seeds = std::vector<Seed>();
+  auto marker_to_seed =[&](const auto &marker_file) -> Seed {
+    auto markers =
+        readMarker_file(fs::absolute(marker_file), marker_base);
 
-  rng::for_each(
-      fs::directory_iterator(seed_path), [&](const auto &marker_file) {
-        if (!fs::is_directory(marker_file)) {
-          auto markers =
-              readMarker_file(fs::absolute(marker_file), marker_base);
-          assertm(markers.size() == 1, "only 1 marker file per soma");
-          auto marker = markers[0]; 
-          uint64_t volume;
-            if (marker.radius == 0) {
-             std::string fn = marker_file.path().filename().string();
-              auto numbers =
-                  fn | rv::split('_') | rng::to<std::vector<std::string>>();
-              if (numbers.size() != 5)
-                throw std::runtime_error(
-                    "Marker file names must be in format marker_x_y_z_volume");
-             //  volume is the last number of the file name
-             uint64_t volume = std::stoull(numbers.back());
+    // check read
+    if (markers.size() != 1)
+      throw std::runtime_error("only 1 soma per marker file allowed");
+    auto marker = markers.front(); 
+    if (marker.radius == 0) 
+      throw std::runtime_error("Error marker file contained no or 0 radius");
 
-            marker.radius = std::cbrt(volume) / (4 / 3 * PI);
-          } else {
-            volume = (4 / 3) * PI * std::pow(marker.radius, 3);
-          }
-          std::array<double, 3> coord_um{{marker.x, marker.y, marker.z}};
-          // convert from world space (um) to image space (pixels)
-          // these are the offsets around the coordinate to keep
-          seeds.emplace_back(
-              GridCoord(std::round(marker.x / voxel_size[0]),
-                        std::round(marker.y / voxel_size[1]),
-                        std::round(marker.z / voxel_size[2])),
-              coord_um,
-              marker.radius / min_voxel_size,
-              marker.radius, volume);
-        }
-      });
+    uint64_t volume = (4 / 3) * PI * std::pow(marker.radius, 3);
+    std::array<double, 3> coord_um{{marker.x, marker.y, marker.z}};
+    // convert from world space (um) to image space (pixels)
+    // these are the offsets around the coordinate to keep
+    return {
+        GridCoord(std::round(marker.x / voxel_size[0]),
+                  std::round(marker.y / voxel_size[1]),
+                  std::round(marker.z / voxel_size[2])),
+       {{marker.x, marker.y, marker.z}},
+        static_cast<float>(marker.radius / min_voxel_size),
+        marker.radius, volume};
+  };
 
-#ifdef LOG
-  std::cout << '\t' << seeds.size() << " seeds found in directory\n";
-#endif
-  // required of clients and users
-  if (seeds.size() == 0)
-    throw std::runtime_error(
-        "Error --seeds folder passed contained no valid seed files");
+  return entries 
+    | rv::filter(is_marker)
+    | rv::transform(marker_to_seed)
+    | rng::to_vector; 
+}
 
-  return seeds;
+bool is_swc_dir(fs::path seed_path) {
+  assertm(fs::is_directory(seed_path), "Must pass a directory");
+  // must instantiate directory_iterators since not std::safe_range
+  const auto entries{fs::directory_iterator(seed_path)};
+
+  return rng::any_of(entries, is_swc);
+}
+
+std::vector<Seed> process_swc_dir(
+    std::string seed_path,
+    std::array<double, 3> voxel_size) {
+
+  assertm(fs::is_directory(seed_path), "Must pass a directory");
+  const auto entries{fs::directory_iterator(seed_path)};
+
+  return entries 
+    | rv::filter(is_swc)
+    | rv::transform([&](auto file) {
+      return swc_to_graph(file, voxel_size); })
+    | rv::keys | rng::to_vector; 
 }
 
 std::pair<openvdb::FloatGrid::Ptr, std::vector<openvdb::FloatGrid::Ptr>>

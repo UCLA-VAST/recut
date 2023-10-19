@@ -740,7 +740,7 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<GridCoord> soma
   //}
 }
 
-std::pair<Geometry::AMGraph3D, std::vector<Seed>> 
+std::pair<Seed, Geometry::AMGraph3D>
 swc_to_graph(filesystem::path marker_file, std::array<double, 3> voxel_size,
     bool save_file = false) {
   ifstream ifs(marker_file);
@@ -799,14 +799,14 @@ swc_to_graph(filesystem::path marker_file, std::array<double, 3> voxel_size,
     }
   }
 
-  if (seeds.size() > 1) {
+  if (seeds.size() == 1) {
     throw std::runtime_error("Warning: SWC files are trees which by definition must have only 1 root (soma), provided file has " + seeds.size());
   }
   
   if (save_file)
     graph_save(marker_file.stem().string() + ".graph", g);
 
-  return std::make_pair(g, seeds);
+  return std::make_pair(seeds.front(), g);
 }
 
 openvdb::FloatGrid::Ptr skeleton_to_surface(Geometry::AMGraph3D skeleton) {
@@ -840,7 +840,8 @@ openvdb::FloatGrid::Ptr skeleton_to_surface(Geometry::AMGraph3D skeleton) {
 openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path marker_file,
     std::array<double, 3> voxel_size, bool save_vdbs = false, 
     std::string name = "") {
-  auto [skeleton, seeds] = swc_to_graph(marker_file, voxel_size);
+  auto [seed, skeleton] = swc_to_graph(marker_file, voxel_size);
+  std::vector<Seed> seeds{seed};
 
   auto invalids = get_invalid_radii(skeleton);
   if (invalids.size()) 

@@ -3428,12 +3428,20 @@ template <class image_t> void Recut<image_t>::operator()() {
     }
   } else {
     if (fs::is_directory(args->seed_path)) {
-      seeds = process_marker_dir(args->seed_path, args->voxel_size);
-    } else if (fs::is_regular_file(args->seed_path) && args->seed_path.extension() == ".swc") {
-      auto [_, seeds] = swc_to_graph(args->seed_path, args->voxel_size);
+      seeds = is_swc_dir(args->seed_path) ?
+        process_swc_dir(args->seed_path, args->voxel_size) :
+        process_marker_dir(args->seed_path, args->voxel_size);
+    } else if (is_swc(args->seed_path)) {
+      auto [seed, _] = swc_to_graph(args->seed_path, args->voxel_size);
+      seeds = {seed};
     } else {
       throw std::runtime_error("Does not recognize seed type");
     }
+    std::cout << '\t' << seeds.size() << " seeds found in directory\n";
+    // required of clients and users
+    if (seeds.size() == 0)
+      throw std::runtime_error(
+          "Error --seeds folder passed contained no valid seed files");
   }
 
   // labels need somas as intact / unmodified therefore they should
