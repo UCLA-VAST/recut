@@ -49,8 +49,12 @@ This will create a folder in your current directory `run-1` which has a folder f
 
 ### Quickstart and Recommended Settings
 #### MORF membrane labeled dendritome data
-`recut [tif_folder] --fg-percent .4 --output-type mask --voxel-size [x y z]`
-`recut [mask VDB file] --seeds [seed folder] --seed-action force --voxel-size [x y z] [--disable-swc-scaling]`
+```
+recut [tif_folder] --fg-percent .4 --output-type mask --voxel-size [x y z]
+```
+```
+recut [mask VDB file] --seeds [seed folder] --seed-action force --voxel-size [x y z] [--disable-swc-scaling]
+```
 If you use a viewer like Neutube that operates only in voxel units with --output-windows, you need to add the flag `--disable-swc-scaling`
 Note that many parameters are inferred by the voxel size. For example, morphological close steps of topology is inferred from the voxel size for 15x (.4 .4 .4) it computes 4, for 1 1 1 it computes 1 which is almost negligible.
 

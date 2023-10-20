@@ -799,8 +799,9 @@ swc_to_graph(filesystem::path marker_file, std::array<double, 3> voxel_size,
     }
   }
 
-  if (seeds.size() == 1) {
-    throw std::runtime_error("Warning: SWC files are trees which by definition must have only 1 root (soma), provided file has " + seeds.size());
+  if (seeds.size() != 1) {
+    throw std::runtime_error("Warning: SWC files are trees which by definition must have only 1 root (soma), provided file: " + 
+        marker_file.generic_string() + " has " + std::to_string(seeds.size()));
   }
   
   if (save_file)

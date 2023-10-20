@@ -2779,7 +2779,6 @@ template <class image_t> void Recut<image_t>::initialize() {
 
 #ifdef LOG
   cout << "User specified image " << args->input_path << '\n';
-  cout << "Input type " << args->input_type << '\n';
 #endif
   
   if (args->input_type == "ims" || args->input_type == "tiff" || this->input_is_vdb) {
