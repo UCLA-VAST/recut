@@ -2,6 +2,7 @@ logs/
 lib/
 log*
 build*/
+scripts/__pycache__/
 cmake-build-debug/
 tags
 include

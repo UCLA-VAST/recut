@@ -643,6 +643,16 @@ void write_apo_file(fs::path component_dir_fn, std::string file_name_base, std::
   apo_file.close();
 }
 
+std::string swc_name(Node &n, std::array<double, 3> voxel_size) {
+  std::ostringstream out;
+  out << std::setprecision(SWC_PRECISION);
+  for (int i=0; i < 3; ++i) {
+    out << n.pos[i] * voxel_size[i] << '-';
+  }
+  out << n.radius << '-';
+  return out.str();
+}
+
 void write_swcs(Geometry::AMGraph3D component_graph, std::vector<GridCoord> soma_coords,
     std::array<double, 3> voxel_size,
     std::filesystem::path component_dir_fn = ".",
@@ -670,11 +680,9 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<GridCoord> soma
       q.push(soma_id);
 
       // start swc and add header metadata
-      auto pos = component_graph.pos[soma_id].get();
-      auto file_name_base = "tree-with-soma-xyz-" +
-      std::to_string((NodeID)pos[0]) + "-" +
-      std::to_string((NodeID)pos[1]) + "-" +
-      std::to_string((NodeID)pos[2]);
+      auto pos = component_graph.pos[soma_id];
+      Node n{pos, get_radius(component_graph.node_color, soma_id)};
+      auto file_name_base = swc_name(n, voxel_size);
       auto coord_to_swc_id = get_id_map();
 
       // traverse rest of tree

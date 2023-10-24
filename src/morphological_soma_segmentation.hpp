@@ -81,6 +81,14 @@ bool is_swc_dir(fs::path seed_path) {
   return rng::any_of(entries, is_swc);
 }
 
+/*
+auto name_to_coord(fs::path file) {
+  auto coord = file.generic_string() | rv::split('-') | rv::drop(4) | rv::take(3) | 
+  rv::transform([](auto token) { return std::stod(token)})
+  | rng::to_vector();
+}
+*/
+
 std::vector<Seed> process_swc_dir(
     std::string seed_path,
     std::array<double, 3> voxel_size) {

@@ -4,6 +4,7 @@ import shutil
 import pathlib
 
 # takes a directory path returns list of coord+radius
+# markers are always in world space (um units)
 def gather_markers(path):
     markers = []
     adjust = 0
