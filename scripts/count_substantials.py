@@ -1,5 +1,5 @@
 import argparse
-from recut_interface import gather_swcs, filter_fails
+from recut_interface import gather_swc_files, filter_fails
 import numpy as np
 
 def main():
@@ -13,7 +13,7 @@ def main():
     kwargs['voxel_size_z'] = .4
     voxel_sizes = np.array([kwargs['voxel_size_x'], kwargs['voxel_size_y'], kwargs['voxel_size_z']], dtype=float)
 
-    all_swcs = gather_swcs(args.run, voxel_sizes).values()
+    all_swcs = gather_swc_files(args.run)
     substantials = filter_fails(zip(all_swcs, all_swcs))
     print("Substantial count: " + str(len(substantials)) + '/' + str(len(all_swcs)))
 

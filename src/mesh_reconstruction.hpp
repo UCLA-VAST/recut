@@ -77,7 +77,6 @@ void merge_local_radius(Geometry::AMGraph3D &graph, std::vector<Node> &nodes,
   // is fast at finding nodes within a 3D radial distance
   auto tree = build_kdtree(graph);
 
-  std::set<NodeID> deleted_nodes;
   rng::for_each(nodes, [&](Node node) {
       auto original_pos = CGLA::Vec3d(node.pos[0], node.pos[1], node.pos[2]);
       Node n{original_pos, static_cast<float>(node.radius)};
@@ -563,8 +562,10 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     component_log << "saturate edges, " << timer.elapsed() << '\n';
   }
 
+  /*
   if (save_graphs)
     graph_save(component_dir_fn / ("mesh.graph"), g);
+  */
 
   timer.restart();
   // multi-scale is faster and scales linearly with input graph size at
@@ -678,7 +679,7 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<GridCoord> soma
 
   // each vertex in the graph has a single parent (id) which is
   // determined via BFS traversal
-  std::vector<NodeID> parent_table(component_graph.no_nodes(), -1);
+  std::vector<std::optional<NodeID>> parent_table(component_graph.no_nodes());
 
   // scan the graph to find the final set of soma_ids
   std::vector<NodeID> soma_ids;
@@ -732,7 +733,7 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<GridCoord> soma
         auto radius = get_radius(component_graph.node_color, id);
         // can only be this trees root, not possible for somas from other trees to enter in to q
         auto is_root = id == soma_id;
-        auto parent_id = parent_table[id];
+        auto parent_id = parent_table[id].value();
 
         auto coord = std::array<double, 3>{pos[0], pos[1], pos[2]};
         std::array<double, 3> parent_coord;
@@ -749,7 +750,7 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<GridCoord> soma
         // add all neighbors of current to q
         for (auto nb_id : component_graph.neighbors(id)) {
           // do not add other somas or previously visited to the q
-          if (parent_table[nb_id] < 0 && std::find(soma_ids.begin(), soma_ids.end(),
+          if (!parent_table[nb_id].has_value() && std::find(soma_ids.begin(), soma_ids.end(),
                 nb_id) == std::end(soma_ids)) {
             // add current id as parent to all neighbors
             parent_table[nb_id] = id; // permanent assignment of parent
@@ -872,7 +873,6 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path marker_file,
     std::array<double, 3> voxel_size, GridCoord image_offsets, bool save_vdbs = false, 
     std::string name = "") {
   auto [seed, skeleton] = swc_to_graph(marker_file, voxel_size, image_offsets);
-  std::cout << seed << '\n';
   std::vector<Seed> seeds{seed};
 
   auto invalids = get_invalid_radii(skeleton);

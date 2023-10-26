@@ -16,8 +16,9 @@ auto is_swc = [](auto entry) {
     fs::path(entry).extension() == ".swc";
 }; 
 
-void name_to_radius_volume(fs::path name) {
-   std::string fn = name.filename().string();
+double name_to_radius_volume(fs::path name) {
+
+  std::string fn = name.filename().string();
   auto numbers =
       fn | rv::split('_') | rng::to<std::vector<std::string>>();
   if (numbers.size() != 5)
@@ -25,7 +26,7 @@ void name_to_radius_volume(fs::path name) {
    //  volume is the last number of the file name
    uint64_t volume = std::stoull(numbers.back());
 
-  auto radius = std::cbrt(volume) / (4 / 3 * PI);
+  return static_cast<double>(std::cbrt((3 * volume) / (4 * PI)));
 }
 
 // adds all markers to seeds
@@ -52,9 +53,10 @@ std::vector<Seed> process_marker_dir(
       throw std::runtime_error("only 1 soma per marker file allowed");
     auto marker = markers.front(); 
     if (marker.radius == 0) 
-      throw std::runtime_error("Error marker file contained no or 0 radius");
+      marker.radius = name_to_radius_volume(marker_file);
+      //throw std::runtime_error("Error marker file contained no or 0 radius");
 
-    uint64_t volume = (4 / 3) * PI * std::pow(marker.radius, 3);
+    uint64_t volume = (4. / 3.) * PI * std::pow(marker.radius, 3);
     std::array<double, 3> coord_um{{marker.x, marker.y, marker.z}};
     // convert from world space (um) to image space (pixels)
     // these are the offsets around the coordinate to keep

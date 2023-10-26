@@ -30,7 +30,7 @@ struct Seed {
               std::to_string(s.coord_um[1]) + ", " +
               std::to_string(s.coord_um[2]) +
               "], radius: " + std::to_string(s.radius) + 
-              " radius um: " + std::to_string(s.radius_um) + '\n';
+              " radius um: " + std::to_string(s.radius_um) +  " volume " + std::to_string(s.volume) + '\n';
     return os;
   }
 

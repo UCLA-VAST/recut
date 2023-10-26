@@ -3146,7 +3146,7 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
     component->setTransform(get_transform());
     auto bbox = component->evalActiveVoxelBoundingBox();
 
-    // filter all roots within this component
+    // keep all roots within this component
     auto component_seeds = seeds |
                            rv::remove_if([&component](const auto &seed) {
                              return component->tree().getValue(seed.coord) > 0;
@@ -3185,7 +3185,8 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
 
     // seeds are always in voxel units and output with respect to the whole
     // volume
-    write_seeds(component_dir_fn, component_seeds, args->voxel_size);
+    if (false)
+      write_seeds(component_dir_fn, component_seeds, args->voxel_size);
 
     if (args->save_vdbs) { // save a grid corresponding to this component
       write_vdb_file({component}, component_dir_fn / "component-sdf.vdb");
