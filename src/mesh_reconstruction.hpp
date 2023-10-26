@@ -71,16 +71,16 @@ std::vector<NodeID> within_sphere(Node &node,
 // merge an ideal sphere after meshing
 // in use cases where the graph is not transformed into a mesh this is
 // not necessary
-void merge_local_radius(Geometry::AMGraph3D &graph, std::vector<Seed> &seeds,
+void merge_local_radius(Geometry::AMGraph3D &graph, std::vector<Node> &nodes,
     float soma_dilation=1., bool keep_radius_small=false) {
   // the graph is complete so build a data structure that
   // is fast at finding nodes within a 3D radial distance
   auto tree = build_kdtree(graph);
 
   std::set<NodeID> deleted_nodes;
-  rng::for_each(seeds, [&](Seed seed) {
-      auto original_pos = CGLA::Vec3d(seed.coord[0], seed.coord[1], seed.coord[2]);
-      Node n{original_pos, static_cast<float>(seed.radius)};
+  rng::for_each(nodes, [&](Node node) {
+      auto original_pos = CGLA::Vec3d(node.pos[0], node.pos[1], node.pos[2]);
+      Node n{original_pos, static_cast<float>(node.radius)};
 
       std::vector<NodeID> within_sphere_ids = within_sphere(n, tree, soma_dilation);
 
@@ -89,11 +89,17 @@ void merge_local_radius(Geometry::AMGraph3D &graph, std::vector<Seed> &seeds,
       // set the position and radius explicitly rather than averaging the merged nodes
       graph.pos[new_seed_id] = original_pos;
 
-      graph.node_color[new_seed_id] = CGLA::Vec3f(0, keep_radius_small ? 1 : seed.radius, 0);
+      graph.node_color[new_seed_id] = CGLA::Vec3f(0, keep_radius_small ? 1 : node.radius, 0);
   });
 
   graph = Geometry::clean_graph(graph);
 }
+
+auto to_node = [](Seed seed) {
+  CGLA::Vec3d p{static_cast<double>(seed.coord[0]),
+    static_cast<double>(seed.coord[1]), static_cast<double>(seed.coord[2])}; 
+  return Node{p, seed.radius};
+};
 
 // add seeds passed as new nodes in the graph,
 // nearby skeletal nodes are merged into the seeds,
@@ -104,14 +110,13 @@ std::vector<GridCoord> force_soma_nodes(Geometry::AMGraph3D &graph,
     std::vector<Seed> &seeds,
     float soma_dilation) {
 
-  auto soma_coords =
-    seeds | rv::transform([](Seed seed) { return seed.coord; }) 
+  auto nodes = seeds | rv::transform(to_node) 
     | rng::to_vector;
 
   // add the known seeds to the skeletonized graph
-  merge_local_radius(graph, seeds, soma_dilation);
+  merge_local_radius(graph, nodes, soma_dilation);
 
-  return soma_coords;
+  return seeds | rv::transform(&Seed::coord) | rng::to_vector;
 }
 
 void check_soma_ids(NodeID nodes, std::vector<NodeID> soma_ids) {
@@ -129,9 +134,9 @@ std::vector<GridCoord> find_soma_nodes(Geometry::AMGraph3D &graph,
 
   std::vector<GridCoord> soma_coords;
   rng::for_each(seeds, [&](Seed seed) {
-      std::optional<NodeID> max_index;
+    std::optional<NodeID> max_index;
 
-      if (highest_valence) {
+    if (highest_valence) {
       auto original_pos = CGLA::Vec3d(seed.coord[0], seed.coord[1], seed.coord[2]);
       Node n{original_pos, static_cast<float>(seed.radius)};
       auto within_sphere_ids = within_sphere(n, tree, soma_dilation);
@@ -139,13 +144,19 @@ std::vector<GridCoord> find_soma_nodes(Geometry::AMGraph3D &graph,
       // pick skeletal node within radii with highest number of edges (valence)
       int max_valence = 0;
       for (auto id : within_sphere_ids) {
-      auto valence = graph.valence(id);
-      if (valence > max_valence) {
-      max_index = id;
-      max_valence = valence;
+        auto valence = graph.valence(id);
+        if (valence > max_valence) {
+          max_index = id;
+          max_valence = valence;
+        }
       }
+
+      if (max_index) { //found
+        Node n {graph.pos[max_index.value()], get_radius(graph.node_color, max_index.value())};
+        std::vector nodes{n};
+        merge_local_radius(graph, nodes, soma_dilation);
       }
-      } else { // find closest point
+    } else { // find closest point
       auto coord = seed.coord;
       CGLA::Vec3d p0(coord[0], coord[1], coord[2]);
       CGLA::Vec3d key;
@@ -154,14 +165,14 @@ std::vector<GridCoord> find_soma_nodes(Geometry::AMGraph3D &graph,
       bool found = tree.closest_point(p0, dist, key, val);
       if (found)
         max_index = val;
-      }
+    }
 
-      if (max_index) {
-        auto pos = graph.pos[max_index.value()];
-        soma_coords.emplace_back(pos[0], pos[1], pos[2]);
-      } else {
-        std::cout << "Warning lost 1 seed during skeletonization\n";
-      }
+    if (max_index) {
+      auto pos = graph.pos[max_index.value()];
+      soma_coords.emplace_back(pos[0], pos[1], pos[2]);
+    } else {
+      std::cout << "Warning lost 1 seed during skeletonization\n";
+    }
   });
   return soma_coords;
 }
@@ -643,6 +654,9 @@ void write_apo_file(fs::path component_dir_fn, std::string file_name_base, std::
   apo_file.close();
 }
 
+// converts the trees ( single ) root location and radius to world-space um units
+// and names the output file accordingly, Note that this uniquely identifies
+// trees and also allows rerunning recut from known seed/soma locations later
 std::string swc_name(Node &n, std::array<double, 3> voxel_size) {
   std::ostringstream out;
   out <<  std::fixed << std::setprecision(SWC_PRECISION);
@@ -650,7 +664,9 @@ std::string swc_name(Node &n, std::array<double, 3> voxel_size) {
   out << n.pos[0] * voxel_size[0] << ',';
   out << n.pos[1] * voxel_size[1] << ',';
   out << n.pos[2] * voxel_size[2] << ']';
-  out << "-r=" << n.radius << "-µm";
+
+  auto min_voxel_size = min_max(voxel_size).first;
+  out << "-r=" << n.radius * min_voxel_size << "-µm";
   return out.str();
 }
 
@@ -863,7 +879,9 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path marker_file,
   if (invalids.size()) 
     fix_invalid_radii(skeleton, invalids);
 
-  merge_local_radius(skeleton, seeds, 1, true);
+  auto nodes = seeds | rv::transform(to_node) 
+    | rng::to_vector;
+  merge_local_radius(skeleton, nodes, 1, true);
 
   if (save_vdbs)
     graph_save(marker_file.stem().string() + ".graph", skeleton);
