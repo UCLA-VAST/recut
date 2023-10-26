@@ -8,20 +8,7 @@ from test_precision_recall import gather_markers
 from functools import partial
 import numpy as np
 import re
-
-# translates from pixel space to world-space um
-def swc_to_coord(swc, voxel_sizes):
-    coord_space = tuple(map(int, Path(swc).stem.split('_')[0].split('-')[-3:]))
-    return (coord_space[0] * voxel_sizes[0], 
-            coord_space[1] * voxel_sizes[1],
-            coord_space[2] * voxel_sizes[2])
-
-def swcs_to_dict(swcs, voxel_sizes):
-    d = {}
-    for swc in swcs:
-        t = swc_to_coord(swc, voxel_sizes)
-        d[t] = swc
-    return d
+from recut_interface import rm_none, filter_fails
 
 def compare_2_swcs(kwargs, proof_swc, auto_swc, offset):
     timeout_seconds = 4 * 60
@@ -54,13 +41,6 @@ def extract_accuracy(result):
         return True
     else:
         return False
-
-def gather_swcs(path, voxel_sizes, f=None):
-    pattern = path + "/**/*.swc"
-    swcs = glob(pattern, recursive=True)
-    if (f):
-        swcs = filter(f, swcs)
-    return swcs_to_dict(swcs, voxel_sizes)
 
 def euc_dist(l, r):
     return np.sqrt((l[0] - r[0]) ** 2 + (l[1] - r[1]) ** 2 + (l[2] - r[2]) ** 2)
@@ -97,8 +77,6 @@ def match_closest(swc_dict, thresh, coord):
         # l.append(tup)
     # return l
 
-rm_none = lambda iterable: list(filter(lambda x: x is not None, iterable))
-
 def match_coord(f, p):
     (coord, proof_name) = p
     file = f(coord)
@@ -132,15 +110,6 @@ def extract_offset(pair):
     to_int = lambda token: int(re.sub("[^0-9]","",token))
     return (proof_fn, tuple(map(to_int, start.split(','))))
 
-# keep swcs that have more topology than just the soma
-def is_substantial(pair):
-    (proof_swc, automated_swc) = pair
-    with open(automated_swc, 'r') as fp:
-        return pair if len(fp.readlines()) > 3 else None
-
-def filter_fails(matched):
-    return rm_none(map(is_substantial, matched))
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('proofread')
@@ -170,11 +139,13 @@ def main():
     matched = match_swcs(proofreads, automateds, distance_threshold)
     matched_substantial = filter_fails(matched)
     matched_v1 = match_swcs(proofreads, v1, distance_threshold)
+    matched_v1_substantial = filter_fails(matched_v1)
     v1_offset = list(map(extract_offset, matched_v1))
     matched_dict = dict(matched)
     v1_dict = dict(v1_offset)
     params = [(key, matched_dict[key], v1_dict[key]) for key in set(matched_dict) & set(v1_dict)]
     print("Match count: " + str(len(matched)) + '/' + str(len(proofreads)))
+    print("Substantial v1 count: " + str(len(matched_v1_substantial)) + '/' + str(len(proofreads)))
     print("Substantial match count: " + str(len(matched_substantial)) + '/' + str(len(proofreads)))
     print("Match v1 count: " + str(len(matched_v1)) + '/' + str(len(proofreads)))
     print("Params count: " + str(len(params)) + '/' + str(len(proofreads)))
