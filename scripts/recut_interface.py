@@ -30,6 +30,13 @@ def is_substantial(pair):
 def filter_fails(matched):
     return rm_none(map(is_substantial, matched))
 
+def gather_swc_files(path, f=None):
+    pattern = path + "/**/*.swc"
+    swcs = glob(pattern, recursive=True)
+    if (f):
+        swcs = filter(f, swcs)
+    return swcs
+
 def gather_swcs(path, voxel_sizes, f=None):
     pattern = path + "/**/*.swc"
     swcs = glob(pattern, recursive=True)
