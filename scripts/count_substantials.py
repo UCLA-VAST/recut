@@ -1,5 +1,5 @@
 import argparse
-from recut_interface import gather_swcs, filter_fails
+from recut_interface import gather_swc_files, filter_fails
 import numpy as np
 
 def main():
