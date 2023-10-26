@@ -1436,8 +1436,8 @@ auto print_all_points = [](const EnlargedPointDataGrid::Ptr grid,
       ("tcase" + std::to_string(tcase)) /
       ("slt_pct" + std::to_string(slt_pct));
     auto lengths = GridCoord(grid_size);
-    args.set_image_lengths(lengths);
-    args.set_image_offsets(zeros());
+    args.image_lengths = lengths;
+    args.image_offsets = zeros();
 
     // tcase 6 means use real data, in which case we need to either
     // set max and min explicitly (to save time) or recompute what the
@@ -1449,12 +1449,8 @@ auto print_all_points = [](const EnlargedPointDataGrid::Ptr grid,
       // note: a background_thresh of 0 would simply take all pixels within the
       // domain and check that all were used
 
-      // first marker is at 58, 230, 111 : 7333434
-      // args.set_image_offsets({57, 228, 110});
-      // root at {1125, 12949, 344}
-      args.set_image_offsets(
-          {1123 / downsample_factor, 12947 / downsample_factor, 342});
-      args.set_image_lengths({grid_size, grid_size, grid_size});
+      args.image_offsets = {1123 / downsample_factor, 12947 / downsample_factor, 342};
+      args.image_lengths = {grid_size, grid_size, grid_size};
 
       if (const char *env_p = std::getenv("TEST_IMAGE")) {
         std::cout << "Using $TEST_IMAGE environment variable: " << env_p << '\n';

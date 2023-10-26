@@ -3325,8 +3325,11 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   // do an accuracy comparison
   if (args->input_type == "swc" && args->test) {
-    auto input = swc_to_segmented(args->input_path, args->voxel_size, args->save_vdbs, "input");
-    auto test = swc_to_segmented(args->test.value(), args->voxel_size, args->save_vdbs, "test");
+    // image offsets only apply to the ground truth data since those were run with windows
+    // windowed outputs are also not scaled (already in pixel space) thus leave them
+    std::array<double, 3> no_scaling{{1,1,1}}; 
+    auto input = swc_to_segmented(args->input_path, args->disable_swc_scaling ? no_scaling : args->voxel_size, args->image_offsets, args->save_vdbs, "input");
+    auto test = swc_to_segmented(args->test.value(), args->voxel_size, zeros(), args->save_vdbs, "test");
     calculate_recall_precision(input, test, args->save_vdbs);
     exit(0);
   }

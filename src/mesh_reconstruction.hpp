@@ -645,11 +645,12 @@ void write_apo_file(fs::path component_dir_fn, std::string file_name_base, std::
 
 std::string swc_name(Node &n, std::array<double, 3> voxel_size) {
   std::ostringstream out;
-  out << std::setprecision(SWC_PRECISION);
-  for (int i=0; i < 3; ++i) {
-    out << n.pos[i] * voxel_size[i] << '-';
-  }
-  out << n.radius << '-';
+  out <<  std::fixed << std::setprecision(SWC_PRECISION);
+  out << '[';
+  out << n.pos[0] * voxel_size[0] << ',';
+  out << n.pos[1] * voxel_size[1] << ',';
+  out << n.pos[2] * voxel_size[2] << ']';
+  out << "-r=" << n.radius << "-µm";
   return out.str();
 }
 
@@ -750,7 +751,7 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<GridCoord> soma
 
 std::pair<Seed, Geometry::AMGraph3D>
 swc_to_graph(filesystem::path marker_file, std::array<double, 3> voxel_size,
-    bool save_file = false) {
+    GridCoord image_offsets = zeros(), bool save_file = false) {
   ifstream ifs(marker_file);
   if (ifs.fail()) {
     throw std::runtime_error("Unable to open marker file " + marker_file.string());
@@ -782,6 +783,11 @@ swc_to_graph(filesystem::path marker_file, std::array<double, 3> voxel_size,
     ifs >> parent_id;
     ifs.ignore(1000, '\n');
     parent_id -= 1; // need to adjust to 0-indexed
+
+    //translate by image offsets only for data originating from windowed runs 
+    x_um += image_offsets[0];
+    y_um += image_offsets[1];
+    z_um += image_offsets[2];
 
     // translate from um units into integer voxel units
     double x,y,z,radius;
@@ -847,9 +853,10 @@ openvdb::FloatGrid::Ptr skeleton_to_surface(Geometry::AMGraph3D skeleton) {
 
 // returns a polygonal mesh
 openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path marker_file,
-    std::array<double, 3> voxel_size, bool save_vdbs = false, 
+    std::array<double, 3> voxel_size, GridCoord image_offsets, bool save_vdbs = false, 
     std::string name = "") {
-  auto [seed, skeleton] = swc_to_graph(marker_file, voxel_size);
+  auto [seed, skeleton] = swc_to_graph(marker_file, voxel_size, image_offsets);
+  std::cout << seed << '\n';
   std::vector<Seed> seeds{seed};
 
   auto invalids = get_invalid_radii(skeleton);

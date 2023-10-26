@@ -58,7 +58,6 @@ def extract_accuracy(result):
 def gather_swcs(path, voxel_sizes, f=None):
     pattern = path + "/**/*.swc"
     swcs = glob(pattern, recursive=True)
-    print(swcs)
     if (f):
         swcs = filter(f, swcs)
     return swcs_to_dict(swcs, voxel_sizes)
@@ -124,7 +123,6 @@ def run_accuracy(kwargs, match):
     return None
 
 def extract_offset(pair):
-    print(pair)
     (proof_fn, v1_fn) = pair
     file = open(v1_fn, 'r')
     first_line = file.readline()
@@ -133,6 +131,15 @@ def extract_offset(pair):
     start = re.findall(r'\[.*?\]', first_line)[0]
     to_int = lambda token: int(re.sub("[^0-9]","",token))
     return (proof_fn, tuple(map(to_int, start.split(','))))
+
+# keep swcs that have more topology than just the soma
+def is_substantial(pair):
+    (proof_swc, automated_swc) = pair
+    with open(automated_swc, 'r') as fp:
+        return pair if len(fp.readlines()) > 3 else None
+
+def filter_fails(matched):
+    return rm_none(map(is_substantial, matched))
 
 def main():
     parser = argparse.ArgumentParser()
@@ -161,12 +168,14 @@ def main():
     print("Automateds count: " + str(len(v1)))
 
     matched = match_swcs(proofreads, automateds, distance_threshold)
+    matched_substantial = filter_fails(matched)
     matched_v1 = match_swcs(proofreads, v1, distance_threshold)
     v1_offset = list(map(extract_offset, matched_v1))
     matched_dict = dict(matched)
     v1_dict = dict(v1_offset)
     params = [(key, matched_dict[key], v1_dict[key]) for key in set(matched_dict) & set(v1_dict)]
     print("Match count: " + str(len(matched)) + '/' + str(len(proofreads)))
+    print("Substantial match count: " + str(len(matched_substantial)) + '/' + str(len(proofreads)))
     print("Match v1 count: " + str(len(matched_v1)) + '/' + str(len(proofreads)))
     print("Params count: " + str(len(params)) + '/' + str(len(proofreads)))
     print()
@@ -180,7 +189,7 @@ def main():
     # print("Marker-auto match count: " + str(len(matched_markers_auto)) + '/' + str(len(markers)))
 
     run = partial(run_accuracy, kwargs)
-    accuracies = rm_none(map(run, params[0]))
+    accuracies = rm_none(map(run, params))
     acc_dict = {}
     acc_dict['recall'] = list(map(lambda x: x[0], accuracies))
     acc_dict['precision'] = list(map(lambda x: x[1], accuracies))

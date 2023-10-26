@@ -209,7 +209,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
           offsets[j] = atoi(argv[i + 1]);
           ++i;
         }
-        args.set_image_offsets(offsets);
+        args.image_offsets = offsets;
       } else if (strcmp(argv[i], "--voxel-size") == 0) {
         for (int j = 0; j < 3; ++j) {
           args.voxel_size[j] = atof(argv[i + 1]);
@@ -222,7 +222,7 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
           lengths[j] = atoi(argv[i + 1]);
           ++i;
         }
-        args.set_image_lengths(lengths);
+        args.image_lengths = lengths;
       } else if (strcmp(argv[i], "--input-type") == 0) {
         auto arg = std::string(argv[i + 1]);
         std::transform(arg.begin(), arg.end(), arg.begin(),

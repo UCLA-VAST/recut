@@ -43,19 +43,6 @@ public:
   std::string MetaString();
   void PrintParameters() { std::cout << MetaString() << std::endl; }
 
-  // setters
-  void set_image_offsets(const GridCoord &image_offsets) {
-    for (size_t i = 0; i < 3; ++i) {
-      this->image_offsets[i] = image_offsets[i];
-    }
-  }
-
-  void set_image_lengths(const GridCoord &image_lengths) {
-    for (size_t i = 0; i < 3; ++i) {
-      this->image_lengths[i] = image_lengths[i];
-    }
-  }
-
   std::vector<MyMarker *> output_tree;
   GridCoord image_offsets, image_lengths;
 
