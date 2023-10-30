@@ -1,6 +1,23 @@
 import subprocess
 from glob import glob
 from pathlib import Path
+import re
+
+# new file format is in world space um units
+def fn_to_coord(fn_name):
+    start = re.findall(r'\[.*?\]', fn_name)[0][1:-1]
+    to_int = lambda token: round(float(token))
+    return tuple(map(to_int, start.split(',')))
+
+# translates from pixel space to world-space um
+def swc_to_coord(swc, voxel_sizes):
+    if '[' in swc:
+        return fn_to_coord(swc)
+    else:
+        coord_space = tuple(map(int, Path(swc).stem.split('_')[0].split('-')[-3:]))
+        return (coord_space[0] * voxel_sizes[0], 
+                coord_space[1] * voxel_sizes[1],
+                coord_space[2] * voxel_sizes[2])
 
 def swcs_to_dict(swcs, voxel_sizes):
     d = {}
@@ -8,13 +25,6 @@ def swcs_to_dict(swcs, voxel_sizes):
         t = swc_to_coord(swc, voxel_sizes)
         d[t] = swc
     return d
-
-# translates from pixel space to world-space um
-def swc_to_coord(swc, voxel_sizes):
-    coord_space = tuple(map(int, Path(swc).stem.split('_')[0].split('-')[-3:]))
-    return (coord_space[0] * voxel_sizes[0], 
-            coord_space[1] * voxel_sizes[1],
-            coord_space[2] * voxel_sizes[2])
 
 def valid(voxel_size):
     return type(voxel_size) == list and len(voxel_size) == 3

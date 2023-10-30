@@ -658,7 +658,8 @@ void write_apo_file(fs::path component_dir_fn, std::string file_name_base, std::
 // converts the trees ( single ) root location and radius to world-space um units
 // and names the output file accordingly, Note that this uniquely identifies
 // trees and also allows rerunning recut from known seed/soma locations later
-std::string swc_name(Node &n, std::array<double, 3> voxel_size) {
+std::string swc_name(Node &n, std::array<double, 3> voxel_size, bool bbox_adjust=false,
+    CoordBBox bbox = {}) {
   std::ostringstream out;
   out <<  std::fixed << std::setprecision(SWC_PRECISION);
   out << '[';
@@ -667,7 +668,12 @@ std::string swc_name(Node &n, std::array<double, 3> voxel_size) {
   out << n.pos[2] * voxel_size[2] << ']';
 
   auto min_voxel_size = min_max(voxel_size).first;
-  out << "-r=" << n.radius * min_voxel_size << "-µm";
+  out << "-r=" << n.radius * min_voxel_size;
+  if (bbox_adjust) {
+    auto off = bbox.min();
+    out << "-offset=" << '(' << off[0] * voxel_size[0] << ',' << off[1] * voxel_size[1] << ',' << off[2] * voxel_size[2] << ')';
+  }
+  out << "-µm";
   return out.str();
 }
 
@@ -700,7 +706,7 @@ void write_swcs(Geometry::AMGraph3D component_graph, std::vector<GridCoord> soma
       // start swc and add header metadata
       auto pos = component_graph.pos[soma_id];
       Node n{pos, get_radius(component_graph.node_color, soma_id)};
-      auto file_name_base = swc_name(n, voxel_size);
+      auto file_name_base = swc_name(n, voxel_size, bbox_adjust, bbox);
       auto coord_to_swc_id = get_id_map();
 
       // traverse rest of tree
@@ -873,6 +879,7 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path marker_file,
     std::array<double, 3> voxel_size, GridCoord image_offsets, bool save_vdbs = false, 
     std::string name = "") {
   auto [seed, skeleton] = swc_to_graph(marker_file, voxel_size, image_offsets);
+  std::cout << seed << '\n';
   std::vector<Seed> seeds{seed};
 
   auto invalids = get_invalid_radii(skeleton);

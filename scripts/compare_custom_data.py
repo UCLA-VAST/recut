@@ -8,7 +8,7 @@ from test_precision_recall import gather_markers
 from functools import partial
 import numpy as np
 import re
-from recut_interface import rm_none, filter_fails
+from recut_interface import rm_none, filter_fails, gather_swcs
 
 def compare_2_swcs(kwargs, proof_swc, auto_swc, offset):
     timeout_seconds = 4 * 60
@@ -134,19 +134,16 @@ def main():
     v1 = gather_swcs(args.v1, voxel_sizes, f)
     print("Proofread count: " + str(len(proofreads)))
     print("Automateds count: " + str(len(automateds)))
-    print("Automateds count: " + str(len(v1)))
+    print("Original automateds count: " + str(len(v1)))
 
+    # match all data based off soma distance
     matched = match_swcs(proofreads, automateds, distance_threshold)
-    matched_substantial = filter_fails(matched)
     matched_v1 = match_swcs(proofreads, v1, distance_threshold)
-    matched_v1_substantial = filter_fails(matched_v1)
     v1_offset = list(map(extract_offset, matched_v1))
     matched_dict = dict(matched)
     v1_dict = dict(v1_offset)
     params = [(key, matched_dict[key], v1_dict[key]) for key in set(matched_dict) & set(v1_dict)]
     print("Match count: " + str(len(matched)) + '/' + str(len(proofreads)))
-    print("Substantial v1 count: " + str(len(matched_v1_substantial)) + '/' + str(len(proofreads)))
-    print("Substantial match count: " + str(len(matched_substantial)) + '/' + str(len(proofreads)))
     print("Match v1 count: " + str(len(matched_v1)) + '/' + str(len(proofreads)))
     print("Params count: " + str(len(params)) + '/' + str(len(proofreads)))
     print()
