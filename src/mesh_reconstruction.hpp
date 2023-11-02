@@ -443,7 +443,7 @@ void smooth_graph_pos_rad(Geometry::AMGraph3D &g, const int iter, const float al
             false);
       auto [component_graph, _] = skeleton_from_node_set_vec(layer, separators);
       std::cout << "  skeleton node count: " << component_graph.no_nodes() << '\n';
-      std::cout << "  ls time: " << timer.elapsed() << '\n';
+      std::cout << "  ls time: " << timer.elapsed_formatted() << '\n';
       //graph_save(component_dir_fn / ("skeleton" + i + ".graph"), component_graph);
       ++i;
     } }
@@ -545,7 +545,7 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
 
   auto timer = high_resolution_timer();
   auto g = vdb_to_graph(component, args);
-  component_log << "vdb to graph, " << timer.elapsed() << '\n';
+  component_log << "vdb to graph, " << timer.elapsed_formatted() << '\n';
 
   if (args->coarsen_steps) {
     timer.restart();
@@ -553,13 +553,13 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     auto last_layer_index = msg.layers.size() - 1;
     auto layer_index = args->coarsen_steps.value() > last_layer_index ? last_layer_index : args->coarsen_steps.value();
     g = msg.layers[layer_index];
-    component_log << "coarsen, " << timer.elapsed() << '\n';
+    component_log << "coarsen, " << timer.elapsed_formatted() << '\n';
   }
 
   if (args->saturate_edges) {
     timer.restart();
     Geometry::saturate_graph(g, args->saturate_edges.value());
-    component_log << "saturate edges, " << timer.elapsed() << '\n';
+    component_log << "saturate edges, " << timer.elapsed_formatted() << '\n';
   }
 
   /*
@@ -576,7 +576,7 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
         /*opt steps*/ args->optimize_steps, threads,
         false);
   auto [component_graph, _] = skeleton_from_node_set_vec(g, separators);
-  component_log << "msls, " << timer.elapsed() << '\n';
+  component_log << "msls, " << timer.elapsed_formatted() << '\n';
 
   // prune all leaf vertices (valency 1) whose only neighbor has valency > 2
   // as these tend to be spurious branches
@@ -879,8 +879,9 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path marker_file,
     std::array<double, 3> voxel_size, GridCoord image_offsets, bool save_vdbs = false, 
     std::string name = "") {
   auto [seed, skeleton] = swc_to_graph(marker_file, voxel_size, image_offsets);
-  std::cout << seed << '\n';
   std::vector<Seed> seeds{seed};
+
+  bool merge_soma_on_top = true;
 
   auto invalids = get_invalid_radii(skeleton);
   if (invalids.size()) 
@@ -888,7 +889,7 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path marker_file,
 
   auto nodes = seeds | rv::transform(to_node) 
     | rng::to_vector;
-  merge_local_radius(skeleton, nodes, 1, true);
+  merge_local_radius(skeleton, nodes, 1, merge_soma_on_top);
 
   if (save_vdbs)
     graph_save(marker_file.stem().string() + ".graph", skeleton);
@@ -903,7 +904,7 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path marker_file,
   auto level_set = skeleton_to_surface(skeleton);
 
   // merge soma on top
-  {
+  if (merge_soma_on_top) {
     // only 1 soma allowed per swc
     auto seed = seeds[0];
     auto soma_sdf = vto::createLevelSetSphere<openvdb::FloatGrid>(
@@ -934,31 +935,47 @@ void calculate_recall_precision(openvdb::FloatGrid::Ptr truth,
 
   // calculate true positive pixels
   // this is total count of matching truth and test pixels
-  auto true_positive = vto::csgIntersectionCopy(*truth, *test);
+  auto true_positive = truth->deepCopy();
+  {
+    auto test_copy = test->deepCopy();
+    vto::csgIntersection(*true_positive, *test_copy);
+  }
   if (save_vdbs)
     write_vdb_file({true_positive}, "surface-true-positive.vdb");
   auto true_positive_count = voxel_count(true_positive);
 
   // calculate the count of false positive pixels
-  auto false_positive = vto::csgDifferenceCopy(*test, *true_positive);
+  auto false_positive = test->deepCopy();
+  {
+    auto true_positive_copy = true_positive->deepCopy();
+    vto::csgDifference(*false_positive, *true_positive_copy);
+  }
   if (save_vdbs)
     write_vdb_file({false_positive}, "surface-false-positive.vdb");
   auto false_positive_count = voxel_count(false_positive);
 
   // calculate the count of false positive pixels
-  auto false_negative = vto::csgDifferenceCopy(*truth, *true_positive);
+  auto false_negative = truth->deepCopy();
+  {
+    auto true_positive_copy = true_positive->deepCopy();
+    vto::csgDifference(*false_negative, *true_positive_copy);
+  }
   if (save_vdbs)
     write_vdb_file({false_negative}, "surface-false-negative.vdb");
   auto false_negative_count = voxel_count(false_negative);
 
   // calculation union
-  auto union_ls = vto::csgUnionCopy(*truth, *test);
+  auto union_ls = truth->deepCopy();
+  {
+    auto test_copy = test->deepCopy();
+    vto::csgUnion(*union_ls, *test_copy);
+  }
   auto union_count = voxel_count(union_ls);
 
-  recall = true_positive_count / (true_positive_count + false_negative_count);
-  precision_d = true_positive_count / (true_positive_count + false_positive_count);
-  f1 = 2 * precision_d * recall / (precision_d + recall);
-  iou = true_positive_count / union_count;
+  recall = true_positive_count / static_cast<double>(true_positive_count + false_negative_count);
+  precision_d = true_positive_count / static_cast<double>(true_positive_count + false_positive_count);
+  f1 = 2 * precision_d * recall / static_cast<double>(precision_d + recall);
+  iou = true_positive_count / static_cast<double>(union_count);
 
   std::cout << "true positive count, " << true_positive_count << '\n';
   std::cout << "false positive count, " << false_positive_count << '\n';

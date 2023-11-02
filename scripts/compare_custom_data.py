@@ -5,10 +5,14 @@ from glob import glob
 from pathlib import Path
 from collections import namedtuple
 from test_precision_recall import gather_markers
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 from functools import partial
 import numpy as np
 import re
 from recut_interface import rm_none, filter_fails, gather_swcs
+import pandas as pd
 
 def compare_2_swcs(kwargs, proof_swc, auto_swc, offset):
     timeout_seconds = 4 * 60
@@ -110,6 +114,30 @@ def extract_offset(pair):
     to_int = lambda token: int(re.sub("[^0-9]","",token))
     return (proof_fn, tuple(map(to_int, start.split(','))))
 
+def plot(df):
+    des = df.describe()
+    cols = des.columns.to_list()
+    bar_colors = ['red', 'yellow', 'darkorange']
+    r = lambda row: des.loc[row,:].to_list()
+    pct = lambda xs: list(map(lambda x: x *100, xs))
+    means = pct(r("mean"))
+    print(r("mean"))
+    print(r("std"))
+    # plt.plot(cols, means, label=cols, xerr=r("std"))
+    plt.plot(cols, means, label=cols)
+    plt.title("Neurite Accuracy N=" + str(r("count")[0]))
+    # plt.set_ylabel("%")
+    plt.savefig("/home/kdmarrett/fig/fg-.08-neurite-accuracy.png")
+    import pdb; pdb.set_trace()
+    # fig, ax = plt.subplots()
+    # textures = ['///', '...', '', 'OOO']
+    # texture = textures[0]
+    # import pdb; pdb.set_trace()
+    # for name, val in df.mean().items():
+      # bars = ax.bar(val, edgecolor='black', hatch=texture, color='White', align='edge', label=name)
+    # fig.tight_layout()
+    # fig.show()
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('proofread')
@@ -143,9 +171,15 @@ def main():
     matched_dict = dict(matched)
     v1_dict = dict(v1_offset)
     params = [(key, matched_dict[key], v1_dict[key]) for key in set(matched_dict) & set(v1_dict)]
+    discards = len(list(filter(lambda pair: 'discard' in pair[1], matched)))
+    multis = len(list(filter(lambda pair: 'multi' in pair[1], matched)))
+    others = len(list(filter(lambda pair: 'multi' not in pair[1] and 'discard' not in pair[1], matched)))
     print("Match count: " + str(len(matched)) + '/' + str(len(proofreads)))
     print("Match v1 count: " + str(len(matched_v1)) + '/' + str(len(proofreads)))
     print("Params count: " + str(len(params)) + '/' + str(len(proofreads)))
+    print("Automateds discards count: " + str(discards) + '/' + str(len(matched)))
+    print("Automateds multis count: " + str(multis) + '/' + str(len(matched)))
+    print("Automateds others count: " + str(others) + '/' + str(len(matched)))
     print()
 
     # markers are always in world space (um)
@@ -162,8 +196,9 @@ def main():
     acc_dict['recall'] = list(map(lambda x: x[0], accuracies))
     acc_dict['precision'] = list(map(lambda x: x[1], accuracies))
     acc_dict['F1'] = list(map(lambda x: x[2], accuracies))
-    pd.DataFrame(data=acc_dict)
+    df = pd.DataFrame(data=acc_dict)
     print("Comparison count: " + str(len(accuracies)) + '/' + str(len(proofreads)))
+    plot(df)
     import pdb; pdb.set_trace()
 
 if __name__ == "__main__":
