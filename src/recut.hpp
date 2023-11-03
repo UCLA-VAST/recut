@@ -3155,17 +3155,17 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
 
     std::string prefix = "";
     if (component_seeds.size() > 1) {
-      prefix = "a-multi-";
+      prefix = "multi-";
     }
 
     auto voxel_count = component->activeVoxelCount();
     if (voxel_count < SWC_MIN_LINE) {
-      prefix = "discard-";
+      prefix = "d-";
       // return; // skip
     }
 
     if (bbox.dim()[2] < MIN_Z_DEPTH) {
-      prefix = "discard-";
+      prefix = "d-";
       // return; // skip
     }
 
