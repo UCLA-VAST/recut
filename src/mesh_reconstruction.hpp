@@ -101,7 +101,7 @@ void merge_local_radius(Geometry::AMGraph3D &graph, std::vector<Node> &nodes,
       graph.node_color[new_seed_id] = CGLA::Vec3f(0, keep_radius_small ? 1 : node.radius, 0);
   });
 
-  graph = Geometry::clean_graph(graph);
+  graph.cleanup();
 }
 
 auto to_node = [](Seed seed) {
@@ -482,25 +482,47 @@ void fix_invalid_radii(Geometry::AMGraph3D &g, std::vector<NodeID> invalids) {
   });
 }
 
-std::vector<NodeID> get_completely_within(Geometry::AMGraph3D &g, NodeID i) {
-    // rebuilding the kdtree, per index is extremely inefficient,
-    // however at each node, certain vertices are potentially being deleted
-    // so this protects already deleted nodes from populating later searches
-    auto tree = build_kdtree(g);
-
-    auto n = get_node(g, i);
-    auto radius = get_radius(g.node_color, i);
-    std::vector<NodeID> within_sphere_ids = within_sphere(n, tree);
-    // some nodes are partially within, others are completely within
-    // the curren node
-    return within_sphere_ids | rv::remove_if([&](NodeID j){ 
-        return radius >= get_radius(g.node_color, j) + euc_dist(g.pos[i], g.pos[j]);
+std::vector<NodeID> get_completely_within(Geometry::AMGraph3D &g, NodeID current, Geometry::KDTree<CGLA::Vec3d, NodeID> &kdtree) {
+    auto n = get_node(g, current);
+    auto radius = get_radius(g.node_color, current);
+    std::vector<NodeID> within_sphere_ids = within_sphere(n, kdtree);
+    // keep a list of node ids that can't escape (are completely within) the radius 
+    // of the current node, these nodes will be deleted since their
+    // volumetric contributions are 0
+    return within_sphere_ids | rv::filter([&](NodeID nb){ 
+        // keep the nbs that are within current
+        return radius >= get_radius(g.node_color, nb) + euc_dist(g.pos[current], g.pos[nb]);
         }) | rng::to_vector;
 }
 
-void fix_node_within_another(Geometry::AMGraph3D &g) {
-  for (NodeID i=0; i < g.no_nodes(); ++i) {
-    auto completely_within = get_completely_within(g, i);
+bool in(std::set<NodeID> invalidated, NodeID i) {
+  return invalidated.count(i) != 0;
+}
+
+void fix_node_within_another(Geometry::AMGraph3D &g, std::set<NodeID> 
+    enclosers) {
+
+  // iterate the set of nodes that are known to enclose at least 1 other
+  // node, it's possible that some enclosers enclose eachother
+  // since each iteration deletes covered nodes, its possible other
+  // enclosers are invalidated, therefore a list of previously deleted
+  // nodes must be kept to protect from accessing invalid (deleted) nodes
+  // from a previous iteration
+  std::set<NodeID> invalidated;
+  for (NodeID encloser : enclosers) {
+    // protect from previously deleted enclosers 
+    if (in(invalidated, encloser)) continue;
+
+    // save known pos/rad of this node
+    auto radius = get_radius(g.node_color, encloser);
+    auto pos = g.pos[encloser];
+
+    // rebuilding the kdtree, per index is inefficient,
+    // however at each node, certain vertices are potentially being deleted
+    // so this protects already deleted nodes from populating later searches
+    auto kdtree = build_kdtree(g);
+
+    auto completely_within = get_completely_within(g, encloser, kdtree);
 
     // it's only legal to merge another node if it is also a neighbor
     // merging a neighbor can make a second, third, etc. degree neighbor
@@ -508,48 +530,60 @@ void fix_node_within_another(Geometry::AMGraph3D &g) {
     bool performed_a_merge;
     do {
       performed_a_merge = false;
-      auto neighbors = g.neighbors(i);
+      auto neighbors = g.neighbors(encloser);
 
       // protect from checking if a node is a neighbor of itself
+      // which causes UB
       // keep nodes that are within and a directly linked neighbor only
-      auto mergeables = completely_within | rv::remove_if([&](NodeID j) {
-          return i == j || rng::find(neighbors, j) == rng::end(neighbors);
-          }) | rng::to_vector; 
+      auto mergeables = completely_within | rv::remove_if([&](NodeID within) { return encloser == within; }) 
+        | rv::remove_if([&](NodeID within) { return in(invalidated, within); })
+        | rv::remove_if([&](NodeID within) { return rng::find(neighbors, within) == rng::end(neighbors); })
+        | rng::to_vector; 
 
-      // also merge this node if necessary
-      mergeables.push_back(i);
-      // FIXME seg fault here at merge nodes
-      // probably due to j node already being invalidated
-      // switch to merge_nodes(list) interface instead
+      // safe to merge encloser now
+      mergeables.push_back(encloser);
+
+      // if there are other mergeable nodes besides encloser
       if (mergeables.size() > 1) {
-        auto pos = g.pos[i];
-        NodeID new_i = g.merge_nodes(mergeables);
-        // restore original position of i
+        NodeID new_encloser = g.merge_nodes(mergeables);
+        // the enclosers are the ground truth, but merge nodes
+        // sets an averaged pos and radii, instead:
+        // restore original position and radius of encloser
         // so that you don't create more within nodes
-        g.pos[new_i] = pos;
-        //g = Geometry::clean_graph(g);
-        g.cleanup();
+        g.pos[new_encloser] = pos;
+        g.node_color[new_encloser] = CGLA::Vec3f(0, radius, 0);
+        // keep track of invalidated nodes so they don't cause errors
+        // in subsequent iterations
+        for (auto merged : mergeables)
+          invalidated.insert(merged);
         performed_a_merge = true;
       }
     } while (performed_a_merge);
   }
+  // removes invalidated nodes, also invalidates all previous node ids
+  g.cleanup();
 }
 
-int count_nodes_within_another(Geometry::AMGraph3D &g) {
-  int count=0;
-  for (NodeID i=0; i < g.no_nodes(); ++i) {
-    auto completely_within = get_completely_within(g, i);
+std::set<NodeID> count_nodes_within_another(Geometry::AMGraph3D &g) {
+
+  auto kdtree = build_kdtree(g);
+
+  std::set<NodeID> enclosers;
+  for (NodeID i : g.node_ids()) {
+    auto completely_within = get_completely_within(g, i, kdtree);
 
     auto neighbors = g.neighbors(i);
     for (auto j : completely_within) {
       if (i != j && rng::find(neighbors, j) != rng::end(neighbors)) {
-        std::cout << get_node(g, i);
-        std::cout << '\t' << get_node(g, i);
-        ++count;
+        //std::cout << get_node(g, i);
+        //std::cout << '\t' << get_node(g, j);
+        //std::cout << '\t' << euc_dist(g.pos[i], g.pos[j]) << '\n';
+        // keep track that node i, encloses other nodes
+        enclosers.insert(i);
       }
     }
   }
-  return count;
+  return enclosers;
 }
 
 std::optional<std::pair<Geometry::AMGraph3D, std::vector<GridCoord>>>
@@ -612,21 +646,25 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     return std::nullopt;
   }
 
-  //int illegal_nodes = count_nodes_within_another(component_graph);
-  //component_log << "Original within nodes, " << illegal_nodes << '\n';
-  //if (illegal_nodes)
-    //fix_node_within_another(component_graph);
-  //component_log << "Post-fix within nodes, " << count_nodes_within_another(component_graph) << '\n';
+  {
+    auto illegal_nodes = count_nodes_within_another(component_graph);
+    component_log << "Original within nodes, " << illegal_nodes.size() << '\n';
+    if (illegal_nodes.size())
+      fix_node_within_another(component_graph, illegal_nodes);
+    illegal_nodes = count_nodes_within_another(component_graph);
+    assertm(illegal_nodes.size() == 0, "fix node within another not functional");
+    //component_log << "Post-fix within nodes, " << illegal_nodes.size() << '\n';
+  }
 
   // multifurcations are only important for rules of SWC standard
   component_graph = fix_multifurcations(component_graph, soma_coords);
-  //component_log << "Final within nodes, " << count_nodes_within_another(component_graph) << '\n';
   auto invalids = get_invalid_radii(component_graph);
   if (invalids.size() > 0) {
     component_log << "Invalid radii, " << invalids.size() << '\n';
     fix_invalid_radii(component_graph, invalids);
     invalids = get_invalid_radii(component_graph);
-    component_log << "Final invalid radii, " << invalids.size() << '\n';
+    assertm(invalids.size() == 0, "fix invalid radii not functional");
+    //component_log << "Final invalid radii, " << invalids.size() << '\n';
   }
 
   if (save_graphs)
@@ -703,7 +741,7 @@ void write_swcs(Geometry::AMGraph3D &component_graph, std::vector<GridCoord> som
 
   // scan the graph to find the final set of soma_ids
   std::vector<NodeID> soma_ids;
-  for (NodeID i=0; i < component_graph.no_nodes(); ++i) {
+  for (NodeID i : component_graph.node_ids()) {
     auto pos = component_graph.pos[i];
     auto current_coord = GridCoord(pos[0], pos[1], pos[2]);
     if (std::find(soma_coords.begin(),
@@ -866,7 +904,7 @@ openvdb::FloatGrid::Ptr skeleton_to_surface(Geometry::AMGraph3D &skeleton) {
   // feq requires an explicit radii vector
   std::vector<double> radii;
   radii.reserve(skeleton.no_nodes());
-  for (NodeID i = 0; i < skeleton.no_nodes(); ++i) {
+  for (NodeID i : skeleton.node_ids()) {
     radii.push_back(get_radius(skeleton.node_color, i));
   }
 
@@ -937,26 +975,23 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path marker_file,
   bool merge_soma_on_top = true;
 
   auto invalids = get_invalid_radii(skeleton);
-  if (invalids.size()) 
+  if (invalids.size())
     fix_invalid_radii(skeleton, invalids);
-  // delete me
-  invalids = get_invalid_radii(skeleton);
-  assertm(invalids.size() ==0, "invalid radii still not zero");
 
   auto nodes = seeds | rv::transform(to_node) 
     | rng::to_vector;
-  merge_local_radius(skeleton, nodes, 1);
+  merge_local_radius(skeleton, nodes, 
+      /*don't dilate soma at all*/1);
 
   if (save_vdbs)
     graph_save(marker_file.stem().string() + ".graph", skeleton);
 
   // check SWC health
   if (true) {
-    int illegal_nodes = count_nodes_within_another(skeleton);
-    std::cout << "Original within nodes, " << illegal_nodes << " of " << skeleton.no_nodes() << '\n';
-    if (illegal_nodes)
-      fix_node_within_another(skeleton);
-    std::cout << "Post-fix within nodes, " << count_nodes_within_another(skeleton) << " of " << skeleton.no_nodes() << '\n';
+    auto illegal_nodes = count_nodes_within_another(skeleton);
+    std::cout << "Original within nodes, " << illegal_nodes.size() << " of " << skeleton.no_nodes() << '\n';
+    if (!illegal_nodes.empty())
+      fix_node_within_another(skeleton, illegal_nodes);
   }
 
   if (save_swcs) {
@@ -976,12 +1011,13 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path marker_file,
 
   // check SWC health
   //node_valencies(skeleton);
-  //illegal_nodes = count_nodes_within_another(skeleton);
-  //fix_node_within_another(skeleton);
-  //std::cout << "Final within nodes, " << illegal_nodes << " of " << skeleton.no_nodes() << '\n';
-  int illegal_nodes = count_self_connected(skeleton);
-  if (illegal_nodes)
-    throw std::runtime_error("Self connected count" + std::to_string(illegal_nodes));
+  {
+    auto invalids = get_invalid_radii(skeleton);
+    if (invalids.size())
+      throw std::runtime_error("invalid radii found");
+  }
+  if (count_self_connected(skeleton))
+    throw std::runtime_error("Self connected nodes found");
 
   auto level_set = skeleton_to_surface(skeleton);
 
