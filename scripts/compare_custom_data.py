@@ -23,6 +23,7 @@ def compare_2_swcs(kwargs, proof_swc, auto_swc, offset):
         result = subprocess.run(cmd.split(), capture_output=True, check=False, text=True,
                         timeout=timeout_seconds)
     except:
+        print("Failed python call")
         return None
     return result
 
@@ -102,6 +103,7 @@ def run_accuracy(kwargs, match):
         print()
         print()
         return is_success
+    print("Failed in compare")
     return None
 
 def extract_offset(pair):

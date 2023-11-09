@@ -17,6 +17,16 @@ class Node {
   public:
     CGLA::Vec3d pos;
     float radius;
+
+    friend std::ostream &operator<<(std::ostream &os, const Node &n) {
+      os << std::fixed << std::setprecision(SWC_PRECISION);
+      os << "[" << std::to_string(n.pos[0]) << ", " +
+                std::to_string(n.pos[1]) + ", " +
+                std::to_string(n.pos[2]) +
+                "], radius: " + std::to_string(n.radius) + '\n';
+      return os;
+    }
+
 };
 
 using NodeID = Geometry::AMGraph3D::NodeID;
@@ -31,7 +41,7 @@ CGLA::Vec3f convert_radius(float radius) {
   return {0, radius, 0};
 }
 
-Node get_node(Geometry::AMGraph3D g, NodeID i) {
+Node get_node(Geometry::AMGraph3D &g, NodeID i) {
   Node n{g.pos[i], get_radius(g.node_color, i)};
   return n;
 }
@@ -472,7 +482,7 @@ void fix_invalid_radii(Geometry::AMGraph3D &g, std::vector<NodeID> invalids) {
   });
 }
 
-std::vector<NodeID> get_completely_within(NodeID i, Geometry::AMGraph3D &g) {
+std::vector<NodeID> get_completely_within(Geometry::AMGraph3D &g, NodeID i) {
     // rebuilding the kdtree, per index is extremely inefficient,
     // however at each node, certain vertices are potentially being deleted
     // so this protects already deleted nodes from populating later searches
@@ -490,12 +500,14 @@ std::vector<NodeID> get_completely_within(NodeID i, Geometry::AMGraph3D &g) {
 
 void fix_node_within_another(Geometry::AMGraph3D &g) {
   for (NodeID i=0; i < g.no_nodes(); ++i) {
-    auto completely_within = get_completely_within(i, g);
+    auto completely_within = get_completely_within(g, i);
 
     // it's only legal to merge another node if it is also a neighbor
     // merging a neighbor can make a second, third, etc. degree neighbor
     // mergeable afterwards
-    for (bool merged = false; merged; merged = false) {
+    bool performed_a_merge;
+    do {
+      performed_a_merge = false;
       auto neighbors = g.neighbors(i);
 
       // protect from checking if a node is a neighbor of itself
@@ -515,24 +527,26 @@ void fix_node_within_another(Geometry::AMGraph3D &g) {
         // restore original position of i
         // so that you don't create more within nodes
         g.pos[new_i] = pos;
-        g = Geometry::clean_graph(g);
-        merged = true;
+        //g = Geometry::clean_graph(g);
+        g.cleanup();
+        performed_a_merge = true;
       }
-    }
+    } while (performed_a_merge);
   }
 }
 
-// throws if 1 node is a neighbor of another and one of them is
-// completely within the other 
 int count_nodes_within_another(Geometry::AMGraph3D &g) {
   int count=0;
   for (NodeID i=0; i < g.no_nodes(); ++i) {
-    auto completely_within = get_completely_within(i, g);
+    auto completely_within = get_completely_within(g, i);
 
     auto neighbors = g.neighbors(i);
     for (auto j : completely_within) {
-      if (i != j && rng::find(neighbors, j) != rng::end(neighbors))
+      if (i != j && rng::find(neighbors, j) != rng::end(neighbors)) {
+        std::cout << get_node(g, i);
+        std::cout << '\t' << get_node(g, i);
         ++count;
+      }
     }
   }
   return count;
@@ -677,7 +691,7 @@ std::string swc_name(Node &n, std::array<double, 3> voxel_size, bool bbox_adjust
   return out.str();
 }
 
-void write_swcs(Geometry::AMGraph3D component_graph, std::vector<GridCoord> soma_coords,
+void write_swcs(Geometry::AMGraph3D &component_graph, std::vector<GridCoord> soma_coords,
     std::array<double, 3> voxel_size,
     std::filesystem::path component_dir_fn = ".",
     CoordBBox bbox = {}, bool bbox_adjust = false,
@@ -847,7 +861,7 @@ swc_to_graph(filesystem::path marker_file, std::array<double, 3> voxel_size,
   return std::make_pair(seeds.front(), g);
 }
 
-openvdb::FloatGrid::Ptr skeleton_to_surface(Geometry::AMGraph3D skeleton) {
+openvdb::FloatGrid::Ptr skeleton_to_surface(Geometry::AMGraph3D &skeleton) {
 
   // feq requires an explicit radii vector
   std::vector<double> radii;
@@ -874,10 +888,49 @@ openvdb::FloatGrid::Ptr skeleton_to_surface(Geometry::AMGraph3D skeleton) {
   return vto::meshToVolume<openvdb::FloatGrid>(mesh, *get_transform());
 }
 
+int count_self_connected(Geometry::AMGraph3D &g) {
+  std::vector<NodeID> self_connected;
+  for (NodeID n : g.node_ids()) {
+    for (NodeID nn: g.neighbors(n)) {
+      if (n == nn)
+        self_connected.push_back(n);
+    }
+  }
+  return self_connected.size();
+}
+
+void remove_from_graph(Geometry::AMGraph3D &g, std::vector<GridCoord> coords) {
+  // loop over all vertices until no remaining multifurcations are found
+  for (auto i : g.node_ids()) {
+    auto pos = g.pos[i];
+    auto current_coord = GridCoord(pos[0], pos[1], pos[2]);
+    if (rng::find(coords, current_coord) != rng::end(coords)) {
+      //std::cout << "nb count " << g.neighbors(i).size() << '\n';
+      g.remove_node(i);
+      g.cleanup();
+    }
+  }
+}
+
+std::vector<int> node_valencies(Geometry::AMGraph3D &g) {
+  std::vector<int> valencies;
+  for (NodeID n : g.node_ids()) {
+    auto nbs = g.neighbors(n);
+    valencies.push_back(nbs.size());
+  }
+
+  // greatest to smallest
+  std::sort(valencies.begin(), valencies.end(), std::greater<int>());
+  for (auto v : valencies)
+    std::cout << v << '\n';
+  return valencies;
+}
+
 // returns a polygonal mesh
 openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path marker_file,
     std::array<double, 3> voxel_size, GridCoord image_offsets, bool save_vdbs = false, 
-    std::string name = "") {
+    std::string name = "", bool save_swcs = true) {
+
   auto [seed, skeleton] = swc_to_graph(marker_file, voxel_size, image_offsets);
   std::vector<Seed> seeds{seed};
 
@@ -886,20 +939,49 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path marker_file,
   auto invalids = get_invalid_radii(skeleton);
   if (invalids.size()) 
     fix_invalid_radii(skeleton, invalids);
+  // delete me
+  invalids = get_invalid_radii(skeleton);
+  assertm(invalids.size() ==0, "invalid radii still not zero");
 
   auto nodes = seeds | rv::transform(to_node) 
     | rng::to_vector;
-  merge_local_radius(skeleton, nodes, 1, merge_soma_on_top);
+  merge_local_radius(skeleton, nodes, 1);
 
   if (save_vdbs)
     graph_save(marker_file.stem().string() + ".graph", skeleton);
 
-  if (false) {
+  // check SWC health
+  if (true) {
+    int illegal_nodes = count_nodes_within_another(skeleton);
+    std::cout << "Original within nodes, " << illegal_nodes << " of " << skeleton.no_nodes() << '\n';
+    if (illegal_nodes)
+      fix_node_within_another(skeleton);
+    std::cout << "Post-fix within nodes, " << count_nodes_within_another(skeleton) << " of " << skeleton.no_nodes() << '\n';
+  }
+
+  if (save_swcs) {
     auto soma_coords = rv::transform(seeds, [](Seed seed) {
         return seed.coord;
         }) | rng::to_vector;
-    write_swcs(skeleton, soma_coords, voxel_size, "test");
+    write_swcs(skeleton, soma_coords, voxel_size);
   }
+
+  // delete the soma from the graph because it can have >10 valency
+  // which causes graph_to_FEQ to seg fault
+  // the soma sphere will be fused on top of the level set later
+  if (merge_soma_on_top) {
+    auto soma_coords = seeds | rv::transform(&Seed::coord) | rng::to_vector;
+    remove_from_graph(skeleton, soma_coords);
+  }
+
+  // check SWC health
+  //node_valencies(skeleton);
+  //illegal_nodes = count_nodes_within_another(skeleton);
+  //fix_node_within_another(skeleton);
+  //std::cout << "Final within nodes, " << illegal_nodes << " of " << skeleton.no_nodes() << '\n';
+  int illegal_nodes = count_self_connected(skeleton);
+  if (illegal_nodes)
+    throw std::runtime_error("Self connected count" + std::to_string(illegal_nodes));
 
   auto level_set = skeleton_to_surface(skeleton);
 
