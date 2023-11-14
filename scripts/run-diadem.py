@@ -1,5 +1,4 @@
 import argparse
-import shutil
 import os, glob
 from recut_interface import call_recut, valid
 

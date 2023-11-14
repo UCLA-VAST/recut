@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from functools import partial
 import numpy as np
 import re
-from recut_interface import rm_none, filter_fails, gather_swcs
+from recut_interface import *
 import pandas as pd
 
 def compare_2_swcs(kwargs, proof_swc, auto_swc, offset):
@@ -47,53 +47,6 @@ def extract_accuracy(result):
     else:
         return False
 
-def euc_dist(l, r):
-    return np.sqrt((l[0] - r[0]) ** 2 + (l[1] - r[1]) ** 2 + (l[2] - r[2]) ** 2)
-
-def match_closest(swc_dict, thresh, coord):
-    coords = list(swc_dict.keys())
-    # for this particular coord..
-    dist = partial(euc_dist, coord)
-    # distance to all others in swc_dict
-    dists = list(map(dist, coords))
-    coords_swcs_dists = zip(coords, swc_dict.values(), dists)
-    sorted_coord_dists = sorted(coords_swcs_dists, key=lambda p: p[2])
-    # print(sorted_coord_dists)
-    smallest_tup = sorted_coord_dists[0]
-    smallest_dist = smallest_tup[2]
-    # filename of smallest dist
-    return smallest_tup[1] if (thresh and (smallest_dist <= thresh)) or not thresh else None
-
-# def match_markers(markers, swcs, thresh=None):
-    # l = []
-    # for coord_um in markers:
-        # # FIXME parameterize
-        # coord = (int(coord_um[0] / .4), int(coord_um[1] / .4),
-                 # int(coord_um[2] / .4))
-        # if coord in swcs:
-            # swc = swcs[coord]
-        # else:
-            # closest_coord = match_closest(coord, swcs, thresh)
-            # if closest_coord: 
-                # swc = swcs[closest_coord];
-            # else:
-                # continue
-        # tup = (coord, swc)
-        # l.append(tup)
-    # return l
-
-def match_coord(f, p):
-    (coord, proof_name) = p
-    file = f(coord)
-    return (proof_name, file) if file else None
-
-# match each proofread against the larger set of automateds
-def match_swcs(proofreads, automateds, thresh=None):
-    closest_file = partial(match_closest, automateds, thresh)
-    make_pair = partial(match_coord, closest_file)
-    matched = map(make_pair, proofreads.items())
-    return rm_none(matched)
-
 def run_accuracy(kwargs, match):
     returncode = compare_2_swcs(kwargs, *match)
     is_success = extract_accuracy(returncode)
@@ -105,16 +58,6 @@ def run_accuracy(kwargs, match):
         return is_success
     print("Failed in compare")
     return None
-
-def extract_offset(pair):
-    (proof_fn, v1_fn) = pair
-    file = open(v1_fn, 'r')
-    first_line = file.readline()
-    file.close()
-
-    start = re.findall(r'\[.*?\]', first_line)[0]
-    to_int = lambda token: int(re.sub("[^0-9]","",token))
-    return (proof_fn, tuple(map(to_int, start.split(','))))
 
 def plot(df):
     des = df.describe()
@@ -140,12 +83,21 @@ def plot(df):
     # fig.tight_layout()
     # fig.show()
 
+# explore the breakdown of how recut classified its component outputs only for 
+# the final set of markers that proofreaders deemed proofreadable
+def describe_recut_component_classifier(raw_matched):
+    discards = len(list(filter(lambda pair: 'discard' in pair[1], raw_matched)))
+    multis = len(list(filter(lambda pair: 'multi' in pair[1], raw_matched)))
+    others = len(list(filter(lambda pair: 'multi' not in pair[1] and 'discard' not in pair[1], raw_matched)))
+    print("Automateds discards count: " + str(discards) + '/' + str(len(raw_matched)))
+    print("Automateds multis count: " + str(multis) + '/' + str(len(raw_matched)))
+    print("Automateds others count: " + str(others) + '/' + str(len(raw_matched)))
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('proofread')
     parser.add_argument('automated')
     parser.add_argument('v1')
-    # parser.add_argument('markers')
     args = parser.parse_args()
     kwargs = {}
     kwargs['voxel_size_x'] = .4
@@ -167,30 +119,21 @@ def main():
     print("Original automateds count: " + str(len(v1)))
 
     # match all data based off soma distance
-    matched = match_swcs(proofreads, automateds, distance_threshold)
-    matched_v1 = match_swcs(proofreads, v1, distance_threshold)
+    raw_matched = match_coord_keys(proofreads, automateds, distance_threshold)
+    # keep only the matches whose automated succeeded (had more than the soma in the swc)
+    matched = filter_fails(raw_matched)
+    matched_v1 = match_coord_keys(proofreads, v1, distance_threshold)
     v1_offset = list(map(extract_offset, matched_v1))
     matched_dict = dict(matched)
     v1_dict = dict(v1_offset)
     params = [(key, matched_dict[key], v1_dict[key]) for key in set(matched_dict) & set(v1_dict)]
-    discards = len(list(filter(lambda pair: 'discard' in pair[1], matched)))
-    multis = len(list(filter(lambda pair: 'multi' in pair[1], matched)))
-    others = len(list(filter(lambda pair: 'multi' not in pair[1] and 'discard' not in pair[1], matched)))
+    print("Raw match count: " + str(len(raw_matched)) + '/' + str(len(proofreads)))
     print("Match count: " + str(len(matched)) + '/' + str(len(proofreads)))
+    print("Automated sucess rate on final proofreads: " + str(len(matched)) + '/' + str(len(raw_matched)))
     print("Match v1 count: " + str(len(matched_v1)) + '/' + str(len(proofreads)))
     print("Params count: " + str(len(params)) + '/' + str(len(proofreads)))
-    print("Automateds discards count: " + str(discards) + '/' + str(len(matched)))
-    print("Automateds multis count: " + str(multis) + '/' + str(len(matched)))
-    print("Automateds others count: " + str(others) + '/' + str(len(matched)))
-    print()
 
-    # markers are always in world space (um)
-    # (markers, _) = gather_markers(args.markers)
-    # print("Marker count: " + str(len(markers)))
-    # matched_markers = match_markers(markers, proofreads)
-    # matched_markers_auto = match_markers(markers, automateds)
-    # print("Marker-proof match count: " + str(len(matched_markers)) + '/' + str(len(markers)))
-    # print("Marker-auto match count: " + str(len(matched_markers_auto)) + '/' + str(len(markers)))
+    print()
 
     run = partial(run_accuracy, kwargs)
     accuracies = rm_none(map(run, params))

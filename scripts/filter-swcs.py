@@ -3,21 +3,6 @@ import sys
 import shutil
 import pathlib
 
-# takes a directory path returns list of coord+radius
-# markers are always in world space (um units)
-def gather_markers(path):
-    markers = []
-    adjust = 0
-    for root, dirs, files in os.walk(path):
-        for file in files:
-            name = os.path.join(root, file)
-            if 'marker_' in file:
-                x, y, z, volume = file.split('_')[1:]
-                radius = volume # ....
-                coord = (int(x) - adjust, int(y) - adjust, int(z) - adjust)
-                markers.append(coord[[0], coord[1], coord[2], radius)
-    return markers
-
 def gather_proofreads(proofread_dir):
     # build set of sections from proofread folder
     # sections = [f.name for f in os.scandir(proofread_dir) if f.is_dir()]

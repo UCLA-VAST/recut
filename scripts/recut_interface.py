@@ -1,6 +1,8 @@
 import subprocess
 from glob import glob
 from pathlib import Path
+from functools import partial
+import numpy as np
 import re
 
 # new file format is in world space um units
@@ -72,3 +74,53 @@ def call_recut(**kwargs):
         kwargs['inferenced_path'] = f"{run_dir}/seeds"
     return run_dir;
 
+def euc_dist(l, r):
+    return np.sqrt((l[0] - r[0]) ** 2 + (l[1] - r[1]) ** 2 + (l[2] - r[2]) ** 2)
+
+def match_closest(swc_dict, thresh, coord):
+    coords = list(swc_dict.keys())
+    # for this particular coord..
+    dist = partial(euc_dist, coord)
+    # distance to all others in swc_dict
+    dists = list(map(dist, coords))
+    coords_swcs_dists = zip(coords, swc_dict.values(), dists)
+    sorted_coord_dists = sorted(coords_swcs_dists, key=lambda p: p[2])
+    # print(sorted_coord_dists)
+    smallest_tup = sorted_coord_dists[0]
+    smallest_dist = smallest_tup[2]
+    # filename of smallest dist
+    return smallest_tup[1] if (thresh and (smallest_dist <= thresh)) or not thresh else None
+
+def match_coord(f, p):
+    (coord, proof_name) = p
+    file = f(coord)
+    return (proof_name, file) if file else None
+
+# match each proofread against the larger set of automateds
+def match_coord_keys(proofreads, automateds, thresh=None):
+    closest_file = partial(match_closest, automateds, thresh)
+    make_pair = partial(match_coord, closest_file)
+    matched = map(make_pair, proofreads.items())
+    return rm_none(matched)
+
+def extract_offset(pair):
+    (proof_fn, v1_fn) = pair
+    file = open(v1_fn, 'r')
+    first_line = file.readline()
+    file.close()
+
+    start = re.findall(r'\[.*?\]', first_line)[0]
+    to_int = lambda token: int(re.sub("[^0-9]","",token))
+    return (proof_fn, tuple(map(to_int, start.split(','))))
+
+def extract_soma_coord(pair):
+    (proof_fn, v1_fn) = pair
+    with open(proof_fn, 'r') as file:
+        _ = file.readline()
+        return tuple(map(float, file.readline().split()[2:-1]))
+
+def extract_soma_radius(pair):
+    (proof_fn, v1_fn) = pair
+    with open(proof_fn, 'r') as file:
+        _ = file.readline()
+        return float(file.readline().split()[-2])
