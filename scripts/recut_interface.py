@@ -97,11 +97,11 @@ def match_coord(f, p):
     return (proof_name, file) if file else None
 
 # match each proofread against the larger set of automateds
-def match_coord_keys(proofreads, automateds, thresh=None):
+def match_coord_keys(proofreads, automateds, thresh=None, rm=True):
     closest_file = partial(match_closest, automateds, thresh)
     make_pair = partial(match_coord, closest_file)
     matched = map(make_pair, proofreads.items())
-    return rm_none(matched)
+    return rm_none(matched) if rm else matched
 
 def extract_offset(pair):
     (proof_fn, v1_fn) = pair
@@ -117,7 +117,7 @@ def extract_soma_coord(pair):
     (proof_fn, v1_fn) = pair
     with open(proof_fn, 'r') as file:
         _ = file.readline()
-        return tuple(map(float, file.readline().split()[2:-1]))
+        return tuple(map(float, file.readline().split()[2:-2]))
 
 def extract_soma_radius(pair):
     (proof_fn, v1_fn) = pair
