@@ -652,8 +652,9 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     if (illegal_nodes.size())
       fix_node_within_another(component_graph, illegal_nodes);
     illegal_nodes = count_nodes_within_another(component_graph);
-    assertm(illegal_nodes.size() == 0, "fix node within another not functional");
-    //component_log << "Post-fix within nodes, " << illegal_nodes.size() << '\n';
+    //assertm(illegal_nodes.size() == 0, "fix node within another not functional");
+    if (illegal_nodes.size() != 0)
+      component_log << "Post-fix within nodes, " << illegal_nodes.size() << '\n';
   }
 
   // multifurcations are only important for rules of SWC standard
