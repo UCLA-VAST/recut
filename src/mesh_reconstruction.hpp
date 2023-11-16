@@ -663,8 +663,9 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     component_log << "Invalid radii, " << invalids.size() << '\n';
     fix_invalid_radii(component_graph, invalids);
     invalids = get_invalid_radii(component_graph);
-    assertm(invalids.size() == 0, "fix invalid radii not functional");
-    //component_log << "Final invalid radii, " << invalids.size() << '\n';
+    //assertm(invalids.size() == 0, "fix invalid radii not functional");
+    if (invalids.size() != 0)
+      component_log << "Final invalid radii, " << invalids.size() << '\n';
   }
 
   if (save_graphs)

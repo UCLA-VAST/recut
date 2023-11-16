@@ -93,30 +93,31 @@ def main():
 
     # you need to get v1 outputs to match to, get correct offset adjustment
     v1 = gather_swcs(args.v1, voxel_sizes, f)
+
     # list of (proofread path, v1 path):
     # note once you start matching you need to keep things as a list of tuples
     # so that ordering (which implies matching) is preserved
     # sets and dicts in python can be tricky to reason about in sorted order
     matched_v1 = match_coord_keys(proofread_dict, v1, distance_threshold)
-    # print("Match v1 count: " + str(len(matched_v1)) + '/' + str(len(proofread_dict)))
-
     soma_coords_radii = get_proofread_soma_pos_rad(matched_v1, voxel_sizes)
 
     # pairs of proofread file path matched with marker file path
     matches = match_coord_keys(proofread_dict, marker_dict, distance_threshold)
-    final_matched_proofreads = [tup[0] for tup in matches]
-    # print("match count: " + str(len(matches)) + '/' + str(len(proofread_dict)))
+    final_matched_proofreads = [proof for proof, _ in matches]
 
     # soma_coords_radii and matched_v1 originate from the same list so they share indices
     final_soma_coords_radii = [soma_coords_radii[i] for i, tup in enumerate(matched_v1) 
                                    if tup[0] in final_matched_proofreads] 
-    print("final soma match count: " + str(len(final_soma_coords_radii)) + '/' + str(len(proofread_dict)))
+    final_proofreads = [proof for proof, _ in matched_v1 
+                                   if proof in final_matched_proofreads] 
+    double_matched_markers = {marker for proof in final_proofreads for proof2, marker in matches if proof2 == proof}
+    print("final marker count: " + str(len(double_matched_markers)) + '/' + str(len(proofread_dict)))
+    if (len(final_soma_coords_radii) != len(double_matched_markers)):
+        raise Exception("if a marker cant be matched you need to at least guarantee reuse of the original")
 
     # split markers into those that match the final set of proofreads and those that do not
-    matched_markers = {match[1] for match in matches}
     marker_set = set(marker_dict.values())
-    unmatched_markers = marker_set - matched_markers
-    # print("Marker-proof match count: " + str(len(matched_markers)) + '/' + str(len(markers)))
+    unmatched_markers = marker_set - double_matched_markers
 
     # for those that do not match, simply copy them over to the new directory
     copy_unmatched(proofread_marker_dir, unmatched_markers)
