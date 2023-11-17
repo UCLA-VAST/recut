@@ -827,11 +827,11 @@ void write_swcs(Geometry::AMGraph3D &component_graph, std::vector<GridCoord> som
 }
 
 std::pair<Seed, Geometry::AMGraph3D>
-swc_to_graph(filesystem::path marker_file, std::array<double, 3> voxel_size,
+swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
     GridCoord image_offsets = zeros(), bool save_file = false) {
-  ifstream ifs(marker_file);
+  ifstream ifs(swc_file);
   if (ifs.fail()) {
-    throw std::runtime_error("Unable to open marker file " + marker_file.string());
+    throw std::runtime_error("Unable to open marker file " + swc_file.string());
   }
 
   auto min_voxel_size = min_max(voxel_size).first;
@@ -868,7 +868,7 @@ swc_to_graph(filesystem::path marker_file, std::array<double, 3> voxel_size,
 
     // translate from um units into integer voxel units
     double x,y,z,radius;
-    radius = std::round(radius_um / min_voxel_size);
+    radius = radius_um / min_voxel_size;
     x = std::round(x_um / voxel_size[0]);
     y = std::round(y_um / voxel_size[1]);
     z = std::round(z_um / voxel_size[2]);
@@ -882,7 +882,7 @@ swc_to_graph(filesystem::path marker_file, std::array<double, 3> voxel_size,
     // somas are nodes that have a parent of -1 (adjusted to -2) or have an index
     // of themselves
     if (parent_id == -2 || parent_id == node_id) {
-      auto volume = static_cast<uint64_t>((4 / 3) * PI * std::pow(radius, 3));
+      auto volume = static_cast<uint64_t>(std::round((4. / 3.) * PI * std::pow(radius, 3)));
       std::array<double, 3> coord_um{x_um, y_um, z_um};
       seeds.emplace_back(coord, coord_um, radius, radius_um, volume);
     } else {
@@ -892,11 +892,11 @@ swc_to_graph(filesystem::path marker_file, std::array<double, 3> voxel_size,
 
   if (seeds.size() != 1) {
     throw std::runtime_error("Warning: SWC files are trees which by definition must have only 1 root (soma), provided file: " + 
-        marker_file.generic_string() + " has " + std::to_string(seeds.size()));
+        swc_file.generic_string() + " has " + std::to_string(seeds.size()));
   }
   
   if (save_file)
-    graph_save(marker_file.stem().string() + ".graph", g);
+    graph_save(swc_file.stem().string() + ".graph", g);
 
   return std::make_pair(seeds.front(), g);
 }
@@ -967,26 +967,31 @@ std::vector<int> node_valencies(Geometry::AMGraph3D &g) {
 }
 
 // returns a polygonal mesh
-openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path marker_file,
+openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
     std::array<double, 3> voxel_size, GridCoord image_offsets, bool save_vdbs = false, 
     std::string name = "", bool save_swcs = true) {
 
-  auto [seed, skeleton] = swc_to_graph(marker_file, voxel_size, image_offsets);
+  auto [seed, skeleton] = swc_to_graph(swc_file, voxel_size, image_offsets);
   std::vector<Seed> seeds{seed};
 
-  bool merge_soma_on_top = true;
+  bool merge_soma_on_top = false;
 
   auto invalids = get_invalid_radii(skeleton);
-  if (invalids.size())
+  if (invalids.size()) {
+    std::cout << "Original invalid radii, " << invalids.size() << '\n';
     fix_invalid_radii(skeleton, invalids);
+  }
 
-  auto nodes = seeds | rv::transform(to_node) 
-    | rng::to_vector;
-  merge_local_radius(skeleton, nodes, 
-      /*don't dilate soma at all*/1);
+  // for any nodes within the soma collapse them
+  if (false) {
+    auto nodes = seeds | rv::transform(to_node) 
+      | rng::to_vector;
+    merge_local_radius(skeleton, nodes, 
+        /*don't dilate soma at all*/1);
+  }
 
   if (save_vdbs)
-    graph_save(marker_file.stem().string() + ".graph", skeleton);
+    graph_save(swc_file.stem().string() + ".graph", skeleton);
 
   // check SWC health
   if (true) {
@@ -1034,7 +1039,7 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path marker_file,
   }
 
   if (save_vdbs)
-    write_vdb_file({level_set}, "surface-" + (name.empty() ? marker_file.stem().string() : name) + ".vdb");
+    write_vdb_file({level_set}, "surface-" + (name.empty() ? swc_file.stem().string() : name) + ".vdb");
 
   return level_set;
 }

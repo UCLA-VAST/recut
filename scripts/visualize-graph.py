@@ -12,7 +12,7 @@ def main():
 
     print('Building FEQ...')
     s = graph.load(args.graph)
-    # viewer.display(s, reset_view=True)
+    viewer.display(s, reset_view=True)
     m_skel = hmesh.skeleton_to_feq(s)#, [5.0]*len(s.nodes()))
     hmesh.cc_split(m_skel)
     hmesh.cc_smooth(m_skel)

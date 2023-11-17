@@ -14,10 +14,23 @@ import re
 from recut_interface import *
 import pandas as pd
 
-def compare_2_swcs(kwargs, proof_swc, auto_swc, offset):
-    timeout_seconds = 4 * 60
+diadem_path = "/home/kdmarrett/diadem/DiademMetric.jar"
 
+def run_volumetric_accuracy(kwargs, proof_swc, auto_swc, offset):
+    timeout_seconds = 4 * 60
     cmd = "/home/kdmarrett/recut/result/bin/recut {} --test {} --voxel-size {} {} {} --disable-swc-scaling --image-offsets {} {} {}".format(proof_swc,auto_swc, kwargs['voxel_size_x'], kwargs['voxel_size_y'], kwargs['voxel_size_z'], *offset)
+    print("Run: " + cmd)
+    try:
+        result = subprocess.run(cmd.split(), capture_output=True, check=False, text=True,
+                        timeout=timeout_seconds)
+    except:
+        print("Failed python call")
+        return None
+    return result
+
+def run_diadem(proof_swc, auto_swc):
+    timeout_seconds = 4 * 60
+    cmd = "java -jar {}.jar -G {} -T {}".format(diadem_path, proof_swc, auto_swc)
     print("Run: " + cmd)
     try:
         result = subprocess.run(cmd.split(), capture_output=True, check=False, text=True,
@@ -48,7 +61,7 @@ def extract_accuracy(result):
         return False
 
 def run_accuracy(kwargs, match):
-    returncode = compare_2_swcs(kwargs, *match)
+    returncode = run_volumetric_accuracy(kwargs, *match)
     is_success = extract_accuracy(returncode)
     if is_success:
         print("Success")
@@ -135,6 +148,7 @@ def main():
 
     print()
 
+    import pdb; pdb.set_trace()
     run = partial(run_accuracy, kwargs)
     accuracies = rm_none(map(run, params))
     acc_dict = {}
