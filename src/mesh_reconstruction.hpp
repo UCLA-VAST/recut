@@ -751,6 +751,7 @@ void write_swcs(Geometry::AMGraph3D &component_graph, std::vector<GridCoord> som
       soma_ids.push_back(i);
   }
 
+  std::set<NodeID> visited_node_ids;
   // do BFS from each known soma in the component
   for (auto soma_id : soma_ids) {
       // init q with soma
@@ -768,17 +769,16 @@ void write_swcs(Geometry::AMGraph3D &component_graph, std::vector<GridCoord> som
                                        // start file per soma, write header info
       std::ofstream swc_file;
       if (is_eswc) {
+        auto soma_pos = component_graph.pos[soma_id].get();
+        auto soma_coord = std::array<double, 3>{pos[0], pos[1], pos[2]};
+        auto soma_radius = get_radius(component_graph.node_color, soma_id);
 
-      auto soma_pos = component_graph.pos[soma_id].get();
-      auto soma_coord = std::array<double, 3>{pos[0], pos[1], pos[2]};
-      auto soma_radius = get_radius(component_graph.node_color, soma_id);
+        write_apo_file(component_dir_fn, file_name_base, soma_coord, soma_radius, voxel_size);
+        write_ano_file(component_dir_fn, file_name_base);
 
-      write_apo_file(component_dir_fn, file_name_base, soma_coord, soma_radius, voxel_size);
-      write_ano_file(component_dir_fn, file_name_base);
-
-      swc_file.open(component_dir_fn / (file_name_base + ".ano.eswc"));
-      swc_file << "# id type_id x y z radius parent_id"
-        << " seg_id level mode timestamp TFresindex\n";
+        swc_file.open(component_dir_fn / (file_name_base + ".ano.eswc"));
+        swc_file << "# id type_id x y z radius parent_id"
+          << " seg_id level mode timestamp TFresindex\n";
       } else {
         swc_file.open(component_dir_fn / (file_name_base + ".swc"));
         swc_file << "# Crop windows bounding volume: " << bbox << '\n'
@@ -804,14 +804,17 @@ void write_swcs(Geometry::AMGraph3D &component_graph, std::vector<GridCoord> som
           parent_coord = std::array<double, 3>{lpos[0], lpos[1], lpos[2]};
         }
 
+        assertm(visited_node_ids.count(id) == 0, "Node already visited");
+        visited_node_ids.insert(id);
         print_swc_line(coord, is_root, radius, parent_coord, bbox, swc_file,
             coord_to_swc_id, voxel_size, bbox_adjust, is_eswc, disable_swc_scaling);
 
         // add all neighbors of current to q
         for (auto nb_id : component_graph.neighbors(id)) {
           // do not add other somas or previously visited to the q
-          if (!parent_table[nb_id].has_value() && std::find(soma_ids.begin(), soma_ids.end(),
-                nb_id) == std::end(soma_ids)) {
+          if (nb_id != id 
+              && !parent_table[nb_id].has_value() 
+              && std::find(soma_ids.begin(), soma_ids.end(), nb_id) == std::end(soma_ids)) {
             // add current id as parent to all neighbors
             parent_table[nb_id] = id; // permanent assignment of parent
             q.push(nb_id);
@@ -837,7 +840,7 @@ swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
   auto min_voxel_size = min_max(voxel_size).first;
   std::vector<Seed> seeds;
   Geometry::AMGraph3D g;
-  NodeID count = 0;
+  std::vector<std::pair<NodeID, NodeID>> edges;
   while (ifs.good()) {
     if (ifs.peek() == '#' || ifs.eof()) {
       ifs.ignore(1000, '\n');
@@ -877,6 +880,10 @@ swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
 
     // add it to the graph
     auto node_id = g.add_node(p);
+    if ((node_id + 1) != id) {
+      std::cout << "node id " << node_id << ' ' << " id " << id << '\n';
+      throw std::runtime_error("SWC ids are improperly numbered");
+    }
     g.node_color[node_id] = CGLA::Vec3f(0, radius, 0);
 
     // somas are nodes that have a parent of -1 (adjusted to -2) or have an index
@@ -886,9 +893,15 @@ swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
       std::array<double, 3> coord_um{x_um, y_um, z_um};
       seeds.emplace_back(coord, coord_um, radius, radius_um, volume);
     } else {
-      g.connect_nodes(node_id, parent_id);
+      //g.connect_nodes(node_id, parent_id);
+      edges.emplace_back(node_id, parent_id);
     }
   }
+
+  // connect all the nodes according to saved bidirectional edges
+  rng::for_each(edges, [&](auto p) {
+    g.connect_nodes(p.first, p.second);
+  });
 
   if (seeds.size() != 1) {
     throw std::runtime_error("Warning: SWC files are trees which by definition must have only 1 root (soma), provided file: " + 
