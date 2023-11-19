@@ -499,6 +499,23 @@ bool in(std::set<NodeID> invalidated, NodeID i) {
   return invalidated.count(i) != 0;
 }
 
+void same_position(Geometry::AMGraph3D &g) {
+  for (auto i : g.node_ids()) {
+    auto pos = g.pos[i];
+    for (auto j : g.node_ids()) {
+      if (i != j && pos == g.pos[j]) {
+        std::cout << "i " << i << " pos " << pos << '\n';
+        std::cout << " j " << j << " pos " << pos << '\n';
+        auto nbs = g.neighbors(i);
+        std::cout << rv::all(nbs) << '\n';
+        nbs = g.neighbors(j);
+        std::cout << rv::all(nbs) << '\n';
+        throw std::runtime_error("Position already filled by another");
+      }
+    }
+  }
+}
+
 void fix_node_within_another(Geometry::AMGraph3D &g, std::set<NodeID> 
     enclosers) {
 
@@ -659,7 +676,7 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
 
   // multifurcations are only important for rules of SWC standard
   //component_graph = fix_multifurcations(component_graph, soma_coords);
-
+  
   auto invalids = get_invalid_radii(component_graph);
   if (invalids.size() > 0) {
     component_log << "Invalid radii, " << invalids.size() << '\n';
@@ -669,6 +686,8 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     if (invalids.size() != 0)
       component_log << "Final invalid radii, " << invalids.size() << '\n';
   }
+
+  same_position(component_graph);
 
   if (save_graphs)
     graph_save(component_dir_fn / ("skeleton.graph"), component_graph);
@@ -986,13 +1005,13 @@ std::vector<int> node_valencies(Geometry::AMGraph3D &g) {
 
 // returns a polygonal mesh
 openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
-    std::array<double, 3> voxel_size, GridCoord image_offsets, bool save_vdbs = false, 
-    std::string name = "", bool save_swcs = true) {
-
-  auto [seed, skeleton] = swc_to_graph(swc_file, voxel_size, image_offsets);
-  std::vector<Seed> seeds{seed};
+    std::array<double, 3> voxel_size, GridCoord image_offsets, 
+    bool save_vdbs = false, std::string name = "",
+    bool remove_soma=true, bool save_swcs = true) {
 
   bool merge_soma_on_top = false;
+  auto [seed, skeleton] = swc_to_graph(swc_file, voxel_size, image_offsets);
+  std::vector<Seed> seeds{seed};
 
   auto invalids = get_invalid_radii(skeleton);
   if (invalids.size()) {
@@ -1011,8 +1030,9 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
   if (save_vdbs)
     graph_save(swc_file.stem().string() + ".graph", skeleton);
 
-  // check SWC health
-  if (true) {
+  // you must correct for nodes within another before calling
+  // graph to FEQ
+  {
     auto illegal_nodes = count_nodes_within_another(skeleton);
     std::cout << "Original within nodes, " << illegal_nodes.size() << " of " << skeleton.no_nodes() << '\n';
     if (!illegal_nodes.empty())
@@ -1047,13 +1067,20 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
   auto level_set = skeleton_to_surface(skeleton);
 
   // merge soma on top
-  if (merge_soma_on_top) {
-    // only 1 soma allowed per swc
+  // only 1 soma allowed per swc
+  {
     auto seed = seeds[0];
     auto soma_sdf = vto::createLevelSetSphere<openvdb::FloatGrid>(
        seed.radius, seed.coord.asVec3s(), 1.,
        RECUT_LEVEL_SET_HALF_WIDTH);
-    vto::csgUnion(*level_set, *soma_sdf); // empties merged_somas grid into ls
+    // either path empties/nullifies the soma_sdf grid
+    if (remove_soma) {
+      // subtract soma from whole neuron
+      vto::csgDifference(*level_set, *soma_sdf);
+    } else if (merge_soma_on_top) {
+      // merge the two on top of each other
+      vto::csgUnion(*level_set, *soma_sdf);
+    } 
   }
 
   if (save_vdbs)
