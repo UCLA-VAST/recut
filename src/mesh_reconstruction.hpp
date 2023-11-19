@@ -688,6 +688,9 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
       component_log << "Post-fix within nodes, " << illegal_nodes.size() << '\n';
   }
 
+  fix_same_position(component_graph);
+  same_position(component_graph);
+
   // multifurcations are only important for rules of SWC standard
   component_graph = fix_multifurcations(component_graph, soma_coords);
   
@@ -700,9 +703,6 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     if (invalids.size() != 0)
       component_log << "Final invalid radii, " << invalids.size() << '\n';
   }
-
-  fix_same_position(component_graph);
-  same_position(component_graph);
 
   if (save_graphs)
     graph_save(component_dir_fn / ("skeleton.graph"), component_graph);
@@ -1124,7 +1124,7 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
   }
 
   // for any nodes within the soma collapse them
-  if (false) {
+  if (true) {
     auto nodes = seeds | rv::transform(to_node) 
       | rng::to_vector;
     merge_local_radius(skeleton, nodes, 
@@ -1153,10 +1153,11 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
   // delete the soma from the graph because it can have >10 valency
   // which causes graph_to_FEQ to seg fault
   // the soma sphere will be fused on top of the level set later
-  if (merge_soma_on_top) {
+  if (remove_soma) {
     auto soma_coords = seeds | rv::transform(&Seed::coord) | rng::to_vector;
     remove_from_graph(skeleton, soma_coords);
   }
+  //auto node_sets = Geometry::connected_components();
 
   // check SWC health
   //node_valencies(skeleton);
