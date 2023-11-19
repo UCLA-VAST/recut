@@ -658,7 +658,8 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
   }
 
   // multifurcations are only important for rules of SWC standard
-  component_graph = fix_multifurcations(component_graph, soma_coords);
+  //component_graph = fix_multifurcations(component_graph, soma_coords);
+
   auto invalids = get_invalid_radii(component_graph);
   if (invalids.size() > 0) {
     component_log << "Invalid radii, " << invalids.size() << '\n';
@@ -752,6 +753,7 @@ void write_swcs(Geometry::AMGraph3D &component_graph, std::vector<GridCoord> som
   }
 
   std::set<NodeID> visited_node_ids;
+  std::set<NodeID> visited_swc_ids;
   // do BFS from each known soma in the component
   for (auto soma_id : soma_ids) {
       // init q with soma
@@ -805,7 +807,10 @@ void write_swcs(Geometry::AMGraph3D &component_graph, std::vector<GridCoord> som
         }
 
         assertm(visited_node_ids.count(id) == 0, "Node already visited");
+        auto swc_id = find_or_assign(coord, coord_to_swc_id);
+        assertm(visited_swc_ids.count(swc_id) == 0, "SWC already assigned");
         visited_node_ids.insert(id);
+        visited_swc_ids.insert(swc_id);
         print_swc_line(coord, is_root, radius, parent_coord, bbox, swc_file,
             coord_to_swc_id, voxel_size, bbox_adjust, is_eswc, disable_swc_scaling);
 
