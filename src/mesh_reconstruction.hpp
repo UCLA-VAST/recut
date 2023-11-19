@@ -516,6 +516,20 @@ void same_position(Geometry::AMGraph3D &g) {
   }
 }
 
+void fix_same_position(Geometry::AMGraph3D &g) {
+  for (auto i : g.node_ids()) {
+    auto pos = g.pos[i];
+    for (auto j : g.node_ids()) {
+      if (i != j && pos == g.pos[j]) {
+        auto nbs = g.neighbors(i);
+        auto nbs2 = g.neighbors(j);
+        if (nbs == nbs2)
+          g.merge_nodes(i, j); 
+      }
+    }
+  }
+}
+
 void fix_node_within_another(Geometry::AMGraph3D &g, std::set<NodeID> 
     enclosers) {
 
@@ -687,6 +701,7 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
       component_log << "Final invalid radii, " << invalids.size() << '\n';
   }
 
+  fix_same_position(component_graph);
   same_position(component_graph);
 
   if (save_graphs)
