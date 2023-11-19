@@ -243,6 +243,7 @@ auto partition_cluster = [](const std::vector<MyMarker *> &cluster) {
   return trees;
 };
 
+/*
 // assumes tree passed is sorted root at front of tree
 auto write_swc = [](std::vector<MyMarker *> &tree,
                     std::array<double, 3> voxel_size,
@@ -327,6 +328,7 @@ auto write_swc = [](std::vector<MyMarker *> &tree,
     });
   }
 };
+*/
 
 auto create_child_count = [](std::vector<MyMarker *> &tree) {
   // build a map to save coords with 1 or 2 children

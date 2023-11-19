@@ -675,7 +675,7 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
   }
 
   // multifurcations are only important for rules of SWC standard
-  //component_graph = fix_multifurcations(component_graph, soma_coords);
+  component_graph = fix_multifurcations(component_graph, soma_coords);
   
   auto invalids = get_invalid_radii(component_graph);
   if (invalids.size() > 0) {
@@ -751,6 +751,88 @@ std::string swc_name(Node &n, std::array<double, 3> voxel_size, bool bbox_adjust
   return out.str();
 }
 
+// n,type,x,y,z,radius,parent
+// for more info see:
+// http://www.neuronland.org/NLMorphologyConverter/MorphologyFormats/SWC/Spec.html
+// https://github.com/HumanBrainProject/swcPlus/blob/master/SWCplus_specification.html
+auto print_swc_line = [](NodeID id, NodeID parent_id, 
+    std::array<double, 3> swc_coord, bool is_root,
+    float radius, std::array<double, 3> parent_coord,
+    CoordBBox bbox, std::ofstream &out,
+    std::array<double, 3> voxel_size,
+    bool bbox_adjust = true, bool is_eswc = false,
+    bool disable_swc_scaling = false) {
+  std::ostringstream line;
+
+  auto scale_coord = [&](std::array<double, 3> &coord) {
+    for (int i = 0; i < 3; ++i)
+      coord[i] *= voxel_size[i];
+  };
+
+  //if (!bbox_adjust || is_eswc) {
+  if (!disable_swc_scaling) {
+    scale_coord(swc_coord);
+    scale_coord(parent_coord);
+  }
+
+  if (bbox_adjust) { // implies output window crops is set
+    std::array<double, 3> window_start = {static_cast<double>(bbox.min().x()),
+      static_cast<double>(bbox.min().y()),
+      static_cast<double>(bbox.min().z())};
+    if (!disable_swc_scaling)
+      scale_coord(window_start);
+
+    auto subtract = [](std::array<double, 3> &l,
+        const std::array<double, 3> r) {
+      for (int i = 0; i < 3; ++i)
+        l[i] -= r[i];
+    };
+
+    // adjust the coordinates to the components bbox
+    subtract(swc_coord, window_start);
+    subtract(parent_coord, window_start);
+  }
+
+  // n
+  line << std::to_string(id) << ' ';
+
+  // type_id
+  if (is_root) {
+    line << "1 ";
+  } else {
+    line << "3 ";
+  }
+  line << std::fixed << std::setprecision(SWC_PRECISION);
+
+  // coordinates
+  line << swc_coord[0] << ' ' << swc_coord[1] << ' ' << swc_coord[2] << ' ';
+
+  // radius, already been adjsuted to voxel size
+  line << radius << ' ';
+
+  // parent
+  if (is_root) {
+    // only the first line of the file can have a parent of -1
+    // any other should connect to themselves
+    line << std::to_string(is_eswc ? 0 : id);
+  } else {
+    line << std::to_string(parent_id);
+  }
+
+  if (is_eswc) {
+    // " seg_id level mode timestamp TFresindex";
+    line << " 0 0 0 0 1";
+  }
+
+  line << '\n';
+
+  if (out.is_open()) {
+    out << line.str();
+  } else {
+    std::cout << line.str();
+  }
+};
+
 void write_swcs(Geometry::AMGraph3D &component_graph, std::vector<GridCoord> soma_coords,
     std::array<double, 3> voxel_size,
     std::filesystem::path component_dir_fn = ".",
@@ -772,9 +854,13 @@ void write_swcs(Geometry::AMGraph3D &component_graph, std::vector<GridCoord> som
   }
 
   std::set<NodeID> visited_node_ids;
-  std::set<NodeID> visited_swc_ids;
   // do BFS from each known soma in the component
   for (auto soma_id : soma_ids) {
+      std::set<NodeID> visited_swc_ids;
+      NodeID swc_id = 1; // are 1-indexed
+      std::vector<std::optional<NodeID>> swc_ids;
+      swc_ids.reserve(component_graph.no_nodes() + 1); // 1-indexed, nothing at 0
+
       // init q with soma
       std::queue<NodeID> q;
       q.push(soma_id);
@@ -783,7 +869,6 @@ void write_swcs(Geometry::AMGraph3D &component_graph, std::vector<GridCoord> som
       auto pos = component_graph.pos[soma_id];
       Node n{pos, get_radius(component_graph.node_color, soma_id)};
       auto file_name_base = swc_name(n, voxel_size, bbox_adjust, bbox);
-      auto coord_to_swc_id = get_id_map();
 
       // traverse rest of tree
       parent_table[soma_id] = soma_id; // a soma technically has no parent
@@ -826,12 +911,16 @@ void write_swcs(Geometry::AMGraph3D &component_graph, std::vector<GridCoord> som
         }
 
         assertm(visited_node_ids.count(id) == 0, "Node already visited");
-        auto swc_id = find_or_assign(coord, coord_to_swc_id);
         assertm(visited_swc_ids.count(swc_id) == 0, "SWC already assigned");
         visited_node_ids.insert(id);
         visited_swc_ids.insert(swc_id);
-        print_swc_line(coord, is_root, radius, parent_coord, bbox, swc_file,
-            coord_to_swc_id, voxel_size, bbox_adjust, is_eswc, disable_swc_scaling);
+        // invalid if root
+        auto swc_parent_id = is_root ? swc_id : swc_ids[parent_id].value();
+        print_swc_line(swc_id, swc_parent_id, coord, is_root, radius, parent_coord,
+            bbox, swc_file, voxel_size, bbox_adjust, is_eswc, disable_swc_scaling);
+        // mark this swc's id
+        swc_ids[id] = swc_id;
+        ++swc_id;
 
         // add all neighbors of current to q
         for (auto nb_id : component_graph.neighbors(id)) {

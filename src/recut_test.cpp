@@ -299,7 +299,6 @@ auto boundary_coord = new_grid_coord(7, 7, 7);
 ASSERT_TRUE(leaf_iter->isValueOn(boundary_coord));
 ASSERT_FALSE(leaf_iter->getValue(boundary_coord));
 }
-*/
 
 TEST(SWC, PrintSWCLine) {
   std::array<double, 3> swc_coord{{1., 1., 1.}};
@@ -311,6 +310,7 @@ TEST(SWC, PrintSWCLine) {
   print_swc_line(swc_coord, false, .00001, parent_coord, {}, 
       swc_file, coord_to_swc_id, swc_coord, false);
 }
+*/
 
 TEST(VDB, UpdateSemantics) {
 
@@ -1097,8 +1097,8 @@ TEST(TreeOps, FixTrifurcations) {
   f->radius = 4;
   tree.push_back(f);
 
-  if (write_swc_disk)
-    write_swc(tree, {1, 1, 1});
+  //if (write_swc_disk)
+    //write_swc(tree, {1, 1, 1});
 
   auto fixed_tree = fix_trifurcations(tree);
   ASSERT_TRUE(is_cluster_self_contained(fixed_tree));
@@ -1120,9 +1120,9 @@ TEST(TreeOps, FixTrifurcations) {
   auto fixed_trees = partition_cluster(fixed_tree);
 
   for (auto fixed_tree : fixed_trees) {
-    if (write_swc_disk) {
-      write_swc(fixed_tree, {1, 1, 1});
-    }
+    //if (write_swc_disk) {
+      //write_swc(fixed_tree, {1, 1, 1});
+    //}
     ASSERT_TRUE(tree_is_sorted(fixed_tree));
   }
 }
