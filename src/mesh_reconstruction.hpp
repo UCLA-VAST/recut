@@ -503,8 +503,9 @@ void same_position(Geometry::AMGraph3D &g) {
   for (auto i : g.node_ids()) {
     auto pos = g.pos[i];
     for (auto j : g.node_ids()) {
-      if (pos == g.pos[j]) {
-        std::cout << "i " << i << " j " << j << '\n';
+      if (i != j && pos == g.pos[j]) {
+        std::cout << "i " << i << " pos " << pos << '\n';
+        std::cout << " j " << j << " pos " << pos << '\n';
         auto nbs = g.neighbors(i);
         std::cout << rv::all(nbs) << '\n';
         nbs = g.neighbors(j);
