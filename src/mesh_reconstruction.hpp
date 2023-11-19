@@ -677,8 +677,6 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
   // multifurcations are only important for rules of SWC standard
   //component_graph = fix_multifurcations(component_graph, soma_coords);
   
-  same_position(component_graph);
-
   auto invalids = get_invalid_radii(component_graph);
   if (invalids.size() > 0) {
     component_log << "Invalid radii, " << invalids.size() << '\n';
@@ -688,6 +686,8 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     if (invalids.size() != 0)
       component_log << "Final invalid radii, " << invalids.size() << '\n';
   }
+
+  same_position(component_graph);
 
   if (save_graphs)
     graph_save(component_dir_fn / ("skeleton.graph"), component_graph);
