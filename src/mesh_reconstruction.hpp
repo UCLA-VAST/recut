@@ -13,9 +13,15 @@
 #include <openvdb/tools/ValueTransformer.h>
 #include <openvdb/tools/VolumeToMesh.h>
 
+using AMGraph3D = Geometry::AMGraph3D;
+using NodeID = AMGraph3D::NodeID;
+using NodeSet = AMGraph3D::NodeSet;
+using Pos = CGLA::Vec3d;
+using KDTree = Geometry::KDTree<Pos, NodeID>;
+
 class Node { 
   public:
-    CGLA::Vec3d pos;
+    Pos pos;
     float radius;
 
     friend std::ostream &operator<<(std::ostream &os, const Node &n) {
@@ -29,20 +35,23 @@ class Node {
 
 };
 
-using NodeID = Geometry::AMGraph3D::NodeID;
-
-float get_radius(Util::AttribVec<NodeID, CGLA::Vec3f> &node_color, NodeID i) {
-  auto color = node_color[i].get();
+float get_radius(AMGraph3D &g, NodeID i) {
+  auto color = g.node_color[i].get();
   // radius is in the green channel
   return color[1]; // RGB
 }
 
 CGLA::Vec3f convert_radius(float radius) {
+  // radius is in the green channel
   return {0, radius, 0};
 }
 
-Node get_node(Geometry::AMGraph3D &g, NodeID i) {
-  Node n{g.pos[i], get_radius(g.node_color, i)};
+void set_radius(AMGraph3D &g, float v, NodeID i) {
+  g.node_color[i] = convert_radius(v);
+}
+
+Node get_node(AMGraph3D &g, NodeID i) {
+  Node n{g.pos[i], get_radius(g, i)};
   return n;
 }
 
@@ -55,10 +64,10 @@ auto euc_dist = [](auto a, auto b) -> float {
 };
 
 // build kdtree, highly efficient for nearest point computations
-Geometry::KDTree<CGLA::Vec3d, NodeID> build_kdtree(Geometry::AMGraph3D &graph) {
-  Geometry::KDTree<CGLA::Vec3d, NodeID> tree;
+KDTree build_kdtree(AMGraph3D &graph) {
+  KDTree tree;
   for (auto i : graph.node_ids()) {
-    CGLA::Vec3d p0 = graph.pos[i];
+    Pos p0 = graph.pos[i];
     tree.insert(p0, i);
   }
   tree.build();
@@ -67,10 +76,10 @@ Geometry::KDTree<CGLA::Vec3d, NodeID> build_kdtree(Geometry::AMGraph3D &graph) {
 
 // find existing skeletal node within the radius of the soma
 std::vector<NodeID> within_sphere(Node &node,
-    Geometry::KDTree<CGLA::Vec3d, NodeID> &tree,
+    KDTree &tree,
     float soma_dilation=1) {
 
-  std::vector<CGLA::Vec3d> _;
+  std::vector<Pos> _;
   std::vector<NodeID> vals;
   tree.in_sphere(node.pos, soma_dilation * node.radius, _, vals);
   return vals;
@@ -81,14 +90,14 @@ std::vector<NodeID> within_sphere(Node &node,
 // merge an ideal sphere after meshing
 // in use cases where the graph is not transformed into a mesh this is
 // not necessary
-void merge_local_radius(Geometry::AMGraph3D &graph, std::vector<Node> &nodes,
+void merge_local_radius(AMGraph3D &graph, std::vector<Node> &nodes,
     float soma_dilation=1., bool keep_radius_small=false) {
   // the graph is complete so build a data structure that
   // is fast at finding nodes within a 3D radial distance
   auto tree = build_kdtree(graph);
 
   rng::for_each(nodes, [&](Node node) {
-      auto original_pos = CGLA::Vec3d(node.pos[0], node.pos[1], node.pos[2]);
+      auto original_pos = Pos(node.pos[0], node.pos[1], node.pos[2]);
       Node n{original_pos, static_cast<float>(node.radius)};
 
       std::vector<NodeID> within_sphere_ids = within_sphere(n, tree, soma_dilation);
@@ -98,14 +107,14 @@ void merge_local_radius(Geometry::AMGraph3D &graph, std::vector<Node> &nodes,
       // set the position and radius explicitly rather than averaging the merged nodes
       graph.pos[new_seed_id] = original_pos;
 
-      graph.node_color[new_seed_id] = CGLA::Vec3f(0, keep_radius_small ? 1 : node.radius, 0);
+      set_radius(graph, keep_radius_small ? 1 : node.radius, new_seed_id);
   });
 
   graph.cleanup();
 }
 
 auto to_node = [](Seed seed) {
-  CGLA::Vec3d p{static_cast<double>(seed.coord[0]),
+  Pos p{static_cast<double>(seed.coord[0]),
     static_cast<double>(seed.coord[1]), static_cast<double>(seed.coord[2])}; 
   return Node{p, seed.radius};
 };
@@ -115,7 +124,7 @@ auto to_node = [](Seed seed) {
 // seeds inherit edges and delete nodes within 3D radius soma_dilation *
 // seed.radius the original location and radius of the seeds are preserved
 // returns coords since id's are invalidated by future mutations to graph
-std::vector<GridCoord> force_soma_nodes(Geometry::AMGraph3D &graph,
+std::vector<GridCoord> force_soma_nodes(AMGraph3D &graph,
     std::vector<Seed> &seeds,
     float soma_dilation) {
 
@@ -136,7 +145,7 @@ void check_soma_ids(NodeID nodes, std::vector<NodeID> soma_ids) {
       });
 }
 
-std::vector<GridCoord> find_soma_nodes(Geometry::AMGraph3D &graph,
+std::vector<GridCoord> find_soma_nodes(AMGraph3D &graph,
     std::vector<Seed> seeds, float soma_dilation, bool highest_valence=false) {
 
   auto tree = build_kdtree(graph);
@@ -146,7 +155,7 @@ std::vector<GridCoord> find_soma_nodes(Geometry::AMGraph3D &graph,
     std::optional<NodeID> max_index;
 
     if (highest_valence) {
-      auto original_pos = CGLA::Vec3d(seed.coord[0], seed.coord[1], seed.coord[2]);
+      auto original_pos = Pos(seed.coord[0], seed.coord[1], seed.coord[2]);
       Node n{original_pos, static_cast<float>(seed.radius)};
       auto within_sphere_ids = within_sphere(n, tree, soma_dilation);
 
@@ -161,14 +170,14 @@ std::vector<GridCoord> find_soma_nodes(Geometry::AMGraph3D &graph,
       }
 
       if (max_index) { //found
-        Node n {graph.pos[max_index.value()], get_radius(graph.node_color, max_index.value())};
+        Node n {graph.pos[max_index.value()], get_radius(graph, max_index.value())};
         std::vector nodes{n};
         merge_local_radius(graph, nodes, soma_dilation);
       }
     } else { // find closest point
       auto coord = seed.coord;
-      CGLA::Vec3d p0(coord[0], coord[1], coord[2]);
-      CGLA::Vec3d key;
+      Pos p0(coord[0], coord[1], coord[2]);
+      Pos key;
       NodeID val;
       double dist = 1000;
       bool found = tree.closest_point(p0, dist, key, val);
@@ -187,7 +196,7 @@ std::vector<GridCoord> find_soma_nodes(Geometry::AMGraph3D &graph,
 }
 
 template <typename Poly>
-auto unroll_polygons(std::vector<Poly> polys, Geometry::AMGraph3D &g,
+auto unroll_polygons(std::vector<Poly> polys, AMGraph3D &g,
     unsigned int order) {
   // list all connections of the 0-indexed points
   rng::for_each(polys, [&](auto poly) {
@@ -207,7 +216,7 @@ auto unroll_polygons(std::vector<Poly> polys, Geometry::AMGraph3D &g,
       });
 };
 
-Geometry::AMGraph3D vdb_to_graph(openvdb::FloatGrid::Ptr component,
+AMGraph3D vdb_to_graph(openvdb::FloatGrid::Ptr component,
     RecutCommandLineArgs *args) {
   std::vector<openvdb::Vec3s> points;
   // quad index list, which can be post-processed to
@@ -217,9 +226,9 @@ Geometry::AMGraph3D vdb_to_graph(openvdb::FloatGrid::Ptr component,
   vto::volumeToMesh(*component, points, quads);
   // vto::volumeToMesh(*component, points, tris, quads, 0, args->mesh_grain);
 
-  Geometry::AMGraph3D g;
+  AMGraph3D g;
   rng::for_each(points, [&](auto point) {
-      auto p = CGLA::Vec3d(point[0], point[1], point[2]);
+      auto p = Pos(point[0], point[1], point[2]);
       auto node_id = g.add_node(p);
       });
 
@@ -230,7 +239,7 @@ Geometry::AMGraph3D vdb_to_graph(openvdb::FloatGrid::Ptr component,
 }
 
 // naive multifurcation fix, force non-soma vertices to have at max 3 neighbors
-Geometry::AMGraph3D fix_multifurcations(Geometry::AMGraph3D &graph,
+AMGraph3D fix_multifurcations(AMGraph3D &graph,
     std::vector<GridCoord> soma_coords) {
 
   // loop over all vertices until no remaining multifurcations are found
@@ -245,13 +254,13 @@ Geometry::AMGraph3D fix_multifurcations(Geometry::AMGraph3D &graph,
         auto to_extend = neighbors[1]; // picked at random
 
         // build a new averaged node
-        CGLA::Vec3d pos1 = graph.pos[multifurc_id];
-        CGLA::Vec3d pos2 = graph.pos[to_extend];
-        auto rad = (get_radius(graph.node_color, multifurc_id) + 
-          get_radius(graph.node_color, to_extend)) / 2;
-        auto pos3 = CGLA::Vec3d((pos1[0] + pos2[0]) / 2, (pos1[1] + pos2[1]) / 2, (pos1[2] + pos2[2]) / 2);
+        Pos pos1 = graph.pos[multifurc_id];
+        Pos pos2 = graph.pos[to_extend];
+        auto rad = (get_radius(graph, multifurc_id) + 
+          get_radius(graph, to_extend)) / 2;
+        auto pos3 = Pos((pos1[0] + pos2[0]) / 2, (pos1[1] + pos2[1]) / 2, (pos1[2] + pos2[2]) / 2);
         auto new_path_node = graph.add_node(pos3);
-        graph.node_color[new_path_node] = convert_radius(rad);
+        set_radius(graph, rad, new_path_node);
 
         graph.connect_nodes(new_path_node, to_extend);
         graph.connect_nodes(new_path_node, multifurc_id);
@@ -260,7 +269,7 @@ Geometry::AMGraph3D fix_multifurcations(Geometry::AMGraph3D &graph,
         graph.disconnect_nodes(multifurc_id, to_extend);
         // remove invalidated edges such that edge counts
         // are correct in future iterations
-        graph = Geometry::clean_graph(graph);
+        graph.cleanup();
       }
     }
   }
@@ -278,6 +287,7 @@ HMesh::Manifold vdb_to_mesh(openvdb::FloatGrid::Ptr component,
   // vto::volumeToMesh(*component, points, tris, quads, 0, args->mesh_grain);
 
   // convert points to GEL vertices
+  // FIXME these shoudl match the rest of the API with double not float
   auto vertices = points | rv::transform([](auto point) {
       return CGLA::Vec3f(point[0], point[1], point[2]);
       }) |
@@ -318,9 +328,9 @@ HMesh::Manifold vdb_to_mesh(openvdb::FloatGrid::Ptr component,
 }
 
 // Taken directly from PyGEL library
-Geometry::AMGraph3D mesh_to_graph(HMesh::Manifold &m) {
-  HMesh::VertexAttributeVector<Geometry::AMGraph::NodeID> v2n;
-  Geometry::AMGraph3D g;
+AMGraph3D mesh_to_graph(HMesh::Manifold &m) {
+  HMesh::VertexAttributeVector<NodeID> v2n;
+  AMGraph3D g;
 
   for (auto v : m.vertices())
     v2n[v] = g.add_node(m.pos(v));
@@ -335,8 +345,8 @@ Geometry::AMGraph3D mesh_to_graph(HMesh::Manifold &m) {
 
 // Taken directly from PyGEL library
 std::pair<std::vector<openvdb::Vec3s>, std::vector<openvdb::Vec4I>> mesh_to_polygons(HMesh::Manifold &m) {
-  HMesh::VertexAttributeVector<Geometry::AMGraph::NodeID> v2n;
-  Geometry::AMGraph3D g;
+  HMesh::VertexAttributeVector<NodeID> v2n;
+  AMGraph3D g;
 
   std::vector<openvdb::Vec3s> points;
   std::vector<openvdb::Vec4I> quads;
@@ -373,7 +383,7 @@ std::pair<std::vector<openvdb::Vec3s>, std::vector<openvdb::Vec4I>> mesh_to_poly
 
 openvdb::FloatGrid::Ptr mask_to_sdf(openvdb::MaskGrid::Ptr mask) {
   /*
-     this has a weird bug
+     this has a weird bug but is the canonical and fast way to do it
      struct Local {
      static inline void op(const openvdb::MaskGrid::ValueOnCIter &iter,
      openvdb::FloatGrid::ValueAccessor &accessor) {
@@ -407,25 +417,33 @@ openvdb::FloatGrid::Ptr mask_to_sdf(openvdb::MaskGrid::Ptr mask) {
 // 1 iteration and 1 alpha are the defaults in the GEL library and in the
 // corresponding paper (Baerentzen) all skeletons qualitatively looked smooth
 // after only 1 iteration at 1 alpha
-void smooth_graph_pos_rad(Geometry::AMGraph3D &g, const int iter, const float alpha) {
-  auto lsmooth = [](Geometry::AMGraph3D &g, float _alpha) {
-    Util::AttribVec<Geometry::AMGraph::NodeID, CGLA::Vec3d> new_pos(
-        g.no_nodes(), CGLA::Vec3d(0));
-    Util::AttribVec<Geometry::AMGraph::NodeID, CGLA::Vec3f> new_radius(
+void smooth_graph_pos_rad(AMGraph3D &g, const int iter, const float alpha) {
+  auto lsmooth = [](AMGraph3D &g, float _alpha) {
+
+    Util::AttribVec<NodeID, Pos> new_pos(
+        g.no_nodes(), Pos(0));
+    Util::AttribVec<NodeID, CGLA::Vec3f> new_radius(
         g.no_nodes(), CGLA::Vec3f(0));
+
+    auto radius = [](auto attr, auto n) {
+      auto color = attr[n].get();
+      // radius is in the green channel
+      return color[1]; // RGB
+    };
+
     for (auto n : g.node_ids()) {
       double wsum = 0;
       auto N = g.neighbors(n);
       for (auto nn : N) {
         double w = 1.0;
         new_pos[n] += w * g.pos[nn];
-        new_radius[n] += convert_radius(w * get_radius(g.node_color, nn));
+        new_radius[n] += convert_radius(w * get_radius(g, nn));
         wsum += w;
       }
       double alpha = N.size() == 1 ? 0 : _alpha;
       new_pos[n] = (alpha)*new_pos[n] / wsum + (1.0 - alpha) * g.pos[n];
-      new_radius[n] = convert_radius((alpha)*get_radius(new_radius, n) / wsum +
-          (1.0 - alpha) * get_radius(g.node_color, n));
+      new_radius[n] = convert_radius((alpha)*radius(new_radius, n) / wsum +
+          (1.0 - alpha) * get_radius(g, n));
     }
     return std::make_pair(new_pos, new_radius);
   };
@@ -459,39 +477,39 @@ void smooth_graph_pos_rad(Geometry::AMGraph3D &g, const int iter, const float al
     } }
   */
 
-std::vector<NodeID> get_invalid_radii(Geometry::AMGraph3D &g) {
-  g = Geometry::clean_graph(g);
+std::vector<NodeID> get_invalid_radii(AMGraph3D &g) {
+  g.cleanup();
   return rv::iota(0, static_cast<int>(g.no_nodes())) | 
     rv::transform([](auto i) { return static_cast<NodeID>(i); }) |
     rv::remove_if([&g](NodeID i) {
-      auto rad = get_radius(g.node_color, i);
+      auto rad = get_radius(g, i);
       return rad >= .001;
     }) 
     | rng::to_vector;
 }
 
 // set an invalid radii to be the average radii of its neighbors
-void fix_invalid_radii(Geometry::AMGraph3D &g, std::vector<NodeID> invalids) {
+void fix_invalid_radii(AMGraph3D &g, std::vector<NodeID> invalids) {
   rng::for_each(invalids, [&](NodeID i) {
       auto nbs = g.neighbors(i);
       float radius = 0;
       rng::for_each(nbs, [&](NodeID nb) {
-          radius += get_radius(g.node_color, nb);
+          radius += get_radius(g, nb);
       });
-      g.node_color[i] = CGLA::Vec3f(0, radius / static_cast<float>(nbs.size()), 0);
+      set_radius(g, radius / static_cast<float>(nbs.size()), i);
   });
 }
 
-std::vector<NodeID> get_completely_within(Geometry::AMGraph3D &g, NodeID current, Geometry::KDTree<CGLA::Vec3d, NodeID> &kdtree) {
+std::vector<NodeID> get_completely_within(AMGraph3D &g, NodeID current, KDTree &kdtree) {
     auto n = get_node(g, current);
-    auto radius = get_radius(g.node_color, current);
+    auto radius = get_radius(g, current);
     std::vector<NodeID> within_sphere_ids = within_sphere(n, kdtree);
     // keep a list of node ids that can't escape (are completely within) the radius 
     // of the current node, these nodes will be deleted since their
     // volumetric contributions are 0
     return within_sphere_ids | rv::filter([&](NodeID nb){ 
         // keep the nbs that are within current
-        return radius >= get_radius(g.node_color, nb) + euc_dist(g.pos[current], g.pos[nb]);
+        return radius >= get_radius(g, nb) + euc_dist(g.pos[current], g.pos[nb]);
         }) | rng::to_vector;
 }
 
@@ -499,7 +517,7 @@ bool in(std::set<NodeID> invalidated, NodeID i) {
   return invalidated.count(i) != 0;
 }
 
-void same_position(Geometry::AMGraph3D &g) {
+void same_position(AMGraph3D &g) {
   for (auto i : g.node_ids()) {
     auto pos = g.pos[i];
     for (auto j : g.node_ids()) {
@@ -516,7 +534,7 @@ void same_position(Geometry::AMGraph3D &g) {
   }
 }
 
-void fix_same_position(Geometry::AMGraph3D &g) {
+void fix_same_position(AMGraph3D &g) {
   for (auto i : g.node_ids()) {
     auto pos = g.pos[i];
     for (auto j : g.node_ids()) {
@@ -530,7 +548,7 @@ void fix_same_position(Geometry::AMGraph3D &g) {
   }
 }
 
-void fix_node_within_another(Geometry::AMGraph3D &g, std::set<NodeID> 
+void fix_node_within_another(AMGraph3D &g, std::set<NodeID> 
     enclosers) {
 
   // iterate the set of nodes that are known to enclose at least 1 other
@@ -545,7 +563,7 @@ void fix_node_within_another(Geometry::AMGraph3D &g, std::set<NodeID>
     if (in(invalidated, encloser)) continue;
 
     // save known pos/rad of this node
-    auto radius = get_radius(g.node_color, encloser);
+    auto radius = get_radius(g, encloser);
     auto pos = g.pos[encloser];
 
     // rebuilding the kdtree, per index is inefficient,
@@ -582,7 +600,7 @@ void fix_node_within_another(Geometry::AMGraph3D &g, std::set<NodeID>
         // restore original position and radius of encloser
         // so that you don't create more within nodes
         g.pos[new_encloser] = pos;
-        g.node_color[new_encloser] = CGLA::Vec3f(0, radius, 0);
+        set_radius(g, radius, new_encloser);
         // keep track of invalidated nodes so they don't cause errors
         // in subsequent iterations
         for (auto merged : mergeables)
@@ -595,7 +613,7 @@ void fix_node_within_another(Geometry::AMGraph3D &g, std::set<NodeID>
   g.cleanup();
 }
 
-std::set<NodeID> count_nodes_within_another(Geometry::AMGraph3D &g) {
+std::set<NodeID> count_nodes_within_another(AMGraph3D &g) {
 
   auto kdtree = build_kdtree(g);
 
@@ -617,7 +635,7 @@ std::set<NodeID> count_nodes_within_another(Geometry::AMGraph3D &g) {
   return enclosers;
 }
 
-std::optional<std::pair<Geometry::AMGraph3D, std::vector<GridCoord>>>
+std::optional<std::pair<AMGraph3D, std::vector<GridCoord>>>
 vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_seeds,
     int index, RecutCommandLineArgs *args,
     fs::path component_dir_fn, std::ofstream& component_log, int threads, bool save_graphs = false) {
@@ -848,7 +866,7 @@ auto print_swc_line = [](NodeID id, NodeID parent_id,
   }
 };
 
-void write_swcs(Geometry::AMGraph3D &component_graph, std::vector<GridCoord> soma_coords,
+void write_swcs(AMGraph3D &component_graph, std::vector<GridCoord> soma_coords,
     std::array<double, 3> voxel_size,
     std::filesystem::path component_dir_fn = ".",
     CoordBBox bbox = {}, bool bbox_adjust = false,
@@ -882,7 +900,7 @@ void write_swcs(Geometry::AMGraph3D &component_graph, std::vector<GridCoord> som
 
       // start swc and add header metadata
       auto pos = component_graph.pos[soma_id];
-      Node n{pos, get_radius(component_graph.node_color, soma_id)};
+      Node n{pos, get_radius(component_graph, soma_id)};
       auto file_name_base = swc_name(n, voxel_size, bbox_adjust, bbox);
 
       // traverse rest of tree
@@ -892,7 +910,7 @@ void write_swcs(Geometry::AMGraph3D &component_graph, std::vector<GridCoord> som
       if (is_eswc) {
         auto soma_pos = component_graph.pos[soma_id].get();
         auto soma_coord = std::array<double, 3>{pos[0], pos[1], pos[2]};
-        auto soma_radius = get_radius(component_graph.node_color, soma_id);
+        auto soma_radius = get_radius(component_graph, soma_id);
 
         write_apo_file(component_dir_fn, file_name_base, soma_coord, soma_radius, voxel_size);
         write_ano_file(component_dir_fn, file_name_base);
@@ -911,7 +929,7 @@ void write_swcs(Geometry::AMGraph3D &component_graph, std::vector<GridCoord> som
         q.pop();
 
         auto pos = component_graph.pos[id].get();
-        auto radius = get_radius(component_graph.node_color, id);
+        auto radius = get_radius(component_graph, id);
         // can only be this trees root, not possible for somas from other trees to enter in to q
         auto is_root = id == soma_id;
         auto parent_id = parent_table[id].value();
@@ -957,7 +975,7 @@ void write_swcs(Geometry::AMGraph3D &component_graph, std::vector<GridCoord> som
   //}
 }
 
-std::pair<Seed, Geometry::AMGraph3D>
+std::pair<Seed, AMGraph3D>
 swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
     GridCoord image_offsets = zeros(), bool save_file = false) {
   ifstream ifs(swc_file);
@@ -967,7 +985,7 @@ swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
 
   auto min_voxel_size = min_max(voxel_size).first;
   std::vector<Seed> seeds;
-  Geometry::AMGraph3D g;
+  AMGraph3D g;
   std::vector<std::pair<NodeID, NodeID>> edges;
   while (ifs.good()) {
     if (ifs.peek() == '#' || ifs.eof()) {
@@ -1003,7 +1021,7 @@ swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
     x = std::round(x_um / voxel_size[0]);
     y = std::round(y_um / voxel_size[1]);
     z = std::round(z_um / voxel_size[2]);
-    auto p = CGLA::Vec3d(x, y, z);
+    auto p = Pos(x, y, z);
     auto coord = GridCoord(x, y, z);
 
     // add it to the graph
@@ -1012,7 +1030,7 @@ swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
       std::cout << "node id " << node_id << ' ' << " id " << id << '\n';
       throw std::runtime_error("SWC ids are improperly numbered");
     }
-    g.node_color[node_id] = CGLA::Vec3f(0, radius, 0);
+    set_radius(g, radius, node_id);
 
     // somas are nodes that have a parent of -1 (adjusted to -2) or have an index
     // of themselves
@@ -1020,6 +1038,8 @@ swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
       auto volume = static_cast<uint64_t>(std::round((4. / 3.) * PI * std::pow(radius, 3)));
       std::array<double, 3> coord_um{x_um, y_um, z_um};
       seeds.emplace_back(coord, coord_um, radius, radius_um, volume);
+      if (id != 1)
+        throw std::runtime_error("Soma node must be first line of SWC");
     } else {
       //g.connect_nodes(node_id, parent_id);
       edges.emplace_back(node_id, parent_id);
@@ -1042,13 +1062,13 @@ swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
   return std::make_pair(seeds.front(), g);
 }
 
-openvdb::FloatGrid::Ptr skeleton_to_surface(Geometry::AMGraph3D &skeleton) {
+openvdb::FloatGrid::Ptr skeleton_to_surface(AMGraph3D &skeleton) {
 
   // feq requires an explicit radii vector
   std::vector<double> radii;
   radii.reserve(skeleton.no_nodes());
   for (NodeID i : skeleton.node_ids()) {
-    radii.push_back(get_radius(skeleton.node_color, i));
+    radii.push_back(get_radius(skeleton, i));
   }
 
   // generate a mesh manifold then create a list of points and
@@ -1069,7 +1089,7 @@ openvdb::FloatGrid::Ptr skeleton_to_surface(Geometry::AMGraph3D &skeleton) {
   return vto::meshToVolume<openvdb::FloatGrid>(mesh, *get_transform());
 }
 
-int count_self_connected(Geometry::AMGraph3D &g) {
+int count_self_connected(AMGraph3D &g) {
   std::vector<NodeID> self_connected;
   for (NodeID n : g.node_ids()) {
     for (NodeID nn: g.neighbors(n)) {
@@ -1080,7 +1100,7 @@ int count_self_connected(Geometry::AMGraph3D &g) {
   return self_connected.size();
 }
 
-void remove_from_graph(Geometry::AMGraph3D &g, std::vector<GridCoord> coords) {
+void remove_from_graph(AMGraph3D &g, std::vector<GridCoord> coords) {
   // loop over all vertices until no remaining multifurcations are found
   for (auto i : g.node_ids()) {
     auto pos = g.pos[i];
@@ -1093,7 +1113,7 @@ void remove_from_graph(Geometry::AMGraph3D &g, std::vector<GridCoord> coords) {
   }
 }
 
-std::vector<int> node_valencies(Geometry::AMGraph3D &g) {
+std::vector<int> node_valencies(AMGraph3D &g) {
   std::vector<int> valencies;
   for (NodeID n : g.node_ids()) {
     auto nbs = g.neighbors(n);
@@ -1105,6 +1125,56 @@ std::vector<int> node_valencies(Geometry::AMGraph3D &g) {
   for (auto v : valencies)
     std::cout << v << '\n';
   return valencies;
+}
+
+// partition a graph into separate connected components at node n
+// n is not present in the returned subgraphs
+std::vector<AMGraph3D> split_graph(AMGraph3D &g, const NodeID n) {
+
+  // definitions
+  auto is_n = [n](auto i) { return i == n; };
+
+  // add the old connectivity to the new subgraph
+  // making sure to use the new set of node ids
+  auto copy_connections = [n, &is_n](const AMGraph3D &g, AMGraph3D &subg, 
+      auto to_new, NodeID new_id, NodeID old_id) {
+
+    std::vector<NodeID> old_nbs = g.neighbors(old_id);
+    auto new_nbs = old_nbs | rv::remove_if(is_n) 
+                        | rv::transform([&to_new](auto i) { return to_new[i].value(); });
+    for (auto new_nb : new_nbs)
+      subg.connect_nodes(new_id, new_nb); // bi-direc, order is irrel.
+  };
+
+  auto set_to_graph = [&](NodeSet nset) -> AMGraph3D {
+
+    AMGraph3D subg;
+    // map from the origin node ids to the new set
+    std::vector<std::optional<NodeID>> to_new;
+    // its okay to make this anew for each subgraph since
+    // they do not touch each other and will never connect
+    to_new.reserve(g.no_nodes());
+
+    for (auto const old_id : nset) {
+      auto new_id = subg.add_node(g.pos[old_id]);
+      set_radius(subg, get_radius(g, old_id), new_id);
+      to_new[old_id] = new_id;
+    }
+
+    for (auto const & [new_id, old_id] : nset | rv::enumerate)
+        copy_connections(g, subg, to_new, new_id, old_id);
+
+    return subg;
+  };
+
+  // build a set of all nodes other than n
+  NodeSet s;
+  for (auto id : rv::iota(static_cast<NodeID>(0), g.no_nodes()) | rv::remove_if(is_n))
+    s.insert(id);
+
+  // n is not present in any of the returned sets
+  auto sets = Geometry::connected_components(g, s);
+  return sets | rv::transform(set_to_graph) | rng::to_vector;
 }
 
 // returns a polygonal mesh
@@ -1153,11 +1223,10 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
   // delete the soma from the graph because it can have >10 valency
   // which causes graph_to_FEQ to seg fault
   // the soma sphere will be fused on top of the level set later
-  if (remove_soma) {
-    auto soma_coords = seeds | rv::transform(&Seed::coord) | rng::to_vector;
-    remove_from_graph(skeleton, soma_coords);
-  }
-  //auto node_sets = Geometry::connected_components();
+  //if (remove_soma) {
+    //auto soma_coords = seeds | rv::transform(&Seed::coord) | rng::to_vector;
+    //remove_from_graph(skeleton, soma_coords);
+  //}
 
   // check SWC health
   //node_valencies(skeleton);
@@ -1169,10 +1238,18 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
   if (count_self_connected(skeleton))
     throw std::runtime_error("Self connected nodes found");
 
-  auto level_set = skeleton_to_surface(skeleton);
+  // SWCs are guaranteed to 
+  // have 1 soma
+  // soma is the first node in graph
+  NodeID seed_id = 0;
+  auto subgraphs = split_graph(skeleton, seed_id);
 
-  // merge soma on top
-  // only 1 soma allowed per swc
+  auto level_set = merge_grids(subgraphs | rv::transform(skeleton_to_surface) | rng::to_vector);
+
+  if ((skeleton.no_nodes() - 1) != rng::accumulate(subgraphs | rv::transform([](auto s) { return s.no_nodes(); }), 0))
+    throw std::runtime_error("Split graph loses nodes");
+
+  /*
   {
     auto seed = seeds[0];
     auto soma_sdf = vto::createLevelSetSphere<openvdb::FloatGrid>(
@@ -1187,6 +1264,7 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
       vto::csgUnion(*level_set, *soma_sdf);
     } 
   }
+  */
 
   if (save_vdbs)
     write_vdb_file({level_set}, "surface-" + (name.empty() ? swc_file.stem().string() : name) + ".vdb");
