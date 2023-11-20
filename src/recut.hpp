@@ -19,7 +19,6 @@
 #include <future>
 #include <iostream>
 #include <map>
-#include <openvdb/tools/LevelSetRebuild.h>
 #include <openvdb/tools/FastSweeping.h>
 #include <set>
 #include <sstream>
