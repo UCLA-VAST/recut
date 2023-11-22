@@ -312,6 +312,41 @@ TEST(SWC, PrintSWCLine) {
 }
 */
 
+TEST(Skeletonization, TestSplitGraph) {
+  AMGraph3D g;
+
+  g.add_node({0, 0, 0});
+  g.add_node({1, 0, 0});
+  g.add_node({0, -1, 0});
+  g.add_node({-1, 0, 0});
+  g.add_node({0, 1, 0});
+  for (auto i : rv::iota(1,5))
+    g.connect_nodes(0, i);
+
+  auto graphs = split_graph(g, 0);
+  for (auto graph : graphs) {
+    ASSERT_EQ(graph.no_nodes(), 1);
+    ASSERT_EQ(graph.no_edges(), 0);
+  }
+
+  ASSERT_EQ(graphs.size(), 4);
+
+  auto id = g.add_node({1, 1, 0});
+  ASSERT_EQ(id, 5);
+  g.connect_nodes(4, 5);
+  g.connect_nodes(1, 5);
+
+  graphs = split_graph(g, 0);
+  for (auto graph : graphs) {
+    if (graph.no_nodes() > 1) {
+      ASSERT_EQ(graph.no_nodes(), 3);
+      ASSERT_EQ(graph.no_edges(), 2);
+    }
+  }
+
+  ASSERT_EQ(graphs.size(), 3);
+}
+
 TEST(VDB, UpdateSemantics) {
 
   auto grid = openvdb::BoolGrid::create();

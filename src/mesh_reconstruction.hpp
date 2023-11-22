@@ -91,13 +91,13 @@ std::vector<NodeID> within_sphere(const Node &node,
 // merge an ideal sphere after meshing
 // in use cases where the graph is not transformed into a mesh this is
 // not necessary
-void merge_local_radius(AMGraph3D &graph, std::vector<Node> &nodes,
+std::vector<NodeID> merge_local_radius(AMGraph3D &graph, std::vector<Node> &nodes,
     float soma_dilation=1., bool keep_radius_small=false) {
   // the graph is complete so build a data structure that
   // is fast at finding nodes within a 3D radial distance
   auto tree = build_kdtree(graph);
 
-  rng::for_each(nodes, [&](Node node) {
+  auto ids = nodes | rv::transform([&](const Node &node) {
       auto original_pos = Pos(node.pos[0], node.pos[1], node.pos[2]);
       Node n{original_pos, static_cast<float>(node.radius)};
 
@@ -109,9 +109,11 @@ void merge_local_radius(AMGraph3D &graph, std::vector<Node> &nodes,
       graph.pos[new_seed_id] = original_pos;
 
       set_radius(graph, keep_radius_small ? 1 : node.radius, new_seed_id);
-  });
+      return new_seed_id;
+  }) | rng::to_vector;
 
   graph.cleanup();
+  return ids;
 }
 
 auto to_node = [](Seed seed) {
@@ -891,8 +893,8 @@ void write_swcs(const AMGraph3D &component_graph, std::vector<GridCoord> soma_co
   for (auto soma_id : soma_ids) {
       std::set<NodeID> visited_swc_ids;
       NodeID swc_id = 1; // are 1-indexed
-      std::vector<std::optional<NodeID>> swc_ids;
-      swc_ids.reserve(component_graph.no_nodes() + 1); // 1-indexed, nothing at 0
+      // 1-indexed, nothing at 0
+      std::vector<std::optional<NodeID>> swc_ids(component_graph.no_nodes() + 1);
 
       // init q with soma
       std::queue<NodeID> q;
@@ -1202,12 +1204,12 @@ std::vector<AMGraph3D> split_graph(const AMGraph3D &g, const NodeID n) {
 
     AMGraph3D subg;
     // map from the origin node ids to the new set
-    std::vector<std::optional<NodeID>> to_new;
     // its okay to make this anew for each subgraph since
     // they do not touch each other and will never connect
     // aka, we will never ask to translate a node from another
     // subgraph, optional would throw if you did
-    to_new.reserve(g.no_nodes());
+    std::vector<std::optional<NodeID>> to_new(g.no_nodes());
+    assertm(to_new.size(), "to_new must match exact size");
 
     // create all nodes and save an index mapping ahead of time
     for (auto const old_id : nset) {
@@ -1215,6 +1217,14 @@ std::vector<AMGraph3D> split_graph(const AMGraph3D &g, const NodeID n) {
       set_radius(subg, get_radius(g, old_id), new_id);
       to_new[old_id] = new_id;
     }
+
+    // delete me
+    //std::cout << '\n';
+    //std::cout << "size: " << to_new.size() << '\n';
+    //for (int i=0; i < 3; ++i) {
+      //if (to_new[i].has_value())
+        //std::cout << "i " << i << ' ' << to_new[i].value() << '\n';
+    //}
 
     // safe to establish all connections among new ids of subg
     // the values of nset are old ids
@@ -1253,15 +1263,13 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
   }
 
   // for any nodes within the soma collapse them
-  if (true) {
+  // re-establish a known seed id
+  {
     auto nodes = seeds | rv::transform(to_node) 
       | rng::to_vector;
     merge_local_radius(skeleton, nodes, 
         /*don't dilate soma at all*/1);
   }
-
-  if (save_vdbs)
-    graph_save(swc_file.stem().string() + ".graph", skeleton);
 
   // you must correct for nodes within another before calling
   // graph to FEQ
@@ -1272,20 +1280,26 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
       fix_node_within_another(skeleton, illegal_nodes);
   }
 
+  NodeID seed_id;
+  //auto seed_id = get_closest_id(skeleton, to_node(seed));
+  {
+    auto tree = build_kdtree(skeleton);
+    Pos found_pos;
+    Pos seed_pos(seed.coord[0], seed.coord[1], seed.coord[2]);
+    double d = 0.00001f;
+    assertm(tree.closest_point(seed_pos, d, found_pos, 
+          seed_id), "Could not find seed");
+  }
+
+  if (save_vdbs)
+    graph_save(swc_file.stem().string() + ".graph", skeleton);
+
   if (save_swcs) {
     auto soma_coords = rv::transform(seeds, [](Seed seed) {
         return seed.coord;
         }) | rng::to_vector;
     write_swcs(skeleton, soma_coords, voxel_size);
   }
-
-  // delete the soma from the graph because it can have >10 valency
-  // which causes graph_to_FEQ to seg fault
-  // the soma sphere will be fused on top of the level set later
-  //if (remove_soma) {
-    //auto soma_coords = seeds | rv::transform(&Seed::coord) | rng::to_vector;
-    //remove_from_graph(skeleton, soma_coords);
-  //}
 
   // check SWC health
   //node_valencies(skeleton);
@@ -1297,11 +1311,32 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
   if (count_self_connected(skeleton))
     throw std::runtime_error("Self connected nodes found");
 
-  // SWCs are guaranteed to 
-  // have 1 soma
-  // soma is the first node in graph
-  NodeID seed_id = 0;
+  //std::cout << "Seed id: " << seed_id << '\n';
+  //std::cout << "Seed radius: " << get_radius(skeleton, seed_id) << '\n';
+
+  // delete the soma from the graph because it can have >10 valency
+  // which causes graph_to_FEQ to seg fault
+  // the soma sphere could be fused on top of the level set later if desired
   auto subgraphs = split_graph(skeleton, seed_id);
+
+  // move this elsewhere
+  { // verify subgraphs
+    auto sz = subgraphs.size();
+    auto nbs = skeleton.neighbors(seed_id);
+    auto nbs_sz = nbs.size();
+    if (sz > nbs_sz)  {
+      std::cout << "Subgraph size: " << sz << '\n';
+      std::cout << "nbs size: " << nbs_sz << '\n';
+      throw std::runtime_error("Subgraphs must be <= original nbs");
+    }
+  }
+
+  //for (auto subg : subgraphs) {
+    //for (int i=0; i < subg.no_nodes(); ++i) {
+      //std::cout << get_radius(subg, i) << '\n';
+    //}
+  //}
+  //std::cout << "done\n";
 
   auto level_set = merge_grids(subgraphs | rv::transform(skeleton_to_surface) | rng::to_vector);
   // if level sets overlap at all, their merged values may no longer form a proper surface 
