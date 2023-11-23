@@ -1243,6 +1243,18 @@ std::vector<AMGraph3D> split_graph(const AMGraph3D &g, const NodeID n) {
 
   // n is not present in any of the returned sets
   auto sets = Geometry::connected_components(g, s);
+
+  { // verify subgraphs
+    auto sz = sets.size();
+    auto nbs = g.neighbors(n);
+    auto nbs_sz = nbs.size();
+    if (sz > nbs_sz)  {
+      std::cout << "Subgraph size: " << sz << '\n';
+      std::cout << "nbs size: " << nbs_sz << '\n';
+      throw std::runtime_error("Subgraphs must be <= original nbs");
+    }
+  }
+
   return sets | rv::transform(set_to_graph) | rng::to_vector;
 }
 
@@ -1311,36 +1323,25 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
   if (count_self_connected(skeleton))
     throw std::runtime_error("Self connected nodes found");
 
-  //std::cout << "Seed id: " << seed_id << '\n';
-  //std::cout << "Seed radius: " << get_radius(skeleton, seed_id) << '\n';
-
   // delete the soma from the graph because it can have >10 valency
   // which causes graph_to_FEQ to seg fault
   // the soma sphere could be fused on top of the level set later if desired
   auto subgraphs = split_graph(skeleton, seed_id);
 
-  // move this elsewhere
-  { // verify subgraphs
-    auto sz = subgraphs.size();
-    auto nbs = skeleton.neighbors(seed_id);
-    auto nbs_sz = nbs.size();
-    if (sz > nbs_sz)  {
-      std::cout << "Subgraph size: " << sz << '\n';
-      std::cout << "nbs size: " << nbs_sz << '\n';
-      throw std::runtime_error("Subgraphs must be <= original nbs");
-    }
+  //for (auto [i, subg] : subgraphs | rv::enumerate)
+    //graph_save("subg" + std::to_string(i) + ".graph", subg);
+
+  openvdb::FloatGrid::Ptr level_set;
+  {
+    auto level_sets = subgraphs | rv::transform(skeleton_to_surface) | rng::to_vector;
+    // empties/nullifies level sets into accumulator level set
+    level_set = level_sets.front();
+    for (int i=1; i < subgraphs.size(); ++i)
+      vto::csgUnion(*level_set, *level_sets[i]);
+    // if level sets overlap at all, their merged values may no longer form a proper surface 
+    // without resurfacing
+    level_set = vto::levelSetRebuild(*level_set);
   }
-
-  //for (auto subg : subgraphs) {
-    //for (int i=0; i < subg.no_nodes(); ++i) {
-      //std::cout << get_radius(subg, i) << '\n';
-    //}
-  //}
-  //std::cout << "done\n";
-
-  auto level_set = merge_grids(subgraphs | rv::transform(skeleton_to_surface) | rng::to_vector);
-  // if level sets overlap at all, their merged values may no longer form a proper surface 
-  level_set = vto::levelSetRebuild(*level_set);
 
   if ((skeleton.no_nodes() - 1) != rng::accumulate(subgraphs | rv::transform([](auto s) { return s.no_nodes(); }), 0))
     throw std::runtime_error("Split graph loses nodes");
