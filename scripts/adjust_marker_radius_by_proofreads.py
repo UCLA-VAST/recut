@@ -1,7 +1,6 @@
 import argparse
 from shutil import rmtree, copyfile
-from os import mkdir
-from os import path
+import os
 from recut_interface import *
 import numpy as np
 from glob import glob
@@ -66,9 +65,9 @@ def main():
 
     # create a fresh directory for proofread markers
     proofread_marker_dir = "proofread-markers"
-    if path.isdir(proofread_marker_dir):
+    if os.path.isdir(proofread_marker_dir):
         rmtree(proofread_marker_dir)
-    mkdir(proofread_marker_dir)
+    os.mkdir(proofread_marker_dir)
 
     kwargs = {}
     kwargs['voxel_size_x'] = .4
@@ -79,7 +78,7 @@ def main():
 
     # for dealing with runs with mixed human proofreads and 
     # automated outputs you can pass this to keep original automateds
-    f = lambda n: '_' not in path.basename(n)
+    f = lambda n: '_' not in os.path.basename(n)
 
     # get a dict of coord (world space um) to proofread path
     proofread_dict = gather_swcs(args.proofreads, voxel_sizes)
