@@ -979,13 +979,18 @@ void write_swcs(const AMGraph3D &component_graph, std::vector<GridCoord> soma_co
 
 std::pair<Seed, AMGraph3D>
 swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
-    GridCoord image_offsets = zeros(), bool save_file = false) {
+    GridCoord image_offsets = zeros(), bool disable_swc_scaling=false, bool save_file = false) {
   ifstream ifs(swc_file);
   if (ifs.fail()) {
     throw std::runtime_error("Unable to open marker file " + swc_file.string());
   }
 
+  // still scale the radii sizes of nodes and soma even if disable_swc_scaling is on
   auto min_voxel_size = min_max(voxel_size).first;
+  std::array<double, 3> no_scaling{{1,1,1}}; 
+  if (disable_swc_scaling)
+    voxel_size = no_scaling;
+
   std::vector<Seed> seeds;
   AMGraph3D g;
   std::vector<std::pair<NodeID, NodeID>> edges;
@@ -1261,11 +1266,11 @@ std::vector<AMGraph3D> split_graph(const AMGraph3D &g, const NodeID n) {
 // returns a polygonal mesh
 openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
     std::array<double, 3> voxel_size, GridCoord image_offsets, 
-    bool save_vdbs = false, std::string name = "",
+    bool save_vdbs = false, std::string name = "", bool disable_swc_scaling=false,
     bool remove_soma=true, bool save_swcs = true) {
 
   bool merge_soma_on_top = false;
-  auto [seed, skeleton] = swc_to_graph(swc_file, voxel_size, image_offsets);
+  auto [seed, skeleton] = swc_to_graph(swc_file, voxel_size, image_offsets, disable_swc_scaling);
   std::vector<Seed> seeds{seed};
 
   auto invalids = get_invalid_radii(skeleton);
