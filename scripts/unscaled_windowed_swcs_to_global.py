@@ -40,10 +40,7 @@ def translate_and_scale(file_with_offset, voxel_sizes):
         if swc_df.loc[0].radius < 5:
             swc_df.at[0, 'radius'] = 5
         row = swc_df.loc[0]
-        output_file = global_swc_dir / f'[{int(row.x):06n},{int(row.y):06n},{int(row.z):06n}]-r={int(row.radius):06n}.swc'
-        while output_file.exists():
-            output_file = output_file.parent / (output_file.name[0:-len(output_file.suffix)] + '_.swc')
-            print(output_file)
+        output_file = Path(global_swc_dir) / f'[{int(row.x):06n},{int(row.y):06n},{int(row.z):06n}]-r={int(row.radius):06n}.swc'
         if swc_df.drop(columns=['id', 'type', 'radius', 'parent_id']).duplicated().sum() > 0:
             n += 1
             print(f"duplicate nodes: {n} -> {output_file}")
