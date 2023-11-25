@@ -76,7 +76,8 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 
 #define SWC_MIN_LINE 110
 #define COARSEN_FACTOR 1.5
-#define FORCE_SOMA_DILATION 3
+// force used to be set to 3 for raw human proofread seeds
+#define FORCE_SOMA_DILATION 1
 #define FIND_SOMA_DILATION 3
 // no filtering by default below
 #define MIN_SOMA_RADIUS_UM 0 

@@ -2889,7 +2889,7 @@ template <class image_t> void Recut<image_t>::initialize() {
       if (args->seed_action == "find-valent") 
         args->soma_dilation = FIND_SOMA_DILATION * args->voxel_size[0];
       else if (args->seed_action == "force") 
-        args->soma_dilation = FORCE_SOMA_DILATION * args->voxel_size[0];
+        args->soma_dilation = FORCE_SOMA_DILATION;
       else
         args->soma_dilation = 1;
 
