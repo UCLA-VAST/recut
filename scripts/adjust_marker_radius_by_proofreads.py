@@ -32,7 +32,7 @@ def create_matched(proofread_marker_dir, coords_radii):
             # example: 3306,1223,3267,12, everthing in world space (um)
             f.write(','.join(str_coord) + ',' + f2str(radius))
 
-def get_proofread_soma_pos_rad(matched_v1, voxel_sizes):
+def get_soma_pos_rad(matched_v1, voxel_sizes):
     # extract offset from proofreads
     # returns a list of tuples where fst is proofread path and snd is offset coord
     v1_offset = list(map(extract_offset, matched_v1))
@@ -56,11 +56,17 @@ def get_proofread_soma_pos_rad(matched_v1, voxel_sizes):
     # print(list(final_coords))
     return list(zip(final_coords, final_radii))
 
+# extract final (proofread) soma location and radius from proofreads
+def get_proofread_soma_pos_rad(matched):
+    proofread_soma = map(extract_soma_coord, matched)
+    proofread_soma_radius = map(extract_soma_radius, matched)
+    return list(zip(proofread_soma, proofread_soma_radius))
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('proofreads')
     parser.add_argument('markers')
-    parser.add_argument('v1')
+    parser.add_argument('--v1', help='if v1 is passed it assued proofread swcs are windows and need an offset calculated from the outputs')
     args = parser.parse_args()
 
     # create a fresh directory for proofread markers
@@ -68,11 +74,17 @@ def main():
     if os.path.isdir(proofread_marker_dir):
         rmtree(proofread_marker_dir)
     os.mkdir(proofread_marker_dir)
+    print(f"New markers in: {proofread_marker_dir}")
 
     kwargs = {}
-    kwargs['voxel_size_x'] = .4
-    kwargs['voxel_size_y'] = .4
-    kwargs['voxel_size_z'] = .4
+    if args.v1:
+        kwargs['voxel_size_x'] = .4
+        kwargs['voxel_size_y'] = .4
+        kwargs['voxel_size_z'] = .4
+    else:
+        kwargs['voxel_size_x'] = 1
+        kwargs['voxel_size_y'] = 1
+        kwargs['voxel_size_z'] = 1
     voxel_sizes = np.array([kwargs['voxel_size_x'], kwargs['voxel_size_y'], kwargs['voxel_size_z']], dtype=float)
     distance_threshold = 30
 
@@ -90,33 +102,40 @@ def main():
     # match those coords to each path so you can match with necessary offset below
     marker_dict = dict(zip(coords, markers))
 
-    # you need to get v1 outputs to match to, get correct offset adjustment
-    v1 = gather_swcs(args.v1, voxel_sizes, f)
-
-    # list of (proofread path, v1 path):
-    # note once you start matching you need to keep things as a list of tuples
-    # so that ordering (which implies matching) is preserved
-    # sets and dicts in python can be tricky to reason about in sorted order
-    matched_v1 = match_coord_keys(proofread_dict, v1, distance_threshold)
-    soma_coords_radii = get_proofread_soma_pos_rad(matched_v1, voxel_sizes)
-
     # pairs of proofread file path matched with marker file path
     matches = match_coord_keys(proofread_dict, marker_dict, distance_threshold)
-    final_matched_proofreads = [proof for proof, _ in matches]
+    if args.v1:
+        # you need to get v1 outputs to match to, get correct offset adjustment
+        v1 = gather_swcs(args.v1, voxel_sizes, f)
 
-    # soma_coords_radii and matched_v1 originate from the same list so they share indices
-    final_soma_coords_radii = [soma_coords_radii[i] for i, tup in enumerate(matched_v1) 
-                                   if tup[0] in final_matched_proofreads] 
-    final_proofreads = [proof for proof, _ in matched_v1 
-                                   if proof in final_matched_proofreads] 
-    double_matched_markers = {marker for proof in final_proofreads for proof2, marker in matches if proof2 == proof}
-    print("final marker count: " + str(len(double_matched_markers)) + '/' + str(len(proofread_dict)))
-    if (len(final_soma_coords_radii) != len(double_matched_markers)):
-        raise Exception("if a marker cant be matched you need to at least guarantee reuse of the original")
+        # list of (proofread path, v1 path):
+        # note once you start matching you need to keep things as a list of tuples
+        # so that ordering (which implies matching) is preserved
+        # sets and dicts in python can be tricky to reason about in sorted order
+        # therefore use list of matched tuples wherever possible
+        matched_v1 = match_coord_keys(proofread_dict, v1, distance_threshold)
+        soma_coords_radii = get_soma_pos_rad(matched_v1, voxel_sizes)
+
+        final_matched_proofreads = [proof for proof, _ in matches]
+
+        # soma_coords_radii and matched_v1 originate from the same list so they share indices
+        final_soma_coords_radii = [soma_coords_radii[i] for i, tup in enumerate(matched_v1) 
+                                       if tup[0] in final_matched_proofreads] 
+        final_proofreads = [proof for proof, _ in matched_v1 
+                                       if proof in final_matched_proofreads] 
+        double_matched_markers = {marker for proof in final_proofreads for proof2, marker in matches if proof2 == proof}
+        if (len(final_soma_coords_radii) != len(double_matched_markers)):
+            raise Exception("if a marker cant be matched you need to at least guarantee reuse of the original")
+    else:
+        double_matched_markers = {marker for _, marker in matches}
+        final_soma_coords_radii = get_proofread_soma_pos_rad(matches)
 
     # split markers into those that match the final set of proofreads and those that do not
     marker_set = set(marker_dict.values())
     unmatched_markers = marker_set - double_matched_markers
+    total = len(unmatched_markers) + len(double_matched_markers)
+    print("Adjusted marker count: " + str(len(double_matched_markers)) + '/' + str(total))
+    print("Unadjusted marker count: " + str(len(unmatched_markers)) + '/' + str(total))
 
     # for those that do not match, simply copy them over to the new directory
     copy_unmatched(proofread_marker_dir, unmatched_markers)

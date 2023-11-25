@@ -114,13 +114,13 @@ def extract_offset(pair):
     return (proof_fn, tuple(map(to_int, start.split(','))))
 
 def extract_soma_coord(pair):
-    (proof_fn, v1_fn) = pair
+    (proof_fn, _) = pair
     with open(proof_fn, 'r') as file:
         _ = file.readline()
         return tuple(map(float, file.readline().split()[2:-2]))
 
 def extract_soma_radius(pair):
-    (proof_fn, v1_fn) = pair
+    (proof_fn, _) = pair
     with open(proof_fn, 'r') as file:
         _ = file.readline()
         return float(file.readline().split()[-2])
