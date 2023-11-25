@@ -15,11 +15,11 @@ def fn_to_coord(fn_name):
 def swc_to_coord(swc, voxel_sizes):
     if '[' in swc:
         return fn_to_coord(swc)
-    else:
-        coord_space = tuple(map(int, Path(swc).stem.split('_')[0].split('-')[-3:]))
-        return (coord_space[0] * voxel_sizes[0], 
-                coord_space[1] * voxel_sizes[1],
-                coord_space[2] * voxel_sizes[2])
+    # if len(Path(swc).stem.split('_') > 1:
+    coord_space = tuple(map(int, Path(swc).stem.split('_')[0].split('-')[-3:]))
+    return (coord_space[0] * voxel_sizes[0], 
+            coord_space[1] * voxel_sizes[1],
+            coord_space[2] * voxel_sizes[2])
 
 def swcs_to_dict(swcs, voxel_sizes):
     d = {}

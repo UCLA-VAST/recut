@@ -849,7 +849,7 @@ auto print_swc_line = [](NodeID id, NodeID parent_id,
   if (is_root) {
     // only the first line of the file can have a parent of -1
     // any other should connect to themselves
-    line << std::to_string(is_eswc ? 0 : id);
+    line << std::to_string(is_eswc ? 0 : -1);
   } else {
     line << std::to_string(parent_id);
   }
