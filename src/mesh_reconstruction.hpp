@@ -739,7 +739,7 @@ void write_ano_file(fs::path component_dir_fn, std::string file_name_base) {
 }
 
 void write_apo_file(fs::path component_dir_fn, std::string file_name_base, std::array<double, 3> pos,
-    float radius, std::array<double, 3> voxel_size) {
+    float unscaled_radius, std::array<double, 3> voxel_size) {
   std::ofstream apo_file;
   apo_file.open(component_dir_fn / (file_name_base + ".ano.apo"));
   apo_file << std::fixed << std::setprecision(SWC_PRECISION);
@@ -757,6 +757,8 @@ void write_apo_file(fs::path component_dir_fn, std::string file_name_base, std::
     << ',' << voxel_size[1] * pos[1] << ',';
   // pixmax,intensity,sdev,
   apo_file << "0.,0.,0.,";
+  auto v = min_max(voxel_size).first;
+  auto radius = unscaled_radius * v;
   // volsize
   apo_file << radius * radius * radius;
   // mass,,,, color_r,color_g,color_b
@@ -792,7 +794,7 @@ std::string swc_name(Node &n, std::array<double, 3> voxel_size, bool bbox_adjust
 // https://github.com/HumanBrainProject/swcPlus/blob/master/SWCplus_specification.html
 auto print_swc_line = [](NodeID id, NodeID parent_id, 
     std::array<double, 3> swc_coord, bool is_root,
-    float radius, std::array<double, 3> parent_coord,
+    float unscaled_radius, std::array<double, 3> parent_coord,
     CoordBBox bbox, std::ofstream &out,
     std::array<double, 3> voxel_size,
     bool bbox_adjust = true, bool is_eswc = false,
@@ -842,7 +844,8 @@ auto print_swc_line = [](NodeID id, NodeID parent_id,
   // coordinates
   line << swc_coord[0] << ' ' << swc_coord[1] << ' ' << swc_coord[2] << ' ';
 
-  // radius, already been adjsuted to voxel size
+  auto v = min_max(voxel_size).first;
+  auto radius = unscaled_radius * v;
   line << radius << ' ';
 
   // parent
