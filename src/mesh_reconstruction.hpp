@@ -279,6 +279,16 @@ AMGraph3D fix_multifurcations(AMGraph3D &graph,
   return graph;
 }
 
+void scale_radii(AMGraph3D &g, double scaling_factor, std::vector<GridCoord> exclude_coords) {
+  for (auto id : g.node_ids()) {
+    auto pos = g.pos[id];
+    auto current_coord = GridCoord(pos[0], pos[1], pos[2]);
+    if (rng::find(exclude_coords, current_coord) == rng::end(exclude_coords)) {
+      set_radius(g, get_radius(g, id) * scaling_factor, id);
+    }
+  }
+}
+
 HMesh::Manifold vdb_to_mesh(openvdb::FloatGrid::Ptr component,
     RecutCommandLineArgs *args) {
   std::vector<openvdb::Vec3s> points;
@@ -697,6 +707,11 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     return std::nullopt;
   }
 
+  // if the images are inherently anisotropic, you need to scale the nodes radii according to
+  // the anisotropic radii, this leaves soma nodes alone
+  if (args->anisotropic_scaling.has_value())
+    scale_radii(component_graph, args->anisotropic_scaling.value(), soma_coords);
+
   {
     auto illegal_nodes = count_nodes_within_another(component_graph);
     component_log << "Original within nodes, " << illegal_nodes.size() << '\n';
@@ -794,7 +809,7 @@ std::string swc_name(Node &n, std::array<double, 3> voxel_size, bool bbox_adjust
 // https://github.com/HumanBrainProject/swcPlus/blob/master/SWCplus_specification.html
 auto print_swc_line = [](NodeID id, NodeID parent_id, 
     std::array<double, 3> swc_coord, bool is_root,
-    float unscaled_radius, std::array<double, 3> parent_coord,
+    float unscaled_radius, 
     CoordBBox bbox, std::ofstream &out,
     std::array<double, 3> voxel_size,
     bool bbox_adjust = true, bool is_eswc = false,
@@ -809,7 +824,6 @@ auto print_swc_line = [](NodeID id, NodeID parent_id,
   //if (!bbox_adjust || is_eswc) {
   if (!disable_swc_scaling) {
     scale_coord(swc_coord);
-    scale_coord(parent_coord);
   }
 
   if (bbox_adjust) { // implies output window crops is set
@@ -827,7 +841,6 @@ auto print_swc_line = [](NodeID id, NodeID parent_id,
 
     // adjust the coordinates to the components bbox
     subtract(swc_coord, window_start);
-    subtract(parent_coord, window_start);
   }
 
   // n
@@ -940,13 +953,6 @@ void write_swcs(const AMGraph3D &component_graph, std::vector<GridCoord> soma_co
         auto parent_id = parent_table[id].value();
 
         auto coord = std::array<double, 3>{pos[0], pos[1], pos[2]};
-        std::array<double, 3> parent_coord;
-        if (is_root) {
-          parent_coord = coord;
-        } else {
-          auto lpos = component_graph.pos[parent_id].get();
-          parent_coord = std::array<double, 3>{lpos[0], lpos[1], lpos[2]};
-        }
 
         assertm(visited_node_ids.count(id) == 0, "Node already visited");
         assertm(visited_swc_ids.count(swc_id) == 0, "SWC already assigned");
@@ -954,7 +960,7 @@ void write_swcs(const AMGraph3D &component_graph, std::vector<GridCoord> soma_co
         visited_swc_ids.insert(swc_id);
         // invalid if root
         auto swc_parent_id = is_root ? swc_id : swc_ids[parent_id].value();
-        print_swc_line(swc_id, swc_parent_id, coord, is_root, radius, parent_coord,
+        print_swc_line(swc_id, swc_parent_id, coord, is_root, radius, 
             bbox, swc_file, voxel_size, bbox_adjust, is_eswc, disable_swc_scaling);
         // mark this swc's id
         swc_ids[id] = swc_id;

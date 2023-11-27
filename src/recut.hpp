@@ -2887,7 +2887,7 @@ template <class image_t> void Recut<image_t>::initialize() {
 
     if (!args->soma_dilation.has_value()) {
       if (args->seed_action == "find-valent") 
-        args->soma_dilation = FIND_SOMA_DILATION * args->voxel_size[0];
+        args->soma_dilation = FIND_SOMA_DILATION;
       else if (args->seed_action == "force") 
         args->soma_dilation = FORCE_SOMA_DILATION;
       else
@@ -2898,6 +2898,9 @@ template <class image_t> void Recut<image_t>::initialize() {
                       << " based on voxel size\n";
       }
     }
+
+    if (!args->anisotropic_scaling.has_value())
+      args->anisotropic_scaling = 1.333333 * args->voxel_size[0] - .333333;
 
     if (!args->coarsen_steps.has_value()) {
       // at low resolution voxel sizes 1 (6x) and above do not coarsen

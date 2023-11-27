@@ -62,7 +62,7 @@ public:
       ignore_multifurcations, close_topology, disable_swc_scaling;
   std::array<int, 3> tile_lengths;
   std::array<double, 3> voxel_size;
-  std::optional<float> prune_radius, soma_dilation;
+  std::optional<float> prune_radius, soma_dilation, anisotropic_scaling;
   std::optional<int> close_steps, open_steps, saturate_edges, coarsen_steps;
   std::optional<std::filesystem::path> test;
 };
