@@ -2892,15 +2892,12 @@ template <class image_t> void Recut<image_t>::initialize() {
         args->soma_dilation = FORCE_SOMA_DILATION;
       else
         args->soma_dilation = 1;
-
-      if (args->seed_action != "find") {
-        std::cout << "Soma dilation for action '" << args->seed_action << "' inferred to " << args->soma_dilation.value()
-                      << " based on voxel size\n";
-      }
     }
 
-    if (!args->anisotropic_scaling.has_value())
-      args->anisotropic_scaling = 1.333333 * args->voxel_size[0] - .333333;
+    if (!args->anisotropic_scaling.has_value()) {
+      //find the linear equation that passes through the points (.4, .2)and  (1, .16)
+      args->anisotropic_scaling = .226667 - .0666666 * args->voxel_size[0];
+    }
 
     if (!args->coarsen_steps.has_value()) {
       // at low resolution voxel sizes 1 (6x) and above do not coarsen

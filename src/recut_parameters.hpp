@@ -36,7 +36,7 @@ public:
         skeleton_grain(SKELETON_GRAIN), skeleton_grow(GROW_THRESHOLD),
         smooth_steps(SMOOTH_STEPS),
         mean_shift_factor(0), 
-        seed_action("find"), optimize_steps(5),
+        seed_action("force"), optimize_steps(5),
         disable_swc_scaling(false) {}
 
   static void PrintUsage();
