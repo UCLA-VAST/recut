@@ -656,7 +656,7 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
   auto g = vdb_to_graph(component, args);
   component_log << "vdb to graph, " << timer.elapsed_formatted() << '\n';
 
-  if (args->coarsen_steps) {
+  if (args->coarsen_steps.value()) {
     timer.restart();
     auto msg = Geometry::multiscale_graph(g, args->skeleton_grow, true);
     auto last_layer_index = msg.layers.size() - 1;

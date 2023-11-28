@@ -35,7 +35,7 @@ public:
         mean_shift_max_iters(4), timeout(MEAN_SHIFT_TIMEOUT),
         skeleton_grain(SKELETON_GRAIN), skeleton_grow(GROW_THRESHOLD),
         smooth_steps(SMOOTH_STEPS),
-        mesh_grain(MESH_GRAIN), mean_shift_factor(0), 
+        mean_shift_factor(0), 
         seed_action("find"), optimize_steps(5),
         disable_swc_scaling(false) {}
 
@@ -56,7 +56,7 @@ public:
       skeleton_grow, optimize_steps;
   double foreground_percent, slt_pct;
   float min_window_um, expand_window_um, min_radius_um, max_radius_um,
-      mean_shift_factor, skeleton_grain, mesh_grain;
+      mean_shift_factor, skeleton_grain;
   VID_t selected, root_vid;
   bool run_app2, convert_only, combine, histogram, save_vdbs,
       ignore_multifurcations, close_topology, disable_swc_scaling;

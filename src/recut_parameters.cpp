@@ -58,8 +58,8 @@ void RecutCommandLineArgs::PrintUsage() {
          "default 0 0 0\n";
   std::cout << "--coarsen-steps        determines granularity of final skeletons, lower "
                "values result in higher detailed skeletons (SWC trees) with "
-               "more skeletal nodes; default is "
-            << COARSEN_FACTOR << " / [voxel size]\n";
+               "more skeletal nodes; default is " << COARSEN_STEPS << '\n';
+            //<< COARSEN_FACTOR << " / [voxel size]\n";
   //std::cout << "--skeleton-grain       granularity of final skeletons, lower "
                //"value result in higher detailed skeletons (SWC trees) with "
                //"more skeletal nodes; default is "
@@ -72,9 +72,6 @@ void RecutCommandLineArgs::PrintUsage() {
                "positions and radius of final skeletons, "
                "improving uniformity along paths; defaults to "
             << SMOOTH_STEPS << '\n';
-  // std::cout << "--mesh-grain          granularity of component mesh, lower
-  // value result in higher polygon count to represent the surface; default is "
-  // << MESH_GRAIN << '\n';
   std::cout << "--soma-dilation        factor to multiply computed soma size "
                "by to collapse somal nodes, works in combination with 'find-valent' and 'force' actions "
                "defaults to "
@@ -286,9 +283,6 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
       } else if (strcmp(argv[i], "--optimize-steps") == 0) {
         auto val = atoi(argv[i + 1]);
         args.optimize_steps = val;
-        ++i;
-      } else if (strcmp(argv[i], "--mesh-grain") == 0) {
-        args.mesh_grain = atof(argv[i + 1]);
         ++i;
       } else if (strcmp(argv[i], "--bg-thresh") == 0 ||
                  strcmp(argv[i], "-bt") == 0) {

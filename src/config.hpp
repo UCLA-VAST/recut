@@ -75,7 +75,8 @@ using ImgGrid = openvdb::Grid<UInt8Tree>;
 using EnlargedPointIndexGrid = vto::PointIndexGrid;
 
 #define SWC_MIN_LINE 110
-#define COARSEN_FACTOR 1.5
+//#define COARSEN_FACTOR 1.5
+#define COARSEN_STEPS 0
 // force used to be set to 3 for raw human proofread seeds multiplied by voxel_size[0]
 #define FORCE_SOMA_DILATION 1
 #define FIND_SOMA_DILATION 1
@@ -105,7 +106,6 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 #define MEAN_SHIFT_TIMEOUT 60 * 10
 #define GROW_THRESHOLD 128
 #define SKELETON_GRAIN .09
-#define MESH_GRAIN .999
 #define CLASSIC_PRUNE 0
 #define TOPOLOGY_CLOSE_FACTOR 1.5
 #define SOMA_CLOSE_FACTOR 7
