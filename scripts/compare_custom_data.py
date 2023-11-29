@@ -40,18 +40,23 @@ def run_diadem(proof_swc, auto_swc):
         return None
     return result
 
-def extract(string, token):
-    contains_token = lambda line: token in line
-    # partial
-    line = list(filter(contains_token, string.split('\n')))[0]
+def last_float(line):
     return float(line.split()[-1])
 
-def extract_accuracy(result):
+def extract(string, token):
+    contains_token = lambda line: token in line
+    line = list(filter(contains_token, string.split('\n')))[0]
+    return last_float(line)
+
+def extract_accuracy(result, diadem=False):
     if result:
         if result.stdout:
             print('output: ', result.stdout)
-            ex = partial(extract, result.stdout)
-            return (ex('recall'), ex('precision'), ex('F1'))
+            if diadem:
+                return last_float(result.stdout)
+            else:
+                ex = partial(extract, result.stdout)
+                return ex('recall'), ex('precision'), ex('F1')
         if result.stderr:
             print('error: ', result.stderr)
         if result.stderr != "" or result.returncode != 0:
@@ -59,6 +64,18 @@ def extract_accuracy(result):
         return True
     else:
         return False
+
+def handle_diadem_output(proof_swc, auto_swc):
+    returncode = run_diadem(proof_swc, auto_swc)
+    is_success = extract_accuracy(returncode, True)
+    if is_success:
+        print("Success")
+        print(is_success)
+        print()
+        print()
+        return is_success
+    print("Failed in diadem")
+    return None
 
 def run_accuracy(kwargs, match):
     returncode = run_volumetric_accuracy(kwargs, *match)
@@ -106,6 +123,9 @@ def describe_recut_component_classifier(raw_matched):
     print("Automateds multis count: " + str(multis) + '/' + str(len(raw_matched)))
     print("Automateds others count: " + str(others) + '/' + str(len(raw_matched)))
 
+def stats(f, xs):
+    print(f'{f.__name__}: {f(xs)}')
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('proofread')
@@ -152,9 +172,13 @@ def main():
     print("Params count: " + str(len(params)) + '/' + str(len(proofreads)))
 
     print()
-    l = [run_diadem(proof, auto) for proof, auto in matched_globals] if args.globals else None
-    import pdb; pdb.set_trace()
-    exit(1)
+    if args.globals:
+        diadem_scores = rm_none((handle_diadem_output(proof, auto) for proof, auto in matched_globals))
+        print("Diadem comparison count: " + str(len(diadem_scores)) + '/' + str(len(matched_globals)))
+        if len(diadem_scores):
+            stats(np.mean, diadem_scores)
+            stats(np.std, diadem_scores)
+        exit(1)
 
     run = partial(run_accuracy, kwargs)
     accuracies = rm_none(map(run, params))
