@@ -986,6 +986,10 @@ void write_swcs(const AMGraph3D &component_graph, std::vector<GridCoord> soma_co
   //}
 }
 
+// SWCs are by default in um world space, recut always operates in pixel space
+// you can translate from world to pixel space via a voxel size.
+// some inputs are unscaled see --disable_swc_scaling, in those cases
+// you can leave the coordinates and radii as is
 std::pair<Seed, AMGraph3D>
 swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
     GridCoord image_offsets = zeros(), bool disable_swc_scaling=false, bool save_file = false) {
@@ -994,11 +998,12 @@ swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
     throw std::runtime_error("Unable to open marker file " + swc_file.string());
   }
 
-  // still scale the radii sizes of nodes and soma even if disable_swc_scaling is on
+  if (disable_swc_scaling)  {
+    // leave pos and radii as is (in pixel space)
+    voxel_size = {{1,1,1}};
+  }
+
   auto min_voxel_size = min_max(voxel_size).first;
-  std::array<double, 3> no_scaling{{1,1,1}}; 
-  if (disable_swc_scaling)
-    voxel_size = no_scaling;
 
   std::vector<Seed> seeds;
   AMGraph3D g;
