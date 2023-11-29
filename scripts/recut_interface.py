@@ -5,6 +5,8 @@ from functools import partial
 import numpy as np
 import re
 
+diadem_path = "/home/kdmarrett/diadem/DiademMetric.jar"
+
 # new file format is in world space um units
 def fn_to_coord(fn_name):
     start = re.findall(r'\[.*?\]', fn_name)[0][1:-1]
@@ -124,3 +126,122 @@ def extract_soma_radius(pair):
     with open(proof_fn, 'r') as file:
         _ = file.readline()
         return float(file.readline().split()[-2])
+
+def run_volumetric_accuracy(kwargs, proof_swc, auto_swc, offset):
+    timeout_seconds = 4 * 60
+    cmd = "/home/kdmarrett/recut/result/bin/recut {} --test {} --voxel-size {} {} {}".format(proof_swc,auto_swc, kwargs['voxel_size_x'], kwargs['voxel_size_y'], kwargs['voxel_size_z'])
+    if offset:
+        cmd += "--disable-swc-scaling --image-offsets {} {} {}".format(*offset)
+    print("Run: " + cmd)
+    try:
+        result = subprocess.run(cmd.split(), capture_output=True, check=False, text=True,
+                        timeout=timeout_seconds)
+    except:
+        print("Failed python call")
+        return None
+    return result
+
+def run_diadem(proof_swc, auto_swc):
+    timeout_seconds = 4 * 60
+    cmd = "java -jar {} -G {} -T {}".format(diadem_path, proof_swc, auto_swc)
+    print("Run: " + cmd)
+    try:
+        result = subprocess.run(cmd.split(), capture_output=True, check=False, text=True,
+                        timeout=timeout_seconds)
+    except:
+        print("Failed python call")
+        return None
+    return result
+
+def last_float(line):
+    return float(line.split()[-1])
+
+def extract(string, token):
+    contains_token = lambda line: token in line
+    line = list(filter(contains_token, string.split('\n')))[0]
+    return last_float(line)
+
+def extract_accuracy(result, diadem=False):
+    if result:
+        if result.stdout:
+            print('output: ', result.stdout)
+            if diadem:
+                return last_float(result.stdout)
+            else:
+                ex = partial(extract, result.stdout)
+                return ex('recall'), ex('precision'), ex('F1')
+        if result.stderr:
+            print('error: ', result.stderr)
+        if result.stderr != "" or result.returncode != 0:
+          return False
+        return True
+    else:
+        return False
+
+def handle_diadem_output(proof_swc, auto_swc):
+    returncode = run_diadem(proof_swc, auto_swc)
+    is_success = extract_accuracy(returncode, True)
+    if is_success:
+        print("Success")
+        print(is_success)
+        print()
+        print()
+        return is_success
+    print("Failed in diadem")
+    return None
+
+def run_accuracy(kwargs, match):
+    returncode = run_volumetric_accuracy(kwargs, *match)
+    is_success = extract_accuracy(returncode)
+    if is_success:
+        print("Success")
+        print(is_success)
+        print()
+        print()
+        return is_success
+    print("Failed in compare")
+    return None
+
+def plot(df):
+    des = df.describe()
+    cols = des.columns.to_list()
+    bar_colors = ['red', 'yellow', 'darkorange']
+    r = lambda row: des.loc[row,:].to_list()
+    pct = lambda xs: list(map(lambda x: x *100, xs))
+    means = pct(r("mean"))
+    print(r("mean"))
+    print(r("std"))
+    # plt.plot(cols, means, label=cols, xerr=r("std"))
+    plt.plot(cols, means, label=cols)
+    plt.title("Neurite Accuracy N=" + str(r("count")[0]))
+    # plt.set_ylabel("%")
+    plt.savefig("/home/kdmarrett/fig/fg-.08-neurite-accuracy.png")
+    import pdb; pdb.set_trace()
+    # fig, ax = plt.subplots()
+    # textures = ['///', '...', '', 'OOO']
+    # texture = textures[0]
+    # import pdb; pdb.set_trace()
+    # for name, val in df.mean().items():
+      # bars = ax.bar(val, edgecolor='black', hatch=texture, color='White', align='edge', label=name)
+    # fig.tight_layout()
+    # fig.show()
+
+# explore the breakdown of how recut classified its component outputs only for 
+# the final set of markers that proofreaders deemed proofreadable
+def describe_recut_component_classifier(raw_matched):
+    discards = len(list(filter(lambda pair: 'discard' in pair[1], raw_matched)))
+    multis = len(list(filter(lambda pair: 'multi' in pair[1], raw_matched)))
+    others = len(list(filter(lambda pair: 'multi' not in pair[1] and 'discard' not in pair[1], raw_matched)))
+    print("Automateds discards count: " + str(discards) + '/' + str(len(raw_matched)))
+    print("Automateds multis count: " + str(multis) + '/' + str(len(raw_matched)))
+    print("Automateds others count: " + str(others) + '/' + str(len(raw_matched)))
+
+def stats(f, xs):
+    print(f'{f.__name__}: {f(xs)}')
+
+def p(name, l, l2=None):
+    print(f'{name} count: {str(len(l))}', end='')
+    if l2:
+        print('/' + str(len(l2)) + ', ' + str(float(len(l)) / len(l2)), end='')
+    print()
+
