@@ -1,34 +1,13 @@
 import argparse
-import os
-import subprocess
-from glob import glob
-from pathlib import Path
-from collections import namedtuple
-from test_precision_recall import gather_markers
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-from functools import partial
-import numpy as np
-import re
-import pandas as pd
 from recut_interface import *
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('proofread', help='Folder of swcs required to be in global um space')
-    parser.add_argument('automated', help='Recut `run-X` folder, SWCs required to be in global um space and not windowed')
-    args = parser.parse_args()
-    kwargs = {}
-    kwargs['voxel_size_x'] = .4
-    kwargs['voxel_size_y'] = .4
-    kwargs['voxel_size_z'] = .4
-    voxel_sizes = np.array([kwargs['voxel_size_x'], kwargs['voxel_size_y'], kwargs['voxel_size_z']], dtype=float)
-    distance_threshold = 30
+def main(args):
+    voxel_sizes = tuple(args.voxel_sizes)
 
-    automateds = gather_swcs(args.automated, voxel_sizes)
     proofreads = gather_swcs(args.proofread, voxel_sizes)
     p('Proofread', proofreads)
+
+    automateds = gather_swcs(args.automated, voxel_sizes)
     p('Automateds', automateds)
 
     # match all data based off soma distance of the file names
@@ -47,7 +26,7 @@ def main():
         stats(np.std, diadem_scores)
     exit(1)
 
-    run = partial(run_accuracy, kwargs)
+    run = partial(run_accuracy, voxel_sizes)
     accuracies = rm_none(map(run, params))
     acc_dict = {}
     acc_dict['recall'] = list(map(lambda x: x[0], accuracies))
@@ -58,4 +37,9 @@ def main():
     plot(df)
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('proofread', help='Folder of swcs required to be in global um space')
+    parser.add_argument('automated', help='Recut `run-X` folder, SWCs required to be in global um space and not windowed')
+    parser.add_argument('voxel_sizes', nargs=3, type=float, help='Specify the width in um of each dimension of the voxel e.g. .4 .4 .4 for 15x')
+    args = parser.parse_args()
+    main(args)

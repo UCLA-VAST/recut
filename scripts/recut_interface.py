@@ -1,11 +1,16 @@
 import subprocess
 from glob import glob
+import os
 from pathlib import Path
 from functools import partial
 import numpy as np
 import re
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import pandas as pd
 
-diadem_path = "/home/kdmarrett/diadem/DiademMetric.jar"
+distance_threshold = 30
 
 # new file format is in world space um units
 def fn_to_coord(fn_name):
@@ -127,9 +132,9 @@ def extract_soma_radius(pair):
         _ = file.readline()
         return float(file.readline().split()[-2])
 
-def run_volumetric_accuracy(kwargs, proof_swc, auto_swc, offset):
+def run_volumetric_accuracy(voxel_sizes, proof_swc, auto_swc, offset):
     timeout_seconds = 4 * 60
-    cmd = "/home/kdmarrett/recut/result/bin/recut {} --test {} --voxel-size {} {} {}".format(proof_swc,auto_swc, kwargs['voxel_size_x'], kwargs['voxel_size_y'], kwargs['voxel_size_z'])
+    cmd = "/home/kdmarrett/recut/result/bin/recut {} --test {} --voxel-size {} {} {}".format(proof_swc, auto_swc, *voxel_sizes)
     if offset:
         cmd += "--disable-swc-scaling --image-offsets {} {} {}".format(*offset)
     print("Run: " + cmd)
@@ -143,6 +148,9 @@ def run_volumetric_accuracy(kwargs, proof_swc, auto_swc, offset):
 
 def run_diadem(proof_swc, auto_swc):
     timeout_seconds = 4 * 60
+    diadem_path = os.path.expanduser("~/diadem/DiademMetric.jar")
+    if not os.path.exists(diadem_path):
+        print(f'Install the diadem metric such that the jar file is at this exact location: {diadem_path}\nYou also need to have java installed, do so via something like: `sudo apt install default-jre`')
     cmd = "java -jar {} -G {} -T {}".format(diadem_path, proof_swc, auto_swc)
     print("Run: " + cmd)
     try:
@@ -245,3 +253,7 @@ def p(name, l, l2=None):
         print('/' + str(len(l2)) + ', ' + str(float(len(l)) / len(l2)), end='')
     print()
 
+# def get_log(run_dir):
+    # log = run_dir + "/log.swc"
+    # f = pd.read_csv(log, header=None).T
+    # f = f.rename(columns=f.iloc[0]).drop(f.index[0])[['VC', 'CC', 'SDF', 'TC+TP', 'Thread count', 'Original voxel count', 'Selected', 'Neuron count']].astype({'Thread count':'int'})
