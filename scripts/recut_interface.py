@@ -132,9 +132,12 @@ def extract_soma_radius(pair):
         _ = file.readline()
         return float(file.readline().split()[-2])
 
-def run_volumetric_accuracy(voxel_sizes, proof_swc, auto_swc, offset, quiet=False):
+def run_surface_accuracy(voxel_sizes, proof_swc, auto_swc, offset, quiet=False):
     timeout_seconds = 4 * 60
-    cmd = "/home/kdmarrett/recut/result/bin/recut {} --test {} --voxel-size {} {} {}".format(proof_swc, auto_swc, *voxel_sizes)
+    recut_path = "/home/kdmarrett/recut/result/bin/recut"
+    if not os.path.exists(recut_path):
+        recut_path = "recut"
+    cmd = "{} {} --test {} --voxel-size {} {} {}".format(recut_path, proof_swc, auto_swc, *voxel_sizes)
     if offset:
         cmd += "--disable-swc-scaling --image-offsets {} {} {}".format(*offset)
     if not quiet:
@@ -207,7 +210,7 @@ def handle_diadem_output(proof_swc, auto_swc, quiet=False):
     return None
 
 def handle_surface_output(kwargs, match, quiet=False):
-    returncode = run_volumetric_accuracy(kwargs, *match, quiet)
+    returncode = run_surface_accuracy(kwargs, *match, quiet)
     is_success = extract_accuracy(returncode, False, quiet)
     if is_success:
         if not quiet:
