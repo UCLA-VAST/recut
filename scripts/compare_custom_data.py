@@ -27,7 +27,7 @@ def main(args):
             stats(np.std, diadem_scores)
 
     if not args.disable_surface:
-        accuracies = rm_none((handle_surface_output(voxel_sizes, param, args.threshold, args.quiet) for param in params))
+        accuracies = rm_none((handle_surface_output(voxel_sizes, param, args.quiet) for param in params))
         acc_dict = {}
         acc_dict['recall'] = list(map(lambda x: x[0], accuracies))
         acc_dict['precision'] = list(map(lambda x: x[1], accuracies))
