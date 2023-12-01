@@ -2901,7 +2901,7 @@ template <class image_t> void Recut<image_t>::initialize() {
 
     if (!args->smooth_steps.has_value()) {
       //find the linear equation that passes through the points (.4, .2)and  (1, .16)
-      args->smooth_steps = 4.33333 - .33333 * args->voxel_size[0];
+      args->smooth_steps = 4.33333 - 3.33333 * args->voxel_size[0];
       std::cout << "Smooth steps inferred to " << args->smooth_steps.value()
                       << " based on voxel size\n";
     }
