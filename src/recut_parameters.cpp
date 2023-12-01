@@ -70,8 +70,7 @@ void RecutCommandLineArgs::PrintUsage() {
             //<< GROW_THRESHOLD << '\n';
   std::cout << "--smooth-steps         higher values smooths the node "
                "positions and radius of final skeletons, "
-               "improving uniformity along paths; defaults to "
-            << SMOOTH_STEPS << '\n';
+               "improving uniformity along paths; defaults to ~1\n";
   std::cout << "--soma-dilation        factor to multiply computed soma size "
                "by to collapse somal nodes, works in combination with 'find-valent' and 'force' actions "
                "defaults to "

@@ -691,7 +691,7 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
   // as these tend to be spurious branches
   Geometry::prune(component_graph);
 
-  smooth_graph_pos_rad(component_graph, args->smooth_steps, /*alpha*/ 1);
+  smooth_graph_pos_rad(component_graph, args->smooth_steps.value(), /*alpha*/ 1);
 
   // sweep through various soma ids
   std::vector<GridCoord> soma_coords;

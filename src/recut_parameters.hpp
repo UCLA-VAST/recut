@@ -34,7 +34,6 @@ public:
         ignore_multifurcations(false), close_topology(true),
         mean_shift_max_iters(4), timeout(MEAN_SHIFT_TIMEOUT),
         skeleton_grain(SKELETON_GRAIN), skeleton_grow(GROW_THRESHOLD),
-        smooth_steps(SMOOTH_STEPS),
         mean_shift_factor(0), 
         seed_action("force"), optimize_steps(5),
         disable_swc_scaling(false) {}
@@ -51,7 +50,7 @@ public:
   std::vector<std::string> window_grid_paths;
   uint16_t user_thread_count, min_branch_length, resolution_level, channel,
       upsample_z, downsample_factor, morphological_operations_order,
-      mean_shift_max_iters, smooth_steps;
+      mean_shift_max_iters;
   int background_thresh, max_intensity, min_intensity, tcase, timeout,
       skeleton_grow, optimize_steps;
   double foreground_percent, slt_pct;
@@ -63,7 +62,7 @@ public:
   std::array<int, 3> tile_lengths;
   std::array<double, 3> voxel_size;
   std::optional<float> prune_radius, soma_dilation, anisotropic_scaling;
-  std::optional<int> close_steps, open_steps, saturate_edges, coarsen_steps;
+  std::optional<int> close_steps, open_steps, saturate_edges, coarsen_steps, smooth_steps;
   std::optional<std::filesystem::path> test;
 };
 

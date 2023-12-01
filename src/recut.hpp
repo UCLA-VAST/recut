@@ -2899,6 +2899,13 @@ template <class image_t> void Recut<image_t>::initialize() {
       args->anisotropic_scaling = .226667 - .0666666 * args->voxel_size[0];
     }
 
+    if (!args->smooth_steps.has_value()) {
+      //find the linear equation that passes through the points (.4, .2)and  (1, .16)
+      args->smooth_steps = 4.33333 - .33333 * args->voxel_size[0];
+      std::cout << "Smooth steps inferred to " << args->smooth_steps.value()
+                      << " based on voxel size\n";
+    }
+
     if (!args->coarsen_steps.has_value()) {
       // at low resolution voxel sizes 1 (6x) and above do not coarsen
       //args->coarsen_steps = args->voxel_size[0] >= 1 ? 0 : std::round(COARSEN_FACTOR / args->voxel_size[0]);
@@ -3086,9 +3093,9 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << "Skeletonization: soma dilation, "
             << args->soma_dilation.value_or(1) << '\n'
             << "Skeletonization: coarsen steps, "
-            << args->coarsen_steps.value_or(0) << '\n'
+            << args->coarsen_steps.value() << '\n'
             << "Skeletonization: smooth steps, "
-            << args->smooth_steps << '\n'
+            << args->smooth_steps.value() << '\n'
             << "Benchmarking: run app2, " << args->run_app2 << '\n';
             //<< "Skeletonization: min branch length µm, "
             //<< args->min_branch_length << '\n'
