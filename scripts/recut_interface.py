@@ -151,12 +151,12 @@ def run_surface_accuracy(voxel_sizes, proof_swc, auto_swc, offset, quiet=False):
         return None
     return result
 
-def run_diadem(proof_swc, auto_swc, quiet=False):
+def run_diadem(proof_swc, auto_swc, threshold, quiet=False):
     timeout_seconds = 4 * 60
     diadem_path = os.path.expanduser("~/diadem/DiademMetric.jar")
     if not os.path.exists(diadem_path):
         print(f'Install the diadem metric such that the jar file is at this exact location: {diadem_path}\nYou also need to have java installed, do so via something like: `sudo apt install default-jre`')
-    cmd = "java -jar {} -G {} -T {}".format(diadem_path, proof_swc, auto_swc)
+    cmd = "java -jar {} -G {} -T {} --xy-threshold {} --z-threshold {}".format(diadem_path, proof_swc, auto_swc, threshold, threshold)
     if not quiet:
         print("Run: " + cmd)
     try:
@@ -195,8 +195,8 @@ def extract_accuracy(result, diadem=False, quiet=False):
     else:
         return False
 
-def handle_diadem_output(proof_swc, auto_swc, quiet=False):
-    returncode = run_diadem(proof_swc, auto_swc, quiet)
+def handle_diadem_output(proof_swc, auto_swc, threshold, quiet=False):
+    returncode = run_diadem(proof_swc, auto_swc, threshold, quiet)
     is_success = extract_accuracy(returncode, True, quiet)
     if is_success:
         if not quiet:
