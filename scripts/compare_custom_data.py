@@ -19,27 +19,30 @@ def main(args):
     p('Match', raw_matched, proofreads)
     p('Automated reconstruction success', matched, raw_matched)
 
-    diadem_scores = rm_none((handle_diadem_output(proof, auto) for proof, auto in matched))
-    p('Diadem comparison', diadem_scores, matched)
-    if len(diadem_scores):
-        stats(np.mean, diadem_scores)
-        stats(np.std, diadem_scores)
-    exit(1)
+    if not args.disable_diadem:
+        diadem_scores = rm_none((handle_diadem_output(proof, auto, args.quiet) for proof, auto in matched))
+        p('Diadem comparison', diadem_scores, matched)
+        if len(diadem_scores):
+            stats(np.mean, diadem_scores)
+            stats(np.std, diadem_scores)
 
-    run = partial(run_accuracy, voxel_sizes)
-    accuracies = rm_none(map(run, params))
-    acc_dict = {}
-    acc_dict['recall'] = list(map(lambda x: x[0], accuracies))
-    acc_dict['precision'] = list(map(lambda x: x[1], accuracies))
-    acc_dict['F1'] = list(map(lambda x: x[2], accuracies))
-    df = pd.DataFrame(data=acc_dict)
-    p("Comparison", accuracies, proofreads)
-    plot(df)
+    if not args.disable_surface:
+        accuracies = rm_none((handle_surface_output(voxel_sizes, param, args.quiet) for param in params))
+        acc_dict = {}
+        acc_dict['recall'] = list(map(lambda x: x[0], accuracies))
+        acc_dict['precision'] = list(map(lambda x: x[1], accuracies))
+        acc_dict['F1'] = list(map(lambda x: x[2], accuracies))
+        df = pd.DataFrame(data=acc_dict)
+        p("Comparison", accuracies, proofreads)
+        plot(df)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('proofread', help='Folder of swcs required to be in global um space')
     parser.add_argument('automated', help='Recut `run-X` folder, SWCs required to be in global um space and not windowed')
     parser.add_argument('voxel_sizes', nargs=3, type=float, help='Specify the width in um of each dimension of the voxel e.g. .4 .4 .4 for 15x')
+    parser.add_argument('-s', '--disable-surface', action='store_true')
+    parser.add_argument('-d', '--disable-diadem', action='store_true')
+    parser.add_argument('-q', '--quiet', action='store_true')
     args = parser.parse_args()
     main(args)

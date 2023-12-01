@@ -132,32 +132,36 @@ def extract_soma_radius(pair):
         _ = file.readline()
         return float(file.readline().split()[-2])
 
-def run_volumetric_accuracy(voxel_sizes, proof_swc, auto_swc, offset):
+def run_volumetric_accuracy(voxel_sizes, proof_swc, auto_swc, offset, quiet=False):
     timeout_seconds = 4 * 60
     cmd = "/home/kdmarrett/recut/result/bin/recut {} --test {} --voxel-size {} {} {}".format(proof_swc, auto_swc, *voxel_sizes)
     if offset:
         cmd += "--disable-swc-scaling --image-offsets {} {} {}".format(*offset)
-    print("Run: " + cmd)
+    if not quiet:
+        print("Run: " + cmd)
     try:
         result = subprocess.run(cmd.split(), capture_output=True, check=False, text=True,
                         timeout=timeout_seconds)
     except:
-        print("Failed python call")
+        if not quiet:
+            print("Failed python call")
         return None
     return result
 
-def run_diadem(proof_swc, auto_swc):
+def run_diadem(proof_swc, auto_swc, quiet=False):
     timeout_seconds = 4 * 60
     diadem_path = os.path.expanduser("~/diadem/DiademMetric.jar")
     if not os.path.exists(diadem_path):
         print(f'Install the diadem metric such that the jar file is at this exact location: {diadem_path}\nYou also need to have java installed, do so via something like: `sudo apt install default-jre`')
     cmd = "java -jar {} -G {} -T {}".format(diadem_path, proof_swc, auto_swc)
-    print("Run: " + cmd)
+    if not quiet:
+        print("Run: " + cmd)
     try:
         result = subprocess.run(cmd.split(), capture_output=True, check=False, text=True,
                         timeout=timeout_seconds)
     except:
-        print("Failed python call")
+        if not quiet:
+            print("Failed python call")
         return None
     return result
 
@@ -169,45 +173,51 @@ def extract(string, token):
     line = list(filter(contains_token, string.split('\n')))[0]
     return last_float(line)
 
-def extract_accuracy(result, diadem=False):
+def extract_accuracy(result, diadem=False, quiet=False):
     if result:
         if result.stdout:
-            print('output: ', result.stdout)
+            if not quiet:
+                print('output: ', result.stdout)
             if diadem:
                 return last_float(result.stdout)
             else:
                 ex = partial(extract, result.stdout)
                 return ex('recall'), ex('precision'), ex('F1')
         if result.stderr:
-            print('error: ', result.stderr)
+            if not quiet:
+                print('error: ', result.stderr)
         if result.stderr != "" or result.returncode != 0:
           return False
         return True
     else:
         return False
 
-def handle_diadem_output(proof_swc, auto_swc):
-    returncode = run_diadem(proof_swc, auto_swc)
-    is_success = extract_accuracy(returncode, True)
+def handle_diadem_output(proof_swc, auto_swc, quiet=False):
+    returncode = run_diadem(proof_swc, auto_swc, quiet)
+    is_success = extract_accuracy(returncode, True, quiet)
     if is_success:
-        print("Success")
-        print(is_success)
-        print()
-        print()
+        if not quiet:
+            print("Success")
+            print(is_success)
+            print()
+            print()
         return is_success
-    print("Failed in diadem")
+    if not quiet:
+        print("Failed in diadem")
     return None
 
-def run_accuracy(kwargs, match):
-    returncode = run_volumetric_accuracy(kwargs, *match)
-    is_success = extract_accuracy(returncode)
+def handle_surface_output(kwargs, match, quiet=False):
+    returncode = run_volumetric_accuracy(kwargs, *match, quiet)
+    is_success = extract_accuracy(returncode, False, quiet)
     if is_success:
-        print("Success")
-        print(is_success)
-        print()
-        print()
+        if not quiet:
+            print("Success")
+            print(is_success)
+            print()
+            print()
         return is_success
-    print("Failed in compare")
+    if not quiet:
+        print("Failed in compare")
     return None
 
 def plot(df):
