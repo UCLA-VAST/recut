@@ -55,5 +55,5 @@ if __name__ == "__main__":
     if args.voxel_sizes[0] not in anisotropic_scale:
         raise Exception("Unrecognized dataset only .4 .4 .4 and 1 1 1 objectives allowed")
     if args.path_threshold is None:
-        args.path_threshold = args.threshold / anisotropic_scale[args.voxel_sizes[0]] 
+        args.path_threshold = args.threshold / min(anisotropic_scale.values())
     main(args)
