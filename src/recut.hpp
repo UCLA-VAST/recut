@@ -15,6 +15,7 @@
 #include <deque>
 #include <execution>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <future>
 #include <iostream>
@@ -2744,7 +2745,7 @@ void Recut<image_t>::update_hierarchical_dims(const GridCoord &tile_lengths) {
 template <class image_t> void Recut<image_t>::deduce_input_type() {
   if (fs::is_directory(args->input_path)) {
     this->input_is_vdb = false;
-    this->args->input_type = "tiff";
+    this->args->input_type = is_swc_dir(args->input_path) ? "swcs" : "tiff";
   } else {
     auto path_extension = args->input_path.extension();
     if (path_extension == ".vdb") {
@@ -2777,7 +2778,7 @@ template <class image_t> void Recut<image_t>::initialize() {
   }
 
 #ifdef LOG
-  cout << "User specified image " << args->input_path << '\n';
+  std::cout << "User specified input " << args->input_path << " of type: " << this->args->input_type << '\n';
 #endif
   
   if (args->input_type == "ims" || args->input_type == "tiff" || this->input_is_vdb) {
@@ -3309,6 +3310,17 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
   run_log << "Failed component count, " << failed_components << '\n';
 }
 
+auto graphs_to_max_bifurc = [](std::vector<AMGraph3D> graphs) {
+  auto rng_max = [](auto range) { return rng::accumulate(range, 0, [](auto l, auto r) { return MAX(l, r); }); };
+  auto to_max_bifurc_radius = [&](AMGraph3D &g) -> float { 
+    auto is_bifurc = [&](NodeID i) { return g.neighbors(i).size() == 3; };
+    // note how start index is at 1, this implicitly skips the soma which is
+    // guaranteed to be at index 0
+    return rng_max(rv::iota(static_cast<NodeID>(1), g.no_nodes()) | rv::filter(is_bifurc) | rv::transform([&](NodeID i) { return get_radius(g, i); }));
+  };
+  return rng_max(graphs | rv::transform(to_max_bifurc_radius));
+};
+
 template <class image_t> void Recut<image_t>::operator()() {
 
   // Thread count is enforced across recut and dependencies (openvdb)
@@ -3340,6 +3352,20 @@ template <class image_t> void Recut<image_t>::operator()() {
     auto input = swc_to_segmented(args->input_path, args->voxel_size, args->image_offsets, args->save_vdbs, "input", args->disable_swc_scaling);
     auto test = swc_to_segmented(args->test.value(), args->voxel_size, zeros(), args->save_vdbs, "test");
     calculate_recall_precision(input, test, args->save_vdbs);
+    exit(0);
+  }
+
+  // do a qc of input swc directory
+  if (args->input_type == "swcs") {
+    auto pairs = swc_dir_to_graphs(args->input_path, args->voxel_size);
+    std::vector<AMGraph3D> graphs = pairs | rv::values | rng::to_vector;
+    // multiply by voxel size to convert to world space
+    // divide by Anisotropic factor to retrieve the original highest radii granularity 
+    // achieved by skeletonization algorithm
+    auto max_dia = 2. * graphs_to_max_bifurc(graphs) * args->voxel_size[0];
+    std::cout << "Max bifurcation diameter um: " << max_dia << '\n';
+
+    // TODO mkdir qc-swcs
     exit(0);
   }
 
@@ -3440,9 +3466,12 @@ template <class image_t> void Recut<image_t>::operator()() {
     }
   } else {
     if (fs::is_directory(args->seed_path)) {
-      seeds = is_swc_dir(args->seed_path) ?
-        process_swc_dir(args->seed_path, args->voxel_size) :
-        process_marker_dir(args->seed_path, args->voxel_size);
+      if (is_swc_dir(args->seed_path)) {
+        auto pairs = swc_dir_to_graphs(args->seed_path, args->voxel_size);
+        seeds = pairs | rv::keys | rng::to_vector;
+      }else {
+        seeds = process_marker_dir(args->seed_path, args->voxel_size);
+      }
     } else if (is_swc(args->seed_path)) {
       auto [seed, _] = swc_to_graph(args->seed_path, args->voxel_size);
       seeds = {seed};

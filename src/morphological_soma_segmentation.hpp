@@ -91,7 +91,7 @@ auto name_to_coord(fs::path file) {
 }
 */
 
-std::vector<Seed> process_swc_dir(
+auto swc_dir_to_graphs = [](
     std::string seed_path,
     std::array<double, 3> voxel_size) {
 
@@ -102,8 +102,8 @@ std::vector<Seed> process_swc_dir(
     | rv::filter(is_swc)
     | rv::transform([&](auto file) {
       return swc_to_graph(file, voxel_size); })
-    | rv::keys | rng::to_vector; 
-}
+    | rng::to_vector;
+};
 
 std::pair<openvdb::FloatGrid::Ptr, std::vector<openvdb::FloatGrid::Ptr>>
 create_seed_sphere_grid(std::vector<Seed> seeds) {

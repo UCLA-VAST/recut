@@ -347,6 +347,41 @@ TEST(Skeletonization, TestSplitGraph) {
   ASSERT_EQ(graphs.size(), 3);
 }
 
+TEST(Skeletonization, TestMaxBifurc) {
+  AMGraph3D g;
+
+  // seed
+  g.add_node({0, 0, 0});
+  set_radius(g, 10, 0); 
+  g.add_node({1, 0, 0});
+  g.add_node({0, -1, 0});
+  g.add_node({-1, 0, 0});
+  g.add_node({0, 1, 0});
+  for (auto i : rv::iota(1,5))
+    g.connect_nodes(0, i);
+
+  // no bifurcs yet
+  auto id = g.add_node({1, 1, 0});
+  ASSERT_EQ(id, 5);
+  auto max_bifurc_radii = 7;
+  set_radius(g, max_bifurc_radii, id); 
+  g.connect_nodes(4, 5);
+  g.connect_nodes(1, 5);
+
+  ASSERT_EQ(graphs_to_max_bifurc({g}), 0); 
+
+  // make a max bifurc, by creating a new node nb
+  id = g.add_node({2, 1, 0});
+  g.connect_nodes(5, id); // now its a bifurc
+
+  // add a min bifurc
+  id = g.add_node({0, 2, 0});
+  g.connect_nodes(4, id); // now its a bifurc
+  auto min_bifurc_radii = 5;
+  set_radius(g, min_bifurc_radii, 4); 
+  ASSERT_EQ(graphs_to_max_bifurc({g}), max_bifurc_radii); 
+}
+
 TEST(VDB, UpdateSemantics) {
 
   auto grid = openvdb::BoolGrid::create();

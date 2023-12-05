@@ -1043,7 +1043,6 @@ swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
     y = std::round(y_um / voxel_size[1]);
     z = std::round(z_um / voxel_size[2]);
     auto p = Pos(x, y, z);
-    auto coord = GridCoord(x, y, z);
 
     // add it to the graph
     auto node_id = g.add_node(p);
@@ -1058,6 +1057,8 @@ swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
     if (parent_id == -2 || parent_id == node_id) {
       auto volume = static_cast<uint64_t>(std::round((4. / 3.) * PI * std::pow(radius, 3)));
       std::array<double, 3> coord_um{x_um, y_um, z_um};
+      // the coord of the soma is used as an identity
+      auto coord = GridCoord(x, y, z);
       seeds.emplace_back(coord, coord_um, radius, radius_um, volume);
       if (id != 1)
         throw std::runtime_error("Soma node must be first line of SWC");
@@ -1237,14 +1238,6 @@ std::vector<AMGraph3D> split_graph(const AMGraph3D &g, const NodeID n) {
       to_new[old_id] = new_id;
     }
 
-    // delete me
-    //std::cout << '\n';
-    //std::cout << "size: " << to_new.size() << '\n';
-    //for (int i=0; i < 3; ++i) {
-      //if (to_new[i].has_value())
-        //std::cout << "i " << i << ' ' << to_new[i].value() << '\n';
-    //}
-
     // safe to establish all connections among new ids of subg
     // the values of nset are old ids
     // nset maintains order and new_ids are linearly ordered [0..len(subg))
@@ -1263,7 +1256,7 @@ std::vector<AMGraph3D> split_graph(const AMGraph3D &g, const NodeID n) {
   // n is not present in any of the returned sets
   auto sets = Geometry::connected_components(g, s);
 
-  { // verify subgraphs
+  if (false) { // verify subgraphs used for debugging
     auto sz = sets.size();
     auto nbs = g.neighbors(n);
     auto nbs_sz = nbs.size();
