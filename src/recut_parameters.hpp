@@ -32,7 +32,7 @@ public:
         min_radius_um(MIN_SOMA_RADIUS_UM), max_radius_um(MAX_SOMA_RADIUS_UM),
         voxel_size({1., 1., 1.}), save_vdbs(false), 
         ignore_multifurcations(false), close_topology(true),
-        mean_shift_max_iters(4), timeout(MEAN_SHIFT_TIMEOUT),
+        mean_shift_max_iters(4), // timeout(TIMEOUT),
         skeleton_grain(SKELETON_GRAIN), skeleton_grow(GROW_THRESHOLD),
         mean_shift_factor(0), 
         seed_action("force"), optimize_steps(5),

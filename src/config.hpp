@@ -102,8 +102,8 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 #define DILATION_FACTOR 1
 #define RECUT_LEVEL_SET_HALF_WIDTH 2
 #define SOMA_LABEL_LENGTH 128
-// 10 minutes in unit seconds
-#define MEAN_SHIFT_TIMEOUT 60 * 10
+// 1 hour in seconds
+//#define TIMEOUT 1h
 #define GROW_THRESHOLD 128
 #define SKELETON_GRAIN .09
 #define CLASSIC_PRUNE 0

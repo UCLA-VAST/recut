@@ -5,11 +5,11 @@
 #include "morphological_soma_segmentation.hpp"
 #include "recut_parameters.hpp"
 #include "tile_thresholds.hpp"
-//#include "tree_ops.hpp"
 #include "utils.hpp"
 #include <algorithm>
 #include <bits/stdc++.h>
 #include <bitset>
+#include <chrono>
 #include <cstddef>
 #include <cstdlib>
 #include <deque>
@@ -25,6 +25,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <tbb/global_control.h>
+#include <thread> // for function timeouts
 #include <type_traits>
 #include <unistd.h>
 #include <unordered_set>
@@ -3104,6 +3105,26 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
   }
 }
 
+// doesn't work unless all arguments are non references
+template <typename TF, typename TDuration, class... TArgs>
+std::result_of_t<TF&&(TArgs&&...)> run_with_timeout(TF&& f, TDuration timeout, TArgs&&... args)
+{
+    using R = std::result_of_t<TF&&(TArgs&&...)>;
+    std::packaged_task<R(TArgs...)> task(f);
+    auto future = task.get_future();
+    std::thread thr(std::move(task), std::forward<TArgs>(args)...);
+    if (future.wait_for(timeout) != std::future_status::timeout)
+    {
+       thr.join();
+       return future.get(); // this will propagate exception from f() if any
+    }
+    else
+    {
+       thr.detach(); // we leave the thread still running
+       throw std::runtime_error("Timeout");
+    }
+}
+
 void partition_components(openvdb::FloatGrid::Ptr connected_grid,
                           std::vector<Seed> seeds, RecutCommandLineArgs *args,
                           fs::path run_dir, fs::path log_fn) {
@@ -3167,14 +3188,8 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
     }
 
     auto voxel_count = component->activeVoxelCount();
-    if (voxel_count < SWC_MIN_LINE) {
+    if ((voxel_count < SWC_MIN_LINE) || (bbox.dim()[2] < MIN_Z_DEPTH)) {
       prefix = "d-";
-      // return; // skip
-    }
-
-    if (bbox.dim()[2] < MIN_Z_DEPTH) {
-      prefix = "d-";
-      // return; // skip
     }
 
     // is a fresh run_dir
@@ -3203,11 +3218,36 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
     auto timer = high_resolution_timer();
     std::vector<std::vector<MyMarker *>> trees;
     std::optional<std::pair<Geometry::AMGraph3D, std::vector<GridCoord>>> cluster_opt;
-    cluster_opt = vdb_to_skeleton(component, component_seeds, index, args,
-                                   component_dir_fn, component_log,
-                                   inter_thread_count == 1 ? args->user_thread_count : 1, 
-                                   true);
-    component_log << "TP, " << timer.elapsed() << '\n';
+
+    //using namespace std::chrono_literals;
+    //std::packaged_task<std::optional<std::pair<Geometry::AMGraph3D, 
+      //std::vector<GridCoord>>>(openvdb::FloatGrid::Ptr, std::vector<Seed>, int, RecutCommandLineArgs*,
+          //fs::path, std::ofstream&, int, bool)> task(vdb_to_skeleton);
+    //auto future = task.get_future();
+    //std::thread thr(std::move(task), component, component_seeds, index, args,
+                                   //component_dir_fn, std::ref(component_log),
+                                   //inter_thread_count == 1 ? args->user_thread_count : 1, 
+                                   //true);
+    //if (future.wait_for(1h) != std::future_status::timeout) {
+       //thr.join();
+       //cluster_opt = future.get(); // this will propagate exception from f() if any
+    //} else {
+       //thr.detach(); // we leave the thread still running
+       //throw std::runtime_error("Timeout");
+    //}
+    //cluster_opt = run_with_timeout(vdb_to_skeleton, 1h, component, component_seeds, index, args,
+                                   //component_dir_fn, std::ref(component_log),
+                                   //inter_thread_count == 1 ? args->user_thread_count : 1, 
+                                   //true);
+
+    // either one or the other
+    if (!args->run_app2) {
+      cluster_opt = vdb_to_skeleton(component, component_seeds, index, args,
+                                     component_dir_fn, component_log,
+                                     inter_thread_count == 1 ? args->user_thread_count : 1, 
+                                     true);
+      component_log << "TP, " << timer.elapsed() << '\n';
+    }
 
     bool save_mesh = false;
     if (save_mesh) {
@@ -3285,8 +3325,12 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
       std::cout << "Component " << index << " complete and safe to open\n";
     } else {
       ++failed_components;
-      std::cout << "Component " << index
-                << " SWC failed, image, seed, (and vdb saved)\n";
+      std::cout << "Component " << index;
+      if (args->run_app2)
+        std::cout << " APP2 SWC";
+      else
+        std::cout << " SWC failed";
+      std::cout << ", image, seed, (and vdb saved)\n";
     }
   }; // for each component
 
