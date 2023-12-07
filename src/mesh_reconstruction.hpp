@@ -116,7 +116,15 @@ std::vector<NodeID> merge_local_radius(AMGraph3D &graph, std::vector<Node> &node
   return ids;
 }
 
+auto to_coord = [](Pos p) {
+  GridCoord c;
+  for (int i=0; i < 3; ++i)
+    c[i] = static_cast<int>(std::round(p[i]));
+  return c;
+};
+
 auto to_node = [](Seed seed) {
+  // no need to round since int -> double
   Pos p{static_cast<double>(seed.coord[0]),
     static_cast<double>(seed.coord[1]), static_cast<double>(seed.coord[2])}; 
   return Node{p, seed.radius};
@@ -1446,4 +1454,18 @@ void calculate_recall_precision(openvdb::FloatGrid::Ptr truth,
   std::cout << "precision, " << precision_d << '\n';
   std::cout << "F1, " << f1 << '\n';
   std::cout << "IoU, " << iou << '\n';
+}
+
+// surface must be a level set
+// title is the name of the statistic your computing for example 
+// skeletal recall or precision
+void calculate_skeleton_within_surface(AMGraph3D &g, openvdb::FloatGrid::Ptr surface, std::string title) {
+  auto is_outside_surface = [&g, surface](NodeID i) {
+    return surface->tree().getValue(to_coord(g.pos[i])) > 0;
+  };
+
+  std::cout << title << ": ";
+  std::cout << static_cast<double>(rng::distance(
+        rv::iota(static_cast<NodeID>(0), g.no_nodes())
+        | rv::remove_if(is_outside_surface))) / g.no_nodes();
 }
