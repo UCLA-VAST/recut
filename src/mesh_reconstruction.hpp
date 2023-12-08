@@ -1282,7 +1282,7 @@ std::vector<AMGraph3D> split_graph(const AMGraph3D &g, const NodeID n) {
 openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
     std::array<double, 3> voxel_size, GridCoord image_offsets, 
     bool save_vdbs = false, std::string name = "", bool disable_swc_scaling=false,
-    bool remove_soma=true, bool save_swcs = true) {
+    bool neurites_only=false, bool save_swcs = false) {
 
   bool merge_soma_on_top = false;
   auto [seed, skeleton] = swc_to_graph(swc_file, voxel_size, image_offsets, disable_swc_scaling);
@@ -1347,41 +1347,41 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
   // which causes graph_to_FEQ to seg fault
   // the soma sphere could be fused on top of the level set later if desired
   auto subgraphs = split_graph(skeleton, seed_id);
+  if ((skeleton.no_nodes() - 1) != rng::accumulate(subgraphs | rv::transform([](auto s) { return s.no_nodes(); }), 0))
+    throw std::runtime_error("Split graph loses nodes");
 
   //for (auto [i, subg] : subgraphs | rv::enumerate)
     //graph_save("subg" + std::to_string(i) + ".graph", subg);
 
   openvdb::FloatGrid::Ptr level_set;
   {
+    auto timer = high_resolution_timer();
     auto level_sets = subgraphs | rv::transform(skeleton_to_surface) | rng::to_vector;
+    if (!neurites_only) {
+      level_sets.push_back(vto::createLevelSetSphere<openvdb::FloatGrid>(
+        seed.radius, seed.coord.asVec3s(), 1., RECUT_LEVEL_SET_HALF_WIDTH));
+    }
+    std::cout << "Graph -> surface elapsed: " << timer.elapsed() << "s\n";
+
     // empties/nullifies level sets into accumulator level set
+    timer.restart();
     level_set = level_sets.front();
     for (int i=1; i < subgraphs.size(); ++i)
       vto::csgUnion(*level_set, *level_sets[i]);
     // if level sets overlap at all, their merged values may no longer form a proper surface 
     // without resurfacing
     level_set = vto::levelSetRebuild(*level_set);
+    std::cout << "Surface merge elapsed: " << timer.elapsed() << "s\n";
   }
 
-  if ((skeleton.no_nodes() - 1) != rng::accumulate(subgraphs | rv::transform([](auto s) { return s.no_nodes(); }), 0))
-    throw std::runtime_error("Split graph loses nodes");
-
-  /*
-  {
-    auto seed = seeds[0];
-    auto soma_sdf = vto::createLevelSetSphere<openvdb::FloatGrid>(
-       seed.radius, seed.coord.asVec3s(), 1.,
-       RECUT_LEVEL_SET_HALF_WIDTH);
-    // either path empties/nullifies the soma_sdf grid
-    if (remove_soma) {
-      // subtract soma from whole neuron
-      vto::csgDifference(*level_set, *soma_sdf);
-    } else if (merge_soma_on_top) {
-      // merge the two on top of each other
-      vto::csgUnion(*level_set, *soma_sdf);
-    } 
-  }
-  */
+  //if (!neurites_only) {
+    //auto soma_sdf = vto::createLevelSetSphere<openvdb::FloatGrid>(
+       //seed.radius, seed.coord.asVec3s(), 1.,
+       //RECUT_LEVEL_SET_HALF_WIDTH);
+    //// empties/nullifies the soma_sdf grid
+    //// merge the two on top of each other
+    //vto::csgUnion(*level_set, *soma_sdf);
+  //}
 
   if (save_vdbs)
     write_vdb_file({level_set}, "surface-" + (name.empty() ? swc_file.stem().string() : name) + ".vdb");
@@ -1459,13 +1459,17 @@ void calculate_recall_precision(openvdb::FloatGrid::Ptr truth,
 // surface must be a level set
 // title is the name of the statistic your computing for example 
 // skeletal recall or precision
-void calculate_skeleton_within_surface(AMGraph3D &g, openvdb::FloatGrid::Ptr surface, std::string title) {
+double calculate_skeleton_within_surface(AMGraph3D &g, openvdb::FloatGrid::Ptr surface, std::string title) {
   auto is_outside_surface = [&g, surface](NodeID i) {
     return surface->tree().getValue(to_coord(g.pos[i])) > 0;
   };
 
-  std::cout << title << ": ";
-  std::cout << static_cast<double>(rng::distance(
+  auto within_frac = static_cast<double>(rng::distance(
         rv::iota(static_cast<NodeID>(0), g.no_nodes())
         | rv::remove_if(is_outside_surface))) / g.no_nodes();
+
+  std::cout << title << ": ";
+  std::cout << within_frac << '\n';
+
+  return within_frac;
 }

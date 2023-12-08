@@ -3393,7 +3393,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     // image offsets only apply to the ground truth data since those were run with windows
     // windowed outputs are also not scaled (already in pixel space) thus leave them
     if (args->disable_swc_scaling) 
-      std::cout << "Passing --disable-swc-scaling means the inputs/ground truths are assumed to already be in voxel units\n";
+      std::cout << "Passing --disable-swc-scaling means the inputs/ground truths are assumed to already ke in voxel units\n";
 
     // get graphs
     auto input_graph = swc_to_graph(args->input_path, args->voxel_size, zeros(), args->disable_swc_scaling).second;
