@@ -1357,10 +1357,6 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
   {
     auto timer = high_resolution_timer();
     auto level_sets = subgraphs | rv::transform(skeleton_to_surface) | rng::to_vector;
-    if (!neurites_only) {
-      level_sets.push_back(vto::createLevelSetSphere<openvdb::FloatGrid>(
-        seed.radius, seed.coord.asVec3s(), 1., RECUT_LEVEL_SET_HALF_WIDTH));
-    }
     std::cout << "Graph -> surface elapsed: " << timer.elapsed() << "s\n";
 
     // empties/nullifies level sets into accumulator level set
@@ -1368,20 +1364,21 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
     level_set = level_sets.front();
     for (int i=1; i < subgraphs.size(); ++i)
       vto::csgUnion(*level_set, *level_sets[i]);
+
+    if (!neurites_only) {
+      auto soma_sdf = vto::createLevelSetSphere<openvdb::FloatGrid>(
+         seed.radius, seed.coord.asVec3s(), 1.,
+         RECUT_LEVEL_SET_HALF_WIDTH);
+       //empties/nullifies the soma_sdf grid
+       //merge the two on top of each other
+      vto::csgUnion(*level_set, *soma_sdf);
+    }
+
     // if level sets overlap at all, their merged values may no longer form a proper surface 
     // without resurfacing
     level_set = vto::levelSetRebuild(*level_set);
     std::cout << "Surface merge elapsed: " << timer.elapsed() << "s\n";
   }
-
-  //if (!neurites_only) {
-    //auto soma_sdf = vto::createLevelSetSphere<openvdb::FloatGrid>(
-       //seed.radius, seed.coord.asVec3s(), 1.,
-       //RECUT_LEVEL_SET_HALF_WIDTH);
-    //// empties/nullifies the soma_sdf grid
-    //// merge the two on top of each other
-    //vto::csgUnion(*level_set, *soma_sdf);
-  //}
 
   if (save_vdbs)
     write_vdb_file({level_set}, "surface-" + (name.empty() ? swc_file.stem().string() : name) + ".vdb");
