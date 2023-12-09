@@ -1626,7 +1626,8 @@ bool happ(vector<MyMarker *> &inswc, vector<MyMarker *> &outswc, T *inimg1d,
 }
 
 bool marker_to_swc_file(fs::path swc_file,
-                        std::vector<MyMarker *> &outmarkers) {
+                        std::vector<MyMarker *> &outmarkers, std::array<double, 3>
+                        voxel_size) {
   // cout << "marker num = " << outmarkers.size() << ", save swc file to "
   //<< swc_file << endl;
   map<MyMarker *, int> ind;
@@ -1647,9 +1648,12 @@ bool marker_to_swc_file(fs::path swc_file,
       parent_id = -1;
     else
       parent_id = ind[marker->parent];
-    ofs << i + 1 << " " << marker->type << " " << marker->x << " " << marker->y
-        << " " << marker->z << " " << marker->radius << " " << parent_id
-        << endl;
+    ofs << std::fixed << std::setprecision(SWC_PRECISION);
+    ofs << i + 1 << " " << marker->type << " " 
+      << marker->x * voxel_size[0] << " " 
+      << marker->y * voxel_size[1] << " " 
+      << marker->z * voxel_size[2] 
+      << " " << marker->radius << " " << parent_id << '\n';
   }
   ofs.close();
   return true;
@@ -1661,7 +1665,7 @@ template <typename ValuedGrid>
 void run_app2(ValuedGrid component_with_values,
               std::vector<Seed> component_seeds, fs::path component_dir_fn,
               int index, int min_branch_length, std::ofstream &component_log,
-              bool global_bbox_adjust = false) {
+              std::array<double,3> voxel_size, bool global_bbox_adjust = false) {
   // the bkg_thresh is 0 for vdb to dense
   uint16_t bkg_thresh = 0;
   auto window = convert_vdb_to_dense(component_with_values);
@@ -1678,7 +1682,7 @@ void run_app2(ValuedGrid component_with_values,
       rng::to_vector;
 
   // adjust component_markers to match window, just for
-  // fastmarching_tree()
+  // fastmarching_tree() and happ
   rng::for_each(component_markers, [&window](auto &marker) {
     // subtracts the offset so that app2 is with respect to this window
     // for fastmarching_tree() and happ()
@@ -1693,9 +1697,7 @@ void run_app2(ValuedGrid component_with_values,
                     window.bbox().dim()[0], window.bbox().dim()[1],
                     window.bbox().dim()[2],
                     /* cnn_type*/ 1, bkg_thresh);
-#ifdef LOG
   component_log << "Fast Marching time, " << timer.elapsed_formatted() << '\n';
-#endif
 
   // prune run the seq prune from app2 to compare
   timer.restart();
@@ -1705,9 +1707,7 @@ void run_app2(ValuedGrid component_with_values,
        bkg_thresh,
        /*length thresh*/ min_branch_length,
        /*sr_ratio*/ 1. / 3);
-#ifdef LOG
   component_log << "HAPP time, " << timer.elapsed_formatted() << '\n';
-#endif
   timer.restart();
 
   // adjust app2_output_tree_prune to match global image, for swc output
@@ -1719,17 +1719,17 @@ void run_app2(ValuedGrid component_with_values,
   }
 
   // print
-  auto app2_fn =
-      component_dir_fn / ("app2-component-" + std::to_string(index) + ".swc");
-  if (component_seeds.size() < 2) {
-    auto seed = component_seeds.front();
-    app2_fn = component_dir_fn /
-              ("app2-tree-with-soma-xyz-" + std::to_string(seed.coord.x()) +
-               '-' + std::to_string(seed.coord.y()) + '-' +
-               std::to_string(seed.coord.z()) + ".swc");
-  }
-  marker_to_swc_file(app2_fn, app2_output_tree_prune);
-#ifdef LOG
+  auto seed = component_seeds.front();
+  std::ostringstream out;
+  out <<  std::fixed << std::setprecision(SWC_PRECISION);
+  out << '[';
+  out << seed.coord_um[0] << ',';
+  out << seed.coord_um[1] << ',';
+  out << seed.coord_um[2] << ']';
+
+  out << "-r=" << seed.radius_um;
+  out << "-µm.swc";
+  auto app2_fn = component_dir_fn / (out.str());
+  marker_to_swc_file(app2_fn, app2_output_tree_prune, voxel_size);
   component_log << "APP write SWC time, " << timer.elapsed_formatted() << '\n';
-#endif
 }

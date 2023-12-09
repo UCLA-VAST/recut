@@ -3268,7 +3268,7 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
       // write the first passed window
       auto window_fn = write_output_windows<ImgGrid::Ptr>(
           image_grid, component_dir_fn, component_log, index,
-          /*output_vdb*/ false, /*paged*/ args->output_type != "labels",
+          /*output_vdb*/ args->save_vdbs, /*paged*/ args->output_type != "labels",
           window_bbox, /*channel*/ 0);
 
       // if outputting crops/windows, offset SWCs coords to match window
@@ -3297,23 +3297,19 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
         if (!window_fn.empty()) {
           // make app2 read the window to get accurate comparison of IO
           read_tiff_paged(window_fn);
-#ifdef LOG
           component_log << "Read window time, "
                         << read_timer.elapsed_formatted() << '\n';
-#endif
         }
 
         // for comparison/benchmark/testing purposes
         run_app2(valued_window_grid, component_seeds, component_dir_fn, index,
                  args->min_branch_length, component_log,
-                 args->window_grid_paths.empty());
+                 args->voxel_size, true);
       }
     } // end window created if any
 
-#ifdef LOG
     component_log << "Volume, " << bbox.volume() << '\n';
     component_log << "Bounding box, " << bbox << '\n';
-#endif
 
     if (cluster_opt) {
       auto [component_graph, soma_coords] = cluster_opt.value();
