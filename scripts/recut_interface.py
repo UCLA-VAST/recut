@@ -185,7 +185,9 @@ def extract_accuracy(result, diadem=False, quiet=False):
                 return last_float(result.stdout)
             else:
                 ex = partial(extract, result.stdout)
-                return ex('recall'), ex('precision'), ex('F1')
+                # uncomment to get the surface to surface accuracies
+                # return ex('recall'), ex('precision'), ex('F1')
+                return ex('recall'), ex('precision'), 0
         if result.stderr:
             if not quiet:
                 print('error: ', result.stderr)
