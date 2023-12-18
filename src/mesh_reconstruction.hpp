@@ -655,6 +655,42 @@ std::set<NodeID> count_nodes_within_another(const AMGraph3D &g) {
   return enclosers;
 }
 
+// modifies g such that no edges are longer than max_edge...
+// the graph and the max edge distance are in voxel units
+void resample(AMGraph3D &g, double max_edge_distance_voxels) {
+  bool found_longer_edge = true;
+  while (found_longer_edge) {
+    found_longer_edge = false;
+    for (int i=0; i < g.no_nodes(); ++i) {
+      auto current_pos = g.pos[i];
+      auto nbs = g.neighbors(i);
+      for (auto nb : nbs) {
+        auto nb_pos = g.pos[nb];
+        auto dist = euc_dist(current_pos, nb_pos);
+        if (dist > max_edge_distance_voxels) {
+          found_longer_edge = true;
+
+          // create an averaged pos new node
+          auto new_pos = current_pos + nb_pos;
+          new_pos *= .5;
+          auto new_node_id = g.add_node(new_pos);
+
+          // get an average radius
+          auto new_radius = (get_radius(g, i) + get_radius(g, nb)) / 2;
+          set_radius(g, new_radius, new_node_id);
+
+          // remove edge to eachother
+          g.disconnect_nodes(i, nb);
+
+          // connect the new node between the others
+          g.connect_nodes(new_node_id, i);
+          g.connect_nodes(new_node_id, nb);
+        }
+      }
+    }
+  }
+}
+
 std::optional<std::pair<AMGraph3D, std::vector<GridCoord>>>
 vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_seeds,
     int index, RecutCommandLineArgs *args,
@@ -698,6 +734,8 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
   // prune all leaf vertices (valency 1) whose only neighbor has valency > 2
   // as these tend to be spurious branches
   Geometry::prune(component_graph);
+
+  resample(component_graph, MAX_EDGE_LENGTH_UM / args->voxel_size[0]);
 
   smooth_graph_pos_rad(component_graph, args->smooth_steps.value(), /*alpha*/ 1);
 
@@ -1103,18 +1141,18 @@ openvdb::FloatGrid::Ptr skeleton_to_surface(const AMGraph3D &skeleton) {
 
   // generate a mesh manifold then create a list of points and
   // polygons (quads or tris)
-  std::cout << "Start graph to manifold" << '\n';
+  //std::cout << "Start graph to manifold" << '\n';
   auto manifold = graph_to_FEQ(skeleton, radii);
 
-  HMesh::obj_save("mesh.obj", manifold);
+  //HMesh::obj_save("mesh.obj", manifold);
 
   // translate manifold into something vdb will understand
   // points ands quads
-  std::cout << "Start manifold to polygons" << '\n';
+  //std::cout << "Start manifold to polygons" << '\n';
   auto [points, quads] = mesh_to_polygons(manifold);
 
   // convert the mesh into a surface (level set) vdb
-  std::cout << "Start polygons to level set" << '\n';
+  //std::cout << "Start polygons to level set" << '\n';
   vto::QuadAndTriangleDataAdapter<openvdb::Vec3s, openvdb::Vec4I> mesh(points, quads);
   return vto::meshToVolume<openvdb::FloatGrid>(mesh, *get_transform());
 }
@@ -1470,3 +1508,4 @@ double calculate_skeleton_within_surface(AMGraph3D &g, openvdb::FloatGrid::Ptr s
 
   return within_frac;
 }
+

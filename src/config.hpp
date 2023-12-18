@@ -74,6 +74,7 @@ using ImgGrid = openvdb::Grid<UInt8Tree>;
 // using EnlargedPointIndexGrid = openvdb::Grid<vp::PointIndexTree>;
 using EnlargedPointIndexGrid = vto::PointIndexGrid;
 
+#define MAX_EDGE_LENGTH_UM 2
 #define SWC_MIN_LINE 110
 //#define COARSEN_FACTOR 1.5
 #define COARSEN_STEPS 0
