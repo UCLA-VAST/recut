@@ -3390,19 +3390,21 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     // get graphs
     auto input_graph = swc_to_graph(args->input_path, args->voxel_size, zeros(), args->disable_swc_scaling).second;
-    auto test_graph = swc_to_graph(args->input_path, args->voxel_size).second;
+    auto test_graph = swc_to_graph(args->test.value(), args->voxel_size).second;
 
     // get surfaces
-    auto input = swc_to_segmented(args->input_path, args->voxel_size, args->image_offsets, args->save_vdbs, "input", args->disable_swc_scaling);
-    auto test = swc_to_segmented(args->test.value(), args->voxel_size, zeros(), args->save_vdbs, "test");
+    auto input = swc_to_mask(args->input_path, args->voxel_size, args->image_offsets, args->save_vdbs, "input", args->disable_swc_scaling);
+    auto test = swc_to_mask(args->test.value(), args->voxel_size, zeros(), args->save_vdbs, "test");
 
-    // what proportion of the auto/test graph nodes are within the surface of the input proofread
-    calculate_skeleton_within_surface(test_graph, input, "Skeletal precision");
-    // what proportion of the proofread input graph nodes are within the surface of the test
-    calculate_skeleton_within_surface(input_graph, test, "Skeletal recall");
+    // what proportion of the auto/test graph nodes are within the mask of the input proofread
+    calculate_skeleton_within_mask(test_graph, input, "Skeletal precision");
+    // what proportion of the proofread input graph nodes are within the mask of the test
+    calculate_skeleton_within_mask(input_graph, test, "Skeletal recall");
 
     // surface to surface accuracy metric
     //calculate_recall_precision(input, test, args->save_vdbs);
+    // skeleton to surface accuracy metric
+    //calculate_skeleton_within_surface(input_graph, test, "Skeletal recall");
 
     exit(0);
   }

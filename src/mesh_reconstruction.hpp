@@ -1330,7 +1330,7 @@ std::vector<AMGraph3D> split_graph(const AMGraph3D &g, const NodeID n) {
   return sets | rv::transform(set_to_graph) | rng::to_vector;
 }
 
-void graph_to_mask(AMGraph3D& skeleton, Seed seed, bool neurites_only=false) {
+openvdb::MaskGrid::Ptr graph_to_mask(AMGraph3D& skeleton, Seed seed, bool neurites_only=false) {
   // removes the soma which is always at index 0
   auto subgraphs = split_graph(skeleton, 0);
 
@@ -1351,7 +1351,7 @@ void graph_to_mask(AMGraph3D& skeleton, Seed seed, bool neurites_only=false) {
       }
     }
   }
-  std::cout << "Graph -> mask elapsed: " << timer.elapsed() << "s\n";
+  //std::cout << "Graph -> mask elapsed: " << timer.elapsed() << "s\n";
 
   if (!neurites_only) {
     for (const auto coord : sphere_iterator(seed.coord, seed.radius)) {
@@ -1359,11 +1359,11 @@ void graph_to_mask(AMGraph3D& skeleton, Seed seed, bool neurites_only=false) {
     }
   }
 
-  return mask
+  return mask;
 }
 
-// returns a level set float grid
-openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
+// returns a mask grid corresponding to the segmented volume of the swc
+openvdb::MaskGrid::Ptr swc_to_mask(filesystem::path swc_file,
     std::array<double, 3> voxel_size, GridCoord image_offsets, 
     bool save_vdbs = false, std::string name = "", bool disable_swc_scaling=false,
     bool neurites_only=false, bool save_swcs = false) {
@@ -1375,16 +1375,16 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
   if (save_vdbs)
     write_vdb_file({mask}, "mask-" + (name.empty() ? swc_file.stem().string() : name) + ".vdb");
 
-  openvdb::FloatGrid::Ptr level_set = vto::topologyToLevelSet(mask, RECUT_LEVEL_SET_HALF_WIDTH, 0, 1, 0, 0);
+  // delete this
+  //openvdb::FloatGrid::Ptr level_set = vto::topologyToLevelSet(mask, RECUT_LEVEL_SET_HALF_WIDTH, 0, 1, 0, 0);
+  //if (save_vdbs)
+    //write_vdb_file({level_set}, "surface-" + (name.empty() ? swc_file.stem().string() : name) + ".vdb");
 
-  if (save_vdbs)
-    write_vdb_file({level_set}, "surface-" + (name.empty() ? swc_file.stem().string() : name) + ".vdb");
-
-  return level_set;
+  return mask;
 }
 
 // returns a level set float grid
-openvdb::FloatGrid::Ptr swc_to_segmented_feq(filesystem::path swc_file,
+openvdb::FloatGrid::Ptr swc_to_surface(filesystem::path swc_file,
     std::array<double, 3> voxel_size, GridCoord image_offsets, 
     bool save_vdbs = false, std::string name = "", bool disable_swc_scaling=false,
     bool neurites_only=false, bool save_swcs = false) {
@@ -1561,6 +1561,27 @@ void calculate_recall_precision(openvdb::FloatGrid::Ptr truth,
 // surface must be a level set
 // title is the name of the statistic your computing for example 
 // skeletal recall or precision
+double calculate_skeleton_within_mask(AMGraph3D &g, const openvdb::MaskGrid::Ptr mask, std::string title) {
+
+  auto accessor = mask->getConstAccessor();
+
+  auto is_inside = [&](NodeID i) {
+    return accessor.isValueOn(to_coord(g.pos[i]));
+  };
+
+  auto within_frac = static_cast<double>(rng::distance(
+        rv::iota(static_cast<NodeID>(0), g.no_nodes())
+        | rv::filter(is_inside))) / g.no_nodes();
+
+  std::cout << title << ": ";
+  std::cout << within_frac << '\n';
+
+  return within_frac;
+}
+
+// surface must be a level set
+// title is the name of the statistic your computing for example 
+// skeletal recall or precision
 double calculate_skeleton_within_surface(AMGraph3D &g, openvdb::FloatGrid::Ptr surface, std::string title) {
   auto is_outside_surface = [&g, surface](NodeID i) {
     return surface->tree().getValue(to_coord(g.pos[i])) > 0;
@@ -1575,4 +1596,3 @@ double calculate_skeleton_within_surface(AMGraph3D &g, openvdb::FloatGrid::Ptr s
 
   return within_frac;
 }
-

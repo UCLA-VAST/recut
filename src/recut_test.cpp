@@ -348,7 +348,7 @@ TEST(Skeletonization, TestSplitGraph) {
 }
 
 
-TEST(Skeletonization, TestSkeletonWithinSurface) {
+TEST(Skeletonization, TestSkeletonWithinMask) {
   AMGraph3D g;
 
   // seed
@@ -364,17 +364,20 @@ TEST(Skeletonization, TestSkeletonWithinSurface) {
   for (auto i : rv::iota(1,3))
     g.connect_nodes(0, i);
 
-  auto ls = skeleton_to_surface(g);
-  //write_vdb_file({ls}, "test.vdb");
-  ASSERT_EQ(calculate_skeleton_within_surface(g, ls, ""), 1.);
+  auto seed = Seed(zeros(), {0, 0, 0}, 10, 10, 1000);
+  auto mask = graph_to_mask(g, seed);
+  write_vdb_file({mask}, "test-mask.vdb");
+  ASSERT_EQ(calculate_skeleton_within_mask(g, mask, ""), 1.);
 
   // this new node is no longer within the original ls
   auto id = g.add_node({0, 0, 15});
   set_radius(g, id, 1);
-  ASSERT_EQ(calculate_skeleton_within_surface(g, ls, ""), 3./4);
+  ASSERT_EQ(calculate_skeleton_within_mask(g, mask, ""), 3./4);
 }
 
 /*
+ * FEQ method is extremely sensitive and buggy
+ * see alternative method above
 TEST(Skeletonization, TestSkeletonWithinSurface) {
   AMGraph3D g;
 
