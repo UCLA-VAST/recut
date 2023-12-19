@@ -347,6 +347,34 @@ TEST(Skeletonization, TestSplitGraph) {
   ASSERT_EQ(graphs.size(), 3);
 }
 
+
+TEST(Skeletonization, TestSkeletonWithinSurface) {
+  AMGraph3D g;
+
+  // seed
+  g.add_node({0, 0, 0});
+  set_radius(g, 10, 0); 
+
+  g.add_node({15, 0, 0});
+  set_radius(g, 5, 1); 
+
+  g.add_node({0, 15, 0});
+  set_radius(g, 5, 2); 
+
+  for (auto i : rv::iota(1,3))
+    g.connect_nodes(0, i);
+
+  auto ls = skeleton_to_surface(g);
+  //write_vdb_file({ls}, "test.vdb");
+  ASSERT_EQ(calculate_skeleton_within_surface(g, ls, ""), 1.);
+
+  // this new node is no longer within the original ls
+  auto id = g.add_node({0, 0, 15});
+  set_radius(g, id, 1);
+  ASSERT_EQ(calculate_skeleton_within_surface(g, ls, ""), 3./4);
+}
+
+/*
 TEST(Skeletonization, TestSkeletonWithinSurface) {
   AMGraph3D g;
 
@@ -372,6 +400,7 @@ TEST(Skeletonization, TestSkeletonWithinSurface) {
   set_radius(g, id, 1);
   ASSERT_EQ(calculate_skeleton_within_surface(g, ls, ""), 3./4);
 }
+*/
 
 TEST(Skeletonization, TestMaxBifurc) {
   AMGraph3D g;

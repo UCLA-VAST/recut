@@ -691,6 +691,17 @@ void resample(AMGraph3D &g, double max_edge_distance_voxels) {
   }
 }
 
+// sampling rate along neurites and the smoothing achieved are quite related
+// and you need to keep the behavior of native outputs and proofreads as similar
+// and standardized as possible, that's why these are bound into a single function
+// call to keep the behavior more coupled throughout calls from recut
+void standardize_sampling_smoothing(AMGraph3D& g, const std::array<double,3> 
+    voxel_size, const int iter) {
+  resample(g, MAX_EDGE_LENGTH_UM / voxel_size[0]);
+  // don't change the alpha it leads to poor results
+  smooth_graph_pos_rad(g, iter, /*alpha*/ 1);
+}
+
 std::optional<std::pair<AMGraph3D, std::vector<GridCoord>>>
 vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_seeds,
     int index, RecutCommandLineArgs *args,
@@ -735,9 +746,7 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
   // as these tend to be spurious branches
   Geometry::prune(component_graph);
 
-  resample(component_graph, MAX_EDGE_LENGTH_UM / args->voxel_size[0]);
-
-  smooth_graph_pos_rad(component_graph, args->smooth_steps.value(), /*alpha*/ 1);
+  standardize_sampling_smoothing(component_graph, args->voxel_size, args->smooth_steps.value());
 
   // sweep through various soma ids
   std::vector<GridCoord> soma_coords;
@@ -1036,6 +1045,8 @@ void write_swcs(const AMGraph3D &component_graph, std::vector<GridCoord> soma_co
 // you can translate from world to pixel space via a voxel size.
 // some inputs are unscaled see --disable_swc_scaling, in those cases
 // you can leave the coordinates and radii as is
+// the soma is guaranteed to be the first node of the returned graph at index 0
+// throws if more than 1 soma or if not at first line
 std::pair<Seed, AMGraph3D>
 swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
     GridCoord image_offsets = zeros(), bool disable_swc_scaling=false, bool save_file = false) {
@@ -1130,7 +1141,21 @@ swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
   return std::make_pair(seeds.front(), g);
 }
 
-openvdb::FloatGrid::Ptr skeleton_to_surface(const AMGraph3D &skeleton) {
+//openvdb::FloatGrid::Ptr skeleton_to_surface(const AMGraph3D &skeleton) {
+//}
+
+int count_self_connected(const AMGraph3D &g) {
+  std::vector<NodeID> self_connected;
+  for (NodeID n : g.node_ids()) {
+    for (NodeID nn: g.neighbors(n)) {
+      if (n == nn)
+        self_connected.push_back(n);
+    }
+  }
+  return self_connected.size();
+}
+
+openvdb::FloatGrid::Ptr skeleton_to_surface_feq(const AMGraph3D &skeleton) {
 
   // feq requires an explicit radii vector
   std::vector<double> radii;
@@ -1155,17 +1180,6 @@ openvdb::FloatGrid::Ptr skeleton_to_surface(const AMGraph3D &skeleton) {
   //std::cout << "Start polygons to level set" << '\n';
   vto::QuadAndTriangleDataAdapter<openvdb::Vec3s, openvdb::Vec4I> mesh(points, quads);
   return vto::meshToVolume<openvdb::FloatGrid>(mesh, *get_transform());
-}
-
-int count_self_connected(const AMGraph3D &g) {
-  std::vector<NodeID> self_connected;
-  for (NodeID n : g.node_ids()) {
-    for (NodeID nn: g.neighbors(n)) {
-      if (n == nn)
-        self_connected.push_back(n);
-    }
-  }
-  return self_connected.size();
 }
 
 void remove_from_graph(AMGraph3D &g, std::vector<GridCoord> coords) {
@@ -1316,8 +1330,61 @@ std::vector<AMGraph3D> split_graph(const AMGraph3D &g, const NodeID n) {
   return sets | rv::transform(set_to_graph) | rng::to_vector;
 }
 
-// returns a polygonal mesh
+void graph_to_mask(AMGraph3D& skeleton, Seed seed, bool neurites_only=false) {
+  // removes the soma which is always at index 0
+  auto subgraphs = split_graph(skeleton, 0);
+
+  auto mask = openvdb::MaskGrid::create();
+  auto mask_accessor = mask->getAccessor();
+  auto timer = high_resolution_timer();
+  for (auto& subgraph : subgraphs) {
+    // each skeletal node is upsampled to be 1 voxel apart, to create a smooth contiguous surface
+    resample(subgraph, 1);
+    // TODO does it need to be smoothed?
+    for (auto i : subgraph.node_ids()) {
+      //auto pos = subgraph.pos[i];
+      GridCoord coord;
+      for (int j=0; j < 3; ++j)
+        coord[j] = static_cast<int>(std::round(subgraph.pos[i][j]));
+      for (const auto coord : sphere_iterator(coord, get_radius(subgraph, i))) {
+        mask_accessor.setValueOn(coord);
+      }
+    }
+  }
+  std::cout << "Graph -> mask elapsed: " << timer.elapsed() << "s\n";
+
+  if (!neurites_only) {
+    for (const auto coord : sphere_iterator(seed.coord, seed.radius)) {
+      mask_accessor.setValueOn(coord);
+    }
+  }
+
+  return mask
+}
+
+// returns a level set float grid
 openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
+    std::array<double, 3> voxel_size, GridCoord image_offsets, 
+    bool save_vdbs = false, std::string name = "", bool disable_swc_scaling=false,
+    bool neurites_only=false, bool save_swcs = false) {
+
+  bool merge_soma_on_top = false;
+  auto [seed, skeleton] = swc_to_graph(swc_file, voxel_size, image_offsets, disable_swc_scaling);
+
+  auto mask = graph_to_mask(skeleton, seed, neurites_only);
+  if (save_vdbs)
+    write_vdb_file({mask}, "mask-" + (name.empty() ? swc_file.stem().string() : name) + ".vdb");
+
+  openvdb::FloatGrid::Ptr level_set = vto::topologyToLevelSet(mask, RECUT_LEVEL_SET_HALF_WIDTH, 0, 1, 0, 0);
+
+  if (save_vdbs)
+    write_vdb_file({level_set}, "surface-" + (name.empty() ? swc_file.stem().string() : name) + ".vdb");
+
+  return level_set;
+}
+
+// returns a level set float grid
+openvdb::FloatGrid::Ptr swc_to_segmented_feq(filesystem::path swc_file,
     std::array<double, 3> voxel_size, GridCoord image_offsets, 
     bool save_vdbs = false, std::string name = "", bool disable_swc_scaling=false,
     bool neurites_only=false, bool save_swcs = false) {
@@ -1394,7 +1461,7 @@ openvdb::FloatGrid::Ptr swc_to_segmented(filesystem::path swc_file,
   openvdb::FloatGrid::Ptr level_set;
   {
     auto timer = high_resolution_timer();
-    auto level_sets = subgraphs | rv::transform(skeleton_to_surface) | rng::to_vector;
+    auto level_sets = subgraphs | rv::transform(skeleton_to_surface_feq) | rng::to_vector;
     std::cout << "Graph -> surface elapsed: " << timer.elapsed() << "s\n";
 
     // empties/nullifies level sets into accumulator level set

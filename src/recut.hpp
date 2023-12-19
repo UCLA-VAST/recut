@@ -3089,9 +3089,6 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << "Seed detection: max allowed soma radius in µm, "
             << args->max_radius_um
             << '\n'
-            << "Seed action, "
-            << args->seed_action
-            << '\n'
             << "Skeletonization: soma dilation, "
             << args->soma_dilation.value_or(1) << '\n'
             << "Skeletonization: coarsen steps, "
@@ -3410,6 +3407,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     exit(0);
   }
 
+  start_run_dir_and_logs();
+
   // do a qc of input swc directory
   if (args->input_type == "swcs") {
     auto pairs = swc_dir_to_graphs(args->input_path, args->voxel_size);
@@ -3418,13 +3417,22 @@ template <class image_t> void Recut<image_t>::operator()() {
     // divide by Anisotropic factor to retrieve the original highest radii granularity 
     // achieved by skeletonization algorithm
     auto max_dia = 2. * graphs_to_max_bifurc(graphs) * args->voxel_size[0];
-    std::cout << "Max bifurcation diameter um: " << max_dia << '\n';
 
-    // TODO mkdir qc-swcs
+    // log diadem thresholds
+    std::ofstream run_log;
+    run_log.open(this->log_fn, std::ios::app);
+    run_log << "Max bifurcation diameter um: " << max_dia << '\n';
+    run_log << "Input SWC count " << graphs.size() << '\n';
+    run_log.flush();
+    run_log.close();
+
+    //for (auto& [seed, graph] : pairs) {
+      //standardize_sampling_smoothing(graph, args->voxel_size, args->smooth_steps.value());
+      // FIXME needs to protect against hange in seed id or duplicate swc filenames
+      //write_swcs(graph, {seed.coord}, args->voxel_size, this->run_dir);
+    //}
     exit(0);
   }
-
-  start_run_dir_and_logs();
 
   // if point.vdb was not already set by input
   if (!this->input_is_vdb) {
