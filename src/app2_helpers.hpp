@@ -1669,6 +1669,10 @@ void run_app2(ValuedGrid component_with_values,
   // the bkg_thresh is 0 for vdb to dense
   uint16_t bkg_thresh = 0;
   auto window = convert_vdb_to_dense(component_with_values);
+  auto seed = component_seeds.front();
+
+  if (component_seeds.size() > 1)
+    std::cerr << "Warning: APP2 found multiple proofread seeds in a single component (cluster of trees)\n";
 
   auto component_markers =
       component_seeds | rv::transform([](auto &seed) {
@@ -1680,6 +1684,10 @@ void run_app2(ValuedGrid component_with_values,
         return marker;
       }) |
       rng::to_vector;
+
+  if (component_markers.size() == 0) {
+    throw std::runtime_error("0 component markers from app2");
+  }
 
   // adjust component_markers to match window, just for
   // fastmarching_tree() and happ
@@ -1697,6 +1705,7 @@ void run_app2(ValuedGrid component_with_values,
                     window.bbox().dim()[0], window.bbox().dim()[1],
                     window.bbox().dim()[2],
                     /* cnn_type*/ 1, bkg_thresh);
+  component_log << "APP2 node count, " << app2_output_tree.size() << '\n';
   component_log << "Fast Marching time, " << timer.elapsed_formatted() << '\n';
 
   // prune run the seq prune from app2 to compare
@@ -1704,10 +1713,11 @@ void run_app2(ValuedGrid component_with_values,
   std::vector<MyMarker *> app2_output_tree_prune;
   happ(app2_output_tree, app2_output_tree_prune, window.data(),
        window.bbox().dim()[0], window.bbox().dim()[1], window.bbox().dim()[2],
-       bkg_thresh,
-       /*length thresh*/ min_branch_length,
-       /*sr_ratio*/ 1. / 3);
+       bkg_thresh);
+       //[>length thresh<] min_branch_length,
+       //[>sr_ratio<] 1. / 3);
   component_log << "HAPP time, " << timer.elapsed_formatted() << '\n';
+  component_log << "HAPP node count, " << app2_output_tree_prune.size() << '\n';
   timer.restart();
 
   // adjust app2_output_tree_prune to match global image, for swc output
@@ -1718,18 +1728,17 @@ void run_app2(ValuedGrid component_with_values,
     });
   }
 
-  // print
-  auto seed = component_seeds.front();
+  // filename
   std::ostringstream out;
   out <<  std::fixed << std::setprecision(SWC_PRECISION);
   out << '[';
   out << seed.coord_um[0] << ',';
   out << seed.coord_um[1] << ',';
   out << seed.coord_um[2] << ']';
-
   out << "-r=" << seed.radius_um;
   out << "-µm.swc";
   auto app2_fn = component_dir_fn / (out.str());
+
   marker_to_swc_file(app2_fn, app2_output_tree_prune, voxel_size);
   component_log << "APP write SWC time, " << timer.elapsed_formatted() << '\n';
 }

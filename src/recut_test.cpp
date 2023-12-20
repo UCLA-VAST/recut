@@ -364,8 +364,10 @@ TEST(Skeletonization, TestSkeletonWithinMask) {
   for (auto i : rv::iota(1,3))
     g.connect_nodes(0, i);
 
-  auto seed = Seed(zeros(), {0, 0, 0}, 10, 10, 1000);
-  auto mask = graph_to_mask(g, seed);
+  //auto seed = Seed(zeros(), {0, 0, 0}, 10, 10, 1000);
+  //auto mask = graph_neurites_to_mask(g, seed);
+
+  auto mask = graph_to_mask(g);
   write_vdb_file({mask}, "test-mask.vdb");
   ASSERT_EQ(calculate_skeleton_within_mask(g, mask, ""), 1.);
 

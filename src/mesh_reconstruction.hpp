@@ -1330,34 +1330,37 @@ std::vector<AMGraph3D> split_graph(const AMGraph3D &g, const NodeID n) {
   return sets | rv::transform(set_to_graph) | rng::to_vector;
 }
 
-openvdb::MaskGrid::Ptr graph_to_mask(AMGraph3D& skeleton, Seed seed, bool neurites_only=false) {
+template <typename T>
+void stamp_graph(T mask_accessor, AMGraph3D& g) {
+  for (auto i : g.node_ids()) {
+    for (const auto coord : sphere_iterator(to_coord(g.pos[i]), get_radius(g, i))) {
+      mask_accessor.setValueOn(coord);
+    }
+  }
+}
+
+openvdb::MaskGrid::Ptr graph_neurites_to_mask(AMGraph3D& skeleton, Seed seed) {
   // removes the soma which is always at index 0
   auto subgraphs = split_graph(skeleton, 0);
 
   auto mask = openvdb::MaskGrid::create();
   auto mask_accessor = mask->getAccessor();
-  auto timer = high_resolution_timer();
-  for (auto& subgraph : subgraphs) {
+  for (auto& subgraph : subgraphs)  {
     // each skeletal node is upsampled to be 1 voxel apart, to create a smooth contiguous surface
     resample(subgraph, 1);
-    // TODO does it need to be smoothed?
-    for (auto i : subgraph.node_ids()) {
-      //auto pos = subgraph.pos[i];
-      GridCoord coord;
-      for (int j=0; j < 3; ++j)
-        coord[j] = static_cast<int>(std::round(subgraph.pos[i][j]));
-      for (const auto coord : sphere_iterator(coord, get_radius(subgraph, i))) {
-        mask_accessor.setValueOn(coord);
-      }
-    }
+    stamp_graph(mask_accessor, subgraph);
   }
-  //std::cout << "Graph -> mask elapsed: " << timer.elapsed() << "s\n";
 
-  if (!neurites_only) {
-    for (const auto coord : sphere_iterator(seed.coord, seed.radius)) {
-      mask_accessor.setValueOn(coord);
-    }
-  }
+  return mask;
+}
+
+openvdb::MaskGrid::Ptr graph_to_mask(AMGraph3D& skeleton) {
+  auto mask = openvdb::MaskGrid::create();
+  auto mask_accessor = mask->getAccessor();
+
+  // each skeletal node is upsampled to be 1 voxel apart, to create a smooth contiguous surface
+  resample(skeleton, 1);
+  stamp_graph(mask_accessor, skeleton);
 
   return mask;
 }
@@ -1371,7 +1374,8 @@ openvdb::MaskGrid::Ptr swc_to_mask(filesystem::path swc_file,
   bool merge_soma_on_top = false;
   auto [seed, skeleton] = swc_to_graph(swc_file, voxel_size, image_offsets, disable_swc_scaling);
 
-  auto mask = graph_to_mask(skeleton, seed, neurites_only);
+  auto mask = neurites_only ? graph_neurites_to_mask(skeleton, seed) : graph_to_mask(skeleton);
+
   if (save_vdbs)
     write_vdb_file({mask}, "mask-" + (name.empty() ? swc_file.stem().string() : name) + ".vdb");
 
