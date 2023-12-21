@@ -24,11 +24,10 @@ def main(args):
     p('Match', raw_matched, proofreads)
     p('Automated reconstruction success', matched, raw_matched)
 
-    dict = {'Name': auto
     if not args.surface_only:
         # diadem_scores = rm_none((auto, handle_diadem_output(proof, auto, args.threshold, args.path_threshold, args.quiet) for proof, auto in matched))
         results = {auto : handle_diadem_output(proof, auto, args.threshold, args.path_threshold, args.quiet) for proof, auto in matched}
-        diadem_scores = [score for auto, score in results]
+        diadem_scores = results.values()
         p('Diadem comparison', diadem_scores, matched)
         if len(diadem_scores):
             stats(np.mean, diadem_scores)

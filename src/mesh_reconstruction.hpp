@@ -438,6 +438,10 @@ openvdb::FloatGrid::Ptr mask_to_sdf(openvdb::MaskGrid::Ptr mask) {
 // 1 iteration and 1 alpha are the defaults in the GEL library and in the
 // corresponding paper (Baerentzen) all skeletons qualitatively looked smooth
 // after only 1 iteration at 1 alpha
+// above 1 alpha caused zig-zagged behavior that was unusable
+// additionally pin the position of critical nodes those with valence > 2
+// like branches and somas
+// leaf vertices are already pinned in radius and pos
 void smooth_graph_pos_rad(AMGraph3D &g, const int iter, const float alpha) {
   auto lsmooth = [](AMGraph3D &g, float _alpha) {
 
@@ -471,7 +475,10 @@ void smooth_graph_pos_rad(AMGraph3D &g, const int iter, const float alpha) {
 
   for (int i = 0; i < iter; ++i) {
     auto [npos, nradius] = lsmooth(g, alpha);
-    g.pos = npos;
+    // leaf vertices are already pinned in radius and pos above if you
+    // observe the weighting scheme
+    if (g.valence(i) < 3)
+      g.pos = npos;
     g.node_color = nradius;
   }
 }
