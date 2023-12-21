@@ -1607,3 +1607,11 @@ double calculate_skeleton_within_surface(AMGraph3D &g, openvdb::FloatGrid::Ptr s
 
   return within_frac;
 }
+
+// soma is guaranteed to be the first in the graph
+void scale_neurites(AMGraph3D& g) {
+  // skip the soma
+  for (auto i=1; i < g.no_nodes(); ++i)
+    set_radius(g, get_radius(g, i) * ANISOTROPIC_FACTOR, i);
+}
+

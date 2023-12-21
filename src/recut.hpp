@@ -3392,6 +3392,9 @@ template <class image_t> void Recut<image_t>::operator()() {
     auto input_graph = swc_to_graph(args->input_path, args->voxel_size, zeros(), args->disable_swc_scaling).second;
     auto test_graph = swc_to_graph(args->test.value(), args->voxel_size).second;
 
+    scale_neurites(input_graph);
+    scale_neurites(test_graph);
+
     // get surfaces
     auto input = swc_to_mask(args->input_path, args->voxel_size, args->image_offsets, args->save_vdbs, "input", args->disable_swc_scaling);
     auto test = swc_to_mask(args->test.value(), args->voxel_size, zeros(), args->save_vdbs, "test");
