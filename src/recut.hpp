@@ -3392,6 +3392,24 @@ template <class image_t> void Recut<image_t>::operator()() {
     auto input_graph = swc_to_graph(args->input_path, args->voxel_size, zeros(), args->disable_swc_scaling).second;
     auto test_graph = swc_to_graph(args->test.value(), args->voxel_size).second;
 
+    // to test nearest points bring the sampling as high as possible
+    resample(input_graph, .25 / args->voxel_size[0]);
+    resample(test_graph, .25 / args->voxel_size[0]);
+
+    auto input_tree = build_kdtree(input_graph);
+    auto test_tree = build_kdtree(test_graph);
+
+    double dist_voxels = 8 / args->voxel_size[0];
+    tree_distance(input_graph, test_tree, dist_voxels, "Complete");
+    tree_distance(test_graph, input_tree, dist_voxels, "Correct");
+
+    branch_distance(input_graph, test_graph, dist_voxels, "Branch");
+
+    //leaf_distance(input_graph, test_tree, "Leaf");
+
+    //branch_direction_distance(input_graph, test_tree, "Direction");
+
+    /*
     scale_neurites(input_graph);
     scale_neurites(test_graph);
 
@@ -3403,6 +3421,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     calculate_skeleton_within_mask(test_graph, input, "Skeletal precision");
     // what proportion of the proofread input graph nodes are within the mask of the test
     calculate_skeleton_within_mask(input_graph, test, "Skeletal recall");
+    */
 
     // surface to surface accuracy metric
     //calculate_recall_precision(input, test, args->save_vdbs);

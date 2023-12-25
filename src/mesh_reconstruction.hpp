@@ -1615,3 +1615,43 @@ void scale_neurites(AMGraph3D& g) {
     set_radius(g, get_radius(g, i) * ANISOTROPIC_FACTOR, i);
 }
 
+void tree_distance(AMGraph3D& g, KDTree &kdtree, double dist_voxels, std::string name) {
+  auto matches = 0;
+  for (auto i : g.node_ids()) {
+    Pos key;
+    NodeID val;
+    auto found =  kdtree.closest_point(g.pos[i], dist_voxels, key, val);
+    if (found)
+      ++matches;
+  }
+  std::cout << name << ": " << matches << '/' << g.no_nodes() << ' ' <<  (static_cast<double>(matches) / g.no_nodes()) << '\n';
+}
+
+std::vector<NodeID> get_branch_ids(AMGraph3D& g) {
+  auto is_branch = [&g](auto i) { return g.valence(i) > 2; };
+  return rv::iota(static_cast<NodeID>(1), g.no_nodes()) | rv::filter(is_branch) | rng::to_vector;
+}
+
+void branch_distance(AMGraph3D& g, AMGraph3D& other, double dist_voxels, std::string name) {
+
+  KDTree tree;
+  for (auto i : get_branch_ids(other)) {
+    Pos p0 = other.pos[i];
+    tree.insert(p0, i);
+  }
+  tree.build();
+
+  auto branch_ids = get_branch_ids(g);
+  int matches = 0;
+  for (auto i : branch_ids) {
+    Pos key;
+    NodeID val;
+    if (tree.closest_point(g.pos[i], dist_voxels, key, val))
+      ++matches;
+  }
+
+  std::cout << name << ": " << " " << matches << '/' << branch_ids.size() << ' ' <<
+    (static_cast<double>(matches) / branch_ids.size()) << '\n';
+}
+
+
