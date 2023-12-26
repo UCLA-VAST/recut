@@ -130,6 +130,7 @@ void RecutCommandLineArgs::PrintUsage() {
   // std::cout << "--timeout             time in minutes to automatically cancel
   // pruning of a single component\n";
   std::cout << "--disable-swc-scaling  this flag outputs all SWCs in image voxel units\n";
+  std::cout << "--match-distance       skeletal node match distance in µm units, defaults to " << MATCH_DISTANCE << "µm\n";
   std::cout << "--help                 [-h] print this example usage summary\n";
 }
 
@@ -364,6 +365,9 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         }
       } else if (strcmp(argv[i], "--disable-swc-scaling") == 0) {
         args.disable_swc_scaling = true;
+      } else if (strcmp(argv[i], "--match-distance") == 0) {
+        args.match_distance = atof(argv[i + 1]);
+        ++i;
       } else if (strcmp(argv[i], "--upsample-z") == 0) {
         args.upsample_z = atoi(argv[i + 1]);
         ++i;

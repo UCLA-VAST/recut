@@ -32,9 +32,8 @@ public:
         min_radius_um(MIN_SOMA_RADIUS_UM), max_radius_um(MAX_SOMA_RADIUS_UM),
         voxel_size({1., 1., 1.}), save_vdbs(false), 
         ignore_multifurcations(false), close_topology(true),
-        mean_shift_max_iters(4), // timeout(TIMEOUT),
         skeleton_grain(SKELETON_GRAIN), skeleton_grow(GROW_THRESHOLD),
-        mean_shift_factor(0), 
+        match_distance(MATCH_DISTANCE),
         seed_action("force"), optimize_steps(5),
         disable_swc_scaling(false) {}
 
@@ -55,7 +54,7 @@ public:
       skeleton_grow, optimize_steps;
   double foreground_percent, slt_pct;
   float min_window_um, expand_window_um, min_radius_um, max_radius_um,
-      mean_shift_factor, skeleton_grain;
+      mean_shift_factor, skeleton_grain, match_distance;
   VID_t selected, root_vid;
   bool run_app2, convert_only, combine, histogram, save_vdbs,
       ignore_multifurcations, close_topology, disable_swc_scaling;

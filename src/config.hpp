@@ -114,3 +114,4 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 #define SOMA_CLOSE_FACTOR 7
 #define OPEN_FACTOR 5
 #define FG_PCT .4
+#define MATCH_DISTANCE 8.

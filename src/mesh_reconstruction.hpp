@@ -1615,23 +1615,40 @@ void scale_neurites(AMGraph3D& g) {
     set_radius(g, get_radius(g, i) * ANISOTROPIC_FACTOR, i);
 }
 
-void tree_distance(AMGraph3D& g, KDTree &kdtree, double dist_voxels, std::string name) {
+void graph_distance(AMGraph3D& g, AMGraph3D& other, double dist_voxels, std::string name) {
   auto matches = 0;
   for (auto i : g.node_ids()) {
-    Pos key;
-    NodeID val;
-    auto found =  kdtree.closest_point(g.pos[i], dist_voxels, key, val);
-    if (found)
-      ++matches;
+    Pos pos = g.pos[i]; 
+    for (auto j : other.node_ids()) {
+      Pos other_pos = other.pos[j]; 
+      if (euc_dist(pos, other_pos) <= dist_voxels) {
+        ++matches;
+        break;
+      }
+    }
   }
-  std::cout << name << ": " << matches << '/' << g.no_nodes() << ' ' <<  (static_cast<double>(matches) / g.no_nodes()) << '\n';
+  std::cout << name << " count, " << matches << '/' << g.no_nodes() << '\n';
+  std::cout << name << ", " << (static_cast<double>(matches) / g.no_nodes()) << '\n';
 }
+
+//void tree_distance(AMGraph3D& g, KDTree &kdtree, double dist_voxels, std::string name) {
+  //auto matches = 0;
+  //for (auto i : g.node_ids()) {
+    //Pos key;
+    //NodeID val;
+    //auto found =  kdtree.closest_point(g.pos[i], dist_voxels, key, val);
+    //if (found)
+      //++matches;
+  //}
+  //std::cout << name << ": " << matches << '/' << g.no_nodes() << ' ' <<  (static_cast<double>(matches) / g.no_nodes()) << '\n';
+//}
 
 std::vector<NodeID> get_branch_ids(AMGraph3D& g) {
   auto is_branch = [&g](auto i) { return g.valence(i) > 2; };
   return rv::iota(static_cast<NodeID>(1), g.no_nodes()) | rv::filter(is_branch) | rng::to_vector;
 }
 
+/*
 void branch_distance(AMGraph3D& g, AMGraph3D& other, double dist_voxels, std::string name) {
 
   KDTree tree;
@@ -1653,5 +1670,48 @@ void branch_distance(AMGraph3D& g, AMGraph3D& other, double dist_voxels, std::st
   std::cout << name << ": " << " " << matches << '/' << branch_ids.size() << ' ' <<
     (static_cast<double>(matches) / branch_ids.size()) << '\n';
 }
+*/
 
+void branch_distance(AMGraph3D& g, AMGraph3D& other, double dist_voxels, std::string name) {
 
+  auto branch_ids = get_branch_ids(g);
+  int matches = 0;
+  for (auto i : branch_ids) {
+    Pos pos = g.pos[i];
+    for (auto j : get_branch_ids(other)) {
+      Pos other_pos = other.pos[j];
+      if (euc_dist(pos, other_pos) <= dist_voxels) {
+        ++matches;
+        break;
+      }
+    }
+  }
+
+  std::cout << name << " count, " << ' ' << matches << '/' << branch_ids.size() << '\n';
+  std::cout << name << ", " << (static_cast<double>(matches) / branch_ids.size()) << '\n';
+}
+
+// skip 0, the soma
+std::vector<NodeID> get_leaf_ids(AMGraph3D& g) {
+  auto is_leaf = [&g](auto i) { return g.valence(i) == 1; };
+  return rv::iota(static_cast<NodeID>(1), g.no_nodes()) | rv::filter(is_leaf) | rng::to_vector;
+}
+
+void leaf_distance(AMGraph3D& g, AMGraph3D& other, double dist_voxels, std::string name) {
+
+  auto leaf_ids = get_leaf_ids(g);
+  int matches = 0;
+  for (auto i : leaf_ids) {
+    Pos pos = g.pos[i];
+    for (auto j : get_leaf_ids(other)) {
+      Pos other_pos = other.pos[j];
+      if (euc_dist(pos, other_pos) <= dist_voxels) {
+        ++matches;
+        break;
+      }
+    }
+  }
+
+  std::cout << name << " count, " << " " << matches << '/' << leaf_ids.size() << '\n';
+  std::cout << name << ", " << (static_cast<double>(matches) / leaf_ids.size()) << '\n';
+}

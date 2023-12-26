@@ -2778,12 +2778,9 @@ template <class image_t> void Recut<image_t>::initialize() {
     args->user_thread_count = 1;
   }
 
-#ifdef LOG
-  std::cout << "User specified input " << args->input_path << " of type: " << this->args->input_type << '\n';
-#endif
-  
   if (args->input_type == "ims" || args->input_type == "tiff" || this->input_is_vdb) {
 
+    std::cout << "User specified input " << args->input_path << " of type: " << this->args->input_type << '\n';
     // actual possible lengths
     auto input_image_lengths = get_input_image_lengths(args);
 
@@ -2854,20 +2851,16 @@ template <class image_t> void Recut<image_t>::initialize() {
           this->args->tile_lengths[2] < 1 ? 8 : this->args->tile_lengths[2];
     }
 
-#ifdef LOG
     print_coord(this->image_lengths, "image voxel dimensions");
-#endif
     update_hierarchical_dims(this->tile_lengths);
     this->connected_grid = openvdb::MaskGrid::create();
     this->connected_grid->setTransform(get_transform());
-  }
 
-#ifdef LOG
-  std::cout << "voxel sizes:"
-            << " x=" << this->args->voxel_size[0] << " µm"
-            << " y=" << this->args->voxel_size[1] << " µm"
-            << " z=" << this->args->voxel_size[2] << " µm\n";
-#endif
+    std::cout << "voxel sizes:"
+              << " x=" << this->args->voxel_size[0] << " µm"
+              << " y=" << this->args->voxel_size[1] << " µm"
+              << " z=" << this->args->voxel_size[2] << " µm\n";
+  }
 
   // infer parameters for reconstructions runs
   if (args->input_type != "swc" && !args->convert_only) {
@@ -3363,9 +3356,6 @@ template <class image_t> void Recut<image_t>::operator()() {
   // Thread count is enforced across recut and dependencies (openvdb)
   // as long as control object is alive
   std::unique_ptr<tbb::global_control> control;
-#ifdef LOG
-  std::cout << "Global max thread count " << args->user_thread_count << '\n';
-#endif
   control.reset(new tbb::global_control(
       tbb::global_control::max_allowed_parallelism, args->user_thread_count));
 
@@ -3380,6 +3370,9 @@ template <class image_t> void Recut<image_t>::operator()() {
   // deduce input type
   this->initialize();
 
+  if (args->input_type != "swc")
+    std::cout << "Global max thread count " << args->user_thread_count << '\n';
+
   // do an accuracy comparison
   if (args->input_type == "swc" && args->test) {
 
@@ -3388,6 +3381,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     if (args->disable_swc_scaling) 
       std::cout << "Passing --disable-swc-scaling means the inputs/ground truths are assumed to already ke in voxel units\n";
 
+    std::cout << "Name, " << args->input_path.stem() << '\n';
     // get graphs
     auto input_graph = swc_to_graph(args->input_path, args->voxel_size, zeros(), args->disable_swc_scaling).second;
     auto test_graph = swc_to_graph(args->test.value(), args->voxel_size).second;
@@ -3396,16 +3390,20 @@ template <class image_t> void Recut<image_t>::operator()() {
     resample(input_graph, .25 / args->voxel_size[0]);
     resample(test_graph, .25 / args->voxel_size[0]);
 
-    auto input_tree = build_kdtree(input_graph);
-    auto test_tree = build_kdtree(test_graph);
+    //auto input_tree = build_kdtree(input_graph);
+    //auto test_tree = build_kdtree(test_graph);
 
-    double dist_voxels = 8 / args->voxel_size[0];
-    tree_distance(input_graph, test_tree, dist_voxels, "Complete");
-    tree_distance(test_graph, input_tree, dist_voxels, "Correct");
+    double dist_voxels = args->match_distance / args->voxel_size[0];
+    graph_distance(input_graph, test_graph, dist_voxels, "Complete");
+    graph_distance(test_graph, input_graph, dist_voxels, "Correct");
+    //tree_distance(input_graph, test_tree, dist_voxels, "Complete");
+    //tree_distance(test_graph, input_tree, dist_voxels, "Correct");
 
-    branch_distance(input_graph, test_graph, dist_voxels, "Branch");
+    branch_distance(input_graph, test_graph, dist_voxels, "Branch complete");
+    branch_distance(test_graph, input_graph, dist_voxels, "Branch correct");
 
-    //leaf_distance(input_graph, test_tree, "Leaf");
+    leaf_distance(input_graph, test_graph, dist_voxels, "Leaf complete");
+    leaf_distance(test_graph, input_graph, dist_voxels, "Leaf correct");
 
     //branch_direction_distance(input_graph, test_tree, "Direction");
 
