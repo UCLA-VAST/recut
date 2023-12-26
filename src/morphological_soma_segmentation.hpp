@@ -101,7 +101,9 @@ auto swc_dir_to_graphs = [](
   return entries 
     | rv::filter(is_swc)
     | rv::transform([&](auto file) {
-      return swc_to_graph(file, voxel_size); })
+      auto [seed, graph, _] = swc_to_graph(file, voxel_size);
+      return std::make_pair(seed, graph);
+      })
     | rng::to_vector;
 };
 

@@ -3383,31 +3383,33 @@ template <class image_t> void Recut<image_t>::operator()() {
 
     std::cout << "Name, " << args->input_path.stem() << '\n';
     // get graphs
-    auto input_graph = swc_to_graph(args->input_path, args->voxel_size, zeros(), args->disable_swc_scaling).second;
-    auto test_graph = swc_to_graph(args->test.value(), args->voxel_size).second;
+    auto [_, input_graph, input_parents] = swc_to_graph(args->input_path, args->voxel_size, zeros(), args->disable_swc_scaling);
+    auto [__, test_graph, test_parents] = swc_to_graph(args->test.value(), args->voxel_size);
 
     // to test nearest points bring the sampling as high as possible
     resample(input_graph, .25 / args->voxel_size[0]);
     resample(test_graph, .25 / args->voxel_size[0]);
 
-    //auto input_tree = build_kdtree(input_graph);
-    //auto test_tree = build_kdtree(test_graph);
-
     double dist_voxels = args->match_distance / args->voxel_size[0];
     graph_distance(input_graph, test_graph, dist_voxels, "Complete");
     graph_distance(test_graph, input_graph, dist_voxels, "Correct");
-    //tree_distance(input_graph, test_tree, dist_voxels, "Complete");
-    //tree_distance(test_graph, input_tree, dist_voxels, "Correct");
 
-    branch_distance(input_graph, test_graph, dist_voxels, "Branch complete");
-    branch_distance(test_graph, input_graph, dist_voxels, "Branch correct");
+    auto [missed_branches, missed_direction_branches] = branch_distance(input_graph, input_parents,
+        test_graph, test_parents, dist_voxels, "Branch complete");
+    branch_distance(test_graph, test_parents, input_graph, input_parents, dist_voxels, "Branch correct", false);
 
     leaf_distance(input_graph, test_graph, dist_voxels, "Leaf complete");
     leaf_distance(test_graph, input_graph, dist_voxels, "Leaf correct");
 
-    //branch_direction_distance(input_graph, test_tree, "Direction");
+    std::cout << "Distance um, " << args->match_distance << '\n';
 
     /*
+    auto input_tree = build_kdtree(input_graph);
+    auto test_tree = build_kdtree(test_graph);
+
+    tree_distance(input_graph, test_tree, dist_voxels, "Complete");
+    tree_distance(test_graph, input_tree, dist_voxels, "Correct");
+    
     scale_neurites(input_graph);
     scale_neurites(test_graph);
 
@@ -3419,12 +3421,12 @@ template <class image_t> void Recut<image_t>::operator()() {
     calculate_skeleton_within_mask(test_graph, input, "Skeletal precision");
     // what proportion of the proofread input graph nodes are within the mask of the test
     calculate_skeleton_within_mask(input_graph, test, "Skeletal recall");
-    */
 
     // surface to surface accuracy metric
-    //calculate_recall_precision(input, test, args->save_vdbs);
+    calculate_recall_precision(input, test, args->save_vdbs);
     // skeleton to surface accuracy metric
-    //calculate_skeleton_within_surface(input_graph, test, "Skeletal recall");
+    calculate_skeleton_within_surface(input_graph, test, "Skeletal recall");
+    */
 
     exit(0);
   }
@@ -3554,11 +3556,11 @@ template <class image_t> void Recut<image_t>::operator()() {
       if (is_swc_dir(args->seed_path)) {
         auto pairs = swc_dir_to_graphs(args->seed_path, args->voxel_size);
         seeds = pairs | rv::keys | rng::to_vector;
-      }else {
+      } else {
         seeds = process_marker_dir(args->seed_path, args->voxel_size);
       }
     } else if (is_swc(args->seed_path)) {
-      auto [seed, _] = swc_to_graph(args->seed_path, args->voxel_size);
+      auto [seed, _, __] = swc_to_graph(args->seed_path, args->voxel_size);
       seeds = {seed};
     } else {
       throw std::runtime_error("Does not recognize seed type");

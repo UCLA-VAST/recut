@@ -1054,7 +1054,7 @@ void write_swcs(const AMGraph3D &component_graph, std::vector<GridCoord> soma_co
 // you can leave the coordinates and radii as is
 // the soma is guaranteed to be the first node of the returned graph at index 0
 // throws if more than 1 soma or if not at first line
-std::pair<Seed, AMGraph3D>
+std::tuple<Seed, AMGraph3D, std::vector<NodeID>>
 swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
     GridCoord image_offsets = zeros(), bool disable_swc_scaling=false, bool save_file = false) {
   ifstream ifs(swc_file);
@@ -1070,6 +1070,7 @@ swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
   auto min_voxel_size = min_max(voxel_size).first;
 
   std::vector<Seed> seeds;
+  std::vector<NodeID> parents;
   AMGraph3D g;
   std::vector<std::pair<NodeID, NodeID>> edges;
   while (ifs.good()) {
@@ -1127,9 +1128,9 @@ swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
       if (id != 1)
         throw std::runtime_error("Soma node must be first line of SWC");
     } else {
-      //g.connect_nodes(node_id, parent_id);
       edges.emplace_back(node_id, parent_id);
     }
+    parents.push_back(parent_id);
   }
 
   // connect all the nodes according to saved bidirectional edges
@@ -1145,7 +1146,7 @@ swc_to_graph(filesystem::path swc_file, std::array<double, 3> voxel_size,
   if (save_file)
     graph_save(swc_file.stem().string() + ".graph", g);
 
-  return std::make_pair(seeds.front(), g);
+  return std::make_tuple(seeds.front(), g, parents);
 }
 
 //openvdb::FloatGrid::Ptr skeleton_to_surface(const AMGraph3D &skeleton) {
@@ -1379,7 +1380,7 @@ openvdb::MaskGrid::Ptr swc_to_mask(filesystem::path swc_file,
     bool neurites_only=false, bool save_swcs = false) {
 
   bool merge_soma_on_top = false;
-  auto [seed, skeleton] = swc_to_graph(swc_file, voxel_size, image_offsets, disable_swc_scaling);
+  auto [seed, skeleton, _] = swc_to_graph(swc_file, voxel_size, image_offsets, disable_swc_scaling);
 
   auto mask = neurites_only ? graph_neurites_to_mask(skeleton, seed) : graph_to_mask(skeleton);
 
@@ -1401,7 +1402,7 @@ openvdb::FloatGrid::Ptr swc_to_surface(filesystem::path swc_file,
     bool neurites_only=false, bool save_swcs = false) {
 
   bool merge_soma_on_top = false;
-  auto [seed, skeleton] = swc_to_graph(swc_file, voxel_size, image_offsets, disable_swc_scaling);
+  auto [seed, skeleton, _] = swc_to_graph(swc_file, voxel_size, image_offsets, disable_swc_scaling);
   std::vector<Seed> seeds{seed};
 
   auto invalids = get_invalid_radii(skeleton);
@@ -1672,23 +1673,51 @@ void branch_distance(AMGraph3D& g, AMGraph3D& other, double dist_voxels, std::st
 }
 */
 
-void branch_distance(AMGraph3D& g, AMGraph3D& other, double dist_voxels, std::string name) {
+// returns missed branches and missed branch directions
+std::pair<std::vector<Pos>, std::vector<Pos>> branch_distance(AMGraph3D& g, std::vector<NodeID> g_parents,
+    AMGraph3D& other, std::vector<NodeID> other_parents, double dist_voxels, std::string name, bool report_direction=true) {
 
+  auto normalize = [](Pos pos) -> Pos {
+    auto divisor = std::sqrt(pos[0] * pos[0] + pos[1] * pos[1] + pos[2] * pos[2]);
+    return pos / divisor;
+    //pos[0] /= divisor;
+    //pos[1] /= divisor;
+    //pos[2] /= divisor;
+  };
+
+  std::vector<Pos> missed_branches;
+  std::vector<Pos> missed_direction_branches;
   auto branch_ids = get_branch_ids(g);
   int matches = 0;
+  int direction_matches = 0;
   for (auto i : branch_ids) {
     Pos pos = g.pos[i];
     for (auto j : get_branch_ids(other)) {
       Pos other_pos = other.pos[j];
       if (euc_dist(pos, other_pos) <= dist_voxels) {
         ++matches;
+
+        auto g_offset = g.pos[g_parents[i]] - g.pos[i];
+        auto other_offset = other.pos[other_parents[j]] - other.pos[j];
+        auto prod = CGLA::dot(CGLA::normalize(g_offset), CGLA::normalize(other_offset));
+        if (prod >= 0) // within 90 degrees of the right direction
+          ++direction_matches;
+        else
+          missed_direction_branches.push_back(pos);
         break;
       }
     }
+    //missed_branches.push_back(pos);
   }
 
   std::cout << name << " count, " << ' ' << matches << '/' << branch_ids.size() << '\n';
   std::cout << name << ", " << (static_cast<double>(matches) / branch_ids.size()) << '\n';
+  if (report_direction) {
+    std::cout << name << " direction count, " << ' ' << direction_matches << '/' << matches << '\n';
+    std::cout << name << " direction, " << (static_cast<double>(direction_matches) / matches) << '\n';
+  }
+
+  return std::make_pair(missed_branches, missed_direction_branches);
 }
 
 // skip 0, the soma
@@ -1715,3 +1744,9 @@ void leaf_distance(AMGraph3D& g, AMGraph3D& other, double dist_voxels, std::stri
   std::cout << name << " count, " << " " << matches << '/' << leaf_ids.size() << '\n';
   std::cout << name << ", " << (static_cast<double>(matches) / leaf_ids.size()) << '\n';
 }
+
+/*
+void branch_direction_distance(AMGraph3D& g, AMGraph3D& other, std::vector<std::pair<NodeID, NodeID>> branch_pairs) {
+  for (auto [l, r] : branch_pairs) {
+}
+*/
