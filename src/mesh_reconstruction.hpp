@@ -724,7 +724,7 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     auto last_layer_index = msg.layers.size() - 1;
     auto layer_index = args->coarsen_steps.value() > last_layer_index ? last_layer_index : args->coarsen_steps.value();
     g = msg.layers[layer_index];
-    component_log << "coarsen, " << timer.elapsed_formatted() << '\n';
+    component_log << "Surface smooth, " << timer.elapsed_formatted() << '\n';
   }
 
   if (args->saturate_edges) {
@@ -1628,7 +1628,7 @@ void graph_distance(AMGraph3D& g, AMGraph3D& other, double dist_voxels, std::str
       }
     }
   }
-  std::cout << name << " count, " << matches << '/' << g.no_nodes() << '\n';
+  //std::cout << name << " count, " << matches << '/' << g.no_nodes() << '\n';
   std::cout << name << ", " << (static_cast<double>(matches) / g.no_nodes()) << '\n';
 }
 
@@ -1677,14 +1677,6 @@ void branch_distance(AMGraph3D& g, AMGraph3D& other, double dist_voxels, std::st
 std::pair<std::vector<Pos>, std::vector<Pos>> branch_distance(AMGraph3D& g, std::vector<NodeID> g_parents,
     AMGraph3D& other, std::vector<NodeID> other_parents, double dist_voxels, std::string name, bool report_direction=true) {
 
-  auto normalize = [](Pos pos) -> Pos {
-    auto divisor = std::sqrt(pos[0] * pos[0] + pos[1] * pos[1] + pos[2] * pos[2]);
-    return pos / divisor;
-    //pos[0] /= divisor;
-    //pos[1] /= divisor;
-    //pos[2] /= divisor;
-  };
-
   std::vector<Pos> missed_branches;
   std::vector<Pos> missed_direction_branches;
   auto branch_ids = get_branch_ids(g);
@@ -1710,10 +1702,10 @@ std::pair<std::vector<Pos>, std::vector<Pos>> branch_distance(AMGraph3D& g, std:
     //missed_branches.push_back(pos);
   }
 
-  std::cout << name << " count, " << ' ' << matches << '/' << branch_ids.size() << '\n';
+  //std::cout << name << " count, " << ' ' << matches << '/' << branch_ids.size() << '\n';
   std::cout << name << ", " << (static_cast<double>(matches) / branch_ids.size()) << '\n';
   if (report_direction) {
-    std::cout << name << " direction count, " << ' ' << direction_matches << '/' << matches << '\n';
+    //std::cout << name << " direction count, " << ' ' << direction_matches << '/' << matches << '\n';
     std::cout << name << " direction, " << (static_cast<double>(direction_matches) / matches) << '\n';
   }
 
@@ -1741,12 +1733,6 @@ void leaf_distance(AMGraph3D& g, AMGraph3D& other, double dist_voxels, std::stri
     }
   }
 
-  std::cout << name << " count, " << " " << matches << '/' << leaf_ids.size() << '\n';
+  //std::cout << name << " count, " << " " << matches << '/' << leaf_ids.size() << '\n';
   std::cout << name << ", " << (static_cast<double>(matches) / leaf_ids.size()) << '\n';
 }
-
-/*
-void branch_direction_distance(AMGraph3D& g, AMGraph3D& other, std::vector<std::pair<NodeID, NodeID>> branch_pairs) {
-  for (auto [l, r] : branch_pairs) {
-}
-*/

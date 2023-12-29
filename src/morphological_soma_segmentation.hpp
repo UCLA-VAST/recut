@@ -482,45 +482,35 @@ std::vector<Seed> soma_segmentation(const openvdb::MaskGrid::Ptr mask_grid,
 
   // open again to filter axons and dendrites
   if (args->open_steps) {
-#ifdef LOG
     std::cout << "\tStart morphological open = " << args->open_steps.value()
               << '\n';
-#endif
     timer.restart();
     openvdb::tools::erodeActiveValues(neurite_mask->tree(),
                                       args->open_steps.value());
     openvdb::tools::pruneInactive(neurite_mask->tree());
     openvdb::tools::dilateActiveValues(neurite_mask->tree(),
                                        args->open_steps.value());
-    run_log << "Seed detection: opening time, " << timer.elapsed_formatted()
+    run_log << "Seed detection: morphological open, " << timer.elapsed_formatted()
             << "\n";
     run_log << "Seed detection: opened SDF voxel count, "
             << neurite_mask->activeVoxelCount() << "\n";
     run_log.flush();
-#ifdef LOG
     std::cout << "\tEnd morphological open\n";
-#endif
   }
 
-#ifdef LOG
-  std::cout << "\tsegmentation step\n";
-#endif
+  std::cout << "\tSeed connected component\n";
   std::vector<openvdb::MaskGrid::Ptr> final_soma_sdfs;
   timer.restart();
   // turn the whole sdf image into a vector of sdf for each connected
   // component
   vto::segmentActiveVoxels(*neurite_mask, final_soma_sdfs);
-  run_log << "Seed detection: segmentation time, " << timer.elapsed_formatted()
+  run_log << "Seed detection: connected component, " << timer.elapsed_formatted()
           << '\n'
           << "Seed detection: initial seed count, " << final_soma_sdfs.size()
           << '\n';
   run_log.flush();
 
-#ifdef LOG
   std::cout << "\tcreate seed pairs step\n";
-  std::cout << "\tmin allowed radius is " << args->min_radius_um << " µm\n";
-  std::cout << "\tmax allowed radius is " << args->max_radius_um << " µm\n";
-#endif
   timer.restart();
   // adds all valid markers to roots vector
   auto pairs =
@@ -532,9 +522,7 @@ std::vector<Seed> soma_segmentation(const openvdb::MaskGrid::Ptr mask_grid,
           << timer.elapsed_formatted() << '\n';
   run_log.flush();
 
-#ifdef LOG
   std::cout << "\tsaving " << seeds.size() << " seed coordinates to file ...\n";
-#endif
   run_log << "Seed detection: final seed count, " << seeds.size() << '\n';
   run_log.flush();
   write_seeds(run_dir, seeds, args->voxel_size);

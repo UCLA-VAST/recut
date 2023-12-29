@@ -26,7 +26,7 @@ def main(args):
 
     if not args.surface_only:
         # diadem_scores = rm_none((auto, handle_diadem_output(proof, auto, args.threshold, args.path_threshold, args.quiet) for proof, auto in matched))
-        results = {auto : handle_diadem_output(proof, auto, args.threshold, args.path_threshold, args.quiet) for proof, auto in matched}
+        results = {auto : handle_diadem_output(proof, auto, args.threshold, args.path_threshold, not args.verbose) for proof, auto in matched}
         diadem_scores = results.values()
         p('Diadem comparison', diadem_scores, matched)
         if len(diadem_scores):
@@ -34,14 +34,20 @@ def main(args):
             stats(np.std, diadem_scores)
 
     if not args.diadem_only:
-        accuracies = rm_none((handle_surface_output(voxel_sizes, param, args.quiet) for param in params))
-        acc_dict = {}
-        acc_dict['recall'] = list(map(lambda x: x[0], accuracies))
-        acc_dict['precision'] = list(map(lambda x: x[1], accuracies))
-        acc_dict['F1'] = list(map(lambda x: x[2], accuracies))
-        df = pd.DataFrame(data=acc_dict)
+        accuracies = [handle_surface_output(voxel_sizes, param, not args.verbose) for param in params]
         p("Comparison", accuracies, proofreads)
-        plot(df)
+        df = pd.concat(accuracies, axis=0)
+        # acc_dict = {}
+        # acc_dict['recall'] = list(map(lambda x: x[0], accuracies))
+        # acc_dict['precision'] = list(map(lambda x: x[1], accuracies))
+        # acc_dict['F1'] = list(map(lambda x: x[2], accuracies))
+        # df = pd.DataFrame(data=acc_dict)
+        # df = pd.concat([df, df.apply(['mean', 'median'])])
+        # df1 = pd.concat([df, df.apply('mean')])
+        # df = df.concat(df.agg(['sum', 'mean']))
+        print(df.mean())
+        # print(df)
+        # plot(df)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -54,7 +60,7 @@ if __name__ == "__main__":
     parser.add_argument('-p', '--path-threshold', type=float, help='By default the path distance threshold is calculated based off the DIADEM xy and z distance threshold / anisotropic factor both of which are dataset specific. Do not set this parameter or probe possible values unless you are specifically testing a reported hypothesis')
     parser.add_argument('-s', '--surface-only', action='store_true', help='If passed only the volumetric surface accuracies will be computed')
     parser.add_argument('-d', '--diadem-only', action='store_true', help='If passed only the diadem accuracies will be computed')
-    parser.add_argument('-q', '--quiet', action='store_true')
+    parser.add_argument('--verbose', action='store_true')
     args = parser.parse_args()
     if args.voxel_sizes[0] not in anisotropic_scale:
         raise Exception("Unrecognized dataset only .4 .4 .4 and 1 1 1 objectives allowed")

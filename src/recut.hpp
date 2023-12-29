@@ -2438,7 +2438,7 @@ void Recut<image_t>::update(std::string stage, Container &fifo) {
   {
     auto stage_acr = stage; // line up with paper
     if (stage == "convert")
-      stage_acr = "VC";
+      stage_acr = "VDB Conversion";
     if (stage == "connected")
       stage_acr = "CC";
     if (stage == "radius")
@@ -3055,7 +3055,7 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << "Input: x-axis voxel size in µm, " << args->voxel_size[0] << '\n'
             << "Input: y-axis voxel size in µm, " << args->voxel_size[1] << '\n'
             << "Input: z-axis voxel size in µm, " << args->voxel_size[2] << '\n'
-            << "Input: voxel count, " << coord_prod_accum(this->image_lengths) << '\n'
+            << "Input: dense voxel count, " << coord_prod_accum(this->image_lengths) << '\n'
             << "Seed action, " << args->seed_action
             << '\n';
     if (args->foreground_percent >= 0) {
@@ -3077,16 +3077,16 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << args->close_steps.value_or(0) << '\n'
             << "Seed detection: morphological operations open steps, "
             << args->open_steps.value_or(0) << '\n'
-            << "Seed detection: min allowed soma radius in µm, "
-            << args->min_radius_um << '\n'
-            << "Seed detection: max allowed soma radius in µm, "
-            << args->max_radius_um
-            << '\n'
+            //<< "Seed detection: min allowed soma radius in µm, "
+            //<< args->min_radius_um << '\n'
+            //<< "Seed detection: max allowed soma radius in µm, "
+            //<< args->max_radius_um
+            //<< '\n'
             << "Skeletonization: soma dilation, "
             << args->soma_dilation.value_or(1) << '\n'
-            << "Skeletonization: coarsen steps, "
+            << "Skeletonization: surface smooth steps, "
             << args->coarsen_steps.value() << '\n'
-            << "Skeletonization: smooth steps, "
+            << "Skeletonization: skeletal smooth steps, "
             << args->smooth_steps.value() << '\n'
             << "Benchmarking: run app2, " << args->run_app2 << '\n';
             //<< "Skeletonization: min branch length µm, "
@@ -3127,16 +3127,12 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
   std::ofstream run_log;
   run_log.open(log_fn, std::ios::app);
 
-  auto total_timer = high_resolution_timer();
-
-  // aggregate disjoint connected components
-  auto segment_timer = high_resolution_timer();
-
-  // TODO may need to change this to SDF
+  // separate disjoint connected components
+  auto cc_timer = high_resolution_timer();
   std::vector<openvdb::FloatGrid::Ptr> components;
   // segment SDF can handle asymmetric inside and outside values
   vto::segmentSDF(*connected_grid, components);
-  run_log << "SG, " << segment_timer.elapsed_formatted() << '\n';
+  run_log << "Connected component, " << cc_timer.elapsed_formatted() << '\n';
   run_log << "Component count: " << components.size() << '\n';
   run_log.flush();
 
@@ -3323,19 +3319,19 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
   auto enum_components =
       components | rv::enumerate | rv::reverse | rng::to_vector;
 
-  auto tctp_timer = high_resolution_timer();
+  auto skeleton_timer = high_resolution_timer();
 
   tbb::task_arena arena(inter_thread_count);
   arena.execute(
       [&] { tbb::parallel_for_each(enum_components, process_component); });
-
   //rng::for_each(enum_components, process_component);
 
   // only log this if it isn't occluded by app2 and window write times
-  if (!(args->run_app2 || !args->window_grid_paths.empty())) {
-    run_log << "TC+TP, " << tctp_timer.elapsed() << '\n';
+  if (args->window_grid_paths.empty()) {
+    run_log << "Skeleton, " << skeleton_timer.elapsed_formatted() << '\n';
+  } else {
+    run_log << "Skeleton+windowing, " << skeleton_timer.elapsed_formatted() << '\n';
   }
-  run_log << "Aggregated prune, " << total_timer.elapsed_formatted() << '\n';
   run_log << "Neuron count, " << seeds.size() << '\n';
   run_log << "Failed component count, " << failed_components << '\n';
 }
@@ -3381,7 +3377,8 @@ template <class image_t> void Recut<image_t>::operator()() {
     if (args->disable_swc_scaling) 
       std::cout << "Passing --disable-swc-scaling means the inputs/ground truths are assumed to already ke in voxel units\n";
 
-    std::cout << "Name, " << args->input_path.stem() << '\n';
+    //std::string name = args->input_path.stem().generic_string() | rv::split(',') | rv::join(' ') | rng::to<std::string>() << '\n';
+    //std::cout << "Name, " << name << '\n';
     // get graphs
     auto [_, input_graph, input_parents] = swc_to_graph(args->input_path, args->voxel_size, zeros(), args->disable_swc_scaling);
     auto [__, test_graph, test_parents] = swc_to_graph(args->test.value(), args->voxel_size);
@@ -3401,7 +3398,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     leaf_distance(input_graph, test_graph, dist_voxels, "Leaf complete");
     leaf_distance(test_graph, input_graph, dist_voxels, "Leaf correct");
 
-    std::cout << "Distance um, " << args->match_distance << '\n';
+    //std::cout << "Distance um, " << args->match_distance << '\n';
 
     /*
     auto input_tree = build_kdtree(input_graph);
@@ -3615,7 +3612,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     openvdb::tools::erodeActiveValues(this->mask_grid->tree(),
                                       args->close_steps.value());
     openvdb::tools::pruneInactive(this->mask_grid->tree());
-    run_log << "Seed detection: closing time, " << timer.elapsed_formatted()
+    run_log << "Seed detection: morphological close, " << timer.elapsed_formatted()
             << '\n';
   }
 
@@ -3660,7 +3657,7 @@ template <class image_t> void Recut<image_t>::operator()() {
   auto connected_sdf = vto::maskSdf(*sdf_grid, *(this->mask_grid), false,
       sweep_iters, /*resurfaceReachable*/true);
 
-  run_log << "CC, " << timer.elapsed_formatted() << '\n';
+  run_log << "Cell, " << timer.elapsed_formatted() << '\n';
   run_log << "Connected active voxel count, "
           << connected_sdf->activeVoxelCount() << '\n';
   run_log.flush();

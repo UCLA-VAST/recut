@@ -9,6 +9,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import pandas as pd
+from io import StringIO
 
 matching_distance = 30
 
@@ -180,14 +181,15 @@ def extract_accuracy(result, diadem=False, quiet=False):
     if result:
         if result.stdout:
             if not quiet:
-                print('output: ', result.stdout)
+                print(result.stdout)
             if diadem:
                 return last_float(result.stdout)
             else:
-                ex = partial(extract, result.stdout)
+                return pd.read_csv(StringIO(result.stdout), header=None).T
+                # ex = partial(extract, result.stdout)
                 # uncomment to get the surface to surface accuracies
                 # return ex('recall'), ex('precision'), ex('F1')
-                return ex('recall'), ex('precision'), 0
+                # return ex('recall'), ex('precision'), 0
         if result.stderr:
             if not quiet:
                 print('error: ', result.stderr)
@@ -213,14 +215,15 @@ def handle_diadem_output(proof_swc, auto_swc, threshold, path_threshold, quiet=F
 
 def handle_surface_output(kwargs, match, quiet=False):
     returncode = run_surface_accuracy(kwargs, *match, quiet)
-    is_success = extract_accuracy(returncode, False, quiet)
-    if is_success:
+    df = extract_accuracy(returncode, False, quiet)
+    df = pd.DataFrame(df.values[1:], columns=df.iloc[0])
+    if not df.empty:
         if not quiet:
             print("Success")
-            print(is_success)
+            print(df)
             print()
             print()
-        return is_success
+        return df
     if not quiet:
         print("Failed in compare")
     return None
