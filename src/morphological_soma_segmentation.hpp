@@ -490,9 +490,9 @@ std::vector<Seed> soma_segmentation(const openvdb::MaskGrid::Ptr mask_grid,
     openvdb::tools::pruneInactive(neurite_mask->tree());
     openvdb::tools::dilateActiveValues(neurite_mask->tree(),
                                        args->open_steps.value());
-    run_log << "Seed detection: morphological open, " << timer.elapsed_formatted()
+    run_log << "Morphological open, " << timer.elapsed_formatted()
             << "\n";
-    run_log << "Seed detection: opened SDF voxel count, "
+    run_log << "Seed opened voxel count, "
             << neurite_mask->activeVoxelCount() << "\n";
     run_log.flush();
     std::cout << "\tEnd morphological open\n";
@@ -504,9 +504,9 @@ std::vector<Seed> soma_segmentation(const openvdb::MaskGrid::Ptr mask_grid,
   // turn the whole sdf image into a vector of sdf for each connected
   // component
   vto::segmentActiveVoxels(*neurite_mask, final_soma_sdfs);
-  run_log << "Seed detection: connected component, " << timer.elapsed_formatted()
+  run_log << "Seed connected component, " << timer.elapsed_formatted()
           << '\n'
-          << "Seed detection: initial seed count, " << final_soma_sdfs.size()
+          << "Initial seed count, " << final_soma_sdfs.size()
           << '\n';
   run_log.flush();
 
@@ -518,12 +518,12 @@ std::vector<Seed> soma_segmentation(const openvdb::MaskGrid::Ptr mask_grid,
                         args->max_radius_um, args->output_type);
   auto seeds = pairs.first;
   final_soma_sdfs = pairs.second;
-  run_log << "Seed detection: seed pairs creation time, "
-          << timer.elapsed_formatted() << '\n';
-  run_log.flush();
+  //run_log << "Seed pairs creation time, "
+          //<< timer.elapsed_formatted() << '\n';
+  //run_log.flush();
 
   std::cout << "\tsaving " << seeds.size() << " seed coordinates to file ...\n";
-  run_log << "Seed detection: final seed count, " << seeds.size() << '\n';
+  run_log << "Final seed count, " << seeds.size() << '\n';
   run_log.flush();
   write_seeds(run_dir, seeds, args->voxel_size);
 

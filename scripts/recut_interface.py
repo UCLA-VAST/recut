@@ -271,6 +271,12 @@ def p(name, l, l2=None):
         print('/' + str(len(l2)) + ', ' + str(float(len(l)) / len(l2)), end='')
     print()
 
+# to seconds
+def parse_formatted_time(time):
+    strings = time.split(':')
+    l =  [int(v) for v in strings]
+    return l[0] * 3600 * 24 + l[1] * 3600 + l[2] * 60 + l[3]
+
 # def get_log(run_dir):
     # log = run_dir + "/log.swc"
     # f = pd.read_csv(log, header=None).T

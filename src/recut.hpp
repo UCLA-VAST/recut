@@ -2438,7 +2438,7 @@ void Recut<image_t>::update(std::string stage, Container &fifo) {
   {
     auto stage_acr = stage; // line up with paper
     if (stage == "convert")
-      stage_acr = "VDB Conversion";
+      stage_acr = "VDB conversion";
     if (stage == "connected")
       stage_acr = "CC";
     if (stage == "radius")
@@ -2851,12 +2851,12 @@ template <class image_t> void Recut<image_t>::initialize() {
           this->args->tile_lengths[2] < 1 ? 8 : this->args->tile_lengths[2];
     }
 
-    print_coord(this->image_lengths, "image voxel dimensions");
+    print_coord(this->image_lengths, "Image voxel dimensions");
     update_hierarchical_dims(this->tile_lengths);
     this->connected_grid = openvdb::MaskGrid::create();
     this->connected_grid->setTransform(get_transform());
 
-    std::cout << "voxel sizes:"
+    std::cout << "Voxel sizes:"
               << " x=" << this->args->voxel_size[0] << " µm"
               << " y=" << this->args->voxel_size[1] << " µm"
               << " z=" << this->args->voxel_size[2] << " µm\n";
@@ -3050,47 +3050,40 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
     std::cout << "All outputs will be written to: " << this->run_dir << '\n';
     std::ofstream run_log(log_fn);
     run_log << "Thread count, " << args->user_thread_count << '\n'
-            << "Input: path, " << args->input_path << '\n'
-            << "Input: type, " << args->input_type << '\n'
-            << "Input: x-axis voxel size in µm, " << args->voxel_size[0] << '\n'
-            << "Input: y-axis voxel size in µm, " << args->voxel_size[1] << '\n'
-            << "Input: z-axis voxel size in µm, " << args->voxel_size[2] << '\n'
-            << "Input: dense voxel count, " << coord_prod_accum(this->image_lengths) << '\n'
+            << "Input path, " << args->input_path << '\n'
+            << "Input type, " << args->input_type << '\n'
+            << "x-axis voxel size in µm, " << args->voxel_size[0] << '\n'
+            << "y-axis voxel size in µm, " << args->voxel_size[1] << '\n'
+            << "z-axis voxel size in µm, " << args->voxel_size[2] << '\n'
+            << "Dense voxel count, " << coord_prod_accum(this->image_lengths) << '\n'
             << "Seed action, " << args->seed_action
             << '\n';
     if (args->foreground_percent >= 0) {
       std::ostringstream out;
       out.precision(3);
       out << std::fixed << args->foreground_percent;
-      run_log << "Preprocessing: Foreground in %, " << out.str() << '\n';
+      run_log << "Foreground in %, " << out.str() << '\n';
     } else if (args->background_thresh >= 0) {
       // setting fg would set background value
       // so only log if it was input without a fg %
-      run_log << "Preprocessing: Background threshold, "
+      run_log << "Background threshold, "
               << args->background_thresh << '\n';
     }
-    run_log << "Output: type, " << args->output_type << '\n';
+    run_log << "Output type, " << args->output_type << '\n';
     if (args->seed_path != "") {
-      run_log << "Seed detection: Seeds path, " << args->seed_path << '\n';
+      run_log << "Seeds path, " << args->seed_path << '\n';
     }
-    run_log << "Seed detection: morphological operations close steps, "
+    run_log << "Morphological close steps, "
             << args->close_steps.value_or(0) << '\n'
-            << "Seed detection: morphological operations open steps, "
+            << "Morphological open steps, "
             << args->open_steps.value_or(0) << '\n'
-            //<< "Seed detection: min allowed soma radius in µm, "
-            //<< args->min_radius_um << '\n'
-            //<< "Seed detection: max allowed soma radius in µm, "
-            //<< args->max_radius_um
-            //<< '\n'
-            << "Skeletonization: soma dilation, "
+            << "Soma dilation, "
             << args->soma_dilation.value_or(1) << '\n'
-            << "Skeletonization: surface smooth steps, "
+            << "Surface smooth steps, "
             << args->coarsen_steps.value() << '\n'
-            << "Skeletonization: skeletal smooth steps, "
+            << "Skeletal smooth steps, "
             << args->smooth_steps.value() << '\n'
-            << "Benchmarking: run app2, " << args->run_app2 << '\n';
-            //<< "Skeletonization: min branch length µm, "
-            //<< args->min_branch_length << '\n'
+            << "Run app2, " << args->run_app2 << '\n';
     run_log.flush();
   }
 }
@@ -3132,8 +3125,8 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
   std::vector<openvdb::FloatGrid::Ptr> components;
   // segment SDF can handle asymmetric inside and outside values
   vto::segmentSDF(*connected_grid, components);
-  run_log << "Connected component, " << cc_timer.elapsed_formatted() << '\n';
-  run_log << "Component count: " << components.size() << '\n';
+  run_log << "Cell connected component, " << cc_timer.elapsed_formatted() << '\n';
+  run_log << "Cell component count: " << components.size() << '\n';
   run_log.flush();
 
   // assign parallelization either within the component or between components
@@ -3612,7 +3605,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     openvdb::tools::erodeActiveValues(this->mask_grid->tree(),
                                       args->close_steps.value());
     openvdb::tools::pruneInactive(this->mask_grid->tree());
-    run_log << "Seed detection: morphological close, " << timer.elapsed_formatted()
+    run_log << "Morphological close, " << timer.elapsed_formatted()
             << '\n';
   }
 
@@ -3640,7 +3633,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     }
   }
 
-  run_log << "Foreground active voxel count, "
+  run_log << "Sparse voxel count, "
           << this->mask_grid->activeVoxelCount() << '\n';
   run_log << "Seed count, " << seeds.size() << '\n';
   run_log.flush();
@@ -3657,8 +3650,8 @@ template <class image_t> void Recut<image_t>::operator()() {
   auto connected_sdf = vto::maskSdf(*sdf_grid, *(this->mask_grid), false,
       sweep_iters, /*resurfaceReachable*/true);
 
-  run_log << "Cell, " << timer.elapsed_formatted() << '\n';
-  run_log << "Connected active voxel count, "
+  run_log << "Cell segmentation, " << timer.elapsed_formatted() << '\n';
+  run_log << "Reachable voxel count, "
           << connected_sdf->activeVoxelCount() << '\n';
   run_log.flush();
 

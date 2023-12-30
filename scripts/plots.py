@@ -3,6 +3,7 @@ import argparse
 # set backend that allows save plots without X11 forwarding/
 # $DISPLAY set
 import matplotlib
+import itertools
 # matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import subprocess
@@ -13,6 +14,7 @@ from os import walk
 import pandas as pd
 import numpy as np
 from matplotlib import rc
+from recut_interface import parse_formatted_time
 rc('font',**{'family':'serif','serif':['Palatino']})
 rc('text', usetex=True)
 
@@ -202,8 +204,14 @@ def throughput(args):
 
 def stages(args):
     ''' Show runtime comparison of stages'''
-    # aggregate data
-    stage_names = ['VC', 'CC', 'SDF', 'TC+TP']
+
+    stage_to_col = {'Convert' : ['VDB conversion'],
+              'Seed': ['Morphological open', 'Morphological close', 'Seed connected component'],
+              'Cell' : ['Cell segmentation', 'Cell connected component'],
+              'Skeleton' : ['Skeleton']}
+    time_columns = list(itertools.chain(stage_to_col.values()))
+    to_seconds = np.vectorize(parse_formatted_time)
+
     textures = ['///', '...', '', 'OOO']
     bar_width = 1
     xscale = 4.5
@@ -216,7 +224,8 @@ def stages(args):
                 if 'log.csv' == file:
                     print(name)
                     f = pd.read_csv(name, header=None).T
-                    f = f.rename(columns=f.iloc[0]).drop(f.index[0])[['VC', 'CC', 'SDF', 'TC+TP', 'Thread count', 'Original voxel count', 'Selected', 'Neuron count']].astype({'Thread count':'int'})
+                    # todo convert elapsed formatted to minutes
+                    f = f.rename(columns=f.iloc[0]).drop(f.index[0])[['VDB conversion', 'Morphological open', 'Morphological close', 'Seed connected component', 'Thread count', 'Dense voxel count', 'Sparse voxel count', 'Neuron count', 'Cell segmentation', 'Cell connected component', 'Skeleton']].astype({'Thread count':'int'})
                     frames.append(f)
                 # take VC stage only with rest of stages
                 # elif 'point.vdb-log-' in file:
@@ -225,8 +234,16 @@ def stages(args):
                     # f = f.rename(columns=f.iloc[0]).drop(f.index[0])[['VC', 'Thread count']].astype({'Thread count':'int'})
                     # convert_frames.append(f)
             except:
-              print("Could not process file: " + name)
+                print("Could not process file: " + name)
     df = pd.concat(frames)
+    for stage in stage_to_col.keys():
+        arr = to_seconds(df[stage_to_col[stage]])
+        s = np.sum(arr, axis=1)
+        df[stage] = s
+    for col in time_columns[:-1]:
+        df.drop(col, axis=1, inplace=True)
+    print(df)
+    # import pdb; pdb.set_trace()
     # cv = pd.concat(convert_frames)
     # merged = pd.merge(cv, df, how='inner', on=['Thread count'])
     # g = df.groupby('Thread count')
@@ -240,21 +257,24 @@ def stages(args):
     xlabel = df['Thread count'].astype('int32').astype('str')
     x = xscale * np.arange(len(xlabel))
     bottoms = np.zeros(len(x))
-    for texture, stage in zip(textures, stage_names):
+    for texture, stage in zip(textures, stage_to_col.keys()):
       y = df[stage] / 60
       bars = ax.bar(x - (2 * bar_width), y, bottom=bottoms, edgecolor='black', hatch=texture, color='White', width=bar_width, align='edge', label=stage + ' minutes')
       bottoms += y
     ax.bar_label(bars, fmt='%d')
 
-    df['Runtime'] = df[list(df.columns)[:4]].sum(axis=1)
-    # 16bit 2 Bytes per  voxel
-    name = 'TB/day'
-    df[name] = (df['Original voxel count'].div(df['Runtime']) * 2) * 3600 * 24 / 1e+12
+    # for stage in time_columns:
+    arr = df[stage_to_col.keys()]
+    s = np.sum(arr, axis=1)
+    df['Runtime'] = s
+    name = 'Teravoxels/day'
+    df[name] = (df['Dense voxel count'].div(df['Runtime'])) * 3600 * 24 / 1e+12
     bars = axx.bar(x - bar_width, df[name], edgecolor='black', color='Black', width=bar_width, align='edge', label=name)
     axx.bar_label(bars, fmt='%d')
 
+    # remove this
     name = 'Kvertex/s'
-    df[name] = df['Selected'].div(df['Runtime']) / 1e+03
+    df[name] = df['Sparse voxel count'].div(df['Runtime']) / 1e+03
     bars = axx.bar(x, df[name], edgecolor='black', color='DarkGray', width=bar_width, align='edge', label=name)
     axx.bar_label(bars, fmt='%d')
 
@@ -263,16 +283,18 @@ def stages(args):
     bars = axx.bar(x+bar_width, df[name], edgecolor='black', color='LightGray', width=bar_width, align='edge', label=name)
     axx.bar_label(bars, fmt='%d')
 
-    ax.set_ylabel('Runtime per 170 GB volume (minutes)')
+    ax.set_ylabel('Runtime per mouse brain (1.79 Teravoxels) (minutes)')
     axx.set_ylabel('Throughput')
     loc=(.4, 1.0)
     ax.legend(loc='upper right', bbox_to_anchor=loc)
     axx.legend(loc='upper left', bbox_to_anchor=loc)
     ax.set_xticks(x)
     ax.set_xticklabels(xlabel)
-    ax.set_title('Runtime and Throughput Scaling')
+    # refer to it as runtime and throughput
+    ax.set_title('Empirical Scaling and Performance')
     fig.tight_layout()
     fig.show()
+    fig.savefig('test.png')
     import pdb; pdb.set_trace()
 
 def value(args):
@@ -586,6 +608,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Recompile code with various preprocessor definitions and optionally run and plot all results")
 
     group = parser.add_mutually_exclusive_group()
+    parser.add_argument('output', help="input/output data directory")
     group.add_argument('-a', '--all', help="Use all known cases",
             action="store_true")
     group.add_argument('-c', '--case', help="Specify which case to use",
@@ -600,8 +623,7 @@ if __name__ == '__main__':
 
     project_dir = os.path.join(os.path.dirname(__file__), '../')
     bin_dir = project_dir + 'bin/'
-    data_dir = project_dir + 'data/'
-    parser.add_argument('-o', '--output', help="output data directory", default=data_dir)
+    # data_dir = project_dir + 'data/'
     parser.add_argument('-b', '--binary', help="binary directory", default=bin_dir)
     parser.add_argument('-p', '--project', help="project directory", default=project_dir)
 
