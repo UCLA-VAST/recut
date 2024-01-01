@@ -1,8 +1,36 @@
 #!/bin/bash
 
-timeout 6h recut images/04_Ex_647_Em_690_deconvolved --fg-percent .1 --seeds proofread-swcs --coarsen-steps 2
-timeout 6h recut images/04_Ex_647_Em_690_deconvolved --fg-percent .1 --seeds proofread-swcs --coarsen-steps 0
-#recut images --fg-percent .1 --output-type seeds
+# change to the mask file
+timeout 6h recut images/Ex_488_Em_525_6x_8bit2bsh_tif_deconvolved_zl1 --fg-percent .1 --output-type seeds --voxel-size .4 .4 .4 -pl 256
+timeout 6h recut images/Ex_488_Em_525_6x_8bit2bsh_tif_deconvolved_zl1/img-mask-fgpct-0.100.vdb --fg-percent .1 --seeds final-proofread-swcs --coarsen-steps 2 --voxel-size .4 .4 .4 --smooth-steps 0 -pl 256
+
+timeout 6h recut images/Ex_488_Em_525_6x_8bit2bsh_tif_deconvolved_zl1 --fg-percent .1 --output-type seeds --voxel-size .4 .4 .4 -pl 128
+timeout 6h recut images/Ex_488_Em_525_6x_8bit2bsh_tif_deconvolved_zl1/img-mask-fgpct-0.100.vdb --fg-percent .1 --seeds final-proofread-swcs --coarsen-steps 2 --voxel-size .4 .4 .4 --smooth-steps 0 -pl 128
+
+timeout 6h recut images/Ex_488_Em_525_6x_8bit2bsh_tif_deconvolved_zl1 --fg-percent .1 --output-type seeds --voxel-size .4 .4 .4 -pl 64
+timeout 6h recut images/Ex_488_Em_525_6x_8bit2bsh_tif_deconvolved_zl1/img-mask-fgpct-0.100.vdb --fg-percent .1 --seeds final-proofread-swcs --coarsen-steps 2 --voxel-size .4 .4 .4 --smooth-steps 0 -pl 64
+
+timeout 6h recut images/Ex_488_Em_525_6x_8bit2bsh_tif_deconvolved_zl1 --fg-percent .1 --output-type seeds --voxel-size .4 .4 .4 -pl 32
+timeout 6h recut images/Ex_488_Em_525_6x_8bit2bsh_tif_deconvolved_zl1/img-mask-fgpct-0.100.vdb --fg-percent .1 --seeds final-proofread-swcs --coarsen-steps 2 --voxel-size .4 .4 .4 --smooth-steps 0 -pl 32
+
+timeout 6h recut images/Ex_488_Em_525_6x_8bit2bsh_tif_deconvolved_zl1 --fg-percent .1 --output-type seeds --voxel-size .4 .4 .4 -pl 16
+timeout 6h recut images/Ex_488_Em_525_6x_8bit2bsh_tif_deconvolved_zl1/img-mask-fgpct-0.100.vdb --fg-percent .1 --seeds final-proofread-swcs --coarsen-steps 2 --voxel-size .4 .4 .4 --smooth-steps 0 -pl 16
+
+timeout 6h recut images/Ex_488_Em_525_6x_8bit2bsh_tif_deconvolved_zl1 --fg-percent .1 --output-type seeds --voxel-size .4 .4 .4 -pl 8
+timeout 6h recut images/Ex_488_Em_525_6x_8bit2bsh_tif_deconvolved_zl1/img-mask-fgpct-0.100.vdb --fg-percent .1 --seeds final-proofread-swcs --coarsen-steps 2 --voxel-size .4 .4 .4 --smooth-steps 0 -pl 8
+
+timeout 6h recut images/Ex_488_Em_525_6x_8bit2bsh_tif_deconvolved_zl1 --fg-percent .1 --output-type seeds --voxel-size .4 .4 .4 -pl 4
+timeout 6h recut images/Ex_488_Em_525_6x_8bit2bsh_tif_deconvolved_zl1/img-mask-fgpct-0.100.vdb --fg-percent .1 --seeds final-proofread-swcs --coarsen-steps 2 --voxel-size .4 .4 .4 --smooth-steps 0 -pl 4
+
+timeout 6h recut images/Ex_488_Em_525_6x_8bit2bsh_tif_deconvolved_zl1 --fg-percent .1 --output-type seeds --voxel-size .4 .4 .4 -pl 2
+timeout 6h recut images/Ex_488_Em_525_6x_8bit2bsh_tif_deconvolved_zl1/img-mask-fgpct-0.100.vdb --fg-percent .1 --seeds final-proofread-swcs --coarsen-steps 2 --voxel-size .4 .4 .4 --smooth-steps 0 -pl 2
+
+#timeout 6h recut images/04_Ex_647_Em_690_deconvolved/img-mask-fgpct-0.100.vdb --fg-percent .1 --seeds proofread-swcs --coarsen-steps 4 --voxel-size .4 .4 .4 --smooth-steps 0
+#timeout 6h recut images/04_Ex_647_Em_690_deconvolved/img-mask-fgpct-0.100.vdb --fg-percent .1 --seeds proofread-swcs --coarsen-steps 3 --voxel-size .4 .4 .4 --smooth-steps 0
+#timeout 6h recut images/04_Ex_647_Em_690_deconvolved/img-mask-fgpct-0.100.vdb --fg-percent .1 --seeds proofread-swcs --coarsen-steps 2 --voxel-size .4 .4 .4 --smooth-steps 0
+#timeout 6h recut images/04_Ex_647_Em_690_deconvolved/img-mask-fgpct-0.100.vdb --fg-percent .1 --seeds proofread-swcs --coarsen-steps 1 --voxel-size .4 .4 .4 --smooth-steps 0
+#timeout 6h recut images/04_Ex_647_Em_690_deconvolved/img-mask-fgpct-0.100.vdb --fg-percent .1 --seeds proofread-swcs --coarsen-steps 0 --voxel-size .4 .4 .4 --smooth-steps 0
+#recut --fg-percent .1 --output-type seeds
 
 #recut vdbs/img-mask-fgpct-0.100.vdb --fg-percent .1 --seeds Inspected_FNT_renamed_sorted
 #recut vdbs/img-mask-fgpct-0.100.vdb --fg-percent .1 --output-type seeds
