@@ -492,6 +492,7 @@ std::vector<Seed> soma_segmentation(const openvdb::MaskGrid::Ptr mask_grid,
                                        args->open_steps.value());
     run_log << "Morphological open, " << timer.elapsed_formatted()
             << "\n";
+    run_log.flush();
     run_log << "Seed opened voxel count, "
             << neurite_mask->activeVoxelCount() << "\n";
     run_log.flush();
