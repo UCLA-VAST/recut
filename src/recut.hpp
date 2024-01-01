@@ -3607,6 +3607,7 @@ template <class image_t> void Recut<image_t>::operator()() {
     openvdb::tools::pruneInactive(this->mask_grid->tree());
     run_log << "Morphological close, " << timer.elapsed_formatted()
             << '\n';
+    run_log.flush();
   }
 
   if (seeds.empty())
@@ -3635,6 +3636,7 @@ template <class image_t> void Recut<image_t>::operator()() {
 
   run_log << "Sparse voxel count, "
           << this->mask_grid->activeVoxelCount() << '\n';
+  run_log.flush();
   run_log << "Seed count, " << seeds.size() << '\n';
   run_log.flush();
 
@@ -3651,6 +3653,7 @@ template <class image_t> void Recut<image_t>::operator()() {
       sweep_iters, /*resurfaceReachable*/true);
 
   run_log << "Cell segmentation, " << timer.elapsed_formatted() << '\n';
+  run_log.flush();
   run_log << "Reachable voxel count, "
           << connected_sdf->activeVoxelCount() << '\n';
   run_log.flush();
