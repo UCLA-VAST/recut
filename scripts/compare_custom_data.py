@@ -27,7 +27,8 @@ def main(args):
     if not args.surface_only:
         # diadem_scores = rm_none((auto, handle_diadem_output(proof, auto, args.threshold, args.path_threshold, args.quiet) for proof, auto in matched))
         results = {auto : handle_diadem_output(proof, auto, args.threshold, args.path_threshold, not args.verbose) for proof, auto in matched}
-        diadem_scores = results.values()
+        diadem_scores = [*results.values()]
+        diadem_scores = rm_none(diadem_scores)
         p('Diadem comparison', diadem_scores, matched)
         if len(diadem_scores):
             stats(np.mean, diadem_scores)
@@ -37,6 +38,7 @@ def main(args):
         accuracies = [handle_surface_output(voxel_sizes, param, not args.verbose) for param in params]
         p("Comparison", accuracies, proofreads)
         df = pd.concat(accuracies, axis=0)
+        import pdb; pdb.set_trace()
         # acc_dict = {}
         # acc_dict['recall'] = list(map(lambda x: x[0], accuracies))
         # acc_dict['precision'] = list(map(lambda x: x[1], accuracies))
