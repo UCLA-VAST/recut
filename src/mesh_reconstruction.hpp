@@ -1629,8 +1629,8 @@ void graph_distance(AMGraph3D& g, AMGraph3D& other, double dist_voxels, std::str
     }
   }
   //std::cout << name << " count, " << matches << '/' << g.no_nodes() << '\n';
-  int gcount = g.no_nodes();
-  std::cout << name << ", " << (static_cast<double>(matches) / gcount) << '\n';
+  int ncount = g.no_nodes();
+  std::cout << name << ", " << (ncount ? static_cast<double>(matches) / ncount : 0) << '\n';
 }
 
 //void tree_distance(AMGraph3D& g, KDTree &kdtree, double dist_voxels, std::string name) {
@@ -1705,10 +1705,10 @@ std::pair<std::vector<Pos>, std::vector<Pos>> branch_distance(AMGraph3D& g, std:
 
   //std::cout << name << " count, " << ' ' << matches << '/' << branch_ids.size() << '\n';
   int bcount = branch_ids.size();
-  std::cout << name << ", " << bcount ? (static_cast<double>(matches) / bcount) : 0 << '\n';
+  std::cout << name << ", " << (bcount ? (static_cast<double>(matches) / bcount) : 0) << '\n';
   if (report_direction) {
     //std::cout << name << " direction count, " << ' ' << direction_matches << '/' << matches << '\n';
-    std::cout << name << " direction, " << matches ? (static_cast<double>(direction_matches) / matches) : 0 << '\n';
+    std::cout << name << " direction, " << (matches ? (static_cast<double>(direction_matches) / matches) : 0) << '\n';
   }
 
   return std::make_pair(missed_branches, missed_direction_branches);
@@ -1737,5 +1737,5 @@ void leaf_distance(AMGraph3D& g, AMGraph3D& other, double dist_voxels, std::stri
 
   //std::cout << name << " count, " << " " << matches << '/' << leaf_ids.size() << '\n';
   int lcount = leaf_ids.size();
-  std::cout << name << ", " << lcount ? (static_cast<double>(matches) / lcount) : 0 << '\n';
+  std::cout << name << ", " << (lcount ? (static_cast<double>(matches) / lcount) : 0) << '\n';
 }

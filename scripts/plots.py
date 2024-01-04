@@ -253,13 +253,13 @@ def stages(args):
     fig, ax = plt.subplots()
     axx = ax.twinx()
     df = df.astype(np.float64).sort_values('Thread count')
-    # stacked stages
+    # stacked stages, convert to cores
     xlabel = df['Thread count'].astype('int32').astype('str')
     x = xscale * np.arange(len(xlabel))
     bottoms = np.zeros(len(x))
     for texture, stage in zip(textures, stage_to_col.keys()):
       y = df[stage] / 60
-      bars = ax.bar(x - (2 * bar_width), y, bottom=bottoms, edgecolor='black', hatch=texture, color='White', width=bar_width, align='edge', label=stage + ' minutes')
+      bars = ax.bar(x - (2 * bar_width + .2), y, bottom=bottoms, edgecolor='black', hatch=texture, color='White', width=bar_width, align='edge', label=stage + ' minutes')
       bottoms += y
     ax.bar_label(bars, fmt='%d')
 
@@ -269,21 +269,22 @@ def stages(args):
     df['Runtime'] = s
     name = 'Teravoxels/day'
     df[name] = (df['Dense voxel count'].div(df['Runtime'])) * 3600 * 24 / 1e+12
-    bars = axx.bar(x - bar_width, df[name], edgecolor='black', color='Black', width=bar_width, align='edge', label=name)
+    bars = axx.bar(x - bar_width, df[name], edgecolor='none', color='LightGray', width=bar_width, align='edge', label=name)
     axx.bar_label(bars, fmt='%d')
 
     # remove this
-    name = 'Kvertex/s'
-    df[name] = df['Sparse voxel count'].div(df['Runtime']) / 1e+03
-    bars = axx.bar(x, df[name], edgecolor='black', color='DarkGray', width=bar_width, align='edge', label=name)
-    axx.bar_label(bars, fmt='%d')
+    # name = 'Kvertex/s'
+    # df[name] = df['Sparse voxel count'].div(df['Runtime']) / 1e+03
+    # bars = axx.bar(x, df[name], edgecolor='black', color='DarkGray', width=bar_width, align='edge', label=name)
+    # axx.bar_label(bars, fmt='%d')
 
     name = 'Kneuron/day'
     df[name] = df['Neuron count'].div(df['Runtime']) * 60 * 60 * 24 / 1e+03
-    bars = axx.bar(x+bar_width, df[name], edgecolor='black', color='LightGray', width=bar_width, align='edge', label=name)
+    bars = axx.bar(x, df[name], edgecolor='black', color='Black', width=bar_width, align='edge', label=name)
     axx.bar_label(bars, fmt='%d')
 
     ax.set_ylabel('Runtime per mouse brain (1.79 Teravoxels) (minutes)')
+    ax.set_xlabel('Cores')
     axx.set_ylabel('Throughput')
     loc=(.4, 1.0)
     ax.legend(loc='upper right', bbox_to_anchor=loc)
@@ -294,8 +295,7 @@ def stages(args):
     ax.set_title('Empirical Scaling and Performance')
     fig.tight_layout()
     fig.show()
-    fig.savefig('test.png')
-    import pdb; pdb.set_trace()
+    fig.savefig('/home/kdmarrett/fig/stages2.png')
 
 def value(args):
     ''' Fastmarching Performance '''

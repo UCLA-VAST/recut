@@ -38,7 +38,8 @@ def main(args):
         accuracies = [handle_surface_output(voxel_sizes, param, not args.verbose) for param in params]
         p("Comparison", accuracies, proofreads)
         df = pd.concat(accuracies, axis=0)
-        import pdb; pdb.set_trace()
+        print(df.mean())
+        # import pdb; pdb.set_trace()
         # acc_dict = {}
         # acc_dict['recall'] = list(map(lambda x: x[0], accuracies))
         # acc_dict['precision'] = list(map(lambda x: x[1], accuracies))
@@ -47,7 +48,6 @@ def main(args):
         # df = pd.concat([df, df.apply(['mean', 'median'])])
         # df1 = pd.concat([df, df.apply('mean')])
         # df = df.concat(df.agg(['sum', 'mean']))
-        print(df.mean())
         # print(df)
         # plot(df)
 

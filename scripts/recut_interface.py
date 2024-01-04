@@ -186,16 +186,12 @@ def extract_accuracy(result, diadem=False, quiet=False):
                 return last_float(result.stdout)
             else:
                 return pd.read_csv(StringIO(result.stdout), header=None).T
-                # ex = partial(extract, result.stdout)
-                # uncomment to get the surface to surface accuracies
-                # return ex('recall'), ex('precision'), ex('F1')
-                # return ex('recall'), ex('precision'), 0
         if result.stderr:
             if not quiet:
                 print('error: ', result.stderr)
         if result.stderr != "" or result.returncode != 0:
           return False
-        return True
+        return False
     else:
         return False
 
@@ -216,8 +212,8 @@ def handle_diadem_output(proof_swc, auto_swc, threshold, path_threshold, quiet=F
 def handle_surface_output(kwargs, match, quiet=False):
     returncode = run_surface_accuracy(kwargs, *match, quiet)
     df = extract_accuracy(returncode, False, quiet)
-    df = pd.DataFrame(df.values[1:], columns=df.iloc[0])
-    if not df.empty:
+    if isinstance(df, pd.DataFrame) and (not df.empty):
+        df = pd.DataFrame(df.values[1:], columns=df.iloc[0])
         if not quiet:
             print("Success")
             print(df)
