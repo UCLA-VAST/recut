@@ -3271,6 +3271,7 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
       // skip components that are 0s in the original image
       auto mm = vto::minMax(valued_window_grid->tree());
       if (args->run_app2 && (mm.max() > 0)) {
+        fill_seeds_image(valued_window_grid, component_seeds, mm.max());
         auto read_timer = high_resolution_timer();
         // protect against possibly empty windows ending up in stats
         if (!window_fn.empty()) {
@@ -3592,6 +3593,10 @@ template <class image_t> void Recut<image_t>::operator()() {
   fill_seeds(this->mask_grid, seeds);
   if (args->save_vdbs) 
     write_vdb_file({this->mask_grid}, this->run_dir / "filled_seed.vdb");
+  if (args->run_app2) {
+    if (args->window_grid_paths.empty())
+      throw std::runtime_error("Must pass a uint8 grid to output window in order to run app2");
+  }
 
   openvdb::MaskGrid::Ptr preserved_topology;
   if (args->close_steps) {

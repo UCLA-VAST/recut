@@ -134,6 +134,21 @@ void fill_seeds(openvdb::MaskGrid::Ptr mask_grid, std::vector<Seed> seeds) {
   });
 }
 
+// this strategies permanently modify a uint8_grid for app2
+// warning do not do this in situations proofreaders are expected
+// to edit the soma location becuase they will not be referring to 
+// the ground truth image
+// fills in spheres where the user passed seeds are
+// known to be located
+void fill_seeds_image(ImgGrid::Ptr img, std::vector<Seed> seeds, uint8 fg_value) {
+  auto accessor = img->getAccessor();
+  rng::for_each(seeds, [&](Seed seed) {
+    for (const auto coord : sphere_iterator(seed.coord, seed.radius)) {
+      accessor.setValue(coord, fg_value);
+    }
+  });
+}
+
 std::optional<GridCoord> mean_location(openvdb::MaskGrid::Ptr mask_grid) {
   GridCoord sum = zeros();
   uint64_t counter = 0;

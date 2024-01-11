@@ -278,7 +278,7 @@ def stages(args):
     # bars = axx.bar(x, df[name], edgecolor='black', color='DarkGray', width=bar_width, align='edge', label=name)
     # axx.bar_label(bars, fmt='%d')
 
-    name = 'Kneuron/day'
+    name = 'Kiloneurons/day'
     df[name] = df['Neuron count'].div(df['Runtime']) * 60 * 60 * 24 / 1e+03
     bars = axx.bar(x, df[name], edgecolor='black', color='Black', width=bar_width, align='edge', label=name)
     axx.bar_label(bars, fmt='%d')
@@ -286,7 +286,7 @@ def stages(args):
     ax.set_ylabel('Runtime per mouse brain (1.79 Teravoxels) (minutes)')
     ax.set_xlabel('Cores')
     axx.set_ylabel('Throughput')
-    loc=(.4, 1.0)
+    loc=(.42, 1.0)
     ax.legend(loc='upper right', bbox_to_anchor=loc)
     axx.legend(loc='upper left', bbox_to_anchor=loc)
     ax.set_xticks(x)
@@ -581,6 +581,31 @@ def read(args):
                     legends=('Sequential computation', 'Exact tile read', 'Tile in large image read')
                     )
 
+def accuracy(args):
+    # for 311 run-19
+    x = [3,    4,  5,   6,  7,   8,     9,  10, 11,  12,  13,  14,  15,   16,  17,  18, 19, 20]
+    y = [.58,.62,.65, .67, .68, .69, .70, .69, .70, .71, .71, .71, .71, .72, .72, .73,.73,.73] 
+    plt.plot(x, y, 'k-x', label='.4um')
+
+    # for brain #2 run-12
+    x = [3,   4,   5,    6,    7,    8,     9,  10, 11,  12,  13,  14,  15,   16,  17,  18, 19, 20]
+    y = [.59,.64, .66,.68,  .69,  .70,   .71, .71, .72, .72, .73,.73, .73, .73, .74, .74, .74, .75]
+    plt.plot(x, y, 'r-o', label='1um')
+
+    plt.xlabel('Distance Threshold (um)')
+    # take the first one even though they should all match
+    plt.ylabel('DIADEM Topological Similarity')
+    plt.legend()
+    plt.xticks(x)
+    plt.title("Accuracy vs. Threshold")
+    plt.tight_layout()
+    fig_output_path = 'accuracy.png'
+
+    plt.savefig(fig_output_path, dpi=args.dpi)
+    print(fig_output_path)
+    plt.close()
+
+
 def main(args):
 
     if args.all:
@@ -602,17 +627,19 @@ def main(args):
         stages(args)
     if args.case == 'throughput':
         throughput(args)
+    if args.case == 'accuracy':
+        accuracy(args)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Recompile code with various preprocessor definitions and optionally run and plot all results")
 
     group = parser.add_mutually_exclusive_group()
-    parser.add_argument('output', help="input/output data directory")
+    parser.add_argument('-o', '--output', help="input/output data directory")
     group.add_argument('-a', '--all', help="Use all known cases",
             action="store_true")
     group.add_argument('-c', '--case', help="Specify which case to use",
-            choices=['stages', 'throughput', 'radius', 'scalability', 'value', 'read'])
+            choices=['accuracy', 'stages', 'throughput', 'radius', 'scalability', 'value', 'read'])
 
     parser.add_argument('-r', '--rerun', help="Rerun all to generate new test data", action="store_true")
     parser.add_argument('-w', '--save', help="save all plots to file", action="store_true")
