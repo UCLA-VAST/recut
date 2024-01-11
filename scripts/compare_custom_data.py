@@ -20,6 +20,7 @@ def main(args):
     # keep only the matches whose automated succeeded (had more than the soma in the swc)
     matched = filter_fails(raw_matched)
     auto_reconstruct_fail_count = len(raw_matched) - len(matched)
+    print("Failed by having only soma: " + str(auto_reconstruct_fail_count))
 
     no_offset = None # inputs are required to be global
     params = [(proof, auto, no_offset) for proof, auto in matched]
@@ -59,6 +60,7 @@ def main(args):
         p("Comparison", accuracies, proofreads)
         df = pd.concat(accuracies, axis=0)
         print(df.mean())
+        print(df.std())
         # import pdb; pdb.set_trace()
         # acc_dict = {}
         # acc_dict['recall'] = list(map(lambda x: x[0], accuracies))
