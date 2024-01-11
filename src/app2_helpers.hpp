@@ -3,6 +3,7 @@
 #pragma once
 
 #include "utils.hpp"
+#include "tree_ops.hpp"
 #include <cassert>
 #include <cstdint>
 #include <cstring>
@@ -1649,7 +1650,8 @@ bool marker_to_swc_file(fs::path swc_file,
     else
       parent_id = ind[marker->parent];
     ofs << std::fixed << std::setprecision(SWC_PRECISION);
-    ofs << i + 1 << " " << marker->type << " " 
+    // roots as type 1, eveything else 3
+    ofs << i + 1 << " " << (marker->type ? "3" : "1") << " " 
       << marker->x * voxel_size[0] << " " 
       << marker->y * voxel_size[1] << " " 
       << marker->z * voxel_size[2] 
@@ -1670,9 +1672,6 @@ void run_app2(ValuedGrid component_with_values,
   uint16_t bkg_thresh = 0;
   auto window = convert_vdb_to_dense(component_with_values);
   auto seed = component_seeds.front();
-
-  if (component_seeds.size() > 1)
-    std::cerr << "Warning: APP2 found multiple proofread seeds in a single component (cluster of trees)\n";
 
   auto component_markers =
       component_seeds | rv::transform([](auto &seed) {
@@ -1708,6 +1707,17 @@ void run_app2(ValuedGrid component_with_values,
   component_log << "APP2 node count, " << app2_output_tree.size() << '\n';
   component_log << "Fast Marching time, " << timer.elapsed_formatted() << '\n';
 
+  /*
+  int count = 0;
+  for (auto m : app2_output_tree) {
+    if (m->type == 0) {
+      ++count;
+    }
+  }
+  if (count == 0)
+    throw std::runtime_error("No seeds after fm");
+  */
+
   // prune run the seq prune from app2 to compare
   timer.restart();
   std::vector<MyMarker *> app2_output_tree_prune;
@@ -1720,6 +1730,17 @@ void run_app2(ValuedGrid component_with_values,
   component_log << "HAPP node count, " << app2_output_tree_prune.size() << '\n';
   timer.restart();
 
+  /*
+  count = 0;
+  for (auto m : app2_output_tree_prune) {
+    if (m->type == 0) {
+      ++count;
+    }
+  }
+  if (count == 0)
+    throw std::runtime_error("No seeds after happ");
+  */
+
   // adjust app2_output_tree_prune to match global image, for swc output
   if (global_bbox_adjust) {
     rng::for_each(app2_output_tree_prune, [&window](const auto marker) {
@@ -1728,17 +1749,25 @@ void run_app2(ValuedGrid component_with_values,
     });
   }
 
-  // filename
-  std::ostringstream out;
-  out <<  std::fixed << std::setprecision(SWC_PRECISION);
-  out << '[';
-  out << seed.coord_um[0] << ',';
-  out << seed.coord_um[1] << ',';
-  out << seed.coord_um[2] << ']';
-  out << "-r=" << seed.radius_um;
-  out << "-µm.swc";
-  auto app2_fn = component_dir_fn / (out.str());
+  auto trees = partition_cluster(app2_output_tree_prune);
 
-  marker_to_swc_file(app2_fn, app2_output_tree_prune, voxel_size);
+  for (auto tree : trees) {
+  auto root = tree.front();
+  if (root->type)
+    throw std::runtime_error("First marker of tree must be a root (type 0)");
+
+    // filename
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(SWC_PRECISION);
+    out << '[';
+    out << root->x << ',';
+    out << root->y << ',';
+    out << root->z << ']';
+    out << "-r=" << root->radius;
+    out << "-µm.swc";
+    auto app2_fn = component_dir_fn / (out.str());
+
+    marker_to_swc_file(app2_fn, tree, voxel_size);
+  }
   component_log << "APP write SWC time, " << timer.elapsed_formatted() << '\n';
 }

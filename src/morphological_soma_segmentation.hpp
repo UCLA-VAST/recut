@@ -140,7 +140,7 @@ void fill_seeds(openvdb::MaskGrid::Ptr mask_grid, std::vector<Seed> seeds) {
 // the ground truth image
 // fills in spheres where the user passed seeds are
 // known to be located
-void fill_seeds_image(ImgGrid::Ptr img, std::vector<Seed> seeds, uint8 fg_value) {
+void fill_seeds_image(ImgGrid::Ptr img, std::vector<Seed> seeds, unsigned short fg_value) {
   auto accessor = img->getAccessor();
   rng::for_each(seeds, [&](Seed seed) {
     for (const auto coord : sphere_iterator(seed.coord, seed.radius)) {
