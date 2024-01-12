@@ -1760,10 +1760,14 @@ void run_app2(ValuedGrid component_with_values,
     std::ostringstream out;
     out << std::fixed << std::setprecision(SWC_PRECISION);
     out << '[';
-    out << root->x << ',';
-    out << root->y << ',';
-    out << root->z << ']';
-    out << "-r=" << root->radius;
+    out << seed.coord_um[0] << ',';
+    out << seed.coord_um[1] << ',';
+    out << seed.coord_um[2] << ']';
+    //out << root->x << ',';
+    //out << root->y << ',';
+    //out << root->z << ']';
+    out << "-r=" << seed.radius_um;
+    //out << "-r=" << root->radius;
     out << "-µm.swc";
     auto app2_fn = component_dir_fn / (out.str());
 
