@@ -3079,7 +3079,7 @@ auto print_all_points = [](const EnlargedPointDataGrid::Ptr grid,
           output_fn =
             write_vdb_to_tiff_planes(output_grid, dir, bbox, channel, index);
 
-        runtime << "Write tiff, " << timer.elapsed() << '\n';
+        runtime << "Write tiff, " << timer.elapsed_formatted() << '\n';
 
         if (output_vdb) {
           timer.restart();

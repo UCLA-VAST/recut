@@ -3182,8 +3182,14 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
     component_log.open(component_log_fn.string());
     component_log << std::fixed << std::setprecision(6);
     component_log << "Thread count, " << args->user_thread_count << '\n';
-    component_log << "Soma count, " << component_seeds.size() << '\n';
+    component_log << "Seed count, " << component_seeds.size() << '\n';
+    component_log << "Component dense voxel count, " << bbox.volume() << '\n';
     component_log << "Component active voxel count, " << voxel_count << '\n';
+    component_log.flush();
+    if (component_seeds.size() == 0) {
+      std::cerr << "Warning: 0 seeds in component, skipping\n";
+      return;
+    }
 
     // seeds are always in voxel units and output with respect to the whole
     // volume
@@ -3272,6 +3278,9 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
       auto mm = vto::minMax(valued_window_grid->tree());
       if (args->run_app2 && (mm.max() > 0)) {
         fill_seeds_image(valued_window_grid, component_seeds, mm.max());
+        component_log << "Component uint8 active voxel count, " << valued_window_grid->activeVoxelCount() << '\n';
+        component_log.flush();
+
         auto read_timer = high_resolution_timer();
         // protect against possibly empty windows ending up in stats
         if (!window_fn.empty()) {
@@ -3293,6 +3302,7 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
 
     component_log << "Volume, " << bbox.volume() << '\n';
     component_log << "Bounding box, " << bbox << '\n';
+    component_log.flush();
 
     if (cluster_opt) {
       auto [component_graph, soma_coords] = cluster_opt.value();
