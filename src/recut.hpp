@@ -3225,7 +3225,7 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
                                      component_dir_fn, component_log,
                                      inter_thread_count == 1 ? args->user_thread_count : 1, 
                                      true);
-      component_log << "TP, " << timer.elapsed() << '\n';
+      component_log << "Skeleton, " << timer.elapsed_formatted() << '\n';
     }
 
     bool save_mesh = false;
@@ -3279,12 +3279,15 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
           read_tiff_paged(window_fn);
           component_log << "Read window time, "
                         << read_timer.elapsed_formatted() << '\n';
+          component_log.flush();
         }
 
         // for comparison/benchmark/testing purposes
         run_app2(valued_window_grid, component_seeds, component_dir_fn, index,
                  args->min_branch_length, component_log,
                  args->voxel_size, true);
+        component_log << "APP2 cumulative, " << read_timer.elapsed_formatted() << '\n';
+        component_log.flush();
       }
     } // end window created if any
 
