@@ -147,6 +147,80 @@ def radius(args):
         rplot((radius_sizes, radius_sizes, radius_sizes), r'Radius size (pixels)', real_times,
                 r'Elapsed time (%s)' % time_unit, r'Calculate Radius Performance Sequential', args, legends=legends)
 
+to_seconds = np.vectorize(parse_formatted_time)
+
+def extract_df(rundir, col, count):
+    frames = []
+    for root, dirs, files in os.walk(rundir):
+        for file in files:
+            name = os.path.join(root, file)
+            try:
+                if '-log.csv' in file:
+                    print(name)
+                    f = pd.read_csv(name, header=None, on_bad_lines='skip').T
+                    f = f.rename(columns=f.iloc[0]).drop(f.index[0])[[col, count]]
+                    frames.append(f)
+            except:
+                print("Could not process file: " + name)
+    df = pd.concat(frames)
+    # in minutes
+    df[col] = to_seconds(df[col]) / 60
+    df[count] = df[count].astype(int) / 1000000
+    df.sort_values(count, inplace=True)
+    return df
+
+def fit_line(x, y, color, label, marker):
+    x = list(x)
+    y = list(y)
+    plt.plot(np.unique(x), np.poly1d(np.polyfit(x, y, 1))(np.unique(x)), c=color, label=label)
+    plt.scatter(x, y, c=color, alpha=.2, marker=marker)
+    # deals with unsorted or duplicates
+    # x = np.unique(x)
+    # f = np.poly1d(x, y, 1)
+    # plt.plot(x, f(x), c=color, label=label)
+
+def sequential(args):
+    ''' Show sequential runtime comparison of app2 and recut'''
+
+    # stage_to_col = {'APP2' : ['Read window time', 'Fast Marching time', 'HAPP time', 'Write SWC']}
+
+    skel = 'Skeleton'
+    # the component active voxel count is the volume of the reachable W_c
+    count = 'Component active voxel count'
+    # for APP2 to get the equivalent you have to see the reachable from soma
+    # after fastmarching
+    app2_count = 'APP2 node count'
+    app2_skel = 'APP2 cumulative'
+
+    ours = extract_df(args.output, skel, count)
+    app2 = extract_df(args.app2, app2_skel, app2_count)
+
+    ax = plt.axes()
+    fit_line(ours[count], ours[skel], 'blue', 'Ours', 'o')
+    # plt.scatter(app2[app2_count], app2[app2_skel], c='red', label='APP2')
+    fit_line(app2[app2_count], app2[app2_skel], 'red', 'APP2', '+')
+    plt.ylabel('Runtime per neuron cluster (minutes)')
+    plt.yscale('log')
+    plt.xscale('log')
+    plt.xlim(1,1000)
+    # plt.xticks(range(0,31, 5))
+    # plt.legend(loc='upper left')
+    plt.text(.7, 3, 'APP2', fontsize=22, color='red')
+    plt.text(10, .15, 'Ours', fontsize=22, color='blue')
+    # refer to it as runtime and throughput
+    # plt.title('Neuron Cluster Performance')
+
+    plt.xlim([.1, 1000])
+    ax.set_xticks([.1, 1, 10, 100, 1000])
+    ax.set_xticklabels(['W_c size (megavoxels)', '1', '10', '100', ''])
+
+    plt.ylim([.01, 1000])
+    ax.set_yticks([.01, .1, 1, 10, 100, 1000])
+    ax.set_yticklabels(['', '.1', '1', '10', '100', ''])
+    plt.grid()
+    plt.tight_layout()
+    plt.savefig('/home/kdmarrett/fig/neuron-runtime.png')
+
 def throughput(args):
     ''' Show throughput comparison of app2 and recut'''
     # aggregate data
@@ -210,7 +284,6 @@ def stages(args):
               'Cell' : ['Cell segmentation', 'Cell connected component'],
               'Skeleton' : ['Skeleton']}
     time_columns = list(itertools.chain(stage_to_col.values()))
-    to_seconds = np.vectorize(parse_formatted_time)
 
     textures = ['///', '...', '', 'OOO']
     bar_width = 1
@@ -243,13 +316,6 @@ def stages(args):
     for col in time_columns[:-1]:
         df.drop(col, axis=1, inplace=True)
     print(df)
-    # import pdb; pdb.set_trace()
-    # cv = pd.concat(convert_frames)
-    # merged = pd.merge(cv, df, how='inner', on=['Thread count'])
-    # g = df.groupby('Thread count')
-    #import pdb; pdb.set_trace()
-    # means = g.mean()
-    # errors = g.std()
     fig, ax = plt.subplots()
     axx = ax.twinx()
     df = df.astype(np.float64).sort_values('Thread count')
@@ -629,17 +695,19 @@ def main(args):
         throughput(args)
     if args.case == 'accuracy':
         accuracy(args)
-
+    if args.case == 'sequential':
+        sequential(args)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Recompile code with various preprocessor definitions and optionally run and plot all results")
 
     group = parser.add_mutually_exclusive_group()
     parser.add_argument('-o', '--output', help="input/output data directory")
+    parser.add_argument('-v', '--app2', help="directory where APP2 run folder, if running with the 'throughput' option")
     group.add_argument('-a', '--all', help="Use all known cases",
             action="store_true")
     group.add_argument('-c', '--case', help="Specify which case to use",
-            choices=['accuracy', 'stages', 'throughput', 'radius', 'scalability', 'value', 'read'])
+            choices=['accuracy', 'stages', 'sequential', 'throughput', 'radius', 'scalability', 'value', 'read'])
 
     parser.add_argument('-r', '--rerun', help="Rerun all to generate new test data", action="store_true")
     parser.add_argument('-w', '--save', help="save all plots to file", action="store_true")

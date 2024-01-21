@@ -1,6 +1,8 @@
 import argparse
 from recut_interface import *
 
+distance_threshold = 20
+
 def main(args):
     voxel_sizes = tuple(args.voxel_sizes)
 
@@ -20,6 +22,7 @@ def main(args):
     print("Original automateds count: " + str(len(v1)))
 
     # match all data based off soma distance
+    import pdb; pdb.set_trace()
     raw_matched = match_coord_keys(proofreads, automateds, distance_threshold)
     # keep only the matches whose automated succeeded (had more than the soma in the swc)
     matched = filter_fails(raw_matched)
