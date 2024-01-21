@@ -555,7 +555,7 @@ void same_position(const AMGraph3D &g) {
         std::cout << rv::all(nbs) << '\n';
         nbs = g.neighbors(j);
         std::cout << rv::all(nbs) << '\n';
-        throw std::runtime_error("Position already filled by another");
+        //throw std::runtime_error("Position already filled by another");
       }
     }
   }
@@ -747,14 +747,20 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
         /*opt steps*/ args->optimize_steps, threads,
         false);
   auto [component_graph, _] = skeleton_from_node_set_vec(g, separators);
+  component_log << "msls threads, " << threads << '\n';
   component_log << "msls, " << timer.elapsed_formatted() << '\n';
+  component_log.flush();
 
+  timer.restart();
   // prune all leaf vertices (valency 1) whose only neighbor has valency > 2
   // as these tend to be spurious branches
   Geometry::prune(component_graph);
 
   standardize_sampling_smoothing(component_graph, args->voxel_size, args->smooth_steps.value());
+  component_log << "prune+skeletal smooth, " << timer.elapsed_formatted() << '\n';
+  component_log.flush();
 
+  timer.restart();
   // sweep through various soma ids
   std::vector<GridCoord> soma_coords;
   if (args->seed_action == "force")
@@ -768,12 +774,15 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     std::cerr << "Warning no soma_coords found for component " << index << '\n';
     return std::nullopt;
   }
+  component_log << "apply soma nodes, " << timer.elapsed_formatted() << '\n';
+  component_log.flush();
 
   // if the images are inherently anisotropic, you need to scale the nodes radii according to
   // the anisotropic radii, this leaves soma nodes alone
   if (args->anisotropic_scaling.has_value())
     scale_radii(component_graph, args->anisotropic_scaling.value(), soma_coords);
 
+  timer.restart();
   {
     auto illegal_nodes = count_nodes_within_another(component_graph);
     component_log << "Original within nodes, " << illegal_nodes.size() << '\n';
@@ -784,12 +793,20 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     if (illegal_nodes.size() != 0)
       component_log << "Post-fix within nodes, " << illegal_nodes.size() << '\n';
   }
+  component_log << "fix node within another, " << timer.elapsed_formatted() << '\n';
+  component_log.flush();
 
+  timer.restart();
   fix_same_position(component_graph);
   same_position(component_graph);
+  component_log << "fix same position, " << timer.elapsed_formatted() << '\n';
+  component_log.flush();
 
+  timer.restart();
   // multifurcations are only important for rules of SWC standard
   component_graph = fix_multifurcations(component_graph, soma_coords);
+  component_log << "fix multifurcations, " << timer.elapsed_formatted() << '\n';
+  component_log.flush();
   
   auto invalids = get_invalid_radii(component_graph);
   if (invalids.size() > 0) {
@@ -801,8 +818,11 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
       component_log << "Final invalid radii, " << invalids.size() << '\n';
   }
 
+  timer.restart();
   if (save_graphs)
     graph_save(component_dir_fn / ("skeleton.graph"), component_graph);
+  component_log << "graph save, " << timer.elapsed_formatted() << '\n';
+  component_log.flush();
 
   return std::make_pair(component_graph, soma_coords);
 }

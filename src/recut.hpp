@@ -3230,7 +3230,7 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
       cluster_opt = vdb_to_skeleton(component, component_seeds, index, args,
                                      component_dir_fn, component_log,
                                      inter_thread_count == 1 ? args->user_thread_count : 1, 
-                                     true);
+                                     args->save_vdbs);
       component_log << "Skeleton, " << timer.elapsed_formatted() << '\n';
     }
 
