@@ -15,8 +15,13 @@ import pandas as pd
 import numpy as np
 from matplotlib import rc
 from recut_interface import parse_formatted_time
-rc('font',**{'family':'serif','serif':['Palatino']})
-rc('text', usetex=True)
+plt.rcParams.update({
+    "text.usetex": True,
+    "font.family": "Linux Libertine"
+})
+plt.rc('font', weight ='bold')
+# rc('font',**{'family':'serif','serif':['Palatino']})
+# rc('text', usetex=True)
 
 extract_values = lambda dictions, extract_key, start=None, stop=None: [int(diction[extract_key]) for diction in dictions[start:stop]]
 extract_postfix = lambda dictions, extract_key, start=None, stop=None: [int(diction[extract_key].split('/')[-1]) for diction in dictions[start:stop]]
@@ -166,6 +171,13 @@ def extract_df(rundir, col, count):
     # in minutes
     df[col] = to_seconds(df[col]) / 60
     df[count] = df[count].astype(int) / 1000000
+    return df
+
+def concat_dfs(rundirs, col, count):
+    dfs = []
+    for rdir in rundirs:
+        dfs.append(extract_df(rdir, col, count))
+    df = pd.concat(dfs, axis=0)
     df.sort_values(count, inplace=True)
     return df
 
@@ -184,6 +196,9 @@ def sequential(args):
 
     # stage_to_col = {'APP2' : ['Read window time', 'Fast Marching time', 'HAPP time', 'Write SWC']}
 
+    fontsize = 12
+    app2_color = 'brown'
+    recut_color = 'steelblue'
     skel = 'Skeleton'
     # the component active voxel count is the volume of the reachable W_c
     count = 'Component active voxel count'
@@ -192,34 +207,33 @@ def sequential(args):
     app2_count = 'APP2 node count'
     app2_skel = 'APP2 cumulative'
 
-    ours = extract_df(args.output, skel, count)
-    app2 = extract_df(args.app2, app2_skel, app2_count)
+    app2 = concat_dfs(args.app2, app2_skel, app2_count)
+    ours = concat_dfs(args.output, skel, count)
 
     ax = plt.axes()
-    fit_line(ours[count], ours[skel], 'blue', 'Ours', 'o')
-    # plt.scatter(app2[app2_count], app2[app2_skel], c='red', label='APP2')
-    fit_line(app2[app2_count], app2[app2_skel], 'red', 'APP2', '+')
-    plt.ylabel('Runtime per neuron cluster (minutes)')
+    fit_line(ours[count], ours[skel], recut_color, r'Ours', 'o')
+    fit_line(app2[app2_count], app2[app2_skel], app2_color, r'APP2', '+')
+    plt.ylabel(r'Runtime per neuron (minutes)', weight='bold')
     plt.yscale('log')
     plt.xscale('log')
     plt.xlim(1,1000)
     # plt.xticks(range(0,31, 5))
     # plt.legend(loc='upper left')
-    plt.text(.7, 3, 'APP2', fontsize=22, color='red')
-    plt.text(10, .15, 'Ours', fontsize=22, color='blue')
+    plt.text(.7, 3, r'APP2', fontsize=fontsize, color=app2_color, weight='bold')
+    plt.text(10, .15, 'Ours', fontsize=fontsize, color=recut_color, weight='bold')
     # refer to it as runtime and throughput
     # plt.title('Neuron Cluster Performance')
 
     plt.xlim([.1, 1000])
     ax.set_xticks([.1, 1, 10, 100, 1000])
-    ax.set_xticklabels(['W_c size (megavoxels)', '1', '10', '100', ''])
+    ax.set_xticklabels([r'$ W_c $ count (mega)', r'1', r'10', r'100', r''], weight='bold')
 
     plt.ylim([.01, 1000])
     ax.set_yticks([.01, .1, 1, 10, 100, 1000])
-    ax.set_yticklabels(['', '.1', '1', '10', '100', ''])
+    ax.set_yticklabels([r'', r'.1', r'1', r'10', r'100', r''], weight='bold')
     plt.grid()
     plt.tight_layout()
-    plt.savefig('/home/kdmarrett/fig/neuron-runtime.png')
+    plt.savefig('/home/kdmarrett/fig/neuron-runtime.png', dpi=args.dpi)
 
 def throughput(args):
     ''' Show throughput comparison of app2 and recut'''
@@ -702,8 +716,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Recompile code with various preprocessor definitions and optionally run and plot all results")
 
     group = parser.add_mutually_exclusive_group()
-    parser.add_argument('-o', '--output', help="input/output data directory")
-    parser.add_argument('-v', '--app2', help="directory where APP2 run folder, if running with the 'throughput' option")
+    parser.add_argument('-o', '--output', nargs=2, help="input/output data directory")
+    parser.add_argument('-v', '--app2', nargs=2, help="directory where APP2 run folder, if running with the 'throughput' option")
     group.add_argument('-a', '--all', help="Use all known cases",
             action="store_true")
     group.add_argument('-c', '--case', help="Specify which case to use",
@@ -714,7 +728,7 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--show', help="show figures interactively while generating", action="store_true")
     parser.add_argument('-t', '--type', help="image output type", choices=['eps', 'png', 'pdf'], default='eps')
     parser.add_argument('-l', '--recompile', help="recompile with CMake then Make", action="store_true")
-    parser.add_argument('-d', '--dpi', help="image resolution", type=int, default=100)
+    parser.add_argument('-d', '--dpi', help="image resolution", type=int, default=800)
 
     project_dir = os.path.join(os.path.dirname(__file__), '../')
     bin_dir = project_dir + 'bin/'

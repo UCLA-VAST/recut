@@ -3083,7 +3083,8 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << args->coarsen_steps.value() << '\n'
             << "Skeletal smooth steps, "
             << args->smooth_steps.value() << '\n'
-            << "Run app2, " << args->run_app2 << '\n';
+            << "Run app2, " << args->run_app2 << '\n'
+            << "Skeleton grow, " << args->skeleton_grow << '\n';
     run_log.flush();
   }
 }
