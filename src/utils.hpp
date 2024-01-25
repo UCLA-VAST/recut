@@ -3065,10 +3065,10 @@ auto print_all_points = [](const EnlargedPointDataGrid::Ptr grid,
     std::string write_output_windows(GridT output_grid, fs::path dir,
         std::ofstream &runtime, int index = 0,
         bool output_vdb = false, bool paged = true,
-        CoordBBox bbox = {}, int channel = 0) {
+        CoordBBox bbox = {}, int channel = 0, std::string name="") {
 
-      auto base = dir / ("img-component-" + std::to_string(index) + "-ch" +
-          std::to_string(channel));
+      auto base = name.empty() ? dir / ("img-component-" + std::to_string(index) + "-ch" +
+          std::to_string(channel)) : dir / (name);
 
       std::string output_fn;
       if (output_grid->activeVoxelCount()) {

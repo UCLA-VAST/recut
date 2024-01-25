@@ -2862,6 +2862,23 @@ template <class image_t> void Recut<image_t>::initialize() {
               << " z=" << this->args->voxel_size[2] << " µm\n";
   }
 
+  if (args->output_type == "labels") {
+    // infer close steps if it wasn't explicitly passed
+    if (!args->close_steps.has_value()) {
+      args->close_steps = SOMA_CLOSE_FACTOR / args->voxel_size[0];
+      std::cout << "Close steps inferred to " << args->close_steps.value()
+              << " based on voxel size\n";
+    }
+
+    // infer open steps if it wasn't explicitly passed
+    if (!args->open_steps.has_value()) {
+      args->open_steps = OPEN_FACTOR / args->voxel_size[0];
+      std::cout << "Open steps inferred to " << args->open_steps.value()
+                << " based on voxel size\n";
+    }
+    return;
+  }
+
   // infer parameters for reconstructions runs
   if (args->input_type != "swc" && !args->convert_only) {
     // when no known seeds are passed or when the intersection strategy
@@ -3058,6 +3075,9 @@ template <class image_t> void Recut<image_t>::start_run_dir_and_logs() {
             << "Dense voxel count, " << coord_prod_accum(this->image_lengths) << '\n'
             << "Seed action, " << args->seed_action
             << '\n';
+    run_log.flush();
+    if (args->output_type == "labels")
+      return;
     if (args->foreground_percent >= 0) {
       std::ostringstream out;
       out.precision(3);
@@ -3595,8 +3615,18 @@ template <class image_t> void Recut<image_t>::operator()() {
         rv::transform([](const auto &gpath) { return read_vdb_file(gpath); }) |
         rng::to_vector; // force reading once now
 
+    // mutate the mask grid according to users requested closing and opening
+    if (args->close_steps.value()) {
+      std::cout << "\tMutating the mask (label) by " << args->close_steps.value() << " steps of morphological closing\n";
+      close_mask(this->mask_grid, args->close_steps.value());
+    }
+    if (args->open_steps.value()) {
+      std::cout << "\tMutating the mask (label) by " << args->open_steps.value() << " steps of morphological opening\n";
+      open_mask(this->mask_grid, args->open_steps.value());
+    }
+
     image = openvdb::gridPtrCast<ImgGrid>(window_grids.front());
-    create_labels(seeds, run_dir / "ml-train-and-test", image, nullptr, nullptr,
+    create_labels(seeds, run_dir / "image-and-label", image, this->mask_grid, 
                   args->user_thread_count, args->save_vdbs);
 #ifdef LOG
     std::cout << "\tLabel creation completed and safe to open\n";
@@ -3618,12 +3648,7 @@ template <class image_t> void Recut<image_t>::operator()() {
       preserved_topology = this->mask_grid->deepCopy();
     }
     auto timer = high_resolution_timer();
-    // close
-    openvdb::tools::dilateActiveValues(this->mask_grid->tree(),
-                                       args->close_steps.value());
-    openvdb::tools::erodeActiveValues(this->mask_grid->tree(),
-                                      args->close_steps.value());
-    openvdb::tools::pruneInactive(this->mask_grid->tree());
+    close_mask(this->mask_grid, args->close_steps.value());
     run_log << "Morphological close, " << timer.elapsed_formatted()
             << '\n';
     run_log.flush();

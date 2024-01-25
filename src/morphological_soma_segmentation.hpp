@@ -29,6 +29,18 @@ double name_to_radius_volume(fs::path name) {
   return static_cast<double>(std::cbrt((3 * volume) / (4 * PI)));
 }
 
+void open_mask(openvdb::MaskGrid::Ptr mask, int steps) {
+  openvdb::tools::erodeActiveValues(mask->tree(), steps);
+  openvdb::tools::dilateActiveValues(mask->tree(), steps);
+  openvdb::tools::pruneInactive(mask->tree());
+}
+
+void close_mask(openvdb::MaskGrid::Ptr mask, int steps) {
+  openvdb::tools::dilateActiveValues(mask->tree(), steps);
+  openvdb::tools::erodeActiveValues(mask->tree(), steps);
+  openvdb::tools::pruneInactive(mask->tree());
+}
+
 // adds all markers to seeds
 // recut operates in voxel units (image space) therefore whenever marker/node
 // information is input into recut it converts it from um units into voxel
@@ -268,6 +280,18 @@ create_filter(openvdb::FloatGrid::Ptr sdf_grid,
   return filter;
 }
 
+// build the bounding box:
+// center the window around the center of the soma and give it a uniform width
+// as all other crops/windows
+std::pair<vb::BBoxd, CoordBBox> soma_clip_box(Seed seed) {
+
+  auto offset = GridCoord(SOMA_LABEL_LENGTH / 2);
+  auto bbox = CoordBBox(seed.coord - offset, seed.coord + offset);
+  vb::BBoxd clip_box(bbox.min().asVec3d(), bbox.max().asVec3d());
+
+  return std::make_pair(clip_box, bbox);
+}
+
 // replace the original grid, with a grid only containing the soma component
 // this prevents the soma labels and their grid from contain other components
 template <typename GridT>
@@ -276,12 +300,7 @@ find_soma_component(Seed seed, GridT grid,
                     openvdb::FloatGrid::Ptr keep_if_empty_grid = nullptr,
                     int channel = 0) {
 
-  // build the bounding box:
-  // center the window around the center of the soma and give it a uniform width
-  // as all other crops/windows
-  auto offset = GridCoord(SOMA_LABEL_LENGTH / 2);
-  auto bbox = CoordBBox(seed.coord - offset, seed.coord + offset);
-  vb::BBoxd clipBox(bbox.min().asVec3d(), bbox.max().asVec3d());
+  auto [clip_box, bbox] = soma_clip_box(seed);
 
   if (!grid) {
     return std::nullopt; // do nothing
@@ -291,13 +310,13 @@ find_soma_component(Seed seed, GridT grid,
   // windows where it is empty, this is vital for visualizing the problem
   // somas the somas that get deleted for unknown reasons
   if (keep_if_empty_grid) {
-    const auto output_grid = vto::clip(*keep_if_empty_grid, clipBox);
+    const auto output_grid = vto::clip(*keep_if_empty_grid, clip_box);
     if (output_grid->activeVoxelCount() > 0) {
       return std::nullopt; // do nothing
     }
   }
 
-  auto clipped_grid = vto::clip(*grid, clipBox);
+  auto clipped_grid = vto::clip(*grid, clip_box);
 
   if (!clipped_grid || (clipped_grid->activeVoxelCount() == 0)) {
     return std::nullopt; // do nothing
@@ -427,13 +446,11 @@ template <typename GridT>
 GridT create_label(Seed seed, fs::path dir, GridT grid,
                    openvdb::FloatGrid::Ptr keep_if_empty_grid = nullptr,
                    int index = 0, bool output_vdb = true, int channel = 0,
-                   bool paged = true) {
+                   bool paged = true, std::string name = "") {
 
-  auto opt = find_soma_component(seed, grid, keep_if_empty_grid, channel);
-  if (!opt)
-    return nullptr;
-  auto [clipped_grid, bbox] = opt.value();
-  grid = clipped_grid;
+  auto [clip_box, bbox] = soma_clip_box(seed);
+  grid->clip(bbox);
+  //auto clipped_grid = vto::clip(*grid, clip_box);
 
   if (grid) {
     // prepare the directory and log
@@ -442,7 +459,7 @@ GridT create_label(Seed seed, fs::path dir, GridT grid,
     runtime.open(dir / ("log.csv"));
 
     write_output_windows(grid, dir, runtime, index, output_vdb, paged, bbox,
-                         channel);
+                         channel, name);
     return grid;
   }
 
@@ -458,9 +475,8 @@ fs::path soma_dir(fs::path dir, Seed seed) {
 // takes a set of seeds and their corresponding sdf/isosurface
 // and writes to TIF their uint8
 void create_labels(std::vector<Seed> seeds, fs::path dir,
-                   ImgGrid::Ptr image = nullptr,
-                   openvdb::FloatGrid::Ptr sdf_grid = nullptr,
-                   openvdb::FloatGrid::Ptr keep_if_empty_grid = nullptr,
+                   ImgGrid::Ptr image,
+                   openvdb::MaskGrid::Ptr mask,
                    int threads = 1, bool output_vdb = false,
                    bool paged = true) {
 
@@ -472,11 +488,11 @@ void create_labels(std::vector<Seed> seeds, fs::path dir,
       tbb::parallel_for_each(
           seeds | rv::enumerate | rng::to_vector, [&](auto element) {
             auto [index, seed] = element;
-            create_label(seed, soma_dir(dir, seed), image, keep_if_empty_grid,
-                         index, output_vdb, 0, paged);
-            auto sdf_soma =
-                create_label(seed, soma_dir(dir, seed), sdf_grid,
-                             keep_if_empty_grid, index, output_vdb, 1, paged);
+            auto dir_name = soma_dir(dir, seed);
+            create_label(seed, dir_name, image, nullptr,
+                         index, output_vdb, 0, paged, "image");
+            create_label(seed, dir_name, mask, nullptr, index, 
+                output_vdb, 1, paged, "label");
           });
     });
   }
