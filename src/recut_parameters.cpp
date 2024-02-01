@@ -93,9 +93,7 @@ void RecutCommandLineArgs::PrintUsage() {
   // std::cout
   //<< "--tile-lengths         dimensions for fg percentages and conversion, "
   //"defaults to image sizes\n";
-  // std::cout
-  //<< "--downsample-factor    for images scaled down in x and z dimension "
-  //"scale the marker files by specified factor\n";
+  std::cout << "--benchmark-mode       for performance tests only\n";
   std::cout
       << "--upsample-z           during conversion only z-dimension will be "
          "upsampled (copied) by specified factor, default is 1 i.e. no "
@@ -345,8 +343,8 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
           std::cerr << "--max-radius should be a positive float!\n";
           exit(1);
         }
-      } else if (strcmp(argv[i], "--downsample-factor") == 0) {
-        args.downsample_factor = atoi(argv[i + 1]);
+      } else if (strcmp(argv[i], "--benchmark-mode") == 0) {
+        args.benchmark_mode = true;
         ++i;
       } else if (strcmp(argv[i], "--combine") == 0) {
         args.combine = argv[i + 1];

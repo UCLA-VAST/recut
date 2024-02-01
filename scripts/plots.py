@@ -205,7 +205,8 @@ def sequential(args):
     # for APP2 to get the equivalent you have to see the reachable from soma
     # after fastmarching
     app2_count = 'APP2 node count'
-    app2_skel = 'APP2 cumulative'
+    app2_skel = 'APP2 skeleton' # just record FM + HAPP
+    # app2_skel = 'APP2 cumulative'
 
     app2 = concat_dfs(args.app2, app2_skel, app2_count)
     ours = concat_dfs(args.output, skel, count)

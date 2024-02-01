@@ -712,9 +712,9 @@ void standardize_sampling_smoothing(AMGraph3D& g, const std::array<double,3>
 std::optional<std::pair<AMGraph3D, std::vector<GridCoord>>>
 vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_seeds,
     int index, RecutCommandLineArgs *args,
-    fs::path component_dir_fn, std::ofstream& component_log, int threads, bool save_graphs = false) {
+    fs::path component_dir_fn, std::ofstream& component_log, int threads, 
+    bool save_graphs = false, bool benchmark_mode=false) {
 
-  component_log << "Component threads, " << threads << '\n';
   auto timer = high_resolution_timer();
   auto g = vdb_to_graph(component, args);
   component_log << "vdb to graph, " << timer.elapsed_formatted() << '\n';
@@ -756,6 +756,10 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
   // prune all leaf vertices (valency 1) whose only neighbor has valency > 2
   // as these tend to be spurious branches
   Geometry::prune(component_graph);
+
+  // benchmarks don't care about domain-specific QC
+  if (benchmark_mode)
+    return std::nullopt;
 
   standardize_sampling_smoothing(component_graph, args->voxel_size, args->smooth_steps.value());
   component_log << "prune+skeletal smooth, " << timer.elapsed_formatted() << '\n';

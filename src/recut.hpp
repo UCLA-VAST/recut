@@ -3255,7 +3255,7 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
       cluster_opt = vdb_to_skeleton(component, component_seeds, index, args,
                                      component_dir_fn, component_log,
                                      args->user_thread_count, 
-                                     args->save_vdbs);
+                                     args->save_vdbs, args->benchmark_mode);
       component_log << "Skeleton, " << timer.elapsed_formatted() << '\n';
     }
 
@@ -3319,7 +3319,7 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
         // for comparison/benchmark/testing purposes
         run_app2(valued_window_grid, component_seeds, component_dir_fn, index,
                  args->min_branch_length, component_log,
-                 args->voxel_size, true);
+                 args->voxel_size, true, args->benchmark_mode);
         component_log << "APP2 cumulative, " << read_timer.elapsed_formatted() << '\n';
         component_log.flush();
       }

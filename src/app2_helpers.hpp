@@ -1667,7 +1667,8 @@ template <typename ValuedGrid>
 void run_app2(ValuedGrid component_with_values,
               std::vector<Seed> component_seeds, fs::path component_dir_fn,
               int index, int min_branch_length, std::ofstream &component_log,
-              std::array<double,3> voxel_size, bool global_bbox_adjust = false) {
+              std::array<double,3> voxel_size, bool global_bbox_adjust = false,
+              bool benchmark_mode=false) {
   // the bkg_thresh is 0 for vdb to dense
   uint16_t bkg_thresh = 0;
   auto window = convert_vdb_to_dense(component_with_values);
@@ -1697,6 +1698,7 @@ void run_app2(ValuedGrid component_with_values,
   });
 
   // reconstruct
+  auto skeleton_timer = high_resolution_timer();
   auto timer = high_resolution_timer();
   std::vector<MyMarker *> app2_output_tree;
   std::vector<MyMarker> targets;
@@ -1728,6 +1730,8 @@ void run_app2(ValuedGrid component_with_values,
        //[>sr_ratio<] 1. / 3);
   component_log << "HAPP time, " << timer.elapsed_formatted() << '\n';
   component_log << "HAPP node count, " << app2_output_tree_prune.size() << '\n';
+  // log FM + HAPP only
+  component_log << "APP2 skeleton, " << skeleton_timer.elapsed_formatted() << '\n';
   timer.restart();
 
   /*
