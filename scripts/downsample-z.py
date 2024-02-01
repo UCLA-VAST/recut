@@ -4,7 +4,7 @@ from shutil import copy
 from os import makedirs
 
 def downsample(args):
-    out = args.input + "_downsample" + str(args.factor)
+    out = str(args.input)[:-1] + "_downsample" + str(args.factor)
     print(out)
     pattern = args.input + "/*.tif"
     tifs = sorted(glob(pattern, recursive=False))[0::args.factor]
