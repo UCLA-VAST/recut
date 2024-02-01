@@ -3151,7 +3151,10 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
   run_log.flush();
 
   // assign parallelization either within the component or between components
-  auto inter_thread_count = args->user_thread_count;
+  //auto inter_thread_count = args->user_thread_count;
+  // inter is overall faster for large volumes with power-law graphs because it allows
+  // the large components to get all threads as opposed to 1 thread, which can take days
+  auto inter_thread_count = 1;
   if (components.size() > 1) {
     if (!args->window_grid_paths.empty())
       inter_thread_count = 1;
@@ -3248,9 +3251,10 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
 
     // either one or the other
     if (!args->run_app2) {
+                                     //inter_thread_count == 1 ? args->user_thread_count : 1, 
       cluster_opt = vdb_to_skeleton(component, component_seeds, index, args,
                                      component_dir_fn, component_log,
-                                     inter_thread_count == 1 ? args->user_thread_count : 1, 
+                                     args->user_thread_count, 
                                      args->save_vdbs);
       component_log << "Skeleton, " << timer.elapsed_formatted() << '\n';
     }
@@ -3349,10 +3353,10 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
 
   auto skeleton_timer = high_resolution_timer();
 
-  tbb::task_arena arena(inter_thread_count);
-  arena.execute(
-      [&] { tbb::parallel_for_each(enum_components, process_component); });
-  //rng::for_each(enum_components, process_component);
+  //tbb::task_arena arena(inter_thread_count);
+  //arena.execute(
+      //[&] { tbb::parallel_for_each(enum_components, process_component); });
+  rng::for_each(enum_components, process_component);
 
   // only log this if it isn't occluded by app2 and window write times
   if (args->window_grid_paths.empty()) {

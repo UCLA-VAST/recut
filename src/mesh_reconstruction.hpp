@@ -714,6 +714,7 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     int index, RecutCommandLineArgs *args,
     fs::path component_dir_fn, std::ofstream& component_log, int threads, bool save_graphs = false) {
 
+  component_log << "Component threads, " << threads << '\n';
   auto timer = high_resolution_timer();
   auto g = vdb_to_graph(component, args);
   component_log << "vdb to graph, " << timer.elapsed_formatted() << '\n';
