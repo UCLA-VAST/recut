@@ -59,23 +59,30 @@ If you use a viewer like Neutube that operates only in voxel units with --output
 Note that many parameters are inferred by the voxel size. For example, morphological close steps of topology is inferred from the voxel size for 15x (.4 .4 .4) it computes 4, for 1 1 1 it computes 1 which is almost negligible.
 
 ### Morphological Operations and Seed (Cell Body/Soma) Segmentation
-Even in inferenced neural tissue of internal data, only about 20% of foreground voxels are reachable from known seed locations. In order for Recut to build trees it must traverse from a seed (cell body) point. These seed points can either be morphologically segmented (default), picked from the image by hand, or inferenced from the U-net model in the `recut/pipeline` folder. Inferencing using the U-net implementation requires rigorous training for new datasets therefore we recommend using the morphological soma segmentation included in Recut. Automated soma detection tends to have high recall but low precision (lots of false positives) therefore we recommend proofreading the automated soma locations. If you elect not to proofread the soma locations on large volumes we strongly recommend filtering the final SWCs by their persistent homology via `scripts/TMD_filtering.py` which automates the removal of false positive somas.
+Even in inferenced neural tissue, only about 17% of the sparse foreground voxels are reachable from known seed locations. In order for Recut to build trees it must traverse from a seed (cell body) point. These seed points can either be morphologically segmented (default), picked from the image by hand, or inferenced from the U-net model in the `recut/pipeline` folder. Inferencing using the U-net implementation requires re-training for new datasets therefore we recommend using the morphological soma segmentation included in Recut. Automated soma detection tends to have high recall but low precision (lots of false positives) therefore we recommend proofreading the automated soma locations. If you elect not to proofread the soma locations on large volumes we strongly recommend filtering the final SWCs by their persistent homology via `scripts/TMD_filtering.py` which automates the removal of false positive somas.
 
 In order to find the cell bodies of branching neurons more effectively, recut accepts a parameter to conduct morphological opening like so:
 ```
-recut ch0 --open-steps 5
+recut ch0 --open-steps 5 --output-type seeds --voxel-size 1 1 1
 ```
 This will erase background noise, small islands, and thin projections in the image like the neurites that branch off a cell body. With these projections erased, the true cell body (tree root) are recovered quite robustly.
+Using the `--output-type seeds` tells the program to stop running after detecting seeds.
 
-While the command above works for images with cells with clearly filled interiors, some imaging techniques only label the cell surface (contour). In such cases, we need to morphologically close the image before opening such that holes and valleys are filled. We do so like this: 
+While the command above works for images with cells with clearly filled interiors, some imaging techniques only label the cell surface (contour). In such cases, we need to morphologically close the image before opening such that holes and valleys are filled. Usually you already have converted to a mask vdb file. We would do so like this: 
 ```
-recut ch0 --input-type mask --close-steps 8 --open-steps 5
+recut mask.vdb --output-type seeds --close-steps 8 --open-steps 5 --voxel-size 1 1 1
 ```
 
-For brain volumes with voxel size [1,1,1] in um, we found a morphological closing step of 8 followed by a morphological opening step of 5 with a foreground percent of .1 to be best for segmenting hollow cell body (seed) regions. The estimated cell body location and coordinates will be created in the new run directory under `seeds/`. 
+Recommended close and open steps is voxel size specific, so let Recut decide these parameters based on voxel size like this for example:
+```
+recut mask.vdb --output-type seeds --voxel-size .4 .4 1.2
+```
+It will print on the command line the inferred parameters based off the unique voxel sizes.
+The are chosen to be best for segmenting hollow cell body (seed) regions. The estimated cell body location and coordinates will be created in the new run directory under `seeds/`. 
 
 If you wish to generate seed locations via a separate method, output all seed in the image into separate files in the same folder. Each file contains a single line with the coordinate and radius information separated by commas like so:
 `X,Y,Z,RADIUS`
+You can also pass a directory of SWC files, and the root/soma of the file will be used as seeds.
 
 #### Soma Proofreading
 It's recommended to generate a first pass approximation of soma locations using Recut's morphological operations then proofreading those somas by hand since too many false positives split neurons into erroneous subtrees. We recommend converting Recut's seeds to the Terafly format and proofreading them there using [this](https://github.com/ucla-brain/image-preprocessing-pipeline/blob/main/supplements/soma_recut_seed_to_terafly_ano.py) script. Once proofreading is complete you can convert the Terafly annotations back in to the soma locations readable by Recut via [this](https://github.com/ucla-brain/image-preprocessing-pipeline/blob/main/supplements/soma_terafly_ano_to_recut_seed.py) script. It's also possible to convert to imaris annotations (see the `/scripts/` folder). 
