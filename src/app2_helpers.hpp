@@ -1706,7 +1706,25 @@ void run_app2(ValuedGrid component_with_values,
                     window.bbox().dim()[0], window.bbox().dim()[1],
                     window.bbox().dim()[2],
                     /* cnn_type*/ 1, bkg_thresh);
+
+  // calculate the memory FM consumes
+  //image is 1 B per pixel
+  auto bytes = window.bbox().volume();
+  // phi, parent, state (3) * 4 B/float * window volume
+  bytes += 3 * 4 * window.bbox().volume();
+  //FM uses tmp_map <long, MyMarker> for every dense voxel
+  bytes += (44 + 4) * window.bbox().volume();
+  // each marker is 44 B 
+  bytes += 44 * app2_output_tree.size();
+
+  // calculate the memory HAPP consumes
+  //image is 1 B per pixel uses a temp img
+  bytes += window.bbox().volume();
+  // mask is unsigned short
+  bytes += 2 * window.bbox().volume();
+
   component_log << "APP2 node count, " << app2_output_tree.size() << '\n';
+  component_log << "APP2 Memory Bytes, " << bytes << '\n';
   component_log << "Fast Marching time, " << timer.elapsed_formatted() << '\n';
 
   /*
@@ -1733,6 +1751,9 @@ void run_app2(ValuedGrid component_with_values,
   // log FM + HAPP only
   component_log << "APP2 skeleton, " << skeleton_timer.elapsed_formatted() << '\n';
   timer.restart();
+
+  if (benchmark_mode) 
+    return;
 
   /*
   count = 0;

@@ -715,9 +715,14 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     fs::path component_dir_fn, std::ofstream& component_log, int threads, 
     bool save_graphs = false, bool benchmark_mode=false) {
 
+  // calculate total memory usage
+  auto bytes = component->tree().memUsage();
+
   auto timer = high_resolution_timer();
   auto g = vdb_to_graph(component, args);
   component_log << "vdb to graph, " << timer.elapsed_formatted() << '\n';
+  // adj map of 2 * size_t
+  bytes += g.no_nodes() * 2 * 4;
 
   if (args->coarsen_steps.value()) {
     timer.restart();
@@ -725,6 +730,7 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     auto last_layer_index = msg.layers.size() - 1;
     auto layer_index = args->coarsen_steps.value() > last_layer_index ? last_layer_index : args->coarsen_steps.value();
     g = msg.layers[layer_index];
+    bytes += g.no_nodes() * 2 * 4;
     component_log << "Surface smooth, " << timer.elapsed_formatted() << '\n';
   }
 
@@ -748,8 +754,12 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
         /*opt steps*/ args->optimize_steps, threads,
         false);
   auto [component_graph, _] = skeleton_from_node_set_vec(g, separators);
+  bytes += component_graph.no_nodes() * 2 * 4;
   component_log << "msls threads, " << threads << '\n';
   component_log << "msls, " << timer.elapsed_formatted() << '\n';
+  component_log.flush();
+
+  component_log << "Memory Bytes, " << bytes  << '\n';
   component_log.flush();
 
   timer.restart();
