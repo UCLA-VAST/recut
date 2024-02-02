@@ -458,14 +458,18 @@ void smooth_graph_pos_rad(AMGraph3D &g, const int iter, const float alpha) {
 
     for (auto n : g.node_ids()) {
       double wsum = 0;
-      auto N = g.neighbors(n);
-      for (auto nn : N) {
+      auto nbs = g.neighbors(n);
+      auto valence = nbs.size();
+      for (auto nn : nbs) {
         double w = 1.0;
         new_pos[n] += w * g.pos[nn];
         new_radius[n] += convert_radius(w * get_radius(g, nn));
         wsum += w;
       }
-      double alpha = N.size() == 1 ? 0 : _alpha;
+
+      // pin the loc and radii of leafs, branch points or higher
+      double alpha = valence == 2 ? _alpha : 0;
+
       new_pos[n] = (alpha)*new_pos[n] / wsum + (1.0 - alpha) * g.pos[n];
       new_radius[n] = convert_radius((alpha)*radius(new_radius, n) / wsum +
           (1.0 - alpha) * get_radius(g, n));
@@ -477,8 +481,7 @@ void smooth_graph_pos_rad(AMGraph3D &g, const int iter, const float alpha) {
     auto [npos, nradius] = lsmooth(g, alpha);
     // leaf vertices are already pinned in radius and pos above if you
     // observe the weighting scheme
-    if (g.valence(i) < 3)
-      g.pos = npos;
+    g.pos = npos;
     g.node_color = nradius;
   }
 }
