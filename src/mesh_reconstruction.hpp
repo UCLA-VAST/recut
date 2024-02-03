@@ -743,10 +743,8 @@ vdb_to_skeleton(openvdb::FloatGrid::Ptr component, std::vector<Seed> component_s
     component_log << "saturate edges, " << timer.elapsed_formatted() << '\n';
   }
 
-  /*
-  if (save_graphs)
-    graph_save(component_dir_fn / ("mesh.graph"), g);
-  */
+  //if (save_graphs)
+    //graph_save(component_dir_fn / ("mesh.graph"), g);
 
   timer.restart();
   // multi-scale is faster and scales linearly with input graph size at

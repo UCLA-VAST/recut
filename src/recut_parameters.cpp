@@ -122,6 +122,7 @@ void RecutCommandLineArgs::PrintUsage() {
             << MAX_SOMA_RADIUS_UM << " µm\n";
   std::cout << "--save-vdbs            save intermediate VDB grids during "
                "reconstruction transformations\n";
+  std::cout << "--save-mesh            save surface mesh and graph file\n";
   // std::cout
   //<< "--run-app2             for benchmarks and comparisons runs app2 on "
   //"the vdb passed to --output-windows\n";
@@ -251,6 +252,8 @@ RecutCommandLineArgs ParseRecutArgsOrExit(int argc, char *argv[]) {
         ++i;
       } else if (strcmp(argv[i], "--save-vdbs") == 0) {
         args.save_vdbs = true;
+      } else if (strcmp(argv[i], "--save-mesh") == 0) {
+        args.save_mesh = true;
       } else if (strcmp(argv[i], "--ignore-multifurcations") == 0) {
         args.ignore_multifurcations = true;
       } else if (strcmp(argv[i], "--channel") == 0 ||

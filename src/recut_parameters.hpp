@@ -30,7 +30,7 @@ public:
         expand_window_um(EXPAND_WINDOW_UM), min_window_um(MIN_WINDOW_UM),
         morphological_operations_order(1),
         min_radius_um(MIN_SOMA_RADIUS_UM), max_radius_um(MAX_SOMA_RADIUS_UM),
-        voxel_size({1., 1., 1.}), save_vdbs(false), 
+        voxel_size({1., 1., 1.}), save_vdbs(false), save_mesh(false), save_graph(false),
         ignore_multifurcations(false), close_topology(true),
         skeleton_grain(SKELETON_GRAIN), skeleton_grow(GROW_THRESHOLD),
         match_distance(MATCH_DISTANCE),
@@ -58,7 +58,7 @@ public:
   VID_t selected, root_vid;
   bool run_app2, convert_only, combine, histogram, save_vdbs,
       ignore_multifurcations, close_topology, disable_swc_scaling, 
-      benchmark_mode;
+      benchmark_mode, save_mesh, save_graph;
   std::array<int, 3> tile_lengths;
   std::array<double, 3> voxel_size;
   std::optional<float> prune_radius, soma_dilation, anisotropic_scaling;

@@ -3259,12 +3259,11 @@ void partition_components(openvdb::FloatGrid::Ptr connected_grid,
       cluster_opt = vdb_to_skeleton(component, component_seeds, index, args,
                                      component_dir_fn, component_log,
                                      args->user_thread_count, 
-                                     args->save_vdbs, args->benchmark_mode);
+                                     args->save_graph, args->benchmark_mode);
       component_log << "Skeleton, " << timer.elapsed_formatted() << '\n';
     }
 
-    bool save_mesh = false;
-    if (save_mesh) {
+    if (args->save_mesh) {
       HMesh::Manifold m = vdb_to_mesh(component, args);
       HMesh::obj_save(component_dir_fn / ("mesh.obj"), m);
     }
