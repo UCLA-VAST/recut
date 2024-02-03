@@ -2908,7 +2908,11 @@ template <class image_t> void Recut<image_t>::initialize() {
 
     if (!args->anisotropic_scaling.has_value()) {
       //find the linear equation that passes through the points (.4, .2)and  (1, .16)
-      args->anisotropic_scaling = .226667 - .0666666 * args->voxel_size[0];
+      //args->anisotropic_scaling = .226667 - .0666666 * args->voxel_size[0];
+      
+      // if z-dim is equal or less (very rare) than you can downscale the radii of swc nodes
+      if (args->voxel_size[2] <= args->voxel_size[0])
+        args->anisotropic_scaling = ANISOTROPIC_FACTOR;
     }
 
     if (!args->smooth_steps.has_value()) {

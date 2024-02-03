@@ -95,7 +95,8 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 #define EXPAND_WINDOW_UM 30.0
 #define SWC_PRECISION 3
 // determined empirically from comparing z radii vs. xy radii for 6x data
-#define ANISOTROPIC_FACTOR (1 / (.16))
+//#define ANISOTROPIC_FACTOR (1 / (.16))
+#define ANISOTROPIC_FACTOR (1. / 3)
 
 // Below are deprecated or are not (yet) affecting behavior:
 #define MIN_RADII 2
