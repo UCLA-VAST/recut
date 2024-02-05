@@ -2925,9 +2925,10 @@ template <class image_t> void Recut<image_t>::initialize() {
     if (!args->coarsen_steps.has_value()) {
       // at low resolution voxel sizes 1 (6x) and above do not coarsen
       //args->coarsen_steps = args->voxel_size[0] >= 1 ? 0 : std::round(COARSEN_FACTOR / args->voxel_size[0]);
-      //std::cout << "Coarsen steps inferred to " << args->coarsen_steps.value()
-                      //<< " based on voxel size\n";
-      args->coarsen_steps = COARSEN_STEPS;
+      args->coarsen_steps = args->voxel_size[0] >= 1 ? 0 : std::round(COARSEN_FACTOR / args->voxel_size[0]);
+      std::cout << "Coarsen steps inferred to " << args->coarsen_steps.value()
+                      << " based on voxel size\n";
+      //args->coarsen_steps = COARSEN_STEPS;
     }
 
     if (args->seed_path.empty()) {

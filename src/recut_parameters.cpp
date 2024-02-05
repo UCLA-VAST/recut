@@ -58,7 +58,7 @@ void RecutCommandLineArgs::PrintUsage() {
          "default 0 0 0\n";
   std::cout << "--coarsen-steps        determines granularity of final skeletons, lower "
                "values result in higher detailed skeletons (SWC trees) with "
-               "more skeletal nodes; default is " << COARSEN_STEPS << '\n';
+               "more skeletal nodes; default is determined by the voxel size\n";
             //<< COARSEN_FACTOR << " / [voxel size]\n";
   //std::cout << "--skeleton-grain       granularity of final skeletons, lower "
                //"value result in higher detailed skeletons (SWC trees) with "

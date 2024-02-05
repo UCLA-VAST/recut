@@ -76,8 +76,8 @@ using EnlargedPointIndexGrid = vto::PointIndexGrid;
 
 #define MAX_EDGE_LENGTH_UM 2
 #define SWC_MIN_LINE 110
-//#define COARSEN_FACTOR 1.5
-#define COARSEN_STEPS 0
+#define COARSEN_FACTOR .75
+//#define COARSEN_STEPS 0
 // force used to be set to 3 for raw human proofread seeds multiplied by voxel_size[0]
 #define FORCE_SOMA_DILATION 1
 #define FIND_SOMA_DILATION 1
