@@ -449,7 +449,7 @@ GridT create_label(Seed seed, fs::path dir, GridT grid,
                    bool paged = true, std::string name = "") {
 
   auto [clip_box, bbox] = soma_clip_box(seed);
-  grid->clip(bbox);
+  //grid->clip(bbox);
   //auto clipped_grid = vto::clip(*grid, clip_box);
 
   if (grid) {
