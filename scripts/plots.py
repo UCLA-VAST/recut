@@ -154,16 +154,15 @@ def radius(args):
 
 to_seconds = np.vectorize(parse_formatted_time)
 
-def extract_df(rundir, col, count):
+def extract_df(rundir, col, count, mem):
     frames = []
     for root, dirs, files in os.walk(rundir):
         for file in files:
             name = os.path.join(root, file)
             try:
                 if '-log.csv' in file:
-                    print(name)
                     f = pd.read_csv(name, header=None, on_bad_lines='skip').T
-                    f = f.rename(columns=f.iloc[0]).drop(f.index[0])[[col, count]]
+                    f = f.rename(columns=f.iloc[0]).drop(f.index[0])[[col, count, mem]]
                     frames.append(f)
             except:
                 print("Could not process file: " + name)
@@ -171,12 +170,13 @@ def extract_df(rundir, col, count):
     # in minutes
     df[col] = to_seconds(df[col]) / 60
     df[count] = df[count].astype(int) / 1000000
+    df[mem] = df[mem].astype(int) / 1073741824 
     return df
 
-def concat_dfs(rundirs, col, count):
+def concat_dfs(rundirs, col, count, mem):
     dfs = []
     for rdir in rundirs:
-        dfs.append(extract_df(rdir, col, count))
+        dfs.append(extract_df(rdir, col, count, mem))
     df = pd.concat(dfs, axis=0)
     df.sort_values(count, inplace=True)
     return df
@@ -191,30 +191,63 @@ def fit_line(x, y, color, label, marker):
     # f = np.poly1d(x, y, 1)
     # plt.plot(x, f(x), c=color, label=label)
 
-def sequential(args):
-    ''' Show sequential runtime comparison of app2 and recut'''
-
-    # stage_to_col = {'APP2' : ['Read window time', 'Fast Marching time', 'HAPP time', 'Write SWC']}
-
-    fontsize = 12
-    app2_color = 'brown'
-    recut_color = 'steelblue'
-    skel = 'Skeleton'
-    # the component active voxel count is the volume of the reachable W_c
-    count = 'Component active voxel count'
-    # for APP2 to get the equivalent you have to see the reachable from soma
-    # after fastmarching
-    app2_count = 'APP2 node count'
-    app2_skel = 'APP2 skeleton' # just record FM + HAPP
-    # app2_skel = 'APP2 cumulative'
-
-    app2 = concat_dfs(args.app2, app2_skel, app2_count)
-    ours = concat_dfs(args.output, skel, count)
-
+def plot_neuron_runtime(ours, app2, count, app2_count, skel, app2_skel, recut_color, app2_color, 
+                        fontsize, wc_color):
     ax = plt.axes()
+    #runtime
     fit_line(ours[count], ours[skel], recut_color, r'Ours', 'o')
     fit_line(app2[app2_count], app2[app2_skel], app2_color, r'APP2', '+')
+
     plt.ylabel(r'Runtime per neuron (minutes)', weight='bold')
+    plt.yscale('log')
+    plt.xscale('log')
+    plt.xlim(1, 1000)
+    # plt.xticks(range(0,31, 5))
+    # plt.legend(loc='upper left')
+    plt.text(.7, 3, r'APP2', fontsize=fontsize, color=app2_color, weight='bold')
+    plt.text(10, .15, 'Ours', fontsize=fontsize, color=recut_color, weight='bold')
+    # refer to it as runtime and throughput
+    # plt.title('Neuron Cluster Performance')
+
+    plt.xlim([.1, 10000])
+    ax.set_xticks([.1, 1, 10, 100, 1000, 10000])
+    ax.set_xticklabels([r'$ W_c $ count (mega)', r'1', r'10', r'100', r'1000', r''], weight='bold')
+
+    plt.ylim([.01, 1000])
+    ax.set_yticks([.01, .1, 1, 10, 100, 1000])
+    ax.set_yticklabels([r'', r'.1', r'1', r'10', r'100', r''], weight='bold')
+    plt.grid()
+
+    mega = 10**6
+    # 1.6
+    # sparse = 14025824767 / mega
+    # reach = 377798318 / mega
+    # .8
+    sparse = 4590040395 / mega
+    reach = 705423652 / mega
+
+    smaller_font = 10
+    plt.axvline(x=reach, color=wc_color)
+    plt.axvline(x=sparse, color='black')
+    plt.text(.784, .5, r'All reachable neurons combined ($W_c$)', fontsize=smaller_font,
+             color=wc_color, weight='bold', rotation=270,
+             transform=ax.transAxes, horizontalalignment='center', verticalalignment='center')
+    plt.text(.95, .5, r'All foreground ($W_s$)', fontsize=smaller_font, color='black', weight='bold', rotation=270, transform=ax.transAxes, horizontalalignment='center', verticalalignment='center')
+
+    plt.tight_layout()
+    fn = '/home/kdmarrett/fig/neuron-runtime.png'
+    print(fn)
+    plt.savefig(fn, dpi=args.dpi)
+    plt.close()
+
+def plot_neuron_mem(ours, app2, count, app2_count, mem, app2_mem, recut_color, app2_color, 
+                        fontsize, wc_color):
+    ax = plt.axes()
+    #runtime
+    fit_line(ours[count], ours[mem], recut_color, r'Ours', 'o')
+    fit_line(app2[app2_count], app2[app2_mem], app2_color, r'APP2', '+')
+
+    plt.ylabel(r'Memory per neuron (GB)', weight='bold')
     plt.yscale('log')
     plt.xscale('log')
     plt.xlim(1,1000)
@@ -225,16 +258,65 @@ def sequential(args):
     # refer to it as runtime and throughput
     # plt.title('Neuron Cluster Performance')
 
-    plt.xlim([.1, 1000])
-    ax.set_xticks([.1, 1, 10, 100, 1000])
-    ax.set_xticklabels([r'$ W_c $ count (mega)', r'1', r'10', r'100', r''], weight='bold')
+    plt.xlim([.1, 10000])
+    ax.set_xticks([.1, 1, 10, 100, 1000, 10000])
+    ax.set_xticklabels([r'$ W_c $ count (mega)', r'1', r'10', r'100', r'1000', r''], weight='bold')
 
     plt.ylim([.01, 1000])
-    ax.set_yticks([.01, .1, 1, 10, 100, 1000])
-    ax.set_yticklabels([r'', r'.1', r'1', r'10', r'100', r''], weight='bold')
+    ax.set_yticks([.001, .01, .1, 1, 10, 100, 1000, 10000])
+    ax.set_yticklabels([r'', r'.01', r'.1', r'1', r'10', r'100', r'1000', r''], weight='bold')
     plt.grid()
+
+    mega = 10**6
+    # .8
+    sparse = 4590040395 / mega
+    reach = 705423652 / mega
+
+    # 1.6
+    # sparse = 14025824767 / mega
+    # reach = 377798318 / mega
+
+    smaller_font = 10
+    plt.axvline(x=reach, color=wc_color)
+    plt.axvline(x=sparse, color='black')
+    plt.text(.784, .5, r'All reachable neurons combined ($W_c$)', fontsize=smaller_font,
+             color=wc_color, weight='bold', rotation=270,
+             transform=ax.transAxes, horizontalalignment='center', verticalalignment='center')
+    plt.text(.95, .5, r'All foreground ($W_s$)', fontsize=smaller_font, color='black', weight='bold', rotation=270, transform=ax.transAxes, horizontalalignment='center', verticalalignment='center')
+
     plt.tight_layout()
-    plt.savefig('/home/kdmarrett/fig/neuron-runtime.png', dpi=args.dpi)
+    fn = '/home/kdmarrett/fig/neuron-mem.png'
+    print(fn)
+    plt.savefig(fn, dpi=args.dpi)
+    plt.close()
+
+def sequential(args):
+    ''' Show sequential runtime comparison of app2 and recut'''
+
+    # stage_to_col = {'APP2' : ['Read window time', 'Fast Marching time', 'HAPP time', 'Write SWC']}
+
+    fontsize = 12
+    app2_color = 'brown'
+    wc_color = 'steelblue'
+    recut_color = 'purple'
+    skel = 'Skeleton'
+    # the component active voxel count is the volume of the reachable W_c
+    count = 'Component active voxel count'
+    # for APP2 to get the equivalent you have to see the reachable from soma
+    # after fastmarching
+    app2_count = 'APP2 node count'
+    app2_skel = 'APP2 skeleton' # just record FM + HAPP
+    app2_mem = 'APP2 Memory Bytes'
+    mem = 'Memory Bytes'
+    # app2_skel = 'APP2 cumulative'
+
+    app2 = concat_dfs(args.app2, app2_skel, app2_count, app2_mem)
+    ours = concat_dfs(args.output, skel, count, mem)
+
+    plot_neuron_runtime(ours, app2, count, app2_count, skel, app2_skel, recut_color, app2_color, fontsize, wc_color)
+
+    plot_neuron_mem(ours, app2, count, app2_count, mem, app2_mem, recut_color, app2_color, fontsize, wc_color)
+    # import pdb; pdb.set_trace()
 
 def throughput(args):
     ''' Show throughput comparison of app2 and recut'''
